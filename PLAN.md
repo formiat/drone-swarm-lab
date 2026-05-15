@@ -258,6 +258,7 @@ pub struct TaskRegistry {
 impl TaskRegistry {
     pub fn new(tasks: Vec<Task>) -> Self;
     pub fn assign(&mut self, task_id: &TaskId, agent_id: AgentId) -> Result<(), RuntimeError>;
+    pub fn start(&mut self, task_id: &TaskId) -> Result<(), RuntimeError>;
     pub fn complete(&mut self, task_id: &TaskId) -> Result<(), RuntimeError>;
     pub fn fail_task(&mut self, task_id: &TaskId) -> Result<(), RuntimeError>;
     /// Release all tasks owned by agent; return released TaskIds.
@@ -469,21 +470,29 @@ pub struct RunConfig {
    - назначить все возможные задачи через `GreedyAllocator`;
    - это фиксирует стартовый invariant: при наличии живых агентов coverage tasks не остаются unassigned без причины.
 6. Вести `HashMap<TaskId, u64>` с количеством тиков, проведённых задачей в `Unassigned`.
-7. Цикл по тикам (`0..max_ticks`):
+7. Вести `HashSet<AgentId>` `crashed_agents` как ground-truth состояние симулятора:
+   - это не runtime membership view;
+   - crash означает только "агент перестал отправлять heartbeat";
+   - `MembershipView` остаётся `Alive`, пока `FailureDetector` сам не обнаружит timeout.
+8. Цикл по тикам (`0..max_ticks`):
    a. `clock.advance()`.
-   b. Для каждого `FailureEvent` с `at_tick == current_tick`: пометить агента как мёртвого в `coordinator.membership`.
-   c. Собрать живых агентов (по membership view): каждый посылает heartbeat через `network.send(RawMessage { from: agent_id, to: coordinator_id, payload: agent_id_bytes })`.
+   b. Для каждого `FailureEvent` с `at_tick == current_tick`: добавить агента в `crashed_agents`.
+   c. Собрать агентов, которые считаются alive в membership view и **не входят** в `crashed_agents`: только они посылают heartbeat через `network.send(RawMessage { from: agent_id, to: coordinator_id, payload: agent_id_bytes })`.
    d. `network.advance_tick()`.
    e. Получить heartbeat-сообщения из сети: `network.drain_ready(&coordinator_id)`. Извлечь `AgentId` из payload каждого сообщения.
-   f. `coordinator.process_tick(heartbeat_senders, current_tick)`.
+   f. `coordinator.process_tick(heartbeat_senders, current_tick)`:
+      - обновляет heartbeat ticks для полученных heartbeats;
+      - вызывает `FailureDetector`;
+      - только для `newly_failed` делает `membership.mark_dead()`;
+      - только после этого вызывает `registry.release_agent_tasks()`.
    g. Обновить unassigned-duration counters для всех задач в состоянии `Unassigned`; сохранить максимум в `RunMetrics.max_task_unassigned_ticks`.
    h. Если `output.released_tasks` непустые или в registry есть unassigned tasks:
-      - Записать `detection_tick` (если не записан).
+      - Записать `detection_tick` (если `output.newly_failed` непустой и detection ещё не записан);
       - Вызвать `allocator.allocate(unassigned_tasks, alive_agents)`.
       - Применить назначения через `coordinator.registry.assign(...)`.
       - Если все released_tasks назначены — записать `reallocation_tick`.
    i. Если после failure/reallocation все задачи assigned/completed и `max_task_unassigned_ticks <= config.max_unassigned_ticks`: можно завершить прогон досрочно.
-8. Вернуть `RunMetrics`:
+9. Вернуть `RunMetrics`:
    - `all_tasks_assigned = coordinator.registry.all_assigned_or_completed()`;
    - `success = all_tasks_assigned && max_task_unassigned_ticks <= config.max_unassigned_ticks`.
 
@@ -635,43 +644,45 @@ git commit -m "feat: migrate derive_more to v2, add README, Milestone 1 Coverage
 |---|------|-------|----------|
 | C.11 | `registry_assign_unassigned` | swarm-runtime | `Unassigned` → `Assigned` успешно |
 | C.12 | `registry_assign_already_assigned_fails` | swarm-runtime | Повторный assign на занятую задачу → `Err(InvalidTransition)` |
-| C.13 | `registry_release_agent_tasks` | swarm-runtime | Задачи агента → `Unassigned` после `release_agent_tasks()` |
-| C.14 | `registry_all_assigned_or_completed` | swarm-runtime | true только когда нет задач `Unassigned` без владельца |
+| C.13 | `registry_start_assigned_task` | swarm-runtime | `Assigned` → `InProgress` через `start()` |
+| C.14 | `registry_release_agent_tasks` | swarm-runtime | Задачи агента → `Unassigned` после `release_agent_tasks()` |
+| C.15 | `registry_all_assigned_or_completed` | swarm-runtime | true только когда нет задач `Unassigned` без владельца |
 
 **Задача C: GreedyAllocator**
 
 | # | Тест | Крейт | Описание |
 |---|------|-------|----------|
-| C.15 | `greedy_assigns_to_alive_agents` | swarm-alloc | 3 задачи, 3 агента → все назначены |
-| C.16 | `greedy_no_agents_returns_empty` | swarm-alloc | Нет агентов → пустой Vec |
-| C.17 | `greedy_more_tasks_than_agents` | swarm-alloc | 5 задач, 2 агента → 2 назначения (round-robin) |
+| C.16 | `greedy_assigns_to_alive_agents` | swarm-alloc | 3 задачи, 3 агента → все назначены |
+| C.17 | `greedy_no_agents_returns_empty` | swarm-alloc | Нет агентов → пустой Vec |
+| C.18 | `greedy_more_tasks_than_agents` | swarm-alloc | 5 задач, 2 агента → 2 назначения (round-robin) |
 
 **Задача C: MetricsCollector**
 
 | # | Тест | Крейт | Описание |
 |---|------|-------|----------|
-| C.18 | `aggregate_success_rate` | swarm-metrics | 8 из 10 runs `success=true` → `success_rate=0.8` |
-| C.19 | `aggregate_avg_detection` | swarm-metrics | Среднее `detection_time_ticks` вычисляется верно |
+| C.19 | `aggregate_success_rate` | swarm-metrics | 8 из 10 runs `success=true` → `success_rate=0.8` |
+| C.20 | `aggregate_avg_detection` | swarm-metrics | Среднее `detection_time_ticks` вычисляется верно |
 
 ### Категория 2 — лёгкий рефакторинг (после реализации C)
 
 | # | Тест | Крейт | Описание |
 |---|------|-------|----------|
-| C.20 | `runner_failure_triggers_reallocation` | swarm-sim | End-to-end: агент умирает, задачи перераспределяются за ≤ `timeout_ticks + 1` тиков |
-| C.21 | `runner_deterministic_same_seed` | swarm-sim | Два запуска с одним seed → идентичные RunMetrics |
-| C.22 | `runner_no_failure_assigns_all_tasks` | swarm-sim | Без failure_events все задачи назначаются живым агентам |
+| C.21 | `runner_timeout_semantics_before_after_detection` | swarm-sim | После crash агент перестаёт слать heartbeat; до timeout он не `newly_failed`, после timeout появляется в `newly_failed`, задачи release → reallocate |
+| C.22 | `runner_failure_triggers_reallocation` | swarm-sim | End-to-end: агент умирает, задачи перераспределяются за ≤ `timeout_ticks + latency_ticks + 1` тиков после последнего heartbeat |
+| C.23 | `runner_deterministic_same_seed` | swarm-sim | Два запуска с одним seed → идентичные RunMetrics |
+| C.24 | `runner_no_failure_assigns_all_tasks` | swarm-sim | Без failure_events все задачи назначаются живым агентам |
 
 ### Категория 3 — тяжёлый рефакторинг (будущие milestone)
 
 | # | Тест | Описание |
 |---|------|----------|
-| C.23 | `coverage_1000_seeds_stress` | Тест из 1000 seed с assertion на success_rate >= 0.99; требует ~секунды |
-| C.24 | Property-based тесты TaskRegistry state machine | Нужен `proptest`; добавить в Milestone 2 |
-| C.25 | Multiple simultaneous failures | Несколько агентов умирают одновременно; требует расширения `FailureEvent` |
+| C.25 | `coverage_1000_seeds_stress` | Тест из 1000 seed с assertion на success_rate >= 0.99; требует ~секунды |
+| C.26 | Property-based тесты TaskRegistry state machine | Нужен `proptest`; добавить в Milestone 2 |
+| C.27 | Multiple simultaneous failures | Несколько агентов умирают одновременно; требует расширения `FailureEvent` |
 
 ### Gap-анализ
 
-- **Нет теста на отказ в записи метрик при dropped heartbeats**: сложно проверить детерминированно без контроля RNG seed в тесте — частично покрывается C.4 и C.20.
+- **Нет теста на отказ в записи метрик при dropped heartbeats**: сложно проверить детерминированно без контроля RNG seed в тесте — частично покрывается C.4 и C.21.
 - **Нет E2E теста 1000 сценариев в unit-тестах**: такой тест слишком долгий для `cargo test`; вместо него — smoke через `coverage_with_failure` бинарник.
 
 ## Risks and tradeoffs
