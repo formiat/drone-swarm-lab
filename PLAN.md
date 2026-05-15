@@ -108,7 +108,7 @@ swarm-runtime   = { path = "crates/swarm-runtime" }
 swarm-alloc     = { path = "crates/swarm-alloc" }
 swarm-metrics   = { path = "crates/swarm-metrics" }
 swarm-scenarios = { path = "crates/swarm-scenarios" }
-rand            = "0.8"
+rand            = { version = "0.8", features = ["small_rng"] }
 ```
 
 ---
@@ -449,6 +449,8 @@ pub struct RunConfig {
     pub max_ticks: u64,
     /// Ticks without heartbeat before FailureDetector marks agent Dead.
     pub timeout_ticks: u64,
+    /// Maximum allowed duration for any task to remain Unassigned.
+    pub max_unassigned_ticks: u64,
     pub packet_loss_rate: f64,
     pub latency_ticks: u64,
     pub failures: Vec<FailureEvent>,
@@ -547,6 +549,8 @@ pub fn build_coverage_scenario(config: &CoverageConfig) -> (Scenario, RunConfig)
 - Задачи: `Task { id: "task-{i}", status: Unassigned, assigned_to: None, priority: 1 }`.
 - Изначально распределить задачи между агентами (assign по одной на агента, остальные остаются Unassigned).
 - FailureEvent: первый агент (`"agent-0"`) умирает в `failure_tick`.
+- `RunConfig.max_unassigned_ticks = CoverageConfig.max_unassigned_ticks`.
+- `RunConfig.packet_loss_rate`, `latency_ticks`, `timeout_ticks`, `max_ticks` и `failures` заполняются из `CoverageConfig`.
 
 ---
 
@@ -677,7 +681,7 @@ git commit -m "feat: migrate derive_more to v2, add README, Milestone 1 Coverage
 | Риск | Вероятность | Митигация |
 |------|-------------|-----------|
 | derive_more v2 feature-флаги не включают нужный derive | Низкая | План минимизирует derive-набор, удаляет `AsMut`; тест A.1/A.2 и `cargo build` поймают несовместимость |
-| `rand = "0.8"` несовместим с другими зависимостями | Низкая | 0.8 — стабильная ветка; `cargo build` сразу покажет |
+| `rand = { version = "0.8", features = ["small_rng"] }` несовместим с другими зависимостями | Низкая | 0.8 — стабильная ветка; `cargo build` сразу покажет; feature `small_rng` нужна для `rand::rngs::SmallRng` |
 | Circular dependency: swarm-sim → swarm-runtime → swarm-alloc | Нет | Граф ацикличен: types ← comms ← runtime ← alloc ← metrics ← sim ← scenarios ← examples |
 | При 100% packet loss failure detection может запаздывать или не дать успешный run | Высокая | `max_ticks` ограничивает прогон; `success=false` и `success_rate` в метриках покажут проблему |
 | `coordinator_id = AgentId("coordinator")` конфликтует с реальным агентом | Низкая | В `build_coverage_scenario` агентов называть `"agent-{i}"` — нет пересечения |
