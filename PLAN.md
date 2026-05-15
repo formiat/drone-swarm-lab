@@ -242,7 +242,7 @@ cargo fmt --all
 cargo clippy --all-targets -- -D warnings
 cargo test --workspace
 cargo run -p swarm-examples --bin empty_scenario
-git add Cargo.toml crates/
+git add Cargo.toml Cargo.lock crates/
 git commit -m "feat: Milestone 0 — workspace scaffold and foundational types"
 ```
 
