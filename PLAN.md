@@ -66,7 +66,7 @@ members = [
 swarm-types   = { path = "crates/swarm-types" }
 swarm-comms   = { path = "crates/swarm-comms" }
 swarm-sim     = { path = "crates/swarm-sim" }
-derive_more   = { version = "1", features = ["as_ref", "as_mut", "deref", "deref_mut", "from", "into", "display"] }
+derive_more   = "0.99"
 serde         = { version = "1", features = ["derive"] }
 thiserror     = "2"
 ```
@@ -294,7 +294,7 @@ Milestone 0 — это первый коммит существенного ко
 | Риск | Вероятность | Митигация |
 |------|-------------|-----------|
 | API `swarm-types` потребует изменений в Milestone 1 | Средняя | Типы продуманы с запасом; breaking change — норма до v0.1.0 |
-| `derive_more` v1 vs v2 — несовместимость feature flags | Низкая | Зафиксировать версию в workspace; проверить фичи при добавлении |
+| `derive_more` v1/v2 не имеют фичи `as_mut` | Реализовался | Использовать `"0.99"` — все derive включены по умолчанию; `AsMut` есть |
 | `Tick(u64)` окажется неудобным для временны́х расчётов | Низкая | Можно добавить методы или перейти на `Duration` в Milestone 1 |
 | Stub-крейты без `lib.rs` вызовут ошибку workspace | Высокая | Обязательно создать `src/lib.rs` во всех stub-крейтах |
 

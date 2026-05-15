@@ -1,0 +1,22 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/swarm-types",
+    "crates/swarm-comms",
+    "crates/swarm-sim",
+    "crates/swarm-runtime",
+    "crates/swarm-alloc",
+    "crates/swarm-metrics",
+    "crates/swarm-replay",
+    "crates/swarm-scenarios",
+    "crates/swarm-examples",
+]
+
+[workspace.dependencies]
+swarm-types = { path = "crates/swarm-types" }
+swarm-comms = { path = "crates/swarm-comms" }
+swarm-sim   = { path = "crates/swarm-sim" }
+derive_more = "0.99"
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror  = "2"

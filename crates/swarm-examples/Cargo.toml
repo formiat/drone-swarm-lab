@@ -1,0 +1,12 @@
+[package]
+name    = "swarm-examples"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "empty_scenario"
+path = "src/bin/empty_scenario.rs"
+
+[dependencies]
+swarm-types = { workspace = true }
+swarm-sim   = { workspace = true }
