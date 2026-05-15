@@ -1,4 +1,4 @@
-use derive_more::{AsMut, AsRef, Deref, DerefMut, Display, From, Into};
+use derive_more::{AsRef, Deref, DerefMut, Display, From, Into};
 use serde::{Deserialize, Serialize};
 
 use crate::pose::Pose;
@@ -6,7 +6,6 @@ use crate::task::TaskId;
 
 /// Unique identifier for a swarm agent.
 #[derive(
-    AsMut,
     AsRef,
     Deref,
     DerefMut,
@@ -45,7 +44,6 @@ pub enum Role {
 
 /// A named capability that an agent can provide (e.g. "thermal", "optical").
 #[derive(
-    AsMut,
     AsRef,
     Deref,
     DerefMut,

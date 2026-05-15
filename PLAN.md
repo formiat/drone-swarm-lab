@@ -654,7 +654,7 @@ git commit -m "feat: migrate derive_more to v2, add README, Milestone 1 Coverage
 |---|------|-------|----------|
 | C.16 | `greedy_assigns_to_alive_agents` | swarm-alloc | 3 задачи, 3 агента → все назначены |
 | C.17 | `greedy_no_agents_returns_empty` | swarm-alloc | Нет агентов → пустой Vec |
-| C.18 | `greedy_more_tasks_than_agents` | swarm-alloc | 5 задач, 2 агента → 2 назначения (round-robin) |
+| C.18 | `greedy_more_tasks_than_agents` | swarm-alloc | 5 задач, 2 агента → 5 назначений (round-robin) |
 
 **Задача C: MetricsCollector**
 

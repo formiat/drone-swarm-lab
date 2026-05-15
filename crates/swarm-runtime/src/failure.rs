@@ -1,0 +1,60 @@
+use swarm_types::AgentId;
+
+use crate::MembershipView;
+
+pub struct FailureDetector {
+    pub timeout_ticks: u64,
+}
+
+impl FailureDetector {
+    pub fn new(timeout_ticks: u64) -> Self {
+        Self { timeout_ticks }
+    }
+
+    pub fn detect(&self, view: &MembershipView, current_tick: u64) -> Vec<AgentId> {
+        view.alive_agents()
+            .filter(|(_, entry)| {
+                current_tick.saturating_sub(entry.last_heartbeat_tick) > self.timeout_ticks
+            })
+            .map(|(agent_id, _)| agent_id.clone())
+            .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use swarm_types::{Agent, Health, Pose, Role};
+
+    fn agent(id: &str) -> Agent {
+        Agent {
+            id: AgentId::from(id.to_owned()),
+            role: Role::Scout,
+            health: Health::Alive,
+            pose: Pose { x: 0.0, y: 0.0 },
+            capabilities: Vec::new(),
+            current_task: None,
+        }
+    }
+
+    #[test]
+    fn detector_no_timeout_with_recent_hb() {
+        let mut view = MembershipView::new(vec![agent("agent-0")]);
+        let id = AgentId::from("agent-0".to_owned());
+        view.record_heartbeat(&id, 5);
+        let detector = FailureDetector::new(3);
+
+        assert!(detector.detect(&view, 7).is_empty());
+    }
+
+    #[test]
+    fn detector_timeout_after_missed_hbs() {
+        let view = MembershipView::new(vec![agent("agent-0")]);
+        let detector = FailureDetector::new(3);
+
+        assert_eq!(
+            detector.detect(&view, 4),
+            vec![AgentId::from("agent-0".to_owned())]
+        );
+    }
+}

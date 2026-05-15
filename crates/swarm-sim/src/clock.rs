@@ -1,8 +1,8 @@
-use derive_more::{AsMut, AsRef, Deref, DerefMut, From, Into};
+use derive_more::{AsRef, Deref, DerefMut, From, Into};
 
 /// A discrete simulation time unit.
 #[derive(
-    AsMut, AsRef, Deref, DerefMut, From, Into, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord,
+    AsRef, Deref, DerefMut, From, Into, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord,
 )]
 pub struct Tick(u64);
 

@@ -7,6 +7,12 @@ edition = "2021"
 name = "empty_scenario"
 path = "src/bin/empty_scenario.rs"
 
+[[bin]]
+name = "coverage_with_failure"
+path = "src/bin/coverage_with_failure.rs"
+
 [dependencies]
+swarm-metrics = { workspace = true }
+swarm-scenarios = { workspace = true }
+swarm-sim = { workspace = true }
 swarm-types = { workspace = true }
-swarm-sim   = { workspace = true }

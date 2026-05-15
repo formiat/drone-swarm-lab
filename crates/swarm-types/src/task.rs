@@ -1,11 +1,10 @@
-use derive_more::{AsMut, AsRef, Deref, DerefMut, Display, From, Into};
+use derive_more::{AsRef, Deref, DerefMut, Display, From, Into};
 use serde::{Deserialize, Serialize};
 
 use crate::agent::AgentId;
 
 /// Unique identifier for a mission task.
 #[derive(
-    AsMut,
     AsRef,
     Deref,
     DerefMut,

@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-swarm-types = { workspace = true }
-serde       = { workspace = true }
 derive_more = { workspace = true }
+serde       = { workspace = true }
+swarm-alloc = { workspace = true }
+swarm-comms = { workspace = true }
+swarm-metrics = { workspace = true }
+swarm-runtime = { workspace = true }
+swarm-types = { workspace = true }

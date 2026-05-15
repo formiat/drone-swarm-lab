@@ -5,4 +5,5 @@ edition = "2021"
 
 [dependencies]
 swarm-types = { workspace = true }
+rand        = { workspace = true }
 thiserror   = { workspace = true }
