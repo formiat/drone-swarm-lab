@@ -57,7 +57,7 @@ After **every** code change — without waiting for a reminder:
 Any single-field tuple struct (newtype), e.g. `struct FooId(String)`:
 
 - Inner type must be **private**.
-- Must derive: `#[derive(AsMut, AsRef, Deref, DerefMut, From, Into)]`.
+- Must derive: `#[derive(AsRef, Deref, DerefMut, From, Into)]`.
 
 ## Types: Time and Duration
 
