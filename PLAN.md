@@ -20,7 +20,7 @@ Milestone 0 завершён: workspace scaffold, базовые типы, Trans
 Ключевые факты из кодовой базы (Milestone 0):
 
 - `derive_more = "0.99.20"` в `Cargo.lock`. AsMut используется в 5 местах: `AgentId`, `Capability` (agent.rs), `TaskId` (task.rs), `MessageId` (message.rs), `Tick` (clock.rs). Нигде не вызывается в прикладном коде — только дерайв.
-- В derive_more v2 `AsMut` derive отсутствует; остальные (`AsRef`, `Deref`, `DerefMut`, `Display`, `From`, `Into`) есть за feature-флагами.
+- Для перехода на derive_more v2 **любой ценой** `AsMut` не сохраняем: в текущем коде он не используется, а mutable-доступ к внутренним строкам ID-newtype'ов не является обязательным контрактом Milestone 0/1.
 - CLAUDE.md уже обновлён: правило newtype требует `AsRef, Deref, DerefMut, From, Into` (без AsMut).
 - Stub-крейты `swarm-runtime`, `swarm-alloc`, `swarm-metrics`, `swarm-scenarios` — пустые (`// TODO`).
 - `swarm-comms` содержит только `Transport` trait и `RawMessage`.
@@ -263,7 +263,8 @@ impl TaskRegistry {
     /// Release all tasks owned by agent; return released TaskIds.
     pub fn release_agent_tasks(&mut self, agent_id: &AgentId) -> Vec<TaskId>;
     pub fn unassigned(&self) -> Vec<&Task>;
-    pub fn all_completed(&self) -> bool;
+    /// True when every task has an owner or is completed.
+    pub fn all_assigned_or_completed(&self) -> bool;
 }
 ```
 
@@ -395,13 +396,18 @@ pub struct RunMetrics {
     pub detection_time_ticks: Option<u64>,
     /// Ticks from detection to all released tasks re-assigned. None if no failure.
     pub reallocation_time_ticks: Option<u64>,
-    pub all_tasks_completed: bool,
+    /// Maximum observed duration for any task staying unassigned.
+    pub max_task_unassigned_ticks: u64,
+    /// True when every task is assigned or completed at the end of the run.
+    pub all_tasks_assigned: bool,
+    /// v0.1 success criterion: all tasks assigned and no task exceeded max_unassigned_ticks.
+    pub success: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AggregateMetrics {
     pub total_runs: u64,
-    /// Fraction of runs where all_tasks_completed == true.
+    /// Fraction of runs where success == true.
     pub success_rate: f64,
     pub avg_detection_ticks: f64,
     pub avg_reallocation_ticks: f64,
@@ -455,20 +461,29 @@ pub struct RunConfig {
 2. Создать `Coordinator::new(agents.clone(), tasks.clone(), timeout_ticks)`.
 3. Создать `GreedyAllocator`.
 4. Создать `Clock::new(1)`.
-5. Цикл по тикам (`0..max_ticks`):
+5. До цикла выполнить initial allocation pass:
+   - взять `coordinator.registry.unassigned()`;
+   - взять живых агентов из membership;
+   - назначить все возможные задачи через `GreedyAllocator`;
+   - это фиксирует стартовый invariant: при наличии живых агентов coverage tasks не остаются unassigned без причины.
+6. Вести `HashMap<TaskId, u64>` с количеством тиков, проведённых задачей в `Unassigned`.
+7. Цикл по тикам (`0..max_ticks`):
    a. `clock.advance()`.
    b. Для каждого `FailureEvent` с `at_tick == current_tick`: пометить агента как мёртвого в `coordinator.membership`.
    c. Собрать живых агентов (по membership view): каждый посылает heartbeat через `network.send(RawMessage { from: agent_id, to: coordinator_id, payload: agent_id_bytes })`.
    d. `network.advance_tick()`.
    e. Получить heartbeat-сообщения из сети: `network.drain_ready(&coordinator_id)`. Извлечь `AgentId` из payload каждого сообщения.
    f. `coordinator.process_tick(heartbeat_senders, current_tick)`.
-   g. Если `output.released_tasks` непустые:
+   g. Обновить unassigned-duration counters для всех задач в состоянии `Unassigned`; сохранить максимум в `RunMetrics.max_task_unassigned_ticks`.
+   h. Если `output.released_tasks` непустые или в registry есть unassigned tasks:
       - Записать `detection_tick` (если не записан).
       - Вызвать `allocator.allocate(unassigned_tasks, alive_agents)`.
       - Применить назначения через `coordinator.registry.assign(...)`.
       - Если все released_tasks назначены — записать `reallocation_tick`.
-   h. Если `coordinator.registry.all_completed()`: выйти из цикла.
-6. Вернуть `RunMetrics`.
+   i. Если после failure/reallocation все задачи assigned/completed и `max_task_unassigned_ticks <= config.max_unassigned_ticks`: можно завершить прогон досрочно.
+8. Вернуть `RunMetrics`:
+   - `all_tasks_assigned = coordinator.registry.all_assigned_or_completed()`;
+   - `success = all_tasks_assigned && max_task_unassigned_ticks <= config.max_unassigned_ticks`.
 
 `coordinator_id` = `AgentId::from("coordinator")` — специальный ID, не является реальным агентом.
 
@@ -515,6 +530,8 @@ pub struct CoverageConfig {
     pub packet_loss_rate: f64,
     pub latency_ticks: u64,
     pub timeout_ticks: u64,
+    /// Maximum allowed duration for any task to remain Unassigned.
+    pub max_unassigned_ticks: u64,
     pub max_ticks: u64,
 }
 
@@ -551,7 +568,7 @@ path = "src/bin/coverage_with_failure.rs"
 Логика:
 1. Создать 1000 конфигураций с `seed` от 0 до 999.
 2. Для каждого seed:
-   - `CoverageConfig { seed, agent_count: 10, task_count: 15, failure_tick: 5, packet_loss_rate: 0.1, latency_ticks: 1, timeout_ticks: 3, max_ticks: 200 }`.
+   - `CoverageConfig { seed, agent_count: 10, task_count: 15, failure_tick: 5, packet_loss_rate: 0.1, latency_ticks: 1, timeout_ticks: 3, max_unassigned_ticks: 5, max_ticks: 200 }`.
    - `let (scenario, run_config) = build_coverage_scenario(&config)`.
    - `ScenarioRunner::run(&scenario, run_config)`.
 3. `AggregateMetrics::from_runs(&runs)`.
@@ -615,7 +632,7 @@ git commit -m "feat: migrate derive_more to v2, add README, Milestone 1 Coverage
 | C.11 | `registry_assign_unassigned` | swarm-runtime | `Unassigned` → `Assigned` успешно |
 | C.12 | `registry_assign_already_assigned_fails` | swarm-runtime | Повторный assign на занятую задачу → `Err(InvalidTransition)` |
 | C.13 | `registry_release_agent_tasks` | swarm-runtime | Задачи агента → `Unassigned` после `release_agent_tasks()` |
-| C.14 | `registry_all_completed` | swarm-runtime | `all_completed()` true только когда все задачи Completed |
+| C.14 | `registry_all_assigned_or_completed` | swarm-runtime | true только когда нет задач `Unassigned` без владельца |
 
 **Задача C: GreedyAllocator**
 
@@ -629,7 +646,7 @@ git commit -m "feat: migrate derive_more to v2, add README, Milestone 1 Coverage
 
 | # | Тест | Крейт | Описание |
 |---|------|-------|----------|
-| C.18 | `aggregate_success_rate` | swarm-metrics | 8 из 10 runs `all_completed=true` → `success_rate=0.8` |
+| C.18 | `aggregate_success_rate` | swarm-metrics | 8 из 10 runs `success=true` → `success_rate=0.8` |
 | C.19 | `aggregate_avg_detection` | swarm-metrics | Среднее `detection_time_ticks` вычисляется верно |
 
 ### Категория 2 — лёгкий рефакторинг (после реализации C)
@@ -638,7 +655,7 @@ git commit -m "feat: migrate derive_more to v2, add README, Milestone 1 Coverage
 |---|------|-------|----------|
 | C.20 | `runner_failure_triggers_reallocation` | swarm-sim | End-to-end: агент умирает, задачи перераспределяются за ≤ `timeout_ticks + 1` тиков |
 | C.21 | `runner_deterministic_same_seed` | swarm-sim | Два запуска с одним seed → идентичные RunMetrics |
-| C.22 | `runner_no_failure_completes_all` | swarm-sim | Без failure_events все задачи завершаются |
+| C.22 | `runner_no_failure_assigns_all_tasks` | swarm-sim | Без failure_events все задачи назначаются живым агентам |
 
 ### Категория 3 — тяжёлый рефакторинг (будущие milestone)
 
@@ -659,10 +676,10 @@ git commit -m "feat: migrate derive_more to v2, add README, Milestone 1 Coverage
 
 | Риск | Вероятность | Митигация |
 |------|-------------|-----------|
-| derive_more v2 feature-флаги не включают нужный derive | Низкая | Список флагов проверен по Cargo.toml derive_more master; тест A.1/A.2 поймает |
+| derive_more v2 feature-флаги не включают нужный derive | Низкая | План минимизирует derive-набор, удаляет `AsMut`; тест A.1/A.2 и `cargo build` поймают несовместимость |
 | `rand = "0.8"` несовместим с другими зависимостями | Низкая | 0.8 — стабильная ветка; `cargo build` сразу покажет |
 | Circular dependency: swarm-sim → swarm-runtime → swarm-alloc | Нет | Граф ацикличен: types ← comms ← runtime ← alloc ← metrics ← sim ← scenarios ← examples |
-| `all_completed()` никогда не достигается при 100% packet loss | Высокая | `max_ticks` ограничивает прогон; `success_rate` в метриках покажет проблему |
+| При 100% packet loss failure detection может запаздывать или не дать успешный run | Высокая | `max_ticks` ограничивает прогон; `success=false` и `success_rate` в метриках покажут проблему |
 | `coordinator_id = AgentId("coordinator")` конфликтует с реальным агентом | Низкая | В `build_coverage_scenario` агентов называть `"agent-{i}"` — нет пересечения |
 
 ### Tradeoffs
