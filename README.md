@@ -4,7 +4,7 @@ Swarm Coordination Runtime is a Rust workspace for mission-level coordination of
 
 ## Current Status
 
-Milestone 0 is complete and Milestone 1 introduces the first runnable coordination scenario: `Coverage With Failure`.
+Milestone 1 is implemented: the workspace now includes the first runnable coordination scenario, `Coverage With Failure`.
 
 The project currently includes:
 
@@ -40,7 +40,7 @@ cargo clippy --all-targets -- -D warnings
 
 ## Run Examples
 
-Run the empty Milestone 0 smoke example:
+Run the baseline empty smoke example:
 
 ```bash
 cargo run -p swarm-examples --bin empty_scenario
