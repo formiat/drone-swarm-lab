@@ -33,7 +33,7 @@ Cargo workspace, базовые типы, абстракции Transport и Cloc
 |---|---|---|
 | `crates/swarm-types` | создаётся | AgentId, TaskId, MessageId, Pose, Velocity, Health, Role, Capability, Agent, Task, TaskStatus |
 | `crates/swarm-comms` | создаётся | Transport trait, RawMessage |
-| `crates/swarm-sim` | создаётся | Clock, Tick, Scenario, ScenarioRunner |
+| `crates/swarm-sim` | создаётся | Clock, Tick, Scenario |
 | `crates/swarm-examples` | создаётся | bin `empty_scenario` — запуск пустого сценария |
 | `crates/swarm-runtime` | stub | пустой крейт, `lib.rs` с `// TODO` |
 | `crates/swarm-alloc` | stub | пустой крейт |
@@ -235,11 +235,13 @@ swarm-sim   = { workspace = true }
 4. Вывести: `"Scenario '{}' finished: {} ticks ({} ms elapsed)"`.
 5. Завершить с кодом 0.
 
-### Шаг 7 — `cargo fmt --all` + clippy + commit
+### Шаг 7 — `cargo fmt --all` + clippy + test + smoke-test + commit
 
 ```bash
 cargo fmt --all
 cargo clippy --all-targets -- -D warnings
+cargo test --workspace
+cargo run -p swarm-examples --bin empty_scenario
 git add Cargo.toml crates/
 git commit -m "feat: Milestone 0 — workspace scaffold and foundational types"
 ```
@@ -248,7 +250,8 @@ git commit -m "feat: Milestone 0 — workspace scaffold and foundational types"
 
 ### Категория 1 — без рефакторинга (реализуются вместе с кодом)
 
-Расположение: `crates/swarm-types/src/agent.rs`, `task.rs`, `crates/swarm-sim/src/clock.rs` — модули `#[cfg(test)]`.
+Unit-тесты: `crates/swarm-types/src/agent.rs`, `task.rs`, `crates/swarm-sim/src/clock.rs` — модули `#[cfg(test)]`.
+Smoke-тест: `cargo run -p swarm-examples --bin empty_scenario` — выполняется в шаге 7.
 
 | # | Тест | Крейт | Описание |
 |---|------|-------|----------|
@@ -263,6 +266,7 @@ git commit -m "feat: Milestone 0 — workspace scaffold and foundational types"
 | 1.9 | `clock_elapsed_ms` | swarm-sim | 3 тика × 100 ms = 300 ms |
 | 1.10 | `scenario_empty_has_no_agents` | swarm-sim | `Scenario::empty(…).agents.is_empty()` |
 | 1.11 | `scenario_empty_has_no_tasks` | swarm-sim | `Scenario::empty(…).tasks.is_empty()` |
+| 1.12 | smoke-тест `empty_scenario` | swarm-examples | `cargo run -p swarm-examples --bin empty_scenario` завершается с кодом 0 и печатает итог |
 
 ### Категория 2 — лёгкий рефакторинг (после Milestone 0)
 
@@ -276,7 +280,7 @@ git commit -m "feat: Milestone 0 — workspace scaffold and foundational types"
 
 | # | Тест | Описание |
 |---|------|----------|
-| 3.1 | Интеграционный прогон `empty_scenario` | Требует ScenarioRunner с event loop; сейчас его нет |
+| 3.1 | Полноценный event-driven ScenarioRunner | Требует event loop, очереди событий, инъекции отказов; появится в Milestone 1 |
 | 3.2 | Property-based тесты Clock | Требует `proptest`; добавить в Milestone 1 |
 | 3.3 | Transport: in-memory реализация с потерями пакетов | Основная тестовая среда Milestone 1; здесь не место |
 
@@ -297,7 +301,7 @@ Milestone 0 — это первый коммит существенного ко
 ### Tradeoffs
 
 - **`Tick(u64)` вместо `DateTime<Utc>`** — в симуляции нет реального времени, tick-based clock проще для deterministic replay. `DateTime` добавим в модели событий/метрик позже.
-- **Нет `ScenarioRunner` на Milestone 0** — `empty_scenario` просто вручную тикает Clock. Полноценный runner появится в Milestone 1 вместе с event loop.
+- **Нет event-driven `ScenarioRunner` на Milestone 0** — `empty_scenario` вручную тикает Clock в цикле; этого достаточно для smoke-теста. Полноценный runner с event loop и инъекцией отказов появится в Milestone 1.
 - **Все stub-крейты в workspace сразу** — позволяет зафиксировать структуру до начала реализации, избегает добавления крейтов по одному с перестройкой зависимостей.
 
 ## Open questions
