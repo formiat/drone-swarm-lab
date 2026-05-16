@@ -20,8 +20,10 @@ swarm-runtime   = { path = "crates/swarm-runtime" }
 swarm-alloc     = { path = "crates/swarm-alloc" }
 swarm-metrics   = { path = "crates/swarm-metrics" }
 swarm-scenarios = { path = "crates/swarm-scenarios" }
-derive_more = { version = "2", features = ["as_ref", "deref", "deref_mut", "display", "from", "into"] }
-rand        = { version = "0.8", features = ["small_rng"] }
-serde       = { version = "1", features = ["derive"] }
-serde_json  = "1"
-thiserror   = "2"
+derive_more        = { version = "2", features = ["as_ref", "deref", "deref_mut", "display", "from", "into"] }
+rand               = { version = "0.8", features = ["small_rng"] }
+serde              = { version = "1", features = ["derive"] }
+serde_json         = "1"
+thiserror          = "2"
+tracing            = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

@@ -59,6 +59,11 @@ impl Allocator for GreedyAllocator {
             }
 
             let agent = capable[global_idx % capable.len()];
+            tracing::debug!(
+                task_id = %at.task.id,
+                agent_id = %agent.id,
+                "task allocated"
+            );
             assignments.push((at.task.id.clone(), agent.id.clone()));
             global_idx += 1;
         }
@@ -115,6 +120,11 @@ impl Allocator for AuctionAllocator {
                 .min_by(|(_, ca), (_, cb)| ca.partial_cmp(cb).unwrap());
 
             if let Some((agent, _)) = best {
+                tracing::debug!(
+                    task_id = %at.task.id,
+                    agent_id = %agent.id,
+                    "task allocated"
+                );
                 assignments.push((at.task.id.clone(), agent.id.clone()));
             }
         }

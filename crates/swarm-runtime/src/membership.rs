@@ -42,12 +42,14 @@ impl MembershipView {
     pub fn record_heartbeat(&mut self, agent_id: &AgentId, tick: u64) {
         if let Some(entry) = self.agents.get_mut(agent_id) {
             entry.last_heartbeat_tick = tick;
+            tracing::debug!(agent_id = %agent_id, "heartbeat recorded");
         }
     }
 
     pub fn mark_dead(&mut self, agent_id: &AgentId) {
         if let Some(entry) = self.agents.get_mut(agent_id) {
             entry.health = Health::Dead;
+            tracing::warn!(agent_id = %agent_id, "agent marked dead");
         }
     }
 

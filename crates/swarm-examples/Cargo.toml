@@ -15,9 +15,23 @@ path = "src/bin/coverage_with_failure.rs"
 name = "dynamic_auction"
 path = "src/bin/dynamic_auction.rs"
 
+[[bin]]
+name = "agent_process"
+path = "src/bin/agent_process.rs"
+
+[[bin]]
+name = "multiprocess_scenario"
+path = "src/bin/multiprocess_scenario.rs"
+
 [dependencies]
-swarm-alloc = { workspace = true }
-swarm-metrics = { workspace = true }
-swarm-scenarios = { workspace = true }
-swarm-sim = { workspace = true }
-swarm-types = { workspace = true }
+serde              = { workspace = true }
+serde_json         = { workspace = true }
+swarm-alloc        = { workspace = true }
+swarm-comms        = { workspace = true }
+swarm-metrics      = { workspace = true }
+swarm-runtime      = { workspace = true }
+swarm-scenarios    = { workspace = true }
+swarm-sim          = { workspace = true }
+swarm-types        = { workspace = true }
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }

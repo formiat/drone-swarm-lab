@@ -17,13 +17,21 @@ Swarm Coordination Runtime is a Rust workspace for mission-level coordination of
 - Extended metrics: `tasks_injected`, `tasks_expired`, `conflicting_assignments`.
 - Side-by-side comparison of Greedy vs Auction over 1 000 deterministic seeds.
 
+**Milestone 3** — complete. Pluggable transport, multiprocess runtime:
+
+- `AgentNode<T: Transport>` — unified runtime contour usable in both in-process and multi-process modes.
+- Pluggable `Transport` trait with two implementations: `InMemAgentTransport` (shared bus for simulation) and `UdpTransport` (UDP loopback for OS-level multiprocess).
+- `ScenarioRunner` refactored to use `AgentNode<InMemAgentTransport>` — same runtime, same allocator, same coordinator.
+- Multiprocess scenario: 5 OS-processes communicating via UDP loopback; `kill -9` one agent, rest detect failure and reallocate tasks.
+- Basic observability via `tracing` spans in `swarm-runtime` and `swarm-alloc`. Configure with `RUST_LOG`.
+
 ## Workspace Layout
 
 | Crate | Purpose |
 | --- | --- |
 | `swarm-types` | Shared IDs, agent/task/message types, pose and velocity. |
-| `swarm-comms` | Transport trait and in-memory network with latency and packet loss. |
-| `swarm-runtime` | Membership, failure detection, task registry, coordinator. |
+| `swarm-comms` | Transport trait, in-memory network, UDP transport. |
+| `swarm-runtime` | Membership, failure detection, task registry, coordinator, `AgentNode`. |
 | `swarm-alloc` | Greedy and auction allocation strategies. |
 | `swarm-sim` | Deterministic clock, scenario model, generic scenario runner. |
 | `swarm-scenarios` | Scenario builders: Coverage With Failure and Dynamic Auction. |
@@ -59,6 +67,19 @@ Run the Milestone 2 Dynamic Auction comparison (1 000 seeds × 2 strategies):
 cargo run -p swarm-examples --bin dynamic_auction
 ```
 
+Run the Milestone 3 multiprocess scenario (5 agents over UDP loopback, crash test):
+
+```bash
+cargo run -p swarm-examples --bin multiprocess_scenario
+```
+
+Enable tracing for observability:
+
+```bash
+RUST_LOG=info cargo run -p swarm-examples --bin multiprocess_scenario
+RUST_LOG=debug cargo run -p swarm-examples --bin agent_process -- --config /tmp/swarm-v03/config-0.json
+```
+
 ## Observe Output
 
 `empty_scenario` advances a deterministic clock for 10 ticks and prints elapsed simulated time.
@@ -83,3 +104,11 @@ avg_conflicting_assignments: 0.000
 ```
 
 Exits with code `1` if either strategy has `success_rate < 0.95`.
+
+`multiprocess_scenario` launches 5 OS-level `agent_process` instances on dynamic loopback UDP ports, kills `agent-0` after 2s, waits 3s for failure detection, then reads per-agent JSON metrics from `/tmp/swarm-v03/`. Verifies:
+- All survivors detected `agent-0` as failed.
+- `global_assignment_map` is identical across all survivors (convergence).
+- No task remains assigned to `agent-0`.
+- All 8 tasks are assigned.
+
+Prints `PASS` on success, exits code `0`; reports violations with `FAIL` and exits code `1`.

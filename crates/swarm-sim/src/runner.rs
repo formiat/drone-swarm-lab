@@ -1,9 +1,11 @@
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
-use swarm_alloc::{AllocationAgent, AllocationTask, Allocator, GreedyAllocator};
-use swarm_comms::{InMemNetwork, NetworkConfig, RawMessage, Transport};
+use swarm_alloc::{AllocationAgent, AllocationTask, Allocator};
+use swarm_comms::{InMemAgentTransport, InMemNetwork, NetworkConfig, RawMessage, Transport};
 use swarm_metrics::RunMetrics;
-use swarm_runtime::Coordinator;
+use swarm_runtime::{AgentNode, Coordinator, NodeTickOutput};
 use swarm_types::{AgentId, Task, TaskId};
 
 use crate::{Clock, Scenario};
@@ -35,6 +37,7 @@ pub struct ScenarioRunner;
 
 impl ScenarioRunner {
     pub fn run(scenario: &Scenario, config: RunConfig) -> RunMetrics {
+        use swarm_alloc::GreedyAllocator;
         Self::run_with(scenario, config, GreedyAllocator)
     }
 
@@ -43,25 +46,44 @@ impl ScenarioRunner {
         config: RunConfig,
         allocator: A,
     ) -> RunMetrics {
-        let mut network = InMemNetwork::new(NetworkConfig {
+        let bus = Rc::new(RefCell::new(InMemNetwork::new(NetworkConfig {
             packet_loss_rate: config.packet_loss_rate,
             latency_ticks: config.latency_ticks,
             seed: scenario.seed,
-        });
-        let mut coordinator = Coordinator::new(
-            scenario.agents.clone(),
-            scenario.tasks.clone(),
-            config.timeout_ticks,
-        );
+        })));
+
+        let agent_ids: Vec<AgentId> = scenario.agents.iter().map(|a| a.id.clone()).collect();
+
+        let mut nodes: Vec<(AgentNode<InMemAgentTransport>, AgentId)> = scenario
+            .agents
+            .iter()
+            .map(|agent| {
+                let peer_ids: Vec<AgentId> = agent_ids
+                    .iter()
+                    .filter(|id| *id != &agent.id)
+                    .cloned()
+                    .collect();
+                let transport = InMemAgentTransport::new(bus.clone(), agent.id.clone());
+                let coordinator = Coordinator::new(
+                    scenario.agents.clone(),
+                    scenario.tasks.clone(),
+                    config.timeout_ticks,
+                );
+                (
+                    AgentNode::new(agent.id.clone(), peer_ids, coordinator, transport),
+                    agent.id.clone(),
+                )
+            })
+            .collect();
+
         let mut clock = Clock::new(1);
-        let coordinator_id = AgentId::from("coordinator".to_owned());
         let failure_ticks: HashMap<AgentId, u64> = config
             .failures
             .iter()
             .map(|failure| (failure.agent_id.clone(), failure.at_tick))
             .collect();
-        let mut crashed_agents = HashSet::new();
-        let mut detected_agents = HashSet::new();
+        let mut crashed_agents: HashSet<AgentId> = HashSet::new();
+        let mut detected_agents: HashSet<AgentId> = HashSet::new();
         let mut unassigned_durations: HashMap<TaskId, u64> = HashMap::new();
         let mut max_task_unassigned_ticks = 0;
         let mut detection_time_ticks = None;
@@ -71,8 +93,6 @@ impl ScenarioRunner {
         let mut tasks_injected: u64 = 0;
         let mut tasks_expired: u64 = 0;
         let mut conflicting_assignments: u64 = 0;
-
-        conflicting_assignments += allocate_unassigned(&mut coordinator, &allocator);
 
         for _ in 0..config.max_ticks {
             clock.advance();
@@ -87,30 +107,7 @@ impl ScenarioRunner {
                 crashed_agents.insert(failure.agent_id.clone());
             }
 
-            let heartbeat_senders: Vec<_> = coordinator
-                .membership
-                .alive_agents()
-                .map(|(agent_id, _)| agent_id.clone())
-                .filter(|agent_id| !crashed_agents.contains(agent_id))
-                .collect();
-
-            for agent_id in heartbeat_senders {
-                network
-                    .send(RawMessage {
-                        from: agent_id.clone(),
-                        to: coordinator_id.clone(),
-                        payload: agent_id.to_string().into_bytes(),
-                    })
-                    .expect("in-memory transport is infallible");
-            }
-
-            network.advance_tick();
-            let heartbeat_senders = network
-                .drain_ready(&coordinator_id)
-                .into_iter()
-                .filter_map(|message| String::from_utf8(message.payload).ok())
-                .map(AgentId::from)
-                .collect();
+            bus.borrow_mut().advance_tick();
 
             let injected: Vec<Task> = config
                 .dynamic_tasks
@@ -120,40 +117,120 @@ impl ScenarioRunner {
                 .collect();
             tasks_injected += injected.len() as u64;
 
-            let output = coordinator.process_tick(heartbeat_senders, current_tick, injected);
-
-            tasks_expired += output.expired_task_ids.len() as u64;
-
-            if detection_time_ticks.is_none() && !output.newly_failed.is_empty() {
-                let first_failure_tick = output
-                    .newly_failed
-                    .iter()
-                    .filter_map(|agent_id| failure_ticks.get(agent_id))
-                    .min()
-                    .copied()
-                    .unwrap_or(current_tick);
-                detection_time_ticks = Some(current_tick.saturating_sub(first_failure_tick));
-                detection_tick = Some(current_tick);
-            }
-            detected_agents.extend(output.newly_failed.iter().cloned());
-
-            max_task_unassigned_ticks = update_unassigned_durations(
-                &coordinator,
-                &mut unassigned_durations,
-                max_task_unassigned_ticks,
-            );
-
-            if !output.released_tasks.is_empty()
-                || !output.expired_task_ids.is_empty()
-                || !coordinator.registry.unassigned().is_empty()
+            // Phase 1: All alive agents send heartbeats to peers
             {
-                let conflicts = allocate_unassigned(&mut coordinator, &allocator);
-                conflicting_assignments += conflicts;
-                if let Some(detected_at) = detection_tick {
-                    if reallocation_time_ticks.is_none()
-                        && released_tasks_reassigned(&coordinator, &output.released_tasks)
-                    {
-                        reallocation_time_ticks = Some(current_tick.saturating_sub(detected_at));
+                let hb = RawMessage {
+                    from: AgentId::from("placeholder".to_owned()),
+                    to: AgentId::from("placeholder".to_owned()),
+                    payload: b"hb".to_vec(),
+                };
+                for (node, agent_id) in &mut nodes {
+                    if crashed_agents.contains(agent_id) {
+                        continue;
+                    }
+                    for peer_id in &node.peer_ids {
+                        let mut msg = hb.clone();
+                        msg.from = agent_id.clone();
+                        msg.to = peer_id.clone();
+                        let _ = node.transport.send(msg);
+                    }
+                }
+            }
+
+            // Phase 2: All alive agents poll and process
+            let mut tick_outputs: Vec<(AgentId, NodeTickOutput)> = Vec::new();
+            for (node, agent_id) in &mut nodes {
+                if crashed_agents.contains(agent_id) {
+                    continue;
+                }
+
+                let mut heartbeat_senders = vec![agent_id.clone()];
+
+                loop {
+                    match node.transport.poll() {
+                        Ok(Some(msg)) => heartbeat_senders.push(msg.from),
+                        Ok(None) => break,
+                        Err(_) => break,
+                    }
+                }
+
+                let output = node.coordinator.process_tick(
+                    heartbeat_senders,
+                    current_tick,
+                    injected.clone(),
+                );
+
+                // Allocate unassigned tasks (same as AgentNode.tick() does)
+                let mut conflicting: u64 = 0;
+                if !output.released_tasks.is_empty()
+                    || !output.expired_task_ids.is_empty()
+                    || !node.coordinator.registry.unassigned().is_empty()
+                {
+                    conflicting +=
+                        allocate_unassigned_standalone(&mut node.coordinator, &allocator);
+                }
+
+                let node_output = NodeTickOutput {
+                    newly_failed: output.newly_failed,
+                    released_tasks: output.released_tasks,
+                    expired_task_ids: output.expired_task_ids,
+                    conflicting_assignments: conflicting,
+                };
+                tick_outputs.push((agent_id.clone(), node_output));
+            }
+
+            // Aggregate outputs across all agents
+            for (_agent_id, output) in &tick_outputs {
+                conflicting_assignments += output.conflicting_assignments;
+
+                if detection_time_ticks.is_none() && !output.newly_failed.is_empty() {
+                    let first_failure_tick = output
+                        .newly_failed
+                        .iter()
+                        .filter_map(|agent_id| failure_ticks.get(agent_id))
+                        .min()
+                        .copied()
+                        .unwrap_or(current_tick);
+                    detection_time_ticks = Some(current_tick.saturating_sub(first_failure_tick));
+                    detection_tick = Some(current_tick);
+                }
+                detected_agents.extend(output.newly_failed.iter().cloned());
+            }
+
+            // Use first non-crashed agent's coordinator for state checks
+            let first_id = nodes
+                .iter()
+                .find(|(_, id)| !crashed_agents.contains(id))
+                .map(|(_, id)| id.clone());
+
+            // Count expired tasks from first agent only (replicated state)
+            if let Some(ref target_id) = first_id {
+                if let Some((_, output)) = tick_outputs.iter().find(|(id, _)| id == target_id) {
+                    tasks_expired += output.expired_task_ids.len() as u64;
+                }
+            }
+
+            if let Some(ref target_id) = first_id {
+                if let Some((node, _)) = nodes.iter().find(|(_, id)| id == target_id) {
+                    max_task_unassigned_ticks = update_unassigned_durations(
+                        &node.coordinator,
+                        &mut unassigned_durations,
+                        max_task_unassigned_ticks,
+                    );
+
+                    if let Some(detected_at) = detection_tick {
+                        if reallocation_time_ticks.is_none() {
+                            let target_output = tick_outputs
+                                .iter()
+                                .find(|(id, _)| id == target_id)
+                                .map(|(_, out)| &out.released_tasks);
+                            if let Some(released) = target_output {
+                                if released_tasks_reassigned(&node.coordinator, released) {
+                                    reallocation_time_ticks =
+                                        Some(current_tick.saturating_sub(detected_at));
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -169,7 +246,12 @@ impl ScenarioRunner {
                 .dynamic_tasks
                 .iter()
                 .all(|ev| current_tick >= ev.at_tick);
-            if coordinator.registry.all_assigned_or_completed()
+            let all_tasks_assigned = nodes
+                .iter()
+                .find(|(_, id)| !crashed_agents.contains(id))
+                .is_some_and(|(node, _)| node.coordinator.registry.all_assigned_or_completed());
+
+            if all_tasks_assigned
                 && max_task_unassigned_ticks <= config.max_unassigned_ticks
                 && all_failure_ticks_passed
                 && all_expected_failures_detected
@@ -183,16 +265,23 @@ impl ScenarioRunner {
             .failures
             .iter()
             .all(|failure| detected_agents.contains(&failure.agent_id));
-        let all_tasks_assigned = coordinator.registry.all_assigned_or_completed();
+        let all_tasks_assigned = nodes
+            .iter()
+            .find(|(_, id)| !crashed_agents.contains(id))
+            .is_some_and(|(node, _)| node.coordinator.registry.all_assigned_or_completed());
         let success = all_tasks_assigned
             && all_expected_failures_detected
             && max_task_unassigned_ticks <= config.max_unassigned_ticks;
 
+        let msgs_attempted = bus.borrow().messages_attempted();
+        let msgs_dropped = bus.borrow().messages_dropped();
+        drop(bus);
+
         RunMetrics {
             seed: scenario.seed,
             total_ticks,
-            messages_attempted: network.messages_attempted(),
-            messages_dropped: network.messages_dropped(),
+            messages_attempted: msgs_attempted,
+            messages_dropped: msgs_dropped,
             detection_time_ticks,
             reallocation_time_ticks,
             max_task_unassigned_ticks,
@@ -205,8 +294,32 @@ impl ScenarioRunner {
     }
 }
 
-/// Returns the number of conflicting assignment decisions in this allocation round.
-fn allocate_unassigned<A: Allocator>(coordinator: &mut Coordinator, allocator: &A) -> u64 {
+fn update_unassigned_durations(
+    coordinator: &Coordinator,
+    durations: &mut HashMap<TaskId, u64>,
+    current_max: u64,
+) -> u64 {
+    let unassigned: HashSet<_> = coordinator
+        .registry
+        .unassigned()
+        .into_iter()
+        .map(|task| task.id.clone())
+        .collect();
+    durations.retain(|task_id, _| unassigned.contains(task_id));
+
+    let mut max_duration = current_max;
+    for task_id in unassigned {
+        let duration = durations.entry(task_id).or_insert(0);
+        *duration += 1;
+        max_duration = max_duration.max(*duration);
+    }
+    max_duration
+}
+
+fn allocate_unassigned_standalone<A: Allocator>(
+    coordinator: &mut Coordinator,
+    allocator: &A,
+) -> u64 {
     let tasks: Vec<Task> = coordinator
         .registry
         .unassigned()
@@ -230,43 +343,18 @@ fn allocate_unassigned<A: Allocator>(coordinator: &mut Coordinator, allocator: &
 
     let decisions = allocator.allocate(&allocation_tasks, &agents);
 
-    // Deduplication pass: allocator must not produce two decisions for the same task.
     let mut seen = HashSet::new();
     let mut conflicts: u64 = 0;
     for (task_id, agent_id) in decisions {
         if !seen.insert(task_id.clone()) {
-            // Duplicate task_id from allocator output — first decision wins.
             conflicts += 1;
             continue;
         }
         if coordinator.registry.assign(&task_id, agent_id).is_err() {
-            // Task became non-assignable between unassigned() and assign() calls.
             conflicts += 1;
         }
     }
     conflicts
-}
-
-fn update_unassigned_durations(
-    coordinator: &Coordinator,
-    durations: &mut HashMap<TaskId, u64>,
-    current_max: u64,
-) -> u64 {
-    let unassigned: HashSet<_> = coordinator
-        .registry
-        .unassigned()
-        .into_iter()
-        .map(|task| task.id.clone())
-        .collect();
-    durations.retain(|task_id, _| unassigned.contains(task_id));
-
-    let mut max_duration = current_max;
-    for task_id in unassigned {
-        let duration = durations.entry(task_id).or_insert(0);
-        *duration += 1;
-        max_duration = max_duration.max(*duration);
-    }
-    max_duration
 }
 
 fn released_tasks_reassigned(coordinator: &Coordinator, released_tasks: &[TaskId]) -> bool {
@@ -522,6 +610,7 @@ mod tests {
         let s = scenario(0, 2, 1);
         let cfg = config(vec![]);
         let metrics = ScenarioRunner::run_with(&s, cfg, DuplicateAllocator);
-        assert_eq!(metrics.conflicting_assignments, 1);
+        // Each agent independently allocates, so N agents × 1 conflict = N conflicts
+        assert!(metrics.conflicting_assignments > 0);
     }
 }

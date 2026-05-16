@@ -1,5 +1,7 @@
+use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::convert::Infallible;
+use std::rc::Rc;
 
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
@@ -90,6 +92,46 @@ impl Transport for InMemNetwork {
 
     fn poll(&mut self) -> Result<Option<RawMessage>, Self::Error> {
         Ok(None)
+    }
+}
+
+/// Per-agent Transport wrapper over a shared InMemNetwork.
+///
+/// Used by ScenarioRunner: one shared bus, one wrapper per agent.
+pub struct InMemAgentTransport {
+    bus: Rc<RefCell<InMemNetwork>>,
+    own_id: AgentId,
+    buffer: VecDeque<RawMessage>,
+}
+
+impl InMemAgentTransport {
+    pub fn new(bus: Rc<RefCell<InMemNetwork>>, own_id: AgentId) -> Self {
+        Self {
+            bus,
+            own_id,
+            buffer: VecDeque::new(),
+        }
+    }
+}
+
+impl Transport for InMemAgentTransport {
+    type Error = Infallible;
+
+    fn send(&mut self, msg: RawMessage) -> Result<(), Self::Error> {
+        self.bus.borrow_mut().send(msg)
+    }
+
+    fn poll(&mut self) -> Result<Option<RawMessage>, Self::Error> {
+        if let Some(msg) = self.buffer.pop_front() {
+            return Ok(Some(msg));
+        }
+        let mut ready = self.bus.borrow_mut().drain_ready(&self.own_id);
+        if ready.is_empty() {
+            return Ok(None);
+        }
+        let first = ready.remove(0);
+        self.buffer = ready.into();
+        Ok(Some(first))
     }
 }
 
@@ -192,5 +234,51 @@ mod tests {
 
         assert_eq!(network.messages_attempted(), 2);
         assert_eq!(network.messages_dropped(), 2);
+    }
+
+    #[test]
+    fn inmem_agent_poll_receives_own_messages() {
+        let bus = Rc::new(RefCell::new(InMemNetwork::new(NetworkConfig {
+            packet_loss_rate: 0.0,
+            latency_ticks: 0,
+            seed: 7,
+        })));
+        let mut transport =
+            InMemAgentTransport::new(bus.clone(), AgentId::from("agent-1".to_owned()));
+
+        let msg = RawMessage {
+            from: AgentId::from("agent-0".to_owned()),
+            to: AgentId::from("agent-1".to_owned()),
+            payload: b"ping".to_vec(),
+        };
+        bus.borrow_mut().send(msg).unwrap();
+
+        let received = transport.poll().unwrap();
+        assert!(received.is_some());
+        assert_eq!(received.unwrap().from, AgentId::from("agent-0".to_owned()));
+    }
+
+    #[test]
+    fn inmem_agent_poll_ignores_other_agent_messages() {
+        let bus = Rc::new(RefCell::new(InMemNetwork::new(NetworkConfig {
+            packet_loss_rate: 0.0,
+            latency_ticks: 0,
+            seed: 7,
+        })));
+        let mut transport_a1 =
+            InMemAgentTransport::new(bus.clone(), AgentId::from("agent-1".to_owned()));
+        let mut transport_a2 =
+            InMemAgentTransport::new(bus.clone(), AgentId::from("agent-2".to_owned()));
+
+        let msg = RawMessage {
+            from: AgentId::from("agent-0".to_owned()),
+            to: AgentId::from("agent-2".to_owned()),
+            payload: b"ping".to_vec(),
+        };
+        bus.borrow_mut().send(msg).unwrap();
+
+        assert!(transport_a1.poll().unwrap().is_none());
+        let received = transport_a2.poll().unwrap();
+        assert!(received.is_some());
     }
 }

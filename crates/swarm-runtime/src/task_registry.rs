@@ -61,6 +61,11 @@ impl TaskRegistry {
             {
                 task.status = TaskStatus::Unassigned;
                 task.assigned_to = None;
+                tracing::info!(
+                    task_id = %task.id,
+                    agent_id = %agent_id,
+                    "task released after agent failure"
+                );
                 released.push(task.id.clone());
             }
         }
@@ -82,6 +87,7 @@ impl TaskRegistry {
             .map(|task| task.id.clone())
             .collect();
         for id in &expired {
+            tracing::info!(task_id = %id, "task expired");
             self.tasks.remove(id);
         }
         expired

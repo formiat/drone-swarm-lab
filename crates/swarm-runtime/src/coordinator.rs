@@ -35,6 +35,7 @@ impl Coordinator {
         current_tick: u64,
         injected_tasks: Vec<Task>,
     ) -> CoordinatorOutput {
+        tracing::debug!(tick = current_tick, "coordinator tick");
         for task in injected_tasks {
             self.registry.insert(task);
         }

@@ -13,8 +13,17 @@ impl FailureDetector {
 
     pub fn detect(&self, view: &MembershipView, current_tick: u64) -> Vec<AgentId> {
         view.alive_agents()
-            .filter(|(_, entry)| {
-                current_tick.saturating_sub(entry.last_heartbeat_tick) > self.timeout_ticks
+            .filter(|(agent_id, entry)| {
+                let timed_out =
+                    current_tick.saturating_sub(entry.last_heartbeat_tick) > self.timeout_ticks;
+                if timed_out {
+                    tracing::warn!(
+                        agent_id = %agent_id,
+                        timeout_ticks = self.timeout_ticks,
+                        "failure detected"
+                    );
+                }
+                timed_out
             })
             .map(|(agent_id, _)| agent_id.clone())
             .collect()
