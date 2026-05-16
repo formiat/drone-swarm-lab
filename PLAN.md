@@ -54,7 +54,8 @@ AgentNode<InMemNetwork>             AgentNode<UdpTransport>
 В v0.3 применяется **deterministic replicated-state** подход:
 
 - **Протокол**: только heartbeat-сообщения (`RawMessage { from: own_id, to: peer_id, payload:
-  b"hb" }`), broadcast всем пирам каждый тик.
+  b"hb" }`), broadcast всем пирам каждый тик. Получатель идентифицирует отправителя через
+  `msg.from` — не через payload.
 - **Алгоритм**: каждый агент-процесс запускает идентичный `Coordinator` с одинаковым начальным
   состоянием (одинаковый список агентов + задач). При получении тех же heartbeats все агенты
   приходят к тому же выводу о failures и allocation-решениях.
@@ -62,7 +63,9 @@ AgentNode<InMemNetwork>             AgentNode<UdpTransport>
   входных данных. Расхождение возможно при разном порядке heartbeat-сообщений (network reordering)
   и метрически отслеживается как `conflicting_assignments`.
 - **Тестирование конвергенции**: `multiprocess_scenario` после kill-9 + wait читает JSON-файлы
-  метрик всех выживших агентов и сравнивает множества `tasks_assigned` — они должны совпадать.
+  метрик всех выживших агентов и сравнивает `global_assignment_map` (полная карта `TaskId →
+  AgentId`) — у всех выживших она должна совпадать. Дополнительно проверяется: задачи agent-0
+  переназначены другим агентам, нет задач без владельца.
 
 Полный state-sync (distribution of allocation decisions) — тема v0.4.
 
@@ -231,8 +234,9 @@ impl<T: Transport> AgentNode<T> {
 ```
 
 `tick()` внутри:
-1. Отправить heartbeat всем `peer_ids`: `transport.send(RawMessage { from: own_id, to: peer_id, payload: b"hb".to_vec() })`
-2. Дренировать входящие: `while let Some(msg) = transport.poll()? { heartbeat_senders.push(AgentId from msg.payload) }`
+1. Отправить heartbeat всем `peer_ids`: `transport.send(RawMessage { from: own_id.clone(), to: peer_id, payload: b"hb".to_vec() })`
+2. Дренировать входящие: `while let Some(msg) = transport.poll()? { heartbeat_senders.push(msg.from) }`
+   Отправитель определяется через `msg.from` (typed поле), payload игнорируется как content.
 3. `coordinator.process_tick(heartbeat_senders, current_tick, injected)`
 4. Если есть released/unassigned tasks → allocate, считать конфликты
 5. Вернуть `NodeTickOutput`
@@ -293,17 +297,31 @@ tracing::debug!(task_id = %task_id, agent_id = %agent_id, "task allocated");
 N объектов `AgentNode<InMemNetwork>` (по одному на агента), используя `InMemNetwork::for_agent()`.
 На каждом тике вызывает `node.tick()` для всех агентов.
 
-**Важно**: `InMemNetwork` должна быть общей шиной — все агенты записывают в неё через `send()`,
-каждый агент читает из своей очереди через `poll()`. Для этого каждому `AgentNode` передаётся
-своя `InMemNetwork` с `own_id`, но все они указывают на одну шину через `Arc<Mutex<...>>`.
+**Выбранный дизайн**: `InMemNetwork` является общей шиной. Каждый `AgentNode` в симуляции
+получает thin wrapper `InMemAgentTransport(Rc<RefCell<InMemNetwork>>, AgentId)`:
 
-Альтернатива (проще): Вместо Arc реализовать `SimTransport` — thin wrapper, который хранит
-индекс агента и ref на shared network структуру. Поскольку все агенты работают в одном потоке,
-`RefCell` достаточно: `InMemAgentTransport(Rc<RefCell<InMemNetwork>>, AgentId)`.
+```rust
+pub struct InMemAgentTransport {
+    bus: Rc<RefCell<InMemNetwork>>,
+    own_id: AgentId,
+}
 
-Решение принять на старте реализации, исходя из того что проще интегрировать с существующим
-кодом. Ключевой инвариант: `ScenarioRunner` должен использовать `AgentNode::tick()`, а не
-дублировать логику. Все существующие тесты runner должны проходить после рефакторинга.
+impl Transport for InMemAgentTransport {
+    type Error = Infallible;
+    fn send(&mut self, msg: RawMessage) -> Result<(), Self::Error> {
+        self.bus.borrow_mut().send(msg)
+    }
+    fn poll(&mut self) -> Result<Option<RawMessage>, Self::Error> {
+        Ok(self.bus.borrow_mut().drain_ready(&self.own_id).into_iter().next())
+    }
+}
+```
+
+`Rc<RefCell<>>` выбран потому что симуляция однопоточная (`ScenarioRunner` гоняет всех агентов
+последовательно в одном потоке). `Arc<Mutex<>>` не нужен и добавляет ненужные издержки.
+
+Ключевой инвариант: `ScenarioRunner` использует `AgentNode::tick()`, не дублирует логику.
+Все существующие тесты runner должны проходить после рефакторинга.
 
 ---
 
@@ -346,13 +364,23 @@ for tick in 0..max_ticks {
 Формат файла метрик (JSON, пишется каждые 10 тиков и при exit):
 ```json
 {
-  "agent_id": "agent-0",
+  "agent_id": "agent-1",
   "total_ticks": 70,
-  "detected_failures": ["agent-1"],
-  "tasks_assigned": ["task-2", "task-5"],
+  "detected_failures": ["agent-0"],
+  "local_task_ids": ["task-2"],
+  "global_assignment_map": {
+    "task-0": "agent-1",
+    "task-1": "agent-2",
+    "task-2": "agent-1",
+    "task-3": "agent-3"
+  },
   "reallocation_count": 3
 }
 ```
+
+`local_task_ids` — задачи, назначенные именно этому агенту (per-agent subset).
+`global_assignment_map` — полная карта `TaskId → AgentId` по всей системе
+(вычисляется агентом из состояния `TaskRegistry`). Используется для проверки конвергенции.
 
 ---
 
@@ -360,16 +388,22 @@ for tick in 0..max_ticks {
 
 Новый файл: `crates/swarm-examples/src/bin/multiprocess_scenario.rs`
 
-**Динамическое выделение портов** — чтобы избежать flaky failures на занятых портах:
+**Динамическое выделение UDP-портов** — чтобы избежать flaky failures на занятых портах.
+Порты резервируются через UDP-сокеты (не TCP — TCP и UDP независимы):
 ```rust
-fn free_loopback_port() -> u16 {
-    // Bind a TcpListener to port 0, read the assigned port, drop listener.
-    // UDP port is then free for UdpSocket::bind.
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    listener.local_addr().unwrap().port()
+fn allocate_udp_ports(n: usize) -> Vec<u16> {
+    // Bind UDP sockets to port 0, OS assigns free ports.
+    // Drop sockets immediately; child processes bind to these specific ports.
+    // The race window is very small on loopback in a controlled test environment.
+    (0..n)
+        .map(|_| {
+            let sock = UdpSocket::bind("127.0.0.1:0").unwrap();
+            sock.local_addr().unwrap().port()
+        })
+        .collect()
 }
 
-let ports: Vec<u16> = (0..N).map(|_| free_loopback_port()).collect();
+let ports = allocate_udp_ports(N);
 ```
 
 **Сценарий:**
@@ -383,7 +417,9 @@ let ports: Vec<u16> = (0..N).map(|_| free_loopback_port()).collect();
 8. Читать JSON-метрики из `/tmp/swarm-v03/agent-N.json`
 9. Проверить инварианты:
    - Минимум 1 выживший агент зафиксировал `"agent-0"` в `detected_failures`
-   - `tasks_assigned` множества двух любых выживших агентов совпадают (конвергенция replicated-state)
+   - `global_assignment_map` у всех выживших агентов совпадает (конвергенция replicated-state)
+   - В `global_assignment_map` ни одна задача не принадлежит `"agent-0"` (reassigned)
+   - В `global_assignment_map` нет задач без владельца (все задачи assigned)
 10. Вывести отчёт; exit code `1` при нарушении
 
 ---
@@ -536,9 +572,9 @@ cargo run -p swarm-examples --bin dynamic_auction
 
 **2. ScenarioRunner рефакторинг: SimTransport design**
 
-Конкретный механизм shared `InMemNetwork` для per-agent `AgentNode` (Arc/Mutex или Rc/RefCell)
-выбирается при реализации. Оба варианта валидны для однопоточной симуляции. Критерий: все
-существующие тесты ScenarioRunner должны проходить без изменения публичного API.
+Выбран `Rc<RefCell<InMemNetwork>>` + `InMemAgentTransport` wrapper (см. Шаг 6).
+`Rc<RefCell<>>` достаточен: симуляция однопоточная, `Arc<Mutex<>>` избыточен.
+Критерий: все существующие тесты ScenarioRunner проходят без изменения публичного API.
 
 **3. Replicated-state vs true distributed consensus**
 
@@ -560,11 +596,9 @@ async для gossip. Митигация: Transport trait остаётся ста
 
 ## Open Questions
 
-1. **SimTransport конкретная реализация**: `Rc<RefCell<>>` vs `Arc<Mutex<>>`?
-   (Однопоточная симуляция → `Rc<RefCell<>>` достаточно; решить при имплементации.)
+1. **SIGTERM handler в `agent_process` для записи финальных метрик?**
+   Использовать `ctrlc` crate или просто писать метрики каждые N тиков. Второй вариант проще
+   и достаточен для v0.3 (метрики пишутся периодически, не только при выходе).
 
-2. **SIGTERM handler в `agent_process` для записи финальных метрик?**
-   Использовать `ctrlc` crate или просто писать метрики каждые N тиков. Второй вариант проще.
-
-3. **Добавить `tracing` в `swarm-sim` и `swarm-scenarios`?**
+2. **Добавить `tracing` в `swarm-sim` и `swarm-scenarios`?**
    Не критично для v0.3; трейсинг в runtime и alloc уже даёт нужную видимость.
