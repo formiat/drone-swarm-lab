@@ -194,26 +194,18 @@ fn main() {
         }
     }
 
-    // 2. Check convergence (warn only — replicated-state may diverge)
-    let all_maps_identical = if all_survivors_metrics.len() >= 2 {
+    // 2. Check convergence — hard failure, per PLAN.md and README.md invariant
+    if all_survivors_metrics.len() >= 2 {
         let reference = &all_survivors_metrics[0].global_assignment_map;
-        let all_same = all_survivors_metrics[1..]
-            .iter()
-            .all(|m| &m.global_assignment_map == reference);
-        if !all_same {
-            eprintln!("WARNING: global_assignment_map diverged (expected with replicated-state)");
-            for metrics in &all_survivors_metrics {
-                eprintln!(
-                    "  {}: {:?}",
-                    metrics.agent_id,
-                    metrics.global_assignment_map
-                );
+        for metrics in &all_survivors_metrics[1..] {
+            if &metrics.global_assignment_map != reference {
+                errors.push(format!(
+                    "agent {} assignment map differs from agent {}",
+                    metrics.agent_id, all_survivors_metrics[0].agent_id
+                ));
             }
         }
-        all_same
-    } else {
-        true
-    };
+    }
 
     // 3. No task belongs to agent-0
     let agent_0 = AgentId::from("agent-0".to_owned());
@@ -242,11 +234,7 @@ fn main() {
     }
 
     if errors.is_empty() {
-        if !all_maps_identical {
-            eprintln!("PASS: core invariants satisfied (assignment maps diverged — acceptable for v0.3)");
-        } else {
-            println!("PASS: all invariants satisfied (including assignment map convergence)");
-        }
+        println!("PASS: all invariants satisfied (including assignment map convergence)");
         std::process::exit(0);
     } else {
         for error in &errors {

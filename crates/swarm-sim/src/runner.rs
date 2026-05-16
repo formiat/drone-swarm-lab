@@ -2,8 +2,8 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-use swarm_alloc::{AllocationAgent, AllocationTask, Allocator};
-use swarm_comms::{InMemAgentTransport, InMemNetwork, NetworkConfig, RawMessage, Transport};
+use swarm_alloc::Allocator;
+use swarm_comms::{InMemAgentTransport, InMemNetwork, NetworkConfig};
 use swarm_metrics::RunMetrics;
 use swarm_runtime::{AgentNode, Coordinator, NodeTickOutput};
 use swarm_types::{AgentId, Task, TaskId};
@@ -117,66 +117,30 @@ impl ScenarioRunner {
                 .collect();
             tasks_injected += injected.len() as u64;
 
-            // Phase 1: All alive agents send heartbeats to peers
-            {
-                let hb = RawMessage {
-                    from: AgentId::from("placeholder".to_owned()),
-                    to: AgentId::from("placeholder".to_owned()),
-                    payload: b"hb".to_vec(),
-                };
-                for (node, agent_id) in &mut nodes {
-                    if crashed_agents.contains(agent_id) {
-                        continue;
-                    }
-                    for peer_id in &node.peer_ids {
-                        let mut msg = hb.clone();
-                        msg.from = agent_id.clone();
-                        msg.to = peer_id.clone();
-                        let _ = node.transport.send(msg);
-                    }
+            // Phase 1: All alive agents send heartbeats (uses AgentNode method)
+            for (node, agent_id) in &mut nodes {
+                if crashed_agents.contains(agent_id) {
+                    continue;
                 }
+                let _ = node.send_heartbeats();
             }
 
-            // Phase 2: All alive agents poll and process
+            // Phase 2: All alive agents poll and process (uses AgentNode method)
             let mut tick_outputs: Vec<(AgentId, NodeTickOutput)> = Vec::new();
             for (node, agent_id) in &mut nodes {
                 if crashed_agents.contains(agent_id) {
                     continue;
                 }
 
-                let mut heartbeat_senders = vec![agent_id.clone()];
-
-                loop {
-                    match node.transport.poll() {
-                        Ok(Some(msg)) => heartbeat_senders.push(msg.from),
-                        Ok(None) => break,
-                        Err(_) => break,
-                    }
-                }
-
-                let output = node.coordinator.process_tick(
-                    heartbeat_senders,
+                let output = match node.process_inbox_and_allocate(
                     current_tick,
+                    &allocator,
                     injected.clone(),
-                );
-
-                // Allocate unassigned tasks (same as AgentNode.tick() does)
-                let mut conflicting: u64 = 0;
-                if !output.released_tasks.is_empty()
-                    || !output.expired_task_ids.is_empty()
-                    || !node.coordinator.registry.unassigned().is_empty()
-                {
-                    conflicting +=
-                        allocate_unassigned_standalone(&mut node.coordinator, &allocator);
-                }
-
-                let node_output = NodeTickOutput {
-                    newly_failed: output.newly_failed,
-                    released_tasks: output.released_tasks,
-                    expired_task_ids: output.expired_task_ids,
-                    conflicting_assignments: conflicting,
+                ) {
+                    Ok(out) => out,
+                    Err(_) => continue,
                 };
-                tick_outputs.push((agent_id.clone(), node_output));
+                tick_outputs.push((agent_id.clone(), output));
             }
 
             // Aggregate outputs across all agents
@@ -314,47 +278,6 @@ fn update_unassigned_durations(
         max_duration = max_duration.max(*duration);
     }
     max_duration
-}
-
-fn allocate_unassigned_standalone<A: Allocator>(
-    coordinator: &mut Coordinator,
-    allocator: &A,
-) -> u64 {
-    let tasks: Vec<Task> = coordinator
-        .registry
-        .unassigned()
-        .into_iter()
-        .cloned()
-        .collect();
-    let allocation_tasks: Vec<AllocationTask<'_>> =
-        tasks.iter().map(|task| AllocationTask { task }).collect();
-
-    let agents: Vec<AllocationAgent> = coordinator
-        .membership
-        .alive_agents()
-        .map(|(id, entry)| AllocationAgent {
-            id: id.clone(),
-            pose: entry.pose,
-            battery: entry.battery,
-            capabilities: entry.capabilities.clone(),
-            role: entry.role.clone(),
-        })
-        .collect();
-
-    let decisions = allocator.allocate(&allocation_tasks, &agents);
-
-    let mut seen = HashSet::new();
-    let mut conflicts: u64 = 0;
-    for (task_id, agent_id) in decisions {
-        if !seen.insert(task_id.clone()) {
-            conflicts += 1;
-            continue;
-        }
-        if coordinator.registry.assign(&task_id, agent_id).is_err() {
-            conflicts += 1;
-        }
-    }
-    conflicts
 }
 
 fn released_tasks_reassigned(coordinator: &Coordinator, released_tasks: &[TaskId]) -> bool {
@@ -574,11 +497,8 @@ mod tests {
         let s = scenario(0, 5, 5);
         let cfg = config(vec![]);
         ScenarioRunner::run(&s, cfg);
-        // If there were duplicate ownership, task_registry.assign() would return Err,
-        // which is counted as a conflict — not a panic. The test verifies the run completes.
     }
 
-    /// Stub allocator that returns the same task_id twice to trigger conflict detection.
     struct DuplicateAllocator;
 
     impl Allocator for DuplicateAllocator {
@@ -592,7 +512,6 @@ mod tests {
             }
             let task_id = tasks[0].task.id.clone();
             let agent_id = agents[0].id.clone();
-            // Return same task_id twice — second is a conflict
             vec![(task_id.clone(), agent_id.clone()), (task_id, agent_id)]
         }
     }
@@ -610,7 +529,6 @@ mod tests {
         let s = scenario(0, 2, 1);
         let cfg = config(vec![]);
         let metrics = ScenarioRunner::run_with(&s, cfg, DuplicateAllocator);
-        // Each agent independently allocates, so N agents × 1 conflict = N conflicts
         assert!(metrics.conflicting_assignments > 0);
     }
 }

@@ -41,6 +41,11 @@ impl<T: Transport> AgentNode<T> {
         allocator: &A,
         injected: Vec<Task>,
     ) -> Result<NodeTickOutput, T::Error> {
+        self.send_heartbeats()?;
+        self.process_inbox_and_allocate(current_tick, allocator, injected)
+    }
+
+    pub fn send_heartbeats(&mut self) -> Result<(), T::Error> {
         let hb = RawMessage {
             from: self.own_id.clone(),
             to: AgentId::from("placeholder".to_owned()),
@@ -52,11 +57,23 @@ impl<T: Transport> AgentNode<T> {
             msg.to = peer_id.clone();
             self.transport.send(msg)?;
         }
+        Ok(())
+    }
 
+    pub fn process_inbox_and_allocate<A: Allocator>(
+        &mut self,
+        current_tick: u64,
+        allocator: &A,
+        injected: Vec<Task>,
+    ) -> Result<NodeTickOutput, T::Error> {
         let mut heartbeat_senders = vec![self.own_id.clone()];
 
-        while let Some(msg) = self.transport.poll()? {
-            heartbeat_senders.push(msg.from);
+        loop {
+            match self.transport.poll() {
+                Ok(Some(msg)) => heartbeat_senders.push(msg.from),
+                Ok(None) => break,
+                Err(_) => break,
+            }
         }
 
         let output = self
@@ -82,16 +99,17 @@ impl<T: Transport> AgentNode<T> {
 }
 
 fn allocate_unassigned<A: Allocator>(coordinator: &mut Coordinator, allocator: &A) -> u64 {
-    let tasks: Vec<Task> = coordinator
+    let mut tasks: Vec<Task> = coordinator
         .registry
         .unassigned()
         .into_iter()
         .cloned()
         .collect();
+    tasks.sort_by(|a, b| a.id.as_ref().cmp(b.id.as_ref()));
     let allocation_tasks: Vec<AllocationTask<'_>> =
         tasks.iter().map(|task| AllocationTask { task }).collect();
 
-    let agents: Vec<AllocationAgent> = coordinator
+    let mut agents: Vec<AllocationAgent> = coordinator
         .membership
         .alive_agents()
         .map(|(id, entry)| AllocationAgent {
@@ -102,6 +120,7 @@ fn allocate_unassigned<A: Allocator>(coordinator: &mut Coordinator, allocator: &
             role: entry.role.clone(),
         })
         .collect();
+    agents.sort_by(|a, b| a.id.as_ref().cmp(b.id.as_ref()));
 
     let decisions = allocator.allocate(&allocation_tasks, &agents);
 
@@ -123,6 +142,7 @@ fn allocate_unassigned<A: Allocator>(coordinator: &mut Coordinator, allocator: &
 mod tests {
     use super::*;
     use std::cell::RefCell;
+    use std::collections::HashMap;
     use std::rc::Rc;
 
     use swarm_alloc::GreedyAllocator;
@@ -277,7 +297,6 @@ mod tests {
                 .released_tasks
                 .contains(&TaskId::from("task-0".to_owned()))
             {
-                // The next tick should reassign the task
                 continue;
             }
             let assigned = node.coordinator.registry.tasks().any(|t| {
@@ -297,8 +316,6 @@ mod tests {
 
     #[test]
     fn node_tick_same_output_inmem_vs_stub_transport() {
-        // Verify that AgentNode produces identical NodeTickOutput for
-        // identical inputs independent of transport implementation.
         use std::convert::Infallible;
 
         struct StubTransport {
@@ -361,11 +378,9 @@ mod tests {
             transport_b,
         );
 
-        // Run node_a first (also must advance network ticks manually)
         bus.borrow_mut().advance_tick();
         let allocator = GreedyAllocator;
 
-        // Send heartbeat from agent-1 into the bus for node_a
         bus.borrow_mut()
             .send(RawMessage {
                 from: AgentId::from("agent-1".to_owned()),
@@ -382,5 +397,68 @@ mod tests {
         assert_eq!(out_a.released_tasks, out_b.released_tasks);
         assert_eq!(out_a.expired_task_ids, out_b.expired_task_ids);
         assert_eq!(out_a.conflicting_assignments, out_b.conflicting_assignments);
+    }
+
+    #[test]
+    fn deterministic_allocation_independent_of_insertion_order() {
+        let allocator = GreedyAllocator;
+
+        let agents_ordered: Vec<Agent> = vec![
+            agent_entry("agent-0"),
+            agent_entry("agent-1"),
+            agent_entry("agent-2"),
+        ];
+        let agents_reversed: Vec<Agent> = vec![
+            agent_entry("agent-2"),
+            agent_entry("agent-1"),
+            agent_entry("agent-0"),
+        ];
+
+        let tasks_ordered: Vec<Task> = vec![
+            task_entry("task-0"),
+            task_entry("task-1"),
+            task_entry("task-2"),
+            task_entry("task-3"),
+            task_entry("task-4"),
+        ];
+        let tasks_reversed: Vec<Task> = vec![
+            task_entry("task-4"),
+            task_entry("task-3"),
+            task_entry("task-2"),
+            task_entry("task-1"),
+            task_entry("task-0"),
+        ];
+
+        let mut coord_a = Coordinator::new(agents_ordered, tasks_ordered, 5);
+        let mut coord_b = Coordinator::new(agents_reversed, tasks_reversed, 5);
+
+        // Apply identical heartbeats
+        let all_ids: Vec<AgentId> = vec![
+            AgentId::from("agent-0".to_owned()),
+            AgentId::from("agent-1".to_owned()),
+            AgentId::from("agent-2".to_owned()),
+        ];
+        coord_a.process_tick(all_ids.clone(), 0, vec![]);
+        coord_b.process_tick(all_ids, 0, vec![]);
+
+        // Allocate with different HashMap internal order
+        allocate_unassigned(&mut coord_a, &allocator);
+        allocate_unassigned(&mut coord_b, &allocator);
+
+        let map_a: HashMap<TaskId, AgentId> = coord_a
+            .registry
+            .tasks()
+            .filter_map(|t| t.assigned_to.clone().map(|a| (t.id.clone(), a)))
+            .collect();
+        let map_b: HashMap<TaskId, AgentId> = coord_b
+            .registry
+            .tasks()
+            .filter_map(|t| t.assigned_to.clone().map(|a| (t.id.clone(), a)))
+            .collect();
+
+        assert_eq!(
+            map_a, map_b,
+            "allocation must be deterministic regardless of HashMap insertion order"
+        );
     }
 }
