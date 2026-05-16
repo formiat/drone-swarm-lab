@@ -23,7 +23,7 @@ pub struct AgentNode<T> {
     pub gossip_interval_ticks: u64,
     pub generation: u64,
     ticks_since_last_gossip: u64,
-    discarded_messages: u64,
+    discarded_this_tick: u64,
 }
 
 impl<T: Transport> AgentNode<T> {
@@ -41,7 +41,7 @@ impl<T: Transport> AgentNode<T> {
             gossip_interval_ticks: 3,
             generation: 1,
             ticks_since_last_gossip: 0,
-            discarded_messages: 0,
+            discarded_this_tick: 0,
         }
     }
 
@@ -86,6 +86,8 @@ impl<T: Transport> AgentNode<T> {
             }
         }
 
+        self.discarded_this_tick = 0;
+
         let mut hb_list: Vec<(AgentId, u64, u64)> = Vec::new();
         let mut gossip_buffer: Vec<RuntimeMessage> = Vec::new();
         for msg in &all_msgs {
@@ -102,7 +104,7 @@ impl<T: Transport> AgentNode<T> {
                     }
                 }
                 None => {
-                    self.discarded_messages += 1;
+                    self.discarded_this_tick += 1;
                     tracing::warn!(
                         from = %msg.from,
                         "discarded unknown message payload"
@@ -151,7 +153,7 @@ impl<T: Transport> AgentNode<T> {
             released_tasks: output.released_tasks,
             expired_task_ids: output.expired_task_ids,
             conflicting_assignments,
-            discarded_messages: self.discarded_messages,
+            discarded_messages: self.discarded_this_tick,
         })
     }
 
@@ -214,22 +216,31 @@ impl<T: Transport> AgentNode<T> {
 
                     match local_owner {
                         None => {
-                            let _ = self
-                                .coordinator
-                                .registry
-                                .assign(task_id, remote_agent_id.clone());
-                            merged += 1;
+                            if self.coordinator.membership.is_alive(remote_agent_id) {
+                                let _ = self
+                                    .coordinator
+                                    .registry
+                                    .assign(task_id, remote_agent_id.clone());
+                                merged += 1;
+                            } else {
+                                stale += 1;
+                            }
                         }
                         Some(ref local_id) if local_id == remote_agent_id => {
                             // Already agree
                         }
                         Some(ref local_id) => {
+                            if !self.coordinator.membership.is_alive(remote_agent_id) {
+                                stale += 1;
+                                continue;
+                            }
+
                             let local_gen = self.coordinator.membership.generation_of(local_id);
                             let remote_gen = generations.get(remote_agent_id).copied().unwrap_or(1);
 
                             if remote_gen > local_gen {
                                 // Remote agent has higher generation — authoritative
-                                self.coordinator.registry.release_agent_tasks(local_id);
+                                self.coordinator.registry.release_task(task_id);
                                 let _ = self
                                     .coordinator
                                     .registry
@@ -239,7 +250,7 @@ impl<T: Transport> AgentNode<T> {
                                 && remote_agent_id.as_ref() > local_id.as_ref()
                             {
                                 // Equal generation, deterministic tiebreaker: max AgentId wins
-                                self.coordinator.registry.release_agent_tasks(local_id);
+                                self.coordinator.registry.release_task(task_id);
                                 let _ = self
                                     .coordinator
                                     .registry
@@ -473,9 +484,14 @@ mod tests {
 
     #[test]
     fn gossip_merge_unassigned_task_from_remote() {
+        let task = task_entry("task-0");
         let mut coord = Coordinator::new(
-            vec![agent_entry("agent-0"), agent_entry("agent-1")],
-            vec![task_entry("task-0")],
+            vec![
+                agent_entry("agent-0"),
+                agent_entry("agent-1"),
+                agent_entry("agent-2"),
+            ],
+            vec![task],
             5,
         );
         coord
@@ -520,7 +536,11 @@ mod tests {
         task.assigned_to = Some(AgentId::from("agent-1".to_owned()));
 
         let mut coord = Coordinator::new(
-            vec![agent_entry("agent-0"), agent_entry("agent-1")],
+            vec![
+                agent_entry("agent-0"),
+                agent_entry("agent-1"),
+                agent_entry("agent-2"),
+            ],
             vec![task],
             5,
         );
@@ -566,7 +586,11 @@ mod tests {
         task.assigned_to = Some(AgentId::from("agent-1".to_owned()));
 
         let mut coord = Coordinator::new(
-            vec![agent_entry("agent-0"), agent_entry("agent-1")],
+            vec![
+                agent_entry("agent-0"),
+                agent_entry("agent-1"),
+                agent_entry("agent-2"),
+            ],
             vec![task],
             5,
         );
@@ -805,5 +829,107 @@ mod tests {
             .assigned_to
             .clone();
         assert_eq!(owner_a, owner_b);
+    }
+
+    #[test]
+    fn gossip_merge_ignores_dead_remote_owner() {
+        let mut task = task_entry("task-0");
+        task.status = TaskStatus::Unassigned;
+        task.assigned_to = None;
+
+        let mut coord = Coordinator::new(
+            vec![agent_entry("agent-0"), agent_entry("agent-1")],
+            vec![task],
+            5,
+        );
+        coord
+            .membership
+            .mark_dead(&AgentId::from("agent-1".to_owned()));
+
+        let mut node = AgentNode::new(
+            AgentId::from("agent-0".to_owned()),
+            vec![],
+            coord,
+            InMemAgentTransport::new(make_bus(), AgentId::from("agent-0".to_owned())),
+        );
+
+        let gossip = RuntimeMessage::Gossip {
+            assignments: HashMap::from([(
+                TaskId::from("task-0".to_owned()),
+                AgentId::from("agent-1".to_owned()),
+            )]),
+            generations: HashMap::from([(AgentId::from("agent-1".to_owned()), 1)]),
+        };
+        let (merged, stale) = node.apply_gossip_buffer(&[gossip]);
+        assert_eq!(merged, 0);
+        assert!(stale > 0);
+    }
+
+    #[test]
+    fn gossip_merge_preserves_unrelated_tasks() {
+        let mut task0 = task_entry("task-0");
+        task0.status = TaskStatus::Assigned;
+        task0.assigned_to = Some(AgentId::from("agent-1".to_owned()));
+
+        let mut task1 = task_entry("task-1");
+        task1.status = TaskStatus::Assigned;
+        task1.assigned_to = Some(AgentId::from("agent-1".to_owned()));
+
+        let mut coord = Coordinator::new(
+            vec![
+                agent_entry("agent-0"),
+                agent_entry("agent-1"),
+                agent_entry("agent-2"),
+            ],
+            vec![task0, task1],
+            5,
+        );
+        coord
+            .membership
+            .record_heartbeat(&AgentId::from("agent-1".to_owned()), 0, 1);
+        coord
+            .membership
+            .record_heartbeat(&AgentId::from("agent-2".to_owned()), 0, 3);
+
+        let mut node = AgentNode::new(
+            AgentId::from("agent-0".to_owned()),
+            vec![],
+            coord,
+            InMemAgentTransport::new(make_bus(), AgentId::from("agent-0".to_owned())),
+        );
+
+        // Gossip claims agent-2 (gen=3) owns task-0. Should override agent-1 (gen=1).
+        // But task-1 should remain assigned to agent-1.
+        let gossip = RuntimeMessage::Gossip {
+            assignments: HashMap::from([(
+                TaskId::from("task-0".to_owned()),
+                AgentId::from("agent-2".to_owned()),
+            )]),
+            generations: HashMap::from([
+                (AgentId::from("agent-1".to_owned()), 1),
+                (AgentId::from("agent-2".to_owned()), 3),
+            ]),
+        };
+        node.apply_gossip_buffer(&[gossip]);
+
+        let t0 = node
+            .coordinator
+            .registry
+            .tasks()
+            .find(|t| t.id == TaskId::from("task-0".to_owned()))
+            .unwrap();
+        assert_eq!(t0.assigned_to, Some(AgentId::from("agent-2".to_owned())));
+
+        let t1 = node
+            .coordinator
+            .registry
+            .tasks()
+            .find(|t| t.id == TaskId::from("task-1".to_owned()))
+            .unwrap();
+        assert_eq!(
+            t1.assigned_to,
+            Some(AgentId::from("agent-1".to_owned())),
+            "unrelated task-1 should remain assigned to agent-1"
+        );
     }
 }

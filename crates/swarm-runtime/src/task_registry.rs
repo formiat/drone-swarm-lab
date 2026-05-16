@@ -72,6 +72,17 @@ impl TaskRegistry {
         released
     }
 
+    /// Release a single task back to unassigned. Returns the previous owner.
+    pub fn release_task(&mut self, task_id: &TaskId) -> Option<AgentId> {
+        let task = self.tasks.get_mut(task_id)?;
+        if !matches!(task.status, TaskStatus::Assigned | TaskStatus::InProgress) {
+            return None;
+        }
+        let prev = task.assigned_to.take();
+        task.status = TaskStatus::Unassigned;
+        prev
+    }
+
     /// Remove tasks whose expires_at <= current_tick. Returns expired TaskIds.
     ///
     /// Expiration rule (Milestone 2): only Unassigned and Assigned tasks expire.
