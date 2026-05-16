@@ -212,12 +212,16 @@ pub struct AgentEntry {
 ```rust
 impl TaskRegistry {
     /// Remove tasks whose expires_at <= current_tick. Returns expired TaskIds.
+    ///
+    /// Expiration rule (Milestone 2): only Unassigned and Assigned tasks expire.
+    /// InProgress tasks are never expired — the agent is actively working on them.
     pub fn expire_tasks(&mut self, current_tick: u64) -> Vec<TaskId>;
 }
 ```
 
-Логика: итерировать по `tasks`, если `task.expires_at.is_some_and(|t| t <= current_tick)` —
-удалить из registry, вернуть id.
+Логика: итерировать по `tasks`, если `task.expires_at.is_some_and(|t| t <= current_tick)`
+**И** `task.status != TaskStatus::InProgress` — удалить из registry, вернуть id.
+InProgress задачи с истёкшим `expires_at` пропускаются (жёсткий дедлайн появится в v0.3+).
 
 **`crates/swarm-runtime/src/coordinator.rs`** — изменить `CoordinatorOutput` и `process_tick`:
 
@@ -293,37 +297,85 @@ impl ScenarioRunner {
 - Передать в `coordinator.process_tick(heartbeat_senders, current_tick, injected_tasks)`.
 - `output.expired_task_ids` → инкремент `tasks_expired` в метриках.
 - В `allocate_unassigned<A: Allocator>()` передавать `AllocationAgent` с pose/battery/capabilities из membership view.
+- `allocate_unassigned` возвращает `u64` (число конфликтов этого тика); runner суммирует в `conflicting_assignments`.
 
-Вспомогательная функция:
+Вспомогательная функция с явной обработкой конфликтов:
 
 ```rust
+/// Returns the number of conflicting assignment decisions in this allocation round.
 fn allocate_unassigned<A: Allocator>(
     coordinator: &mut Coordinator,
     allocator: &A,
-) {
+) -> u64 {
     let tasks: Vec<_> = coordinator.registry.unassigned().into_iter().cloned().collect();
     let allocation_tasks: Vec<_> = tasks.iter().map(|task| AllocationTask { task }).collect();
 
-    let agents: Vec<(AgentId, AllocationAgent)> = coordinator
+    // Build agent context from membership view (owned copies to avoid lifetime issues).
+    let agents: Vec<AllocationAgent> = coordinator
         .membership
         .alive_agents()
-        .map(|(id, entry)| (id.clone(), AllocationAgent {
-            id,
+        .map(|(id, entry)| AllocationAgent {
+            id: id.clone(),
             pose: entry.pose,
             battery: entry.battery,
-            capabilities: &entry.capabilities,
+            capabilities: entry.capabilities.clone(),
             role: entry.role.clone(),
-        }))
+        })
         .collect();
-    let agent_refs: Vec<_> = agents.iter().map(|(_, a)| a).collect(); // need to fix lifetime
+    let agent_refs: Vec<_> = agents.iter().collect();
 
-    for (task_id, agent_id) in allocator.allocate(&allocation_tasks, &agent_refs) {
-        let _ = coordinator.registry.assign(&task_id, agent_id);
+    let decisions = allocator.allocate(&allocation_tasks, &agent_refs);
+
+    // Deduplication pass: allocator must not produce two decisions for the same task.
+    let mut seen = HashSet::new();
+    let mut conflicts: u64 = 0;
+    for (task_id, agent_id) in decisions {
+        if !seen.insert(task_id.clone()) {
+            // Duplicate task_id from allocator output — first decision wins.
+            conflicts += 1;
+            continue;
+        }
+        if coordinator.registry.assign(&task_id, agent_id).is_err() {
+            // Task became non-assignable between unassigned() and assign() calls.
+            conflicts += 1;
+        }
     }
+    conflicts
 }
 ```
 
 (Точные lifetime-аннотации определяются при реализации; выше — схема логики.)
+
+---
+
+### Шаг 4а — Ownership conflict handling
+
+**Что такое conflict в этой модели:**
+
+Ownership conflict = два assignment-решения для одной `TaskId` в одном раунде аукциона/аллокатора.
+
+**Где обнаруживается:** в `allocate_unassigned` (см. Шаг 4), до применения к registry.
+
+**Правило разрешения (winner selection):** первое вхождение `TaskId` в выводе аллокатора
+выигрывает; все последующие отклоняются и считаются конфликтами. Порядок вывода аллокатора
+детерминирован (отсортирован по убыванию priority → id), что делает winner selection
+воспроизводимым при одинаковом seed.
+
+**Дополнительный guard:** `TaskRegistry::assign()` возвращает `Err(InvalidTransition)`
+если задача не находится в состоянии Unassigned. Этот error тоже считается конфликтом
+и инкрементирует счётчик.
+
+**Инвариант duplicate ownership:** `TaskRegistry` физически хранит `assigned_to: Option<AgentId>` —
+одно значение на задачу. Второй владелец структурно невозможен. Тем не менее инвариант
+тестируется явно (см. тест 2.6) для проверки, что runner не обходит registry напрямую.
+
+**Что попадает в metrics и output:**
+- `RunMetrics::conflicting_assignments: u64` — суммарное количество отклонённых дублей за всё время прогона.
+- `CoordinatorOutput` конфликты не отражает: ownership conflict — это ошибка аллокатора/раунда,
+  а не событие уровня coordinator. Runner владеет счётчиком и накапливает его независимо.
+
+**`CoordinatorOutput`** остаётся без нового поля для conflict count: coordinator не участвует в
+аллокации (это задача runner + allocator). Разделение ответственности сохраняется.
 
 ---
 
@@ -345,16 +397,20 @@ pub struct RunMetrics {
     // New in Milestone 2:
     pub tasks_injected: u64,
     pub tasks_expired: u64,
+    /// Total conflicting assignment decisions rejected across all ticks (from DRONE_A.1.md metric).
+    pub conflicting_assignments: u64,
 }
 ```
 
-Обновить тест-хелпер `run(...)` в `metrics.rs`, добавив `tasks_injected: 0, tasks_expired: 0`.
+Обновить тест-хелпер `run(...)` в `metrics.rs`, добавив
+`tasks_injected: 0, tasks_expired: 0, conflicting_assignments: 0`.
 
 `AggregateMetrics` — добавить:
 
 ```rust
 pub avg_tasks_injected: f64,
 pub avg_tasks_expired: f64,
+pub avg_conflicting_assignments: f64,
 ```
 
 ---
@@ -505,6 +561,7 @@ git commit -m "feat: Milestone 2 — dynamic tasks, capability matching, auction
 | 1.13 | `task_registry_expire_at_tick` | swarm-runtime | `expire_tasks(5)` удаляет задачу с `expires_at=Some(5)` |
 | 1.14 | `task_registry_expire_keeps_not_due` | swarm-runtime | Задача с `expires_at=Some(10)` остаётся при tick=5 |
 | 1.15 | `task_registry_expire_assigned_task` | swarm-runtime | Истёкшая assigned задача тоже удаляется |
+| 1.15b | `task_registry_expire_skips_in_progress` | swarm-runtime | Задача в InProgress с истёкшим `expires_at` НЕ удаляется |
 | 1.16 | `coordinator_inject_task` | swarm-runtime | `inject_task()` → задача появляется в `unassigned()` |
 | 1.17 | `coordinator_process_tick_injects` | swarm-runtime | `process_tick(_, tick, injected)` → tasks в registry |
 | 1.18 | `coordinator_output_has_expired_ids` | swarm-runtime | `output.expired_task_ids` содержит истёкшие id |
@@ -516,6 +573,8 @@ git commit -m "feat: Milestone 2 — dynamic tasks, capability matching, auction
 |---|------|-------|----------|
 | 1.20 | `aggregate_avg_tasks_injected` | swarm-metrics | Среднее tasks_injected вычисляется верно |
 | 1.21 | `aggregate_avg_tasks_expired` | swarm-metrics | Среднее tasks_expired вычисляется верно |
+| 1.22 | `task_registry_second_assign_returns_err` | swarm-runtime | Задача в Assigned/InProgress → повторный `assign()` возвращает `Err` |
+| 1.23 | `allocate_unassigned_counts_duplicate_allocator_output` | swarm-sim | Аллокатор возвращает один `TaskId` дважды → `conflicts == 1`, задача назначена ровно одному агенту |
 
 ### Категория 2 — лёгкий рефакторинг
 
@@ -527,6 +586,7 @@ git commit -m "feat: Milestone 2 — dynamic tasks, capability matching, auction
 | 2.4 | `runner_auction_deterministic` | swarm-sim | AuctionAllocator: два запуска с одним seed — идентичны |
 | 2.5 | `runner_capability_gate_task_stays_unassigned` | swarm-sim | Задача с required capability, которой ни у кого нет → не назначена |
 | 2.6 | `runner_no_duplicate_ownership_invariant` | swarm-sim | На каждом тике ни одна задача не имеет двух владельцев |
+| 2.7 | `runner_conflict_counter_in_metrics` | swarm-sim | При stub-аллокаторе, возвращающем дубль, `RunMetrics::conflicting_assignments > 0` |
 
 ### Категория 3 — тяжёлый рефакторинг (будущие milestone)
 
@@ -552,8 +612,9 @@ git commit -m "feat: Milestone 2 — dynamic tasks, capability matching, auction
 | Breaking changes в `Task` / `Agent` struct literals | Высокая | `cargo check --workspace` сразу покажет |
 | `Allocator` trait смена сигнатуры ломает `allocate_unassigned` в runner | Высокая | `cargo build -p swarm-sim` |
 | Lifetime-конфликт в `AllocationAgent<'a>` при сборке агентов из MembershipView | Средняя | Если возникает — использовать owned copies вместо ссылок |
-| `expire_tasks` удаляет InProgress задачу, теряя прогресс | Средняя | Добавить проверку: InProgress задачи не истекают (или истекают с `status→Failed`) |
+| `expire_tasks` удаляет InProgress задачу, теряя прогресс | **Снято** | Правило зафиксировано: InProgress задачи не истекают (тест 1.15b) |
 | `CoordinatorOutput` `expired_task_ids` не обновляет `max_task_unassigned_ticks` корректно | Средняя | Тест 1.15 и 2.2 покроют |
+| Conflict counter неверно накапливается (двойной счёт или пропуск) | Средняя | Тест 1.23 и 2.7 покроют; stub-аллокатор даёт детерминированный входной сигнал |
 | `dynamic_auction` binary: success_rate < 0.95 из-за expiry при плотных capabilities | Низкая | Параметры `max_ticks=200`, `max_unassigned_ticks=8` дают достаточно времени |
 
 ### Tradeoffs
@@ -566,7 +627,7 @@ git commit -m "feat: Milestone 2 — dynamic tasks, capability matching, auction
 
 ## Open questions
 
-1. **InProgress задачи при expiration**: истекать нельзя (агент активно работает) или истекать можно (жёсткий дедлайн)? Рекомендация: по умолчанию не истекать InProgress — добавить флаг `hard_deadline: bool` в Milestone 3.
+1. **InProgress задачи при expiration**: ~~открытый вопрос~~ **Решено:** InProgress задачи не истекают — агент активно работает над ними. Жёсткий дедлайн (`hard_deadline: bool`) появится в Milestone 3. Правило закреплено в `expire_tasks` и покрыто тестом 1.15b.
 2. **`max_tasks_per_agent` для аукциона**: нужно ли ограничение "не более 1 новой задачи за раунд аукциона"? Влияет на fairness. Оставить как опциональный параметр `AuctionAllocator`.
 3. **Сравнение greedy vs auction по метрикам**: какой порог успеха? Пока оба должны иметь `success_rate >= 0.95`. Если auction стабильно лучше greedy — зафиксировать в тесте или документировать в README.
 4. **`Pose` для agents в сценариях**: в Milestone 1 все агенты на `(0.0, 0.0)`. Для auction distance cost нужны разные позиции. Разброс детерминирован через seed — каким паттерном (grid, random, ring)?
