@@ -15,7 +15,7 @@ tracing.
 
 **Критерий готовности:**
 1. Один и тот же runtime (`AgentNode<T: Transport>`) работает in-process через
-   `AgentNode<InMemNetwork>`.
+   `AgentNode<InMemAgentTransport>`.
 2. Тот же runtime работает как N OS-процессов через `AgentNode<UdpTransport>`.
 3. `kill -9` одного процесса → остальные обнаруживают отказ → перераспределяют задачи.
 
@@ -36,8 +36,8 @@ INVESTIGATION.md в workspace отсутствует.
   `Transport` trait; `AgentNode` не знает, какой именно.
 
 ```
-In-process mode:                    Multi-process mode:
-AgentNode<InMemNetwork>             AgentNode<UdpTransport>
+In-process mode:                      Multi-process mode:
+AgentNode<InMemAgentTransport>        AgentNode<UdpTransport>
       |                                   |
       tick()                              tick()
       |                                   |
@@ -76,7 +76,7 @@ AgentNode<InMemNetwork>             AgentNode<UdpTransport>
 | Компонент | Тип изменения |
 |---|---|
 | `crates/swarm-comms/src/transport.rs` | Добавить serde к `RawMessage` |
-| `crates/swarm-comms/src/network.rs` | Добавить `own_id` конструктор для per-agent Transport impl |
+| `crates/swarm-comms/src/network.rs` | Добавить `InMemAgentTransport` wrapper (реализует Transport для per-agent use) |
 | `crates/swarm-comms/src/udp.rs` | Новый файл — `UdpTransport` + `UdpTransportError` |
 | `crates/swarm-comms/src/lib.rs` | Экспортировать UDP модуль |
 | `crates/swarm-comms/Cargo.toml` | Добавить `serde_json`, `tracing` |
@@ -114,7 +114,7 @@ tracing-subscriber  = { version = "0.3", features = ["env-filter"] }
 
 ---
 
-### Шаг 2 — Добавить serde к `RawMessage` + per-agent InMemNetwork
+### Шаг 2 — Добавить serde к `RawMessage`; добавить `InMemAgentTransport`
 
 Файл: `crates/swarm-comms/src/transport.rs`
 
@@ -126,19 +126,26 @@ pub struct RawMessage { ... }
 
 Файл: `crates/swarm-comms/src/network.rs`
 
-Добавить конструктор `InMemNetwork::for_agent(config: NetworkConfig, own_id: AgentId) -> Self`
-и поле `own_id: Option<AgentId>`.
+Добавить `InMemAgentTransport` — per-agent Transport wrapper над shared `InMemNetwork`.
+`InMemNetwork` сам по себе НЕ изменяется (не добавляем `own_id` поле).
+`ScenarioRunner` создаёт один `InMemNetwork` на симуляцию и N `InMemAgentTransport` — по одному на агента:
 
-Исправить `poll()`: когда `own_id` установлен, дренировать очередь этого агента:
 ```rust
-fn poll(&mut self) -> Result<Option<RawMessage>, Self::Error> {
-    let Some(own_id) = &self.own_id.clone() else { return Ok(None) };
-    Ok(self.drain_ready(own_id).into_iter().next())
+pub struct InMemAgentTransport {
+    bus: Rc<RefCell<InMemNetwork>>,
+    own_id: AgentId,
+}
+
+impl Transport for InMemAgentTransport {
+    type Error = Infallible;
+    fn send(&mut self, msg: RawMessage) -> Result<(), Self::Error> {
+        self.bus.borrow_mut().send(msg)
+    }
+    fn poll(&mut self) -> Result<Option<RawMessage>, Self::Error> {
+        Ok(self.bus.borrow_mut().drain_ready(&self.own_id).into_iter().next())
+    }
 }
 ```
-
-Существующий путь (`own_id = None`, `poll()` возвращает `None`) сохраняется для
-обратной совместимости с тестами, которые используют `drain_ready` напрямую.
 
 Добавить в `crates/swarm-comms/Cargo.toml`:
 ```toml
@@ -235,9 +242,12 @@ impl<T: Transport> AgentNode<T> {
 
 `tick()` внутри:
 1. Отправить heartbeat всем `peer_ids`: `transport.send(RawMessage { from: own_id.clone(), to: peer_id, payload: b"hb".to_vec() })`
-2. Дренировать входящие: `while let Some(msg) = transport.poll()? { heartbeat_senders.push(msg.from) }`
+2. **Self-heartbeat**: `let mut heartbeat_senders = vec![own_id.clone()]` — собственный агент
+   всегда считается живым на текущем тике. Это гарантирует, что локальный `Coordinator` никогда
+   не пометит собственный `own_id` dead из-за отсутствия heartbeat.
+3. Дренировать входящие: `while let Some(msg) = transport.poll()? { heartbeat_senders.push(msg.from) }`
    Отправитель определяется через `msg.from` (typed поле), payload игнорируется как content.
-3. `coordinator.process_tick(heartbeat_senders, current_tick, injected)`
+4. `coordinator.process_tick(heartbeat_senders, current_tick, injected)`
 4. Если есть released/unassigned tasks → allocate, считать конфликты
 5. Вернуть `NodeTickOutput`
 
@@ -294,31 +304,12 @@ tracing::debug!(task_id = %task_id, agent_id = %agent_id, "task allocated");
 Файл: `crates/swarm-sim/src/runner.rs`
 
 `ScenarioRunner::run_with()` рефакторится: вместо ручного вызова coordinator + network создаёт
-N объектов `AgentNode<InMemNetwork>` (по одному на агента), используя `InMemNetwork::for_agent()`.
-На каждом тике вызывает `node.tick()` для всех агентов.
+N объектов `AgentNode<InMemAgentTransport>` (по одному на агента, на базе единой shared шины).
+На каждом тике вызывает `node.tick()` для всех агентов последовательно.
 
-**Выбранный дизайн**: `InMemNetwork` является общей шиной. Каждый `AgentNode` в симуляции
-получает thin wrapper `InMemAgentTransport(Rc<RefCell<InMemNetwork>>, AgentId)`:
-
-```rust
-pub struct InMemAgentTransport {
-    bus: Rc<RefCell<InMemNetwork>>,
-    own_id: AgentId,
-}
-
-impl Transport for InMemAgentTransport {
-    type Error = Infallible;
-    fn send(&mut self, msg: RawMessage) -> Result<(), Self::Error> {
-        self.bus.borrow_mut().send(msg)
-    }
-    fn poll(&mut self) -> Result<Option<RawMessage>, Self::Error> {
-        Ok(self.bus.borrow_mut().drain_ready(&self.own_id).into_iter().next())
-    }
-}
-```
-
-`Rc<RefCell<>>` выбран потому что симуляция однопоточная (`ScenarioRunner` гоняет всех агентов
-последовательно в одном потоке). `Arc<Mutex<>>` не нужен и добавляет ненужные издержки.
+`InMemAgentTransport` определён в Шаге 2 (`swarm-comms/src/network.rs`). Использует
+`Rc<RefCell<InMemNetwork>>` — выбрано потому что симуляция однопоточная, `Arc<Mutex<>>` не
+нужен и добавляет ненужные издержки.
 
 Ключевой инвариант: `ScenarioRunner` использует `AgentNode::tick()`, не дублирует логику.
 Все существующие тесты runner должны проходить после рефакторинга.
@@ -333,8 +324,8 @@ impl Transport for InMemAgentTransport {
 ```json
 {
   "agent_id": "agent-0",
-  "bind_addr": "127.0.0.1:0",
-  "peers": { "agent-1": "127.0.0.1:PORT", "agent-2": "127.0.0.1:PORT" },
+  "bind_addr": "127.0.0.1:10150",
+  "peers": { "agent-1": "127.0.0.1:10151", "agent-2": "127.0.0.1:10152" },
   "agents": [...],
   "tasks": [...],
   "timeout_ticks": 5,
@@ -343,6 +334,10 @@ impl Transport for InMemAgentTransport {
   "metrics_path": "/tmp/swarm-v03/agent-0.json"
 }
 ```
+
+Конкретные порты (10150, 10151…) — это значения, выделенные `allocate_udp_ports()` в launcher-е
+и записанные в config-файл каждого агента перед его запуском. `bind_addr` всегда содержит
+конкретный порт — не 0.
 
 Использует `AgentNode<UdpTransport>`:
 ```rust
@@ -416,7 +411,8 @@ let ports = allocate_udp_ports(N);
 7. Остановить оставшиеся процессы: `child.kill()` + `child.wait()`
 8. Читать JSON-метрики из `/tmp/swarm-v03/agent-N.json`
 9. Проверить инварианты:
-   - Минимум 1 выживший агент зафиксировал `"agent-0"` в `detected_failures`
+   - **Все** выжившие агенты зафиксировали `"agent-0"` в `detected_failures` (соответствует
+     критерию "остальные обнаруживают отказ")
    - `global_assignment_map` у всех выживших агентов совпадает (конвергенция replicated-state)
    - В `global_assignment_map` ни одна задача не принадлежит `"agent-0"` (reassigned)
    - В `global_assignment_map` нет задач без владельца (все задачи assigned)
@@ -504,6 +500,10 @@ cargo run -p swarm-examples --bin dynamic_auction
 **`swarm-runtime` — `AgentNode` unit-тесты** (`crates/swarm-runtime/src/node.rs`):
 
 - `node_tick_sends_heartbeats_to_peers` — после одного `tick()` пиры получают heartbeat-сообщения
+- `node_tick_self_heartbeat_keeps_own_agent_alive` — запустить `AgentNode` на `timeout_ticks + 2`
+  тиков без каких-либо входящих сообщений (транспорт не шлёт ничего); проверить, что
+  `own_id` ни разу не появляется в `NodeTickOutput::newly_failed`. Тест гарантирует корректность
+  self-heartbeat логики.
 - `node_tick_detects_failure` — агент не отправляет heartbeats N тиков → `newly_failed` содержит его id
 - `node_tick_reallocates_after_failure` — задача упавшего агента перераспределяется через allocator
 - `node_tick_same_output_inmem_vs_stub_transport` — идентичные inputs → идентичный `NodeTickOutput`
@@ -570,11 +570,17 @@ cargo run -p swarm-examples --bin dynamic_auction
 `swarm-runtime → swarm-alloc`. Проверить что `swarm-alloc` не зависит от `swarm-runtime`
 (на данный момент `swarm-alloc` → `swarm-types` only — circular нет).
 
-**2. ScenarioRunner рефакторинг: SimTransport design**
+**2. ScenarioRunner рефакторинг: `InMemAgentTransport` wrapper**
 
-Выбран `Rc<RefCell<InMemNetwork>>` + `InMemAgentTransport` wrapper (см. Шаг 6).
-`Rc<RefCell<>>` достаточен: симуляция однопоточная, `Arc<Mutex<>>` избыточен.
+Выбран `Rc<RefCell<InMemNetwork>>` + `InMemAgentTransport` (определён в Шаге 2, используется
+в Шаге 6). `Rc<RefCell<>>` достаточен: симуляция однопоточная, `Arc<Mutex<>>` избыточен.
 Критерий: все существующие тесты ScenarioRunner проходят без изменения публичного API.
+
+**6. Self-heartbeat корректность**
+
+Каждый агент добавляет `own_id` в `heartbeat_senders` до `process_tick()`. Если этот шаг
+пропустить, `FailureDetector` пометит живой агент dead после `timeout_ticks`. Риск
+верифицируется тестом `node_tick_self_heartbeat_keeps_own_agent_alive` (категория 1).
 
 **3. Replicated-state vs true distributed consensus**
 
