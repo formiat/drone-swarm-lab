@@ -50,6 +50,7 @@ pub fn build_dynamic_auction_scenario(config: &DynamicAuctionConfig) -> (Scenari
                 capabilities: vec![cap],
                 current_task: None,
                 battery: 100.0,
+                generation: 1,
             }
         })
         .collect();
@@ -133,6 +134,8 @@ pub fn build_dynamic_auction_scenario(config: &DynamicAuctionConfig) -> (Scenari
             at_tick: config.failure_tick,
         }],
         dynamic_tasks,
+        partition_events: vec![],
+        gossip_interval_ticks: 999,
     };
 
     (scenario, run_config)

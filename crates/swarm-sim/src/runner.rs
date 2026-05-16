@@ -23,6 +23,13 @@ pub struct DynamicTaskEvent {
 }
 
 #[derive(Clone, Debug)]
+pub struct PartitionEvent {
+    pub at_tick: u64,
+    pub until_tick: Option<u64>,
+    pub agents: (AgentId, AgentId),
+}
+
+#[derive(Clone, Debug)]
 pub struct RunConfig {
     pub max_ticks: u64,
     pub timeout_ticks: u64,
@@ -31,6 +38,8 @@ pub struct RunConfig {
     pub latency_ticks: u64,
     pub failures: Vec<FailureEvent>,
     pub dynamic_tasks: Vec<DynamicTaskEvent>,
+    pub partition_events: Vec<PartitionEvent>,
+    pub gossip_interval_ticks: u64,
 }
 
 pub struct ScenarioRunner;
@@ -50,6 +59,7 @@ impl ScenarioRunner {
             packet_loss_rate: config.packet_loss_rate,
             latency_ticks: config.latency_ticks,
             seed: scenario.seed,
+            partitions: HashSet::new(),
         })));
 
         let agent_ids: Vec<AgentId> = scenario.agents.iter().map(|a| a.id.clone()).collect();
@@ -69,10 +79,9 @@ impl ScenarioRunner {
                     scenario.tasks.clone(),
                     config.timeout_ticks,
                 );
-                (
-                    AgentNode::new(agent.id.clone(), peer_ids, coordinator, transport),
-                    agent.id.clone(),
-                )
+                let mut node = AgentNode::new(agent.id.clone(), peer_ids, coordinator, transport);
+                node.gossip_interval_ticks = config.gossip_interval_ticks;
+                (node, agent.id.clone())
             })
             .collect();
 
@@ -93,6 +102,12 @@ impl ScenarioRunner {
         let mut tasks_injected: u64 = 0;
         let mut tasks_expired: u64 = 0;
         let mut conflicting_assignments: u64 = 0;
+        let mut stale_messages_discarded: u64 = 0;
+        let mut partition_events: u64 = 0;
+        let mut partitions_active: bool = false;
+        let mut convergence_ticks: Option<u64> = None;
+        let mut heal_tick: Option<u64> = None;
+        let mut max_view_divergence: u64 = 0;
 
         for _ in 0..config.max_ticks {
             clock.advance();
@@ -109,6 +124,21 @@ impl ScenarioRunner {
 
             bus.borrow_mut().advance_tick();
 
+            // Apply partition events
+            for pe in &config.partition_events {
+                if pe.at_tick == current_tick {
+                    bus.borrow_mut()
+                        .add_partition(pe.agents.0.clone(), pe.agents.1.clone());
+                    partition_events += 1;
+                    partitions_active = true;
+                }
+                if pe.until_tick == Some(current_tick) {
+                    bus.borrow_mut()
+                        .remove_partition(pe.agents.0.clone(), pe.agents.1.clone());
+                    heal_tick = Some(current_tick);
+                }
+            }
+
             let injected: Vec<Task> = config
                 .dynamic_tasks
                 .iter()
@@ -122,7 +152,7 @@ impl ScenarioRunner {
                 if crashed_agents.contains(agent_id) {
                     continue;
                 }
-                let _ = node.send_heartbeats();
+                let _ = node.send_heartbeats(current_tick);
             }
 
             // Phase 2: All alive agents poll and process (uses AgentNode method)
@@ -146,6 +176,7 @@ impl ScenarioRunner {
             // Aggregate outputs across all agents
             for (_agent_id, output) in &tick_outputs {
                 conflicting_assignments += output.conflicting_assignments;
+                stale_messages_discarded += output.discarded_messages;
 
                 if detection_time_ticks.is_none() && !output.newly_failed.is_empty() {
                     let first_failure_tick = output
@@ -166,6 +197,30 @@ impl ScenarioRunner {
                 .iter()
                 .find(|(_, id)| !crashed_agents.contains(id))
                 .map(|(_, id)| id.clone());
+
+            // Track view divergence and convergence
+            let maps: Vec<HashMap<TaskId, AgentId>> = nodes
+                .iter()
+                .filter(|(_, id)| !crashed_agents.contains(id))
+                .map(|(node, _)| {
+                    node.coordinator
+                        .registry
+                        .tasks()
+                        .filter_map(|t| t.assigned_to.clone().map(|a| (t.id.clone(), a)))
+                        .collect::<HashMap<_, _>>()
+                })
+                .collect();
+            if !maps.is_empty() {
+                let reference = &maps[0];
+                let diverged = maps.iter().filter(|m| *m != reference).count() as u64;
+                max_view_divergence = max_view_divergence.max(diverged);
+
+                if let Some(heal_at) = heal_tick {
+                    if current_tick > heal_at && diverged == 0 && convergence_ticks.is_none() {
+                        convergence_ticks = Some(current_tick - heal_at);
+                    }
+                }
+            }
 
             // Count expired tasks from first agent only (replicated state)
             if let Some(ref target_id) = first_id {
@@ -210,6 +265,17 @@ impl ScenarioRunner {
                 .dynamic_tasks
                 .iter()
                 .all(|ev| current_tick >= ev.at_tick);
+            let all_partitions_resolved = config
+                .partition_events
+                .iter()
+                .all(|pe| pe.until_tick.is_some_and(|u| current_tick >= u));
+            // Don't break early while partitions are still pending
+            let post_partition_converged = if all_partitions_resolved {
+                convergence_ticks.is_some() || max_view_divergence == 0
+            } else {
+                // Partitions are pending — keep running
+                false
+            };
             let all_tasks_assigned = nodes
                 .iter()
                 .find(|(_, id)| !crashed_agents.contains(id))
@@ -220,6 +286,7 @@ impl ScenarioRunner {
                 && all_failure_ticks_passed
                 && all_expected_failures_detected
                 && all_dynamic_tasks_injected
+                && post_partition_converged
             {
                 break;
             }
@@ -254,6 +321,11 @@ impl ScenarioRunner {
             tasks_injected,
             tasks_expired,
             conflicting_assignments,
+            partition_events,
+            partitions_active,
+            stale_messages_discarded,
+            convergence_ticks,
+            max_view_divergence,
         }
     }
 }
@@ -305,6 +377,7 @@ mod tests {
                 capabilities: Vec::new(),
                 current_task: None,
                 battery: 100.0,
+                generation: 1,
             })
             .collect();
         let tasks = (0..task_count)
@@ -336,6 +409,8 @@ mod tests {
             latency_ticks: 0,
             failures,
             dynamic_tasks: vec![],
+            partition_events: vec![],
+            gossip_interval_ticks: 999,
         }
     }
 

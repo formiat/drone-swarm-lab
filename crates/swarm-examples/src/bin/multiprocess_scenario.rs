@@ -44,6 +44,7 @@ fn make_agent(id: &str) -> Agent {
         capabilities: vec![Capability::from("basic".to_owned())],
         current_task: None,
         battery: 100.0,
+        generation: 1,
     }
 }
 

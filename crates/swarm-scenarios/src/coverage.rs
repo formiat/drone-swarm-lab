@@ -32,6 +32,7 @@ pub fn build_coverage_scenario(config: &CoverageConfig) -> (Scenario, RunConfig)
             capabilities: Vec::new(),
             current_task: None,
             battery: 100.0,
+            generation: 1,
         })
         .collect();
 
@@ -76,6 +77,8 @@ pub fn build_coverage_scenario(config: &CoverageConfig) -> (Scenario, RunConfig)
             at_tick: config.failure_tick,
         }],
         dynamic_tasks: vec![],
+        partition_events: vec![],
+        gossip_interval_ticks: 999,
     };
 
     (scenario, run_config)

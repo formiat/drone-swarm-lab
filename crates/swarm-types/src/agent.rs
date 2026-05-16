@@ -71,6 +71,8 @@ pub struct Agent {
     pub current_task: Option<TaskId>,
     /// Remaining battery level (0.0..=100.0). Static in Milestone 2; drain modelled in v0.3+.
     pub battery: f64,
+    /// Generation (epoch). Incremented on restart. Heartbeats with lower generation are discarded.
+    pub generation: u64,
 }
 
 #[cfg(test)]
@@ -86,6 +88,7 @@ mod tests {
             capabilities: Vec::new(),
             current_task: None,
             battery: 100.0,
+            generation: 1,
         }
     }
 

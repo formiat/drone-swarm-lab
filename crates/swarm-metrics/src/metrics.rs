@@ -13,12 +13,14 @@ pub struct RunMetrics {
     pub max_task_unassigned_ticks: u64,
     pub all_tasks_assigned: bool,
     pub success: bool,
-    /// Number of tasks injected dynamically during the run.
     pub tasks_injected: u64,
-    /// Number of tasks removed due to expiration during the run.
     pub tasks_expired: u64,
-    /// Total conflicting assignment decisions rejected across all ticks (from DRONE_A.1.md metric).
     pub conflicting_assignments: u64,
+    pub partition_events: u64,
+    pub partitions_active: bool,
+    pub stale_messages_discarded: u64,
+    pub convergence_ticks: Option<u64>,
+    pub max_view_divergence: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -135,6 +137,11 @@ mod tests {
             tasks_injected: 0,
             tasks_expired: 0,
             conflicting_assignments: 0,
+            partition_events: 0,
+            partitions_active: false,
+            stale_messages_discarded: 0,
+            convergence_ticks: None,
+            max_view_divergence: 0,
         }
     }
 

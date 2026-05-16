@@ -8,9 +8,9 @@ pub struct AgentEntry {
     pub health: Health,
     pub capabilities: Vec<Capability>,
     pub last_heartbeat_tick: u64,
-    /// Remaining battery level (0.0..=100.0).
     pub battery: f64,
     pub pose: Pose,
+    pub generation: u64,
 }
 
 pub struct MembershipView {
@@ -32,6 +32,7 @@ impl MembershipView {
                         last_heartbeat_tick: 0,
                         battery: agent.battery,
                         pose: agent.pose,
+                        generation: agent.generation,
                     },
                 )
             })
@@ -39,10 +40,44 @@ impl MembershipView {
         Self { agents }
     }
 
-    pub fn record_heartbeat(&mut self, agent_id: &AgentId, tick: u64) {
-        if let Some(entry) = self.agents.get_mut(agent_id) {
-            entry.last_heartbeat_tick = tick;
-            tracing::debug!(agent_id = %agent_id, "heartbeat recorded");
+    pub fn record_heartbeat(&mut self, agent_id: &AgentId, sender_tick: u64, generation: u64) {
+        let Some(entry) = self.agents.get_mut(agent_id) else {
+            return;
+        };
+
+        if generation < entry.generation {
+            tracing::debug!(
+                agent_id = %agent_id,
+                generation,
+                local_gen = entry.generation,
+                "stale heartbeat ignored (old generation)"
+            );
+            return;
+        }
+
+        if generation > entry.generation {
+            entry.generation = generation;
+            entry.last_heartbeat_tick = sender_tick;
+            if entry.health != Health::Alive {
+                entry.health = Health::Alive;
+            }
+            tracing::debug!(agent_id = %agent_id, generation, "heartbeat recorded (new generation)");
+            return;
+        }
+
+        if sender_tick > entry.last_heartbeat_tick {
+            entry.last_heartbeat_tick = sender_tick;
+            if entry.health != Health::Alive {
+                entry.health = Health::Alive;
+            }
+            tracing::debug!(agent_id = %agent_id, sender_tick, "heartbeat recorded");
+        } else {
+            tracing::debug!(
+                agent_id = %agent_id,
+                sender_tick,
+                local_tick = entry.last_heartbeat_tick,
+                "stale heartbeat ignored (old tick)"
+            );
         }
     }
 
@@ -67,6 +102,14 @@ impl MembershipView {
         self.get(agent_id)
             .is_some_and(|entry| entry.health == Health::Alive)
     }
+
+    pub fn generation_of(&self, agent_id: &AgentId) -> u64 {
+        self.get(agent_id).map(|e| e.generation).unwrap_or(0)
+    }
+
+    pub fn all_generations(&self) -> impl Iterator<Item = (&AgentId, u64)> {
+        self.agents.iter().map(|(id, e)| (id, e.generation))
+    }
 }
 
 #[cfg(test)]
@@ -82,6 +125,7 @@ mod tests {
             capabilities: Vec::new(),
             current_task: None,
             battery: 100.0,
+            generation: 1,
         }
     }
 
@@ -90,9 +134,54 @@ mod tests {
         let mut view = MembershipView::new(vec![agent("agent-0")]);
         let id = AgentId::from("agent-0".to_owned());
 
-        view.record_heartbeat(&id, 42);
+        view.record_heartbeat(&id, 42, 1);
 
         assert_eq!(view.get(&id).unwrap().last_heartbeat_tick, 42);
+    }
+
+    #[test]
+    fn stale_heartbeat_with_lower_generation_is_ignored() {
+        let mut view = MembershipView::new(vec![agent("agent-0")]);
+        let id = AgentId::from("agent-0".to_owned());
+        view.record_heartbeat(&id, 42, 2);
+
+        view.record_heartbeat(&id, 99, 1);
+
+        assert_eq!(view.get(&id).unwrap().last_heartbeat_tick, 42);
+    }
+
+    #[test]
+    fn stale_heartbeat_with_old_tick_ignored() {
+        let mut view = MembershipView::new(vec![agent("agent-0")]);
+        let id = AgentId::from("agent-0".to_owned());
+        view.record_heartbeat(&id, 10, 1);
+
+        view.record_heartbeat(&id, 5, 1);
+
+        assert_eq!(view.get(&id).unwrap().last_heartbeat_tick, 10);
+    }
+
+    #[test]
+    fn fresh_heartbeat_with_higher_generation_updates() {
+        let mut view = MembershipView::new(vec![agent("agent-0")]);
+        let id = AgentId::from("agent-0".to_owned());
+        view.record_heartbeat(&id, 5, 1);
+
+        view.record_heartbeat(&id, 20, 2);
+
+        let e = view.get(&id).unwrap();
+        assert_eq!(e.last_heartbeat_tick, 20);
+        assert_eq!(e.generation, 2);
+    }
+
+    #[test]
+    fn heartbeat_idempotent_same_tick_same_gen() {
+        let mut view = MembershipView::new(vec![agent("agent-0")]);
+        let id = AgentId::from("agent-0".to_owned());
+        view.record_heartbeat(&id, 7, 1);
+        view.record_heartbeat(&id, 7, 1);
+
+        assert_eq!(view.get(&id).unwrap().last_heartbeat_tick, 7);
     }
 
     #[test]

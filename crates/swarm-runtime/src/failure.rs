@@ -44,6 +44,7 @@ mod tests {
             capabilities: Vec::new(),
             current_task: None,
             battery: 100.0,
+            generation: 1,
         }
     }
 
@@ -51,7 +52,7 @@ mod tests {
     fn detector_no_timeout_with_recent_hb() {
         let mut view = MembershipView::new(vec![agent("agent-0")]);
         let id = AgentId::from("agent-0".to_owned());
-        view.record_heartbeat(&id, 5);
+        view.record_heartbeat(&id, 5, 1);
         let detector = FailureDetector::new(3);
 
         assert!(detector.detect(&view, 7).is_empty());

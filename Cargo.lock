@@ -319,6 +319,8 @@ version = "0.1.0"
 name = "swarm-runtime"
 version = "0.1.0"
 dependencies = [
+ "serde",
+ "serde_json",
  "swarm-alloc",
  "swarm-comms",
  "swarm-types",

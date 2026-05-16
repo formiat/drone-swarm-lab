@@ -31,7 +31,7 @@ impl Coordinator {
 
     pub fn process_tick(
         &mut self,
-        heartbeat_senders: Vec<AgentId>,
+        _heartbeat_senders: Vec<AgentId>,
         current_tick: u64,
         injected_tasks: Vec<Task>,
     ) -> CoordinatorOutput {
@@ -40,9 +40,9 @@ impl Coordinator {
             self.registry.insert(task);
         }
 
-        for agent_id in heartbeat_senders {
-            self.membership.record_heartbeat(&agent_id, current_tick);
-        }
+        // Heartbeats are already recorded via MembershipView::record_heartbeat
+        // by the dispatch loop in AgentNode. Coordinator only detects failures
+        // and expires tasks.
 
         let newly_failed = self.detector.detect(&self.membership, current_tick);
         let mut released_tasks = Vec::new();
@@ -76,6 +76,7 @@ mod tests {
             capabilities: vec![],
             current_task: None,
             battery: 100.0,
+            generation: 1,
         }
     }
 

@@ -25,6 +25,16 @@ Swarm Coordination Runtime is a Rust workspace for mission-level coordination of
 - Multiprocess scenario: 5 OS-processes communicating via UDP loopback; `kill -9` one agent, rest detect failure and reallocate tasks.
 - Basic observability via `tracing` spans in `swarm-runtime` and `swarm-alloc`. Configure with `RUST_LOG`.
 
+**Milestone 4** — complete. Partial connectivity, gossip-based convergence:
+
+- `RuntimeMessage` typed protocol: heartbeat (with sender_tick and generation) + gossip/anti-entropy (full task→agent + agent→generation maps).
+- Network partitions via `InMemNetwork::add_partition`/`remove_partition` — configurable agent-pair blocks.
+- Stale heartbeat protection: `generation` (epoch) per agent; `record_heartbeat` ignores lower generation and old sender tick.
+- Gossip/anti-entropy sync: agents periodically exchange assignment maps + generation maps; deterministic merge via `(generation, AgentId)` total order guarantees convergence after partition heals.
+- Duplicate/delayed/reordered message handling: heartbeat is idempotent, gossip is commutative (applies in any order).
+- New metrics: `partition_events`, `partitions_active`, `stale_messages_discarded`, `convergence_ticks`, `max_view_divergence`.
+- Partition scenario: 6 agents, tick 10 partition into two groups, tick 30 heal, gossip converges after heal.
+
 ## Workspace Layout
 
 | Crate | Purpose |
@@ -73,6 +83,12 @@ Run the Milestone 3 multiprocess scenario (5 agents over UDP loopback, crash tes
 cargo run -p swarm-examples --bin multiprocess_scenario
 ```
 
+Run the Milestone 4 partition + convergence scenario (6 agents, in-process):
+
+```bash
+cargo run -p swarm-examples --bin partition_scenario
+```
+
 Enable tracing for observability:
 
 ```bash
@@ -112,3 +128,11 @@ Exits with code `1` if either strategy has `success_rate < 0.95`.
 - All 8 tasks are assigned.
 
 Prints `PASS` on success, exits code `0`; reports violations with `FAIL` and exits code `1`.
+
+`partition_scenario` runs a deterministic in-process partition scenario: 6 agents, 8 tasks, full connectivity until tick 10, then partition (agent-0,1,2 isolated from agent-3,4,5), heal at tick 30, gossip interval every 3 ticks. Verifies:
+- Partition was active (`partitions_active: true`).
+- Views diverge during partition (`max_view_divergence > 0`).
+- Maps converge after heal (`convergence_ticks` is set).
+- All tasks assigned (`success: true`).
+
+Prints metrics and exits code `0` on success; panics on invariant violation.
