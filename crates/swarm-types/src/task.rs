@@ -1,7 +1,8 @@
 use derive_more::{AsRef, Deref, DerefMut, Display, From, Into};
 use serde::{Deserialize, Serialize};
 
-use crate::agent::AgentId;
+use crate::agent::{AgentId, Capability, Role};
+use crate::pose::Pose;
 
 /// Unique identifier for a mission task.
 #[derive(
@@ -39,11 +40,32 @@ pub struct Task {
     pub status: TaskStatus,
     pub assigned_to: Option<AgentId>,
     pub priority: u8,
+    /// Hard constraint: agent must hold all listed capabilities to be assigned this task.
+    pub required_capabilities: Vec<Capability>,
+    /// Soft constraint: agent matching this role gets a cost bonus.
+    pub preferred_role: Option<Role>,
+    /// Task expires (is removed) when the simulation tick reaches this value.
+    pub expires_at: Option<u64>,
+    /// Geographic position of the task used in the distance cost function.
+    pub pose: Option<Pose>,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn task(id: &str) -> Task {
+        Task {
+            id: TaskId::from(id.to_owned()),
+            status: TaskStatus::Unassigned,
+            assigned_to: None,
+            priority: 1,
+            required_capabilities: vec![],
+            preferred_role: None,
+            expires_at: None,
+            pose: None,
+        }
+    }
 
     #[test]
     fn task_id_newtype_roundtrip() {
@@ -55,5 +77,21 @@ mod tests {
     fn task_status_serde_snake_case() {
         let json = serde_json::to_string(&TaskStatus::Unassigned).unwrap();
         assert_eq!(json, r#""unassigned""#);
+    }
+
+    #[test]
+    fn task_required_capabilities_serde() {
+        let mut t = task("t");
+        t.required_capabilities = vec![Capability::from("thermal".to_owned())];
+        let json = serde_json::to_string(&t).unwrap();
+        assert!(json.contains("thermal"));
+    }
+
+    #[test]
+    fn task_expires_at_serde() {
+        let mut t = task("t");
+        t.expires_at = Some(42);
+        let json = serde_json::to_string(&t).unwrap();
+        assert!(json.contains("42"));
     }
 }

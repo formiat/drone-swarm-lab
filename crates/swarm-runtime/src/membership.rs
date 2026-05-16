@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use swarm_types::{Agent, AgentId, Capability, Health, Role};
+use swarm_types::{Agent, AgentId, Capability, Health, Pose, Role};
 
 #[derive(Clone, Debug)]
 pub struct AgentEntry {
@@ -8,9 +8,13 @@ pub struct AgentEntry {
     pub health: Health,
     pub capabilities: Vec<Capability>,
     pub last_heartbeat_tick: u64,
+    /// Remaining battery level (0.0..=100.0).
+    pub battery: f64,
+    pub pose: Pose,
 }
 
 pub struct MembershipView {
+    /// key: `agent_id`
     agents: HashMap<AgentId, AgentEntry>,
 }
 
@@ -26,6 +30,8 @@ impl MembershipView {
                         health: agent.health,
                         capabilities: agent.capabilities,
                         last_heartbeat_tick: 0,
+                        battery: agent.battery,
+                        pose: agent.pose,
                     },
                 )
             })
@@ -64,7 +70,6 @@ impl MembershipView {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use swarm_types::Pose;
 
     fn agent(id: &str) -> Agent {
         Agent {
@@ -74,6 +79,7 @@ mod tests {
             pose: Pose { x: 0.0, y: 0.0 },
             capabilities: Vec::new(),
             current_task: None,
+            battery: 100.0,
         }
     }
 
@@ -105,5 +111,18 @@ mod tests {
         let alive: Vec<_> = view.alive_agents().map(|(id, _)| id.to_string()).collect();
 
         assert_eq!(alive, vec!["agent-0"]);
+    }
+
+    #[test]
+    fn membership_entry_has_battery_and_pose() {
+        let mut a = agent("a0");
+        a.battery = 50.0;
+        a.pose = Pose { x: 1.0, y: 2.0 };
+        let view = MembershipView::new(vec![a]);
+        let id = AgentId::from("a0".to_owned());
+        let entry = view.get(&id).unwrap();
+        assert_eq!(entry.battery, 50.0);
+        assert_eq!(entry.pose.x, 1.0);
+        assert_eq!(entry.pose.y, 2.0);
     }
 }

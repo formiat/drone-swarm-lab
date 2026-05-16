@@ -5,6 +5,7 @@ use swarm_types::{AgentId, Task, TaskId, TaskStatus};
 use crate::RuntimeError;
 
 pub struct TaskRegistry {
+    /// key: `task_id`
     tasks: HashMap<TaskId, Task>,
 }
 
@@ -16,6 +17,11 @@ impl TaskRegistry {
                 .map(|task| (task.id.clone(), task))
                 .collect(),
         }
+    }
+
+    /// Insert a task dynamically (e.g. via dynamic injection at runtime).
+    pub fn insert(&mut self, task: Task) {
+        self.tasks.insert(task.id.clone(), task);
     }
 
     pub fn assign(&mut self, task_id: &TaskId, agent_id: AgentId) -> Result<(), RuntimeError> {
@@ -59,6 +65,26 @@ impl TaskRegistry {
             }
         }
         released
+    }
+
+    /// Remove tasks whose expires_at <= current_tick. Returns expired TaskIds.
+    ///
+    /// Expiration rule (Milestone 2): only Unassigned and Assigned tasks expire.
+    /// InProgress tasks are never expired — the agent is actively working on them.
+    pub fn expire_tasks(&mut self, current_tick: u64) -> Vec<TaskId> {
+        let expired: Vec<TaskId> = self
+            .tasks
+            .values()
+            .filter(|task| {
+                task.expires_at.is_some_and(|t| t <= current_tick)
+                    && task.status != TaskStatus::InProgress
+            })
+            .map(|task| task.id.clone())
+            .collect();
+        for id in &expired {
+            self.tasks.remove(id);
+        }
+        expired
     }
 
     pub fn unassigned(&self) -> Vec<&Task> {
@@ -113,6 +139,17 @@ mod tests {
             status: TaskStatus::Unassigned,
             assigned_to: None,
             priority: 1,
+            required_capabilities: vec![],
+            preferred_role: None,
+            expires_at: None,
+            pose: None,
+        }
+    }
+
+    fn task_expiring(id: &str, expires_at: u64) -> Task {
+        Task {
+            expires_at: Some(expires_at),
+            ..task(id)
         }
     }
 
@@ -182,5 +219,63 @@ mod tests {
             .unwrap();
 
         assert!(registry.all_assigned_or_completed());
+    }
+
+    #[test]
+    fn task_registry_expire_at_tick() {
+        let mut registry = TaskRegistry::new(vec![task_expiring("t0", 5)]);
+        let expired = registry.expire_tasks(5);
+        assert_eq!(expired, vec![TaskId::from("t0".to_owned())]);
+        assert_eq!(registry.tasks().count(), 0);
+    }
+
+    #[test]
+    fn task_registry_expire_keeps_not_due() {
+        let mut registry = TaskRegistry::new(vec![task_expiring("t0", 10)]);
+        let expired = registry.expire_tasks(5);
+        assert!(expired.is_empty());
+        assert_eq!(registry.tasks().count(), 1);
+    }
+
+    #[test]
+    fn task_registry_expire_assigned_task() {
+        let task_id = TaskId::from("t0".to_owned());
+        let mut registry = TaskRegistry::new(vec![task_expiring("t0", 5)]);
+        registry
+            .assign(&task_id, AgentId::from("a0".to_owned()))
+            .unwrap();
+
+        let expired = registry.expire_tasks(5);
+        assert_eq!(expired.len(), 1);
+        assert_eq!(registry.tasks().count(), 0);
+    }
+
+    #[test]
+    fn task_registry_expire_skips_in_progress() {
+        let task_id = TaskId::from("t0".to_owned());
+        let mut registry = TaskRegistry::new(vec![task_expiring("t0", 5)]);
+        registry
+            .assign(&task_id, AgentId::from("a0".to_owned()))
+            .unwrap();
+        registry.start(&task_id).unwrap();
+
+        let expired = registry.expire_tasks(5);
+        assert!(expired.is_empty());
+        assert_eq!(registry.tasks().count(), 1);
+    }
+
+    #[test]
+    fn task_registry_second_assign_returns_err() {
+        let task_id = TaskId::from("t0".to_owned());
+        let mut registry = TaskRegistry::new(vec![task("t0")]);
+        registry
+            .assign(&task_id, AgentId::from("a0".to_owned()))
+            .unwrap();
+        registry.start(&task_id).unwrap();
+
+        assert!(matches!(
+            registry.assign(&task_id, AgentId::from("a1".to_owned())),
+            Err(RuntimeError::InvalidTransition { .. })
+        ));
     }
 }

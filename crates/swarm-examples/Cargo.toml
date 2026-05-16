@@ -11,7 +11,12 @@ path = "src/bin/empty_scenario.rs"
 name = "coverage_with_failure"
 path = "src/bin/coverage_with_failure.rs"
 
+[[bin]]
+name = "dynamic_auction"
+path = "src/bin/dynamic_auction.rs"
+
 [dependencies]
+swarm-alloc = { workspace = true }
 swarm-metrics = { workspace = true }
 swarm-scenarios = { workspace = true }
 swarm-sim = { workspace = true }

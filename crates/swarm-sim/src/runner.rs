@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use swarm_alloc::{Allocator, GreedyAllocator};
+use swarm_alloc::{AllocationAgent, AllocationTask, Allocator, GreedyAllocator};
 use swarm_comms::{InMemNetwork, NetworkConfig, RawMessage, Transport};
 use swarm_metrics::RunMetrics;
 use swarm_runtime::Coordinator;
@@ -15,6 +15,12 @@ pub struct FailureEvent {
 }
 
 #[derive(Clone, Debug)]
+pub struct DynamicTaskEvent {
+    pub at_tick: u64,
+    pub task: Task,
+}
+
+#[derive(Clone, Debug)]
 pub struct RunConfig {
     pub max_ticks: u64,
     pub timeout_ticks: u64,
@@ -22,12 +28,21 @@ pub struct RunConfig {
     pub packet_loss_rate: f64,
     pub latency_ticks: u64,
     pub failures: Vec<FailureEvent>,
+    pub dynamic_tasks: Vec<DynamicTaskEvent>,
 }
 
 pub struct ScenarioRunner;
 
 impl ScenarioRunner {
     pub fn run(scenario: &Scenario, config: RunConfig) -> RunMetrics {
+        Self::run_with(scenario, config, GreedyAllocator)
+    }
+
+    pub fn run_with<A: Allocator>(
+        scenario: &Scenario,
+        config: RunConfig,
+        allocator: A,
+    ) -> RunMetrics {
         let mut network = InMemNetwork::new(NetworkConfig {
             packet_loss_rate: config.packet_loss_rate,
             latency_ticks: config.latency_ticks,
@@ -38,7 +53,6 @@ impl ScenarioRunner {
             scenario.tasks.clone(),
             config.timeout_ticks,
         );
-        let allocator = GreedyAllocator;
         let mut clock = Clock::new(1);
         let coordinator_id = AgentId::from("coordinator".to_owned());
         let failure_ticks: HashMap<AgentId, u64> = config
@@ -54,8 +68,11 @@ impl ScenarioRunner {
         let mut detection_tick = None;
         let mut reallocation_time_ticks = None;
         let mut total_ticks = 0;
+        let mut tasks_injected: u64 = 0;
+        let mut tasks_expired: u64 = 0;
+        let mut conflicting_assignments: u64 = 0;
 
-        allocate_unassigned(&mut coordinator, &allocator);
+        conflicting_assignments += allocate_unassigned(&mut coordinator, &allocator);
 
         for _ in 0..config.max_ticks {
             clock.advance();
@@ -95,7 +112,17 @@ impl ScenarioRunner {
                 .map(AgentId::from)
                 .collect();
 
-            let output = coordinator.process_tick(heartbeat_senders, current_tick);
+            let injected: Vec<Task> = config
+                .dynamic_tasks
+                .iter()
+                .filter(|ev| ev.at_tick == current_tick)
+                .map(|ev| ev.task.clone())
+                .collect();
+            tasks_injected += injected.len() as u64;
+
+            let output = coordinator.process_tick(heartbeat_senders, current_tick, injected);
+
+            tasks_expired += output.expired_task_ids.len() as u64;
 
             if detection_time_ticks.is_none() && !output.newly_failed.is_empty() {
                 let first_failure_tick = output
@@ -116,8 +143,12 @@ impl ScenarioRunner {
                 max_task_unassigned_ticks,
             );
 
-            if !output.released_tasks.is_empty() || !coordinator.registry.unassigned().is_empty() {
-                allocate_unassigned(&mut coordinator, &allocator);
+            if !output.released_tasks.is_empty()
+                || !output.expired_task_ids.is_empty()
+                || !coordinator.registry.unassigned().is_empty()
+            {
+                let conflicts = allocate_unassigned(&mut coordinator, &allocator);
+                conflicting_assignments += conflicts;
                 if let Some(detected_at) = detection_tick {
                     if reallocation_time_ticks.is_none()
                         && released_tasks_reassigned(&coordinator, &output.released_tasks)
@@ -134,10 +165,15 @@ impl ScenarioRunner {
                 .failures
                 .iter()
                 .all(|failure| current_tick >= failure.at_tick);
+            let all_dynamic_tasks_injected = config
+                .dynamic_tasks
+                .iter()
+                .all(|ev| current_tick >= ev.at_tick);
             if coordinator.registry.all_assigned_or_completed()
                 && max_task_unassigned_ticks <= config.max_unassigned_ticks
                 && all_failure_ticks_passed
                 && all_expected_failures_detected
+                && all_dynamic_tasks_injected
             {
                 break;
             }
@@ -162,28 +198,53 @@ impl ScenarioRunner {
             max_task_unassigned_ticks,
             all_tasks_assigned,
             success,
+            tasks_injected,
+            tasks_expired,
+            conflicting_assignments,
         }
     }
 }
 
-fn allocate_unassigned(coordinator: &mut Coordinator, allocator: &GreedyAllocator) {
+/// Returns the number of conflicting assignment decisions in this allocation round.
+fn allocate_unassigned<A: Allocator>(coordinator: &mut Coordinator, allocator: &A) -> u64 {
     let tasks: Vec<Task> = coordinator
         .registry
         .unassigned()
         .into_iter()
         .cloned()
         .collect();
-    let task_refs: Vec<_> = tasks.iter().collect();
-    let agents: Vec<_> = coordinator
+    let allocation_tasks: Vec<AllocationTask<'_>> =
+        tasks.iter().map(|task| AllocationTask { task }).collect();
+
+    let agents: Vec<AllocationAgent> = coordinator
         .membership
         .alive_agents()
-        .map(|(agent_id, _)| agent_id.clone())
+        .map(|(id, entry)| AllocationAgent {
+            id: id.clone(),
+            pose: entry.pose,
+            battery: entry.battery,
+            capabilities: entry.capabilities.clone(),
+            role: entry.role.clone(),
+        })
         .collect();
-    let agent_refs: Vec<_> = agents.iter().collect();
 
-    for (task_id, agent_id) in allocator.allocate(&task_refs, &agent_refs) {
-        let _ = coordinator.registry.assign(&task_id, agent_id);
+    let decisions = allocator.allocate(&allocation_tasks, &agents);
+
+    // Deduplication pass: allocator must not produce two decisions for the same task.
+    let mut seen = HashSet::new();
+    let mut conflicts: u64 = 0;
+    for (task_id, agent_id) in decisions {
+        if !seen.insert(task_id.clone()) {
+            // Duplicate task_id from allocator output — first decision wins.
+            conflicts += 1;
+            continue;
+        }
+        if coordinator.registry.assign(&task_id, agent_id).is_err() {
+            // Task became non-assignable between unassigned() and assign() calls.
+            conflicts += 1;
+        }
     }
+    conflicts
 }
 
 fn update_unassigned_durations(
@@ -220,7 +281,8 @@ fn released_tasks_reassigned(coordinator: &Coordinator, released_tasks: &[TaskId
 #[cfg(test)]
 mod tests {
     use super::*;
-    use swarm_types::{Agent, Health, Pose, Role, Task, TaskStatus};
+    use swarm_alloc::{AllocationAgent, AllocationTask, Allocator};
+    use swarm_types::{Agent, Capability, Health, Pose, Role, Task, TaskStatus};
 
     fn scenario(seed: u64, agent_count: usize, task_count: usize) -> Scenario {
         let agents = (0..agent_count)
@@ -231,6 +293,7 @@ mod tests {
                 pose: Pose { x: 0.0, y: 0.0 },
                 capabilities: Vec::new(),
                 current_task: None,
+                battery: 100.0,
             })
             .collect();
         let tasks = (0..task_count)
@@ -239,6 +302,10 @@ mod tests {
                 status: TaskStatus::Unassigned,
                 assigned_to: None,
                 priority: 1,
+                required_capabilities: vec![],
+                preferred_role: None,
+                expires_at: None,
+                pose: None,
             })
             .collect();
         Scenario {
@@ -257,6 +324,7 @@ mod tests {
             packet_loss_rate: 0.0,
             latency_ticks: 0,
             failures,
+            dynamic_tasks: vec![],
         }
     }
 
@@ -313,5 +381,147 @@ mod tests {
 
         assert!(metrics.success);
         assert!(metrics.all_tasks_assigned);
+    }
+
+    #[test]
+    fn runner_dynamic_task_appears_and_gets_assigned() {
+        let s = scenario(0, 3, 0);
+        let dynamic_task = Task {
+            id: TaskId::from("dyn-0".to_owned()),
+            status: TaskStatus::Unassigned,
+            assigned_to: None,
+            priority: 1,
+            required_capabilities: vec![],
+            preferred_role: None,
+            expires_at: None,
+            pose: None,
+        };
+        let cfg = RunConfig {
+            dynamic_tasks: vec![DynamicTaskEvent {
+                at_tick: 2,
+                task: dynamic_task,
+            }],
+            ..config(vec![])
+        };
+        let metrics = ScenarioRunner::run(&s, cfg);
+        assert!(metrics.all_tasks_assigned);
+        assert_eq!(metrics.tasks_injected, 1);
+    }
+
+    #[test]
+    fn runner_expired_task_counted_in_metrics() {
+        let s = scenario(0, 3, 0);
+        let expiring_task = Task {
+            id: TaskId::from("exp-0".to_owned()),
+            status: TaskStatus::Unassigned,
+            assigned_to: None,
+            priority: 1,
+            required_capabilities: vec![Capability::from("missing".to_owned())],
+            preferred_role: None,
+            expires_at: Some(3),
+            pose: None,
+        };
+        let cfg = RunConfig {
+            dynamic_tasks: vec![DynamicTaskEvent {
+                at_tick: 1,
+                task: expiring_task,
+            }],
+            ..config(vec![])
+        };
+        let metrics = ScenarioRunner::run(&s, cfg);
+        assert_eq!(metrics.tasks_expired, 1);
+    }
+
+    #[test]
+    fn runner_greedy_deterministic_with_capabilities() {
+        let mut s = scenario(5, 4, 2);
+        s.agents[0].capabilities = vec![Capability::from("optical".to_owned())];
+        s.tasks[0].required_capabilities = vec![Capability::from("optical".to_owned())];
+
+        let cfg = config(vec![]);
+        let a = ScenarioRunner::run(&s, cfg.clone());
+        let b = ScenarioRunner::run(&s, cfg);
+
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn runner_auction_deterministic() {
+        use swarm_alloc::AuctionAllocator;
+        let s = scenario(9, 5, 4);
+        let cfg = config(vec![]);
+
+        let a = ScenarioRunner::run_with(&s, cfg.clone(), AuctionAllocator::default());
+        let b = ScenarioRunner::run_with(&s, cfg, AuctionAllocator::default());
+
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn runner_capability_gate_task_stays_unassigned() {
+        let s = scenario(0, 3, 0);
+        let impossible_task = Task {
+            id: TaskId::from("imp-0".to_owned()),
+            status: TaskStatus::Unassigned,
+            assigned_to: None,
+            priority: 1,
+            required_capabilities: vec![Capability::from("unobtainium".to_owned())],
+            preferred_role: None,
+            expires_at: None,
+            pose: None,
+        };
+        let cfg = RunConfig {
+            dynamic_tasks: vec![DynamicTaskEvent {
+                at_tick: 1,
+                task: impossible_task,
+            }],
+            ..config(vec![])
+        };
+        let metrics = ScenarioRunner::run(&s, cfg);
+        assert!(!metrics.all_tasks_assigned);
+    }
+
+    #[test]
+    fn runner_no_duplicate_ownership_invariant() {
+        let s = scenario(0, 5, 5);
+        let cfg = config(vec![]);
+        ScenarioRunner::run(&s, cfg);
+        // If there were duplicate ownership, task_registry.assign() would return Err,
+        // which is counted as a conflict — not a panic. The test verifies the run completes.
+    }
+
+    /// Stub allocator that returns the same task_id twice to trigger conflict detection.
+    struct DuplicateAllocator;
+
+    impl Allocator for DuplicateAllocator {
+        fn allocate(
+            &self,
+            tasks: &[AllocationTask<'_>],
+            agents: &[AllocationAgent],
+        ) -> Vec<(TaskId, AgentId)> {
+            if tasks.is_empty() || agents.is_empty() {
+                return vec![];
+            }
+            let task_id = tasks[0].task.id.clone();
+            let agent_id = agents[0].id.clone();
+            // Return same task_id twice — second is a conflict
+            vec![(task_id.clone(), agent_id.clone()), (task_id, agent_id)]
+        }
+    }
+
+    #[test]
+    fn runner_conflict_counter_in_metrics() {
+        let s = scenario(0, 2, 1);
+        let cfg = config(vec![]);
+        let metrics = ScenarioRunner::run_with(&s, cfg, DuplicateAllocator);
+        assert!(metrics.conflicting_assignments > 0);
+    }
+
+    #[test]
+    fn allocate_unassigned_counts_duplicate_allocator_output() {
+        let s = scenario(0, 2, 1);
+        let cfg = config(vec![]);
+        let metrics = ScenarioRunner::run_with(&s, cfg, DuplicateAllocator);
+        assert_eq!(metrics.conflicting_assignments, 1);
     }
 }

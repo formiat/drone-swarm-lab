@@ -6,6 +6,7 @@ use crate::{FailureDetector, MembershipView, TaskRegistry};
 pub struct CoordinatorOutput {
     pub newly_failed: Vec<AgentId>,
     pub released_tasks: Vec<TaskId>,
+    pub expired_task_ids: Vec<TaskId>,
 }
 
 pub struct Coordinator {
@@ -23,11 +24,21 @@ impl Coordinator {
         }
     }
 
+    /// Add a task dynamically at runtime.
+    pub fn inject_task(&mut self, task: Task) {
+        self.registry.insert(task);
+    }
+
     pub fn process_tick(
         &mut self,
         heartbeat_senders: Vec<AgentId>,
         current_tick: u64,
+        injected_tasks: Vec<Task>,
     ) -> CoordinatorOutput {
+        for task in injected_tasks {
+            self.registry.insert(task);
+        }
+
         for agent_id in heartbeat_senders {
             self.membership.record_heartbeat(&agent_id, current_tick);
         }
@@ -40,9 +51,66 @@ impl Coordinator {
             released_tasks.extend(self.registry.release_agent_tasks(agent_id));
         }
 
+        let expired_task_ids = self.registry.expire_tasks(current_tick);
+
         CoordinatorOutput {
             newly_failed,
             released_tasks,
+            expired_task_ids,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use swarm_types::{Health, Pose, Role, TaskStatus};
+
+    fn agent(id: &str) -> Agent {
+        Agent {
+            id: AgentId::from(id.to_owned()),
+            role: Role::Scout,
+            health: Health::Alive,
+            pose: Pose { x: 0.0, y: 0.0 },
+            capabilities: vec![],
+            current_task: None,
+            battery: 100.0,
+        }
+    }
+
+    fn task(id: &str) -> Task {
+        Task {
+            id: TaskId::from(id.to_owned()),
+            status: TaskStatus::Unassigned,
+            assigned_to: None,
+            priority: 1,
+            required_capabilities: vec![],
+            preferred_role: None,
+            expires_at: None,
+            pose: None,
+        }
+    }
+
+    #[test]
+    fn coordinator_inject_task() {
+        let mut coord = Coordinator::new(vec![agent("a0")], vec![], 5);
+        coord.inject_task(task("t0"));
+        assert_eq!(coord.registry.unassigned().len(), 1);
+    }
+
+    #[test]
+    fn coordinator_process_tick_injects() {
+        let mut coord = Coordinator::new(vec![agent("a0")], vec![], 5);
+        coord.process_tick(vec![], 1, vec![task("t0")]);
+        assert_eq!(coord.registry.unassigned().len(), 1);
+    }
+
+    #[test]
+    fn coordinator_output_has_expired_ids() {
+        let mut t = task("t0");
+        t.expires_at = Some(1);
+        let mut coord = Coordinator::new(vec![agent("a0")], vec![t], 5);
+        let out = coord.process_tick(vec![], 1, vec![]);
+        assert_eq!(out.expired_task_ids, vec![TaskId::from("t0".to_owned())]);
     }
 }

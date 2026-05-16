@@ -69,11 +69,25 @@ pub struct Agent {
     pub pose: Pose,
     pub capabilities: Vec<Capability>,
     pub current_task: Option<TaskId>,
+    /// Remaining battery level (0.0..=100.0). Static in Milestone 2; drain modelled in v0.3+.
+    pub battery: f64,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn agent(id: &str) -> Agent {
+        Agent {
+            id: AgentId::from(id.to_owned()),
+            role: Role::Scout,
+            health: Health::Alive,
+            pose: Pose { x: 0.0, y: 0.0 },
+            capabilities: Vec::new(),
+            current_task: None,
+            battery: 100.0,
+        }
+    }
 
     #[test]
     fn agent_id_newtype_roundtrip() {
@@ -91,5 +105,11 @@ mod tests {
     fn role_serde_snake_case() {
         let json = serde_json::to_string(&Role::Scout).unwrap();
         assert_eq!(json, r#""scout""#);
+    }
+
+    #[test]
+    fn agent_battery_default_100() {
+        let a = agent("x");
+        assert_eq!(a.battery, 100.0);
     }
 }

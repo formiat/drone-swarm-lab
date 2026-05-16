@@ -34,6 +34,7 @@ mod tests {
             pose: Pose { x: 0.0, y: 0.0 },
             capabilities: Vec::new(),
             current_task: None,
+            battery: 100.0,
         }
     }
 

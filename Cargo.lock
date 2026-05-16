@@ -204,6 +204,7 @@ dependencies = [
 name = "swarm-examples"
 version = "0.1.0"
 dependencies = [
+ "swarm-alloc",
  "swarm-metrics",
  "swarm-scenarios",
  "swarm-sim",

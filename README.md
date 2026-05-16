@@ -1,20 +1,21 @@
 # Swarm Coordination Runtime
 
-Swarm Coordination Runtime is a Rust workspace for mission-level coordination of autonomous drone fleets. The current code focuses on deterministic simulation, task ownership, heartbeat-based membership, failure detection, and measurable recovery behavior rather than low-level flight control.
+Swarm Coordination Runtime is a Rust workspace for mission-level coordination of autonomous drone fleets. The current code focuses on deterministic simulation, task ownership, heartbeat-based membership, failure detection, and measurable recovery behaviour rather than low-level flight control.
 
 ## Current Status
 
-Milestone 1 is implemented: the workspace now includes the first runnable coordination scenario, `Coverage With Failure`.
+**Milestone 1** — complete. Foundational coordination: heartbeat-based membership, timeout failure detection, task registry state machine, greedy reallocation, deterministic scenario runner, metrics.
 
-The project currently includes:
+**Milestone 2** — complete. Realistic task allocation:
 
-- foundational swarm types (`AgentId`, `TaskId`, `MessageId`, `Agent`, `Task`, `Pose`, `Velocity`);
-- a pluggable transport trait and in-memory simulated network;
-- membership, timeout-based failure detection, and task ownership state;
-- greedy task reallocation;
-- deterministic scenario execution;
-- metrics aggregation;
-- runnable examples.
+- Dynamic task injection at configurable ticks during a mission.
+- Task expiration: Unassigned and Assigned tasks are removed when their deadline passes. InProgress tasks are never expired.
+- Agent capability matching as a hard constraint: an agent that lacks a required capability is excluded from allocation.
+- Auction-based allocation (`AuctionAllocator`) with a cost function over Euclidean distance, battery level, and role preference.
+- Pluggable `Allocator` trait: `GreedyAllocator` and `AuctionAllocator` are both usable as drop-in strategies.
+- Ownership conflict detection: duplicate allocation decisions in one round are counted in metrics.
+- Extended metrics: `tasks_injected`, `tasks_expired`, `conflicting_assignments`.
+- Side-by-side comparison of Greedy vs Auction over 1 000 deterministic seeds.
 
 ## Workspace Layout
 
@@ -23,9 +24,9 @@ The project currently includes:
 | `swarm-types` | Shared IDs, agent/task/message types, pose and velocity. |
 | `swarm-comms` | Transport trait and in-memory network with latency and packet loss. |
 | `swarm-runtime` | Membership, failure detection, task registry, coordinator. |
-| `swarm-alloc` | Greedy allocation strategy for unassigned tasks. |
-| `swarm-sim` | Deterministic clock, scenario model, scenario runner. |
-| `swarm-scenarios` | Scenario builders such as Coverage With Failure. |
+| `swarm-alloc` | Greedy and auction allocation strategies. |
+| `swarm-sim` | Deterministic clock, scenario model, generic scenario runner. |
+| `swarm-scenarios` | Scenario builders: Coverage With Failure and Dynamic Auction. |
 | `swarm-metrics` | Per-run and aggregate metrics. |
 | `swarm-replay` | Placeholder for future replay support. |
 | `swarm-examples` | Runnable binaries. |
@@ -46,22 +47,39 @@ Run the baseline empty smoke example:
 cargo run -p swarm-examples --bin empty_scenario
 ```
 
-Run the Milestone 1 Coverage With Failure scenario:
+Run the Milestone 1 Coverage With Failure scenario (1 000 seeds):
 
 ```bash
 cargo run -p swarm-examples --bin coverage_with_failure
+```
+
+Run the Milestone 2 Dynamic Auction comparison (1 000 seeds × 2 strategies):
+
+```bash
+cargo run -p swarm-examples --bin dynamic_auction
 ```
 
 ## Observe Output
 
 `empty_scenario` advances a deterministic clock for 10 ticks and prints elapsed simulated time.
 
-`coverage_with_failure` runs 1000 deterministic seeds. Each run starts with 10 agents and 15 coverage tasks, crashes `agent-0`, detects the missed heartbeats through the failure detector, releases the failed agent's tasks, reallocates them, and reports aggregate metrics:
+`coverage_with_failure` runs 1 000 deterministic seeds with 10 agents and 15 tasks, crashes `agent-0`, detects the failure, reallocates tasks, and reports aggregate metrics. Exits with code `1` if `success_rate < 0.99`.
 
-- `success_rate`;
-- average failure detection ticks;
-- average reallocation ticks;
-- attempted messages;
-- dropped messages.
+`dynamic_auction` runs 1 000 seeds for both Greedy and Auction strategies using the Dynamic Auction scenario: 10 agents with heterogeneous capabilities and poses, 8 initial tasks with capability requirements, 10 tasks injected dynamically (each with a 15-tick expiry window), and 1 agent failure. Outputs side-by-side aggregate metrics:
 
-A successful run exits with code `0`. If the aggregate success rate drops below `0.99`, the example exits with code `1`.
+```
+=== greedy ===
+runs: 1000
+success_rate: 1.000
+avg_detection_ticks: ...
+avg_reallocation_ticks: ...
+avg_messages_attempted: ...
+avg_messages_dropped: ...
+avg_tasks_injected: 10.000
+avg_tasks_expired: ...
+avg_conflicting_assignments: 0.000
+=== auction ===
+...
+```
+
+Exits with code `1` if either strategy has `success_rate < 0.95`.

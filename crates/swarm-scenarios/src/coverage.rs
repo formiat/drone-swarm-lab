@@ -31,6 +31,7 @@ pub fn build_coverage_scenario(config: &CoverageConfig) -> (Scenario, RunConfig)
             pose: Pose { x: 0.0, y: 0.0 },
             capabilities: Vec::new(),
             current_task: None,
+            battery: 100.0,
         })
         .collect();
 
@@ -50,6 +51,10 @@ pub fn build_coverage_scenario(config: &CoverageConfig) -> (Scenario, RunConfig)
                 },
                 assigned_to,
                 priority: 1,
+                required_capabilities: vec![],
+                preferred_role: None,
+                expires_at: None,
+                pose: None,
             }
         })
         .collect();
@@ -70,6 +75,7 @@ pub fn build_coverage_scenario(config: &CoverageConfig) -> (Scenario, RunConfig)
             agent_id: AgentId::from("agent-0".to_owned()),
             at_tick: config.failure_tick,
         }],
+        dynamic_tasks: vec![],
     };
 
     (scenario, run_config)
