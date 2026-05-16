@@ -31,14 +31,15 @@
 | Crate | Изменения |
 | --- | --- |
 | `swarm-types` | `comms_range` у `Agent`; `required_role` у `Task`; новый тип `GroundNode`. |
-| `swarm-comms` | `ConnectivityModel` — граф связности по дальности; mesh reachability; интеграция в `InMemNetwork`. |
-| `swarm-alloc` | `ConnectivityAwareAllocator` — учитывает связность при назначении relay-задач. |
+| `swarm-comms` | `ConnectivityModel` — граф связности по дальности (ручной BFS); mesh reachability; интеграция в `InMemNetwork`. |
+| `swarm-alloc` | `ConnectivityAwareAllocator` — учитывает связность при назначении relay-задач; расширение `Allocator` trait методом `allocate_with_connectivity`. |
 | `swarm-runtime` | Поддержка `required_role` в `allocate_unassigned`; обработка relay-задач в `AgentNode`. |
 | `swarm-metrics` | `network_availability`, `relay_reallocation_ticks`, `avg_hop_count`, `disconnected_agents_max`. |
-| `swarm-sim` | `ScenarioRunner` собирает метрики связности на каждом тике. |
+| `swarm-sim` | `ScenarioRunner` обновляет позиции агентов по назначенным задачам и собирает метрики связности на каждом тике. |
 | `swarm-scenarios` | Новый builder: `emergency_mesh.rs` — сценарий с базой, ground nodes, scout и relay. |
 | `swarm-examples` | Новый бинарник `emergency_mesh_scenario.rs` — запускаемый reference scenario. |
 | `README.md` | Актуализация статуса, добавление описания Milestone 5 и примера запуска. |
+| `Cargo.toml` (root) | Без изменений: новый dependency не требуется (BFS на `Vec` + `HashMap`). |
 
 ## Implementation steps
 
@@ -70,25 +71,29 @@ pub struct GroundNode {
 
 **2.1.** Создать `crates/swarm-comms/src/connectivity.rs`:
 ```rust
+pub struct ConnectivitySnapshot {
+    pub agent_entries: Vec<(AgentId, Pose, f64, Health)>, // id, pose, comms_range, health
+    pub ground_nodes: Vec<(String, Pose, f64)>,          // id, pose, comms_range
+    pub base_id: String,
+    pub base_pose: Pose,
+}
+
 pub struct ConnectivityModel;
 impl ConnectivityModel {
     /// Прямая связь: distance(a, b) <= min(comms_range_a, comms_range_b)
     pub fn direct_link(a: &Pose, range_a: f64, b: &Pose, range_b: f64) -> bool;
-    
-    /// Построить граф связности по агентам + ground nodes + base.
-    pub fn build_graph(agents: &[Agent], ground_nodes: &[GroundNode], base: Option<&Pose>) -> Graph;
-    
-    /// Есть ли путь от base до target через живых агентов и ground nodes?
-    pub fn is_reachable(graph: &Graph, from: &str, to: &str) -> bool;
-    
-    /// Количество хопов кратчайшего пути (None = unreachable).
-    pub fn hop_count(graph: &Graph, from: &str, to: &str) -> Option<usize>;
-    
+
+    /// Построить adjacency list (HashMap<String, Vec<String>>) по снимку.
+    pub fn build_adjacency(snapshot: &ConnectivitySnapshot) -> HashMap<String, Vec<String>>;
+
+    /// BFS от base до всех достижимых узлов. Возвращает HashMap<node_id, hop_count>.
+    pub fn reachability_from_base(snapshot: &ConnectivitySnapshot) -> HashMap<String, usize>;
+
     /// Доля достижимых агентов от base = network availability.
-    pub fn availability_fraction(graph: &Graph, base_id: &str, agent_ids: &[AgentId]) -> f64;
+    pub fn availability_fraction(reachability: &HashMap<String, usize>, agent_ids: &[AgentId]) -> f64;
 }
 ```
-- Использовать `petgraph` (уже в `Cargo.toml` / `workspace.dependencies`).
+- Реализовать через ручной BFS на `VecDeque` + `HashMap` (adjacency list). Новый dependency не требуется (N ≤ 20, аллокаций `Vec` достаточно).
 
 **2.2.** Модифицировать `InMemNetwork` (`crates/swarm-comms/src/network.rs`):
 - Добавить `connectivity: Option<ConnectivitySnapshot>` — снимок позиций и дальностей на текущий тик.
@@ -107,16 +112,36 @@ impl ConnectivityModel {
 **3.2.** Расширить `AllocationTask`:
 - Добавить `task_kind: TaskKind` (или использовать `required_role`).
 
-**3.3.** Реализовать `ConnectivityAwareAllocator` (`crates/swarm-alloc/src/connectivity_aware.rs`):
+**3.3.** Расширить `Allocator` trait (`crates/swarm-alloc/src/allocator.rs`):
 ```rust
-pub struct ConnectivityAwareAllocator {
-    pub base_allocator: Box<dyn Allocator>,
-    pub weight_connectivity: f64, // бонус за улучшение связности
+pub struct ConnectivityContext {
+    pub snapshot: ConnectivitySnapshot,
+    pub base_id: AgentId,
+}
+
+pub trait Allocator {
+    fn allocate(
+        &self,
+        tasks: &[AllocationTask<'_>],
+        agents: &[AllocationAgent],
+    ) -> Vec<(TaskId, AgentId)>;
+
+    /// Новый метод для v0.5. Default-реализация делегирует `allocate`.
+    fn allocate_with_connectivity(
+        &self,
+        tasks: &[AllocationTask<'_>],
+        agents: &[AllocationAgent],
+        _connectivity: &ConnectivityContext,
+    ) -> Vec<(TaskId, AgentId)> {
+        self.allocate(tasks, agents)
+    }
 }
 ```
-- Для **relay-задач**: выбирать агента так, чтобы его позиция максимизировала число вновь достижимых узлов от base (центральность, покрытие "дыр" в связности).
-- Для **scout-задач**: стандартный auction/greedy cost, но с проверкой `required_role`.
-- Hard constraint `required_role` фильтрует до вычисления cost.
+- `GreedyAllocator` и `AuctionAllocator` используют default-реализацию (игнорируют connectivity).
+- `ConnectivityAwareAllocator` (`crates/swarm-alloc/src/connectivity_aware.rs`) реализует `allocate_with_connectivity`:
+  - Для **relay-задач**: среди relay-агентов выбирать того, чья позиция максимизирует число вновь достижимых узлов от base (симулируем назначение на каждого кандидата, строим reachability, выбираем лучший).
+  - Для **scout-задач**: стандартный auction/greedy cost.
+  - Hard constraint `required_role` фильтрует до вычисления cost.
 
 **3.4.** Обновить `has_all_capabilities` + добавить `has_required_role`:
 ```rust
@@ -126,15 +151,21 @@ fn has_required_role(agent: &AllocationAgent, required: &Option<Role>) -> bool {
 ```
 - Применять в `GreedyAllocator` и `AuctionAllocator` перед cost calculation.
 
-### Шаг 4. Runtime: учёт связности в AgentNode и ScenarioRunner
+### Шаг 4. Runtime: учёт связности, pose update, allocator call sites
 
 **4.1.** Модифицировать `AgentNode::send_heartbeats` (`crates/swarm-runtime/src/node.rs`):
-- Вместо отправки всем `peer_ids`, отправлять только достижимым соседям (direct links) или всем (broadcast через mesh, если сеть симулирует multi-hop на транспортном уровне).
-- Для простоты v0.5: heartbeats и gossip отправляются всем `peer_ids`, но `InMemNetwork` фильтрует недостижимые на основе `ConnectivityModel`. Это минимальное изменение в `node.rs`.
+- Heartbeats и gossip отправляются всем `peer_ids`, но `InMemNetwork` фильтрует недостижимые на основе `ConnectivityModel`. Это минимальное изменение в `node.rs`.
 
 **4.2.** Обновить `allocate_unassigned` (`crates/swarm-runtime/src/node.rs`):
 - Передавать `required_role` в фильтр capability/role.
 - Передавать `comms_range` в `AllocationAgent`.
+- Передавать `ConnectivityContext` в `allocator.allocate_with_connectivity(...)` вместо `allocate(...)`.
+
+**4.3.** Добавить pose update в `ScenarioRunner::run` (`crates/swarm-sim/src/runner.rs`):
+- После фазы allocation на каждом тике обновлять позиции живых агентов в `MembershipView`:
+  - Если агенту назначена задача с `pose: Some(target_pose)`, установить `agent.pose = target_pose` (мгновенное перемещение для целей миссионной симуляции уровня A).
+  - Это изменяет граф связности на следующем тике, что позволяет восстановить reachability после reallocation relay-задачи.
+- Обновлённые позиции сохраняются в `Coordinator.membership` и передаются в `ConnectivitySnapshot` на следующем тике.
 
 ### Шаг 5. Метрики сети
 
@@ -155,11 +186,19 @@ pub struct RunMetrics {
 - `avg_network_availability`, `avg_relay_reallocation_ticks`, `avg_avg_hop_count`, `avg_disconnected_agents_max`.
 
 **5.3.** В `ScenarioRunner::run` (`crates/swarm-sim/src/runner.rs`):
-- На каждом тике строить `ConnectivityModel`, вычислять:
-  - `availability_fraction` (доля агентов, достижимых от base).
-  - `hop_count` от base до каждого агента.
-  - `disconnected_count`.
-- Агрегировать по всем тикам для итоговых метрик.
+- На каждом тике:
+  1. Построить `ConnectivitySnapshot` из текущих позиций агентов в `MembershipView`.
+  2. Вычислить `reachability = ConnectivityModel::reachability_from_base(&snapshot)`.
+  3. `availability_fraction` = доля `agent_ids`, присутствующих в `reachability`.
+  4. `avg_hop_count_this_tick` = среднее hop_count по всем достижимым агентам.
+  5. `disconnected_count` = количество агентов, отсутствующих в `reachability`.
+  6. Сохранить `availability_fraction` в вектор `availability_per_tick` для построения time series.
+- `network_availability` (итоговая метрика) = среднее `availability_per_tick` по всем тикам.
+- `relay_reallocation_ticks`:
+  - `detection_tick` = тик, когда `FailureDetector` впервые пометил relay агента как failed (совпадает с `detection_time_ticks`, но фиксируется отдельно для relay).
+  - `reallocation_tick` = первый тик, на котором все relay-задачи, принадлежавшие мёртвому relay, назначены новому живому агенту (проверяется через `TaskRegistry` + `required_role: Some(Role::Relay)`).
+  - `relay_reallocation_ticks = reallocation_tick.saturating_sub(detection_tick)`.
+- `disconnected_agents_max` = максимум `disconnected_count` за всю симуляцию.
 
 ### Шаг 6. Emergency Mesh Scenario
 
@@ -234,6 +273,7 @@ cargo run -p swarm-examples --bin emergency_mesh_scenario
 | `allocator_required_role_blocks_scout` | `required_role: Some(Relay)` блокирует Scout-агента. | `swarm-alloc/src/allocator.rs` |
 | `allocator_required_role_allows_relay` | Relay-агент проходит фильтр для relay-задачи. | `swarm-alloc/src/allocator.rs` |
 | `connectivity_aware_prefers_relay_for_relay_task` | `ConnectivityAwareAllocator` назначает relay-задачу relay-агенту, а не scout. | `swarm-alloc/src/connectivity_aware.rs` |
+| `pose_update_changes_agent_position` | После назначения задачи с `pose` позиция агента в `MembershipView` обновляется. | `swarm-sim/src/runner.rs` |
 
 ### Category 2 — In-Process Async Simulation (основная среда)
 
@@ -241,7 +281,7 @@ cargo run -p swarm-examples --bin emergency_mesh_scenario
 | --- | --- | --- |
 | `emergency_mesh_base_reaches_all_via_relay` | Base достигает всех scouts через 2 relay; network_availability = 1.0. | `swarm-examples/src/bin/emergency_mesh_scenario.rs` (вызов из теста) |
 | `emergency_mesh_relay_death_causes_reallocation` | После гибели relay `relay_reallocation_ticks` задано, задачи переназначены. | `swarm-examples/src/bin/emergency_mesh_scenario.rs` |
-| `emergency_mesh_network_degrades_when_relay_lost` | При потере relay availability падает, затем восстанавливается после reallocation. | `swarm-examples/src/bin/emergency_mesh_scenario.rs` |
+| `emergency_mesh_network_degrades_when_relay_lost` | При потере relay availability падает, затем восстанавливается после reallocation + pose update нового relay. | `swarm-examples/src/bin/emergency_mesh_scenario.rs` |
 | `emergency_mesh_1000_seeds_invariant` | 1000 seeds, все проходят порог `network_availability >= 0.8`. | `swarm-examples/src/bin/emergency_mesh_scenario.rs` |
 | `partition_scenario_still_works` | Обратная совместимость: v0.4 partition scenario проходит без регрессий. | `swarm-examples/src/bin/partition_scenario.rs` |
 | `coverage_scenario_still_works` | v0.1 coverage scenario проходит без регрессий (comms_range по умолчанию = INF). | `swarm-examples/src/bin/coverage_with_failure.rs` |
@@ -259,21 +299,21 @@ cargo run -p swarm-examples --bin emergency_mesh_scenario
 1. **Обратная совместимость Task serde**: добавление `required_role` может сломать десериализацию старых JSON-конфигов агентов (если такие есть вне репозитория). Внутри репозитория все конструкторы обновляются.
    - Mitigation: `#[serde(default)]` на новых полях.
 
-2. **Производительность графа**: построение `petgraph` на каждом тике для N=20 агентов — O(N²), приемлемо. Для N>100 потребуется оптимизация (инкрементальное обновление графа).
+2. **Производительность графа**: построение adjacency list + BFS на каждом тике для N=20 агентов — O(N²), приемлемо. Для N>100 потребуется оптимизация (инкрементальное обновление графа).
    - Mitigation: пока N мал, полный rebuild на каждом тике допустим.
 
 3. **Mesh abstraction vs reality**: текущий план симулирует multi-hop на транспортном уровне (`InMemNetwork` проверяет reachability), а не через явные routing tables в `AgentNode`. Это допустимая абстракция для v0.5, но ограничивает fidelity.
    - Tradeoff: проще реализация, но нельзя тестировать протоколы маршрутизации.
 
-4. **Сложность allocator'а**: `ConnectivityAwareAllocator` требует знания позиций всех агентов и структуры сети. Это нарушает чистоту `Allocator` trait (который сейчас stateless). Можно обойти, передавая `connectivity_snapshot` как параметр.
-   - Mitigation: расширить `Allocator` trait новым методом `allocate_with_connectivity`, оставив старый метод для обратной совместимости; или обернуть allocator в структуру, хранящую снимок.
+4. **Сложность allocator'а**: `ConnectivityAwareAllocator` требует знания позиций и структуры сети. В плане выбрано расширение `Allocator` trait методом `allocate_with_connectivity` с default-реализацией, делегирующей `allocate`. Это сохраняет обратную совместимость для `GreedyAllocator` и `AuctionAllocator`.
+   - Mitigation: все call sites в `node.rs` и `runner.rs` переходят на `allocate_with_connectivity`; `GreedyAllocator`/`AuctionAllocator` не требуют изменений.
 
 5. **Determinism**: позиции агентов в сценарии должны быть seed-based. `EmergencyMeshConfig` использует `rand` с фиксированным `seed` для генерации позиций.
 
 ## Open questions
 
 1. **Динамическая смена ролей**: должен ли агент-scout динамически становиться relay при гибели всех relay? Это усложняет state machine. Для v0.5 оставить фиксированные роли; reallocation — только переназначение задач между агентами одной роли.
-2. **Движение агентов**: должны ли агенты физически перемещаться к pose задачи? В текущей симуляции позиции статичны (Milestone A/B). Для v0.5 оставить статичные позиции; движение — в будущем (kinematic simulation).
+2. **Движение агентов**: для v0.5 добавлен мгновенный pose update при назначении задачи с `pose`. Это упрощённая модель движения уровня A (mission simulation). Реальная кинематика (`position += velocity * dt`) — в будущем.
 3. **Назначение relay-задач**: relay-задачи — это "стоять в точке X,Y" или "обеспечивать связь с узлом Y"? Для v0.5: позиционные relay-задачи (pose-based), allocator назначает relay-агента к точке.
 4. **Ground nodes как задачи?** ground node — это отдельная сущность (не Task, не Agent). Она участвует в графе связности, но не получает allocation. Альтернатива: сделать ground nodes специальными Task (coverage точек). Решение: отдельная сущность для ясности.
 
@@ -298,7 +338,7 @@ cargo run -p swarm-examples --bin emergency_mesh_scenario
   - *Проверка*: `multiprocess_scenario` должен продолжать проходить. Ограничение задокументировать в README: mesh reachability симулируется только в in-process режиме на v0.5.
 
 ### Производительность / ресурсы
-- **Граф на каждом тике**: `ScenarioRunner` строит граф связности N агентов + M ground nodes каждый тик. Для N=20, M=5, 1000 seeds × 50 ticks — ~1M построений графа. `petgraph` справится, но стоит измерить.
+- **Граф на каждом тике**: `ScenarioRunner` строит adjacency list и запускает BFS для N агентов + M ground nodes каждый тик. Для N=20, M=5, 1000 seeds × 50 ticks — ~1M запусков BFS. Ручная реализация на `VecDeque` справится, но стоит измерить.
   - *Проверка*: запустить `cargo bench` (если есть) или измерить время `emergency_mesh_scenario` для 1000 seeds; регрессия >20% — сигнал к оптимизации.
 
 ### Регрессии в метриках
