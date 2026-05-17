@@ -12,6 +12,7 @@ pub struct EventLog {
 
 /// Individual events that can be recorded during a simulation run.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case", tag = "type")]
 pub enum Event {
     TickStart {
         tick: u64,
@@ -56,6 +57,7 @@ pub enum Event {
 
 /// Reason why a message was dropped.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
 pub enum DropReason {
     PacketLoss,
     Partition,

@@ -1,4 +1,5 @@
 use proptest::prelude::*;
+use swarm_alloc::GreedyAllocator;
 use swarm_sim::{RunConfig, ScenarioRunner};
 use swarm_types::{Agent, AgentId, Capability, Health, Pose, Role, Task, TaskId, TaskStatus};
 
@@ -113,5 +114,60 @@ proptest! {
         // success is a boolean; success_rate for a single run is either 0 or 1
         let rate: f64 = if metrics.success { 1.0 } else { 0.0 };
         prop_assert!((0.0..=1.0).contains(&rate));
+    }
+
+    #[test]
+    fn replay_matches_original(
+        agents in prop::collection::vec(agent_strategy(), 3..10),
+        tasks in prop::collection::vec(task_strategy(), 3..15),
+    ) {
+        let scenario = scenario_from_agents_tasks(agents, tasks);
+        let config = default_run_config();
+        let (metrics, log_opt) = ScenarioRunner::run_with_log(&scenario, config, GreedyAllocator);
+        // run_with_log should return Some(EventLog)
+        prop_assert!(log_opt.is_some(), "run_with_log should return EventLog");
+        let log = log_opt.unwrap();
+        // Serialize and deserialize round-trip
+        let json = swarm_replay::to_json(&log).expect("serialize");
+        let restored = swarm_replay::from_json(&json).expect("deserialize");
+        prop_assert_eq!(log, restored.clone(), "EventLog round-trip failed");
+        // Replay reconstructs some state
+        let _state = swarm_replay::replay(&restored);
+        // Basic sanity: replay state should have same tick count as metrics
+        let tick_count = restored.events.iter().filter(|e| matches!(e, swarm_replay::Event::TickStart { .. })).count() as u64;
+        prop_assert_eq!(tick_count, metrics.total_ticks, "Tick count mismatch after replay");
+    }
+
+    #[test]
+    fn centralized_beats_greedy_on_ideal(
+        agents in prop::collection::vec(agent_strategy(), 3..10),
+        tasks in prop::collection::vec(task_strategy(), 3..15),
+    ) {
+        let scenario = scenario_from_agents_tasks(agents, tasks);
+        let mut config = default_run_config();
+        config.packet_loss_rate = 0.0;
+        config.latency_ticks = 0;
+        config.latency_per_hop = 0;
+        config.failures.clear();
+        let greedy_metrics = ScenarioRunner::run_with(&scenario, config.clone(), GreedyAllocator);
+        let centralized_metrics = ScenarioRunner::run_with(&scenario, config, swarm_alloc::CentralizedPlanner::new(
+            &scenario.tasks.iter().map(|t| swarm_alloc::AllocationTask { task: t }).collect::<Vec<_>>(),
+            &scenario.agents.iter().map(|a| swarm_alloc::AllocationAgent {
+                id: a.id.clone(),
+                pose: a.pose,
+                battery: a.battery,
+                capabilities: a.capabilities.clone(),
+                role: a.role.clone(),
+                comms_range: a.comms_range,
+            }).collect::<Vec<_>>(),
+        ));
+        let centralized_rate = if centralized_metrics.success { 1.0 } else { 0.0 };
+        let greedy_rate = if greedy_metrics.success { 1.0 } else { 0.0 };
+        prop_assert!(
+            centralized_rate >= greedy_rate,
+            "Centralized should match or beat greedy on ideal network: centralized={}, greedy={}",
+            centralized_rate,
+            greedy_rate
+        );
     }
 }

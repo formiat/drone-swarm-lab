@@ -58,6 +58,19 @@ pub type ScenarioBuilder = Box<dyn Fn(u64, &str) -> (Scenario, RunConfig)>;
 /// A function that creates a strategy for a given scenario.
 pub type StrategyFactory = Box<dyn Fn(&Scenario, &RunConfig) -> Box<dyn Strategy>>;
 
+/// Options for running a benchmark.
+#[derive(Default)]
+pub struct BenchmarkOptions<'a> {
+    pub prefix: Option<&'a str>,
+    pub enable_replay_log: bool,
+}
+
+/// Result of a benchmark run, optionally including replay logs.
+pub struct BenchmarkResult {
+    pub report: ComparisonReport,
+    pub replay_logs: Vec<swarm_replay::EventLog>,
+}
+
 /// Harness that runs strategies across seeds and profiles.
 pub struct BenchmarkHarness;
 
@@ -68,7 +81,23 @@ impl BenchmarkHarness {
         profile_names: &[String],
         scenario_builder: &ScenarioBuilder,
     ) -> ComparisonReport {
-        Self::run_with_seeds(strategies, profile_names, scenario_builder, 0..10)
+        Self::run_with_seeds(strategies, profile_names, scenario_builder, 0..10, None).report
+    }
+
+    /// Run a small benchmark with options.
+    pub fn run_quick_with_options(
+        strategies: &[StrategyFactory],
+        profile_names: &[String],
+        scenario_builder: &ScenarioBuilder,
+        options: BenchmarkOptions,
+    ) -> BenchmarkResult {
+        Self::run_with_seeds(
+            strategies,
+            profile_names,
+            scenario_builder,
+            0..10,
+            Some(options),
+        )
     }
 
     /// Run a full benchmark (1000 seeds).
@@ -77,7 +106,23 @@ impl BenchmarkHarness {
         profile_names: &[String],
         scenario_builder: &ScenarioBuilder,
     ) -> ComparisonReport {
-        Self::run_with_seeds(strategies, profile_names, scenario_builder, 0..1000)
+        Self::run_with_seeds(strategies, profile_names, scenario_builder, 0..1000, None).report
+    }
+
+    /// Run a full benchmark with options.
+    pub fn run_full_with_options(
+        strategies: &[StrategyFactory],
+        profile_names: &[String],
+        scenario_builder: &ScenarioBuilder,
+        options: BenchmarkOptions,
+    ) -> BenchmarkResult {
+        Self::run_with_seeds(
+            strategies,
+            profile_names,
+            scenario_builder,
+            0..1000,
+            Some(options),
+        )
     }
 
     fn run_with_seeds(
@@ -85,20 +130,32 @@ impl BenchmarkHarness {
         profile_names: &[String],
         scenario_builder: &ScenarioBuilder,
         seeds: std::ops::Range<u64>,
-    ) -> ComparisonReport {
-        let benchmark_run_id = generate_benchmark_run_id(seeds.start, seeds.end, "coverage");
+        options: Option<BenchmarkOptions>,
+    ) -> BenchmarkResult {
+        let opts = options.unwrap_or_default();
+        let benchmark_run_id =
+            generate_benchmark_run_id(seeds.start, seeds.end, "coverage", opts.prefix);
         let mut results: HashMap<(String, String), Vec<swarm_metrics::RunMetrics>> = HashMap::new();
+        let mut replay_logs: Vec<swarm_replay::EventLog> = Vec::new();
 
         for seed in seeds.clone() {
             for factory in strategies {
                 for profile_name in profile_names {
                     let (scenario, run_config) = scenario_builder(seed, profile_name);
                     let strategy = factory(&scenario, &run_config);
-                    let metrics = run_with_strategy(&scenario, run_config, strategy.as_ref());
+                    let (metrics, log) = run_with_strategy(
+                        &scenario,
+                        run_config,
+                        strategy.as_ref(),
+                        opts.enable_replay_log,
+                    );
                     results
                         .entry((strategy.name().to_owned(), profile_name.clone()))
                         .or_default()
                         .push(metrics);
+                    if let Some(event_log) = log {
+                        replay_logs.push(event_log);
+                    }
                 }
             }
         }
@@ -120,40 +177,56 @@ impl BenchmarkHarness {
             );
         }
 
-        ComparisonReport {
-            benchmark_run_id,
-            strategy_names,
-            profile_names: report_profile_names,
-            results: report_results,
+        BenchmarkResult {
+            report: ComparisonReport {
+                benchmark_run_id,
+                strategy_names,
+                profile_names: report_profile_names,
+                results: report_results,
+            },
+            replay_logs,
         }
     }
 }
 
-fn generate_benchmark_run_id(start_seed: u64, end_seed: u64, scenario_name: &str) -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
+fn generate_benchmark_run_id(
+    start_seed: u64,
+    end_seed: u64,
+    scenario_name: &str,
+    prefix: Option<&str>,
+) -> String {
+    let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H%M%SZ");
     let mode = if end_seed - start_seed <= 10 {
         "quick"
     } else {
         "full"
     };
-    format!(
-        "{}_{}_{}_{}",
-        timestamp,
-        scenario_name,
-        end_seed - start_seed,
-        mode
-    )
+    if let Some(p) = prefix {
+        format!(
+            "{}_{}_{}_{}_{}",
+            p,
+            timestamp,
+            scenario_name,
+            end_seed - start_seed,
+            mode
+        )
+    } else {
+        format!(
+            "{}_{}_{}_{}",
+            timestamp,
+            scenario_name,
+            end_seed - start_seed,
+            mode
+        )
+    }
 }
 
 fn run_with_strategy(
     scenario: &Scenario,
     run_config: RunConfig,
     strategy: &dyn Strategy,
-) -> swarm_metrics::RunMetrics {
+    enable_log: bool,
+) -> (swarm_metrics::RunMetrics, Option<swarm_replay::EventLog>) {
     struct StrategyWrapper<'a>(&'a dyn Strategy);
     impl<'a> swarm_alloc::Allocator for StrategyWrapper<'a> {
         fn allocate(
@@ -175,7 +248,14 @@ fn run_with_strategy(
         }
     }
 
-    ScenarioRunner::run_with(scenario, run_config, StrategyWrapper(strategy))
+    if enable_log {
+        ScenarioRunner::run_with_log(scenario, run_config, StrategyWrapper(strategy))
+    } else {
+        (
+            ScenarioRunner::run_with(scenario, run_config, StrategyWrapper(strategy)),
+            None,
+        )
+    }
 }
 
 #[cfg(test)]

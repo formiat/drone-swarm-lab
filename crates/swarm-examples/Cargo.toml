@@ -37,6 +37,7 @@ serde_json         = { workspace = true }
 swarm-alloc        = { workspace = true }
 swarm-comms        = { workspace = true }
 swarm-metrics      = { workspace = true }
+swarm-replay       = { workspace = true }
 swarm-runtime      = { workspace = true }
 swarm-scenarios    = { workspace = true }
 swarm-sim          = { workspace = true }

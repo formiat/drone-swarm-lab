@@ -6,7 +6,8 @@ use swarm_alloc::{
 };
 use swarm_scenarios::{build_coverage_scenario, CoverageConfig, StandardProfiles};
 use swarm_sim::{
-    export_csv, export_json, BenchmarkHarness, FailureEvent, PartitionEvent, RunConfig, Scenario,
+    export_csv, export_json, BenchmarkHarness, BenchmarkOptions, FailureEvent, PartitionEvent,
+    RunConfig, Scenario,
 };
 use swarm_types::AgentId;
 
@@ -223,12 +224,29 @@ fn main() {
         (scenario, run_config)
     });
 
-    let report = if cli.full_mode {
-        BenchmarkHarness::run_full(&factories, &profile_names, &scenario_builder)
-    } else {
-        BenchmarkHarness::run_quick(&factories, &profile_names, &scenario_builder)
+    let enable_replay = cli.replay_log_dir.is_some();
+    let options = BenchmarkOptions {
+        prefix: cli.run_id_prefix.as_deref(),
+        enable_replay_log: enable_replay,
     };
 
+    let result = if cli.full_mode {
+        BenchmarkHarness::run_full_with_options(
+            &factories,
+            &profile_names,
+            &scenario_builder,
+            options,
+        )
+    } else {
+        BenchmarkHarness::run_quick_with_options(
+            &factories,
+            &profile_names,
+            &scenario_builder,
+            options,
+        )
+    };
+
+    let report = result.report;
     println!("{}", report);
 
     // Export JSON
@@ -251,7 +269,16 @@ fn main() {
         if !path.exists() {
             std::fs::create_dir_all(path).expect("Failed to create replay log directory");
         }
-        println!("Replay logs would be saved to {} (feature stub)", dir);
+        for log in &result.replay_logs {
+            let file_name = format!("{}.replay.json", log.run_id.replace('/', "_"));
+            let file_path = path.join(&file_name);
+            swarm_replay::write_to_file(log, &file_path).expect("Failed to write replay log");
+        }
+        println!(
+            "Replay logs saved to {} ({} files)",
+            dir,
+            result.replay_logs.len()
+        );
     }
 
     // Invariant: centralized should match or outperform greedy on ideal network

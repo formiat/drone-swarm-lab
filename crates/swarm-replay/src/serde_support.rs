@@ -49,10 +49,11 @@ mod tests {
         });
         let log = builder.build();
 
-        let path = std::path::Path::new("/tmp/swarm_replay_test.json");
-        write_to_file(&log, path).unwrap();
-        let restored = read_from_file(path).unwrap();
+        let path =
+            std::env::temp_dir().join(format!("swarm_replay_test_{}.json", std::process::id()));
+        write_to_file(&log, &path).unwrap();
+        let restored = read_from_file(&path).unwrap();
         assert_eq!(log, restored);
-        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(&path);
     }
 }
