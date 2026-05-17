@@ -48,11 +48,12 @@ INVESTIGATION.md отсутствует. Контекст из DRONE_A.3.md и D
 |---|---|
 | `crates/swarm-types/src/grid.rs` | **NEW** — `SearchGrid`, `GridCell`, `CellState`, `HiddenTarget`, `SensorModel` |
 | `crates/swarm-types/src/lib.rs` | Re-export новых типов |
+| `crates/swarm-types/src/agent.rs` | Добавить `Role::Thermal` в `Role` enum |
 | `crates/swarm-types/src/task.rs` | Добавить `TaskType` enum (`ScanCell`, `Relay`, `Transport`) или `scan_required: bool` |
 | `crates/swarm-runtime/src/node.rs` | Интеграция scan action в tick loop: после `apply_movement` проверить достижение ячейки и вызвать `scan_cell()` |
 | `crates/swarm-runtime/src/grid_state.rs` | **NEW** — `GridState`: mutable grid scan progress, target placement, scan results |
 | `crates/swarm-sim/src/runner.rs` | `SarRunConfig` или расширение `RunConfig` grid-полями; SAR-специфичная логика в `run_with()` |
-| `crates/swarm-sim/src/sar_scenario.rs` | **NEW** — `SarScenario`: builder для SAR миссии |
+| `crates/swarm-scenarios/src/sar_scenario.rs` | **NEW** — `SarScenario`: builder для SAR миссии |
 | `crates/swarm-metrics/src/metrics.rs` | Новые поля: `time_to_find`, `coverage_over_time`, `probability_of_detection`, `targets_found`, `targets_total`, `scan_count` |
 | `crates/swarm-scenarios/src/lib.rs` | Re-export `sar_scenario` |
 | `crates/swarm-examples/src/bin/sar_scenario.rs` | **NEW** — runnable SAR binary |
@@ -369,15 +370,16 @@ fn main() {
     let (agents, tasks, targets) = build_sar_scenario(&config);
     let grid_state = GridState::new(config.grid.clone(), targets, config.sensor.clone());
 
-    let runner = ScenarioRunner::new(agents, tasks, RunConfig {
-        // ... standard config ...
+    let scenario = Scenario::new(agents, tasks);
+    let run_config = RunConfig {
+        max_ticks: config.max_ticks,
         enable_movement: config.enable_movement,
         tick_duration_ms: config.tick_duration_ms,
-    });
+        // ... other standard config fields ...
+    };
 
-    let result = runner.run_with(|nodes, tick| {
-        // Optional: print coverage every 50 ticks
-    });
+    // Actual API: ScenarioRunner::run_with(&scenario, config, allocator)
+    let result = ScenarioRunner::run_with(&scenario, run_config, GreedyAllocator);
 
     println!("Targets found: {}/{}\n", result.metrics.targets_found, result.metrics.targets_total);
     println!("Time to first find: {:?}\n", result.metrics.time_to_find);
