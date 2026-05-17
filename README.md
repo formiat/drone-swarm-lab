@@ -170,9 +170,9 @@ Prints aggregate metrics and exits code `0` on success, `1` on invariant violati
 - New metrics: `coverage_progress`, `bytes_sent`, `stale_state_age_ticks`, `battery_margin_min`, `battery_margin_avg`.
 - `NetworkProfile` and `FailureProfile` with `StandardProfiles` (Ideal, LightLoss, MediumLoss, HeavyLoss, HighLatency, PartitionProne × NoFailures, SingleFailure, MultipleFailures, CascadeFailure).
 - `BenchmarkHarness` that runs strategies across seeds and profiles, producing `ComparisonReport` with markdown-compatible table output.
-- `strategy_comparison` binary that runs all strategies against a reduced profile matrix and verifies invariants (e.g., centralized >= greedy on ideal network).
+- `strategy_comparison` binary that runs all 4 strategies against a reduced profile matrix and verifies invariants (e.g., centralized >= greedy on ideal network).
 
-Run the Milestone 6 strategy comparison (quick benchmark, 10 seeds × 4 profiles × 3 strategies):
+Run the Milestone 6 strategy comparison (quick benchmark, 10 seeds × 4 profiles × 4 strategies):
 
 ```bash
 cargo run -p swarm-examples --bin strategy_comparison
@@ -181,9 +181,10 @@ cargo run -p swarm-examples --bin strategy_comparison
 Sample output:
 
 ```
-| Стратегия | Профиль | Успех | Обнаружение | Перераспределение | Покрытие | Сообщения | Доступность |
-|-----------|---------|-------|-------------|-------------------|----------|-----------|-------------|
-| greedy    | ideal-no-failures | 1.000 |       0.000 |             0.000 |    1.000 |    90.000 |       1.000 |
-| auction   | ideal-no-failures | 1.000 |       0.000 |             0.000 |    1.000 |    90.000 |       1.000 |
-| connectivity-aware | ideal-no-failures | 1.000 |       0.000 |             0.000 |    1.000 |    90.000 |       1.000 |
+| Стратегия | Профиль | Успех | Завершение | Обнаружение | Перераспределение | Покрытие | Сообщения | Байты | Конфликты | Stale | Батарея мин | Батарея ср | Доступность |
+|-----------|---------|-------|------------|-------------|-------------------|----------|-----------|-------|-----------|-------|-------------|------------|-------------|
+| greedy    | ideal-no-failures | 1.000 |      0.000 |       0.000 |             0.000 |    1.000 |    90.000 |  3960 |     0.000 |     0 |     100.000 |    100.000 |       1.000 |
+| auction   | ideal-no-failures | 1.000 |      0.000 |       0.000 |             0.000 |    1.000 |    90.000 |  3960 |     0.000 |     0 |     100.000 |    100.000 |       1.000 |
+| connectivity-aware | ideal-no-failures | 1.000 |      0.000 |       0.000 |             0.000 |    1.000 |    90.000 |  3960 |     0.000 |     0 |     100.000 |    100.000 |       1.000 |
+| centralized | ideal-no-failures | 1.000 |      0.000 |       0.000 |             0.000 |    1.000 |    90.000 |  3960 |     0.000 |     0 |     100.000 |    100.000 |       1.000 |
 ```

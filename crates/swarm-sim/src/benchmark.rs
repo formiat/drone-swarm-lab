@@ -16,11 +16,11 @@ impl std::fmt::Display for ComparisonReport {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(
             f,
-            "| Стратегия | Профиль | Успех | Обнаружение | Перераспределение | Покрытие | Сообщения | Доступность |"
+            "| Стратегия | Профиль | Успех | Завершение | Обнаружение | Перераспределение | Покрытие | Сообщения | Байты | Конфликты | Stale | Батарея мин | Батарея ср | Доступность |"
         )?;
         writeln!(
             f,
-            "|-----------|---------|-------|-------------|-------------------|----------|-----------|-------------|"
+            "|-----------|---------|-------|------------|-------------|-------------------|----------|-----------|-------|-----------|-------|-------------|------------|-------------|"
         )?;
         for strategy_name in &self.strategy_names {
             for profile_name in &self.profile_names {
@@ -28,14 +28,20 @@ impl std::fmt::Display for ComparisonReport {
                 if let Some(metrics) = self.results.get(&key) {
                     writeln!(
                         f,
-                        "| {:9} | {:7} | {:5.3} | {:11.3} | {:17.3} | {:8.3} | {:9.3} | {:11.3} |",
+                        "| {:9} | {:7} | {:5.3} | {:10.3} | {:11.3} | {:17.3} | {:8.3} | {:9.3} | {:5.0} | {:9.3} | {:5.0} | {:11.3} | {:10.3} | {:11.3} |",
                         strategy_name,
                         profile_name,
                         metrics.success_rate,
+                        metrics.avg_tasks_injected,
                         metrics.avg_detection_ticks,
                         metrics.avg_reallocation_ticks,
                         metrics.avg_coverage_progress,
                         metrics.avg_messages_attempted,
+                        metrics.avg_bytes_sent,
+                        metrics.avg_conflicting_assignments,
+                        metrics.avg_stale_state_age_ticks,
+                        metrics.avg_battery_margin_min,
+                        metrics.avg_battery_margin_avg,
                         metrics.avg_network_availability,
                     )?;
                 }
@@ -48,13 +54,16 @@ impl std::fmt::Display for ComparisonReport {
 /// A function that builds a (Scenario, RunConfig) pair from a seed and profile name.
 pub type ScenarioBuilder = Box<dyn Fn(u64, &str) -> (Scenario, RunConfig)>;
 
+/// A function that creates a strategy for a given scenario.
+pub type StrategyFactory = Box<dyn Fn(&Scenario, &RunConfig) -> Box<dyn Strategy>>;
+
 /// Harness that runs strategies across seeds and profiles.
 pub struct BenchmarkHarness;
 
 impl BenchmarkHarness {
     /// Run a small benchmark for CI/testing (10 seeds).
     pub fn run_quick(
-        strategies: &[Box<dyn Strategy>],
+        strategies: &[StrategyFactory],
         profile_names: &[String],
         scenario_builder: &ScenarioBuilder,
     ) -> ComparisonReport {
@@ -63,7 +72,7 @@ impl BenchmarkHarness {
 
     /// Run a full benchmark (1000 seeds).
     pub fn run_full(
-        strategies: &[Box<dyn Strategy>],
+        strategies: &[StrategyFactory],
         profile_names: &[String],
         scenario_builder: &ScenarioBuilder,
     ) -> ComparisonReport {
@@ -71,7 +80,7 @@ impl BenchmarkHarness {
     }
 
     fn run_with_seeds(
-        strategies: &[Box<dyn Strategy>],
+        strategies: &[StrategyFactory],
         profile_names: &[String],
         scenario_builder: &ScenarioBuilder,
         seeds: std::ops::Range<u64>,
@@ -79,11 +88,10 @@ impl BenchmarkHarness {
         let mut results: HashMap<(String, String), Vec<swarm_metrics::RunMetrics>> = HashMap::new();
 
         for seed in seeds {
-            for strategy in strategies {
+            for factory in strategies {
                 for profile_name in profile_names {
                     let (scenario, run_config) = scenario_builder(seed, profile_name);
-                    // Use a reference to the boxed strategy; ScenarioRunner takes impl Allocator
-                    // We need to deref the box to get the inner value
+                    let strategy = factory(&scenario, &run_config);
                     let metrics = run_with_strategy(&scenario, run_config, strategy.as_ref());
                     results
                         .entry((strategy.name().to_owned(), profile_name.clone()))
@@ -123,10 +131,6 @@ fn run_with_strategy(
     run_config: RunConfig,
     strategy: &dyn Strategy,
 ) -> swarm_metrics::RunMetrics {
-    // Since Strategy: Allocator, we can pass the strategy reference directly
-    // but ScenarioRunner::run_with expects a generic A: Allocator.
-    // We need a workaround since &dyn Strategy doesn't automatically impl Allocator.
-    // The simplest approach is to use a wrapper that delegates.
     struct StrategyWrapper<'a>(&'a dyn Strategy);
     impl<'a> swarm_alloc::Allocator for StrategyWrapper<'a> {
         fn allocate(
@@ -149,4 +153,162 @@ fn run_with_strategy(
     }
 
     ScenarioRunner::run_with(scenario, run_config, StrategyWrapper(strategy))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use swarm_alloc::{AllocationAgent, AllocationTask, CentralizedPlanner, GreedyAllocator};
+    use swarm_types::{Agent, AgentId, Health, Pose, Role, Task, TaskId, TaskStatus};
+
+    fn make_scenario_builder() -> ScenarioBuilder {
+        Box::new(|seed: u64, _profile: &str| {
+            let agents: Vec<Agent> = (0..5)
+                .map(|i| Agent {
+                    id: AgentId::from(format!("agent-{i}")),
+                    role: Role::Scout,
+                    health: Health::Alive,
+                    pose: Pose { x: 0.0, y: 0.0 },
+                    capabilities: vec![],
+                    current_task: None,
+                    battery: 100.0,
+                    comms_range: f64::INFINITY,
+                    generation: 1,
+                })
+                .collect();
+            let tasks: Vec<Task> = (0..5)
+                .map(|i| Task {
+                    id: TaskId::from(format!("task-{i}")),
+                    status: TaskStatus::Unassigned,
+                    assigned_to: None,
+                    priority: 1,
+                    required_capabilities: vec![],
+                    required_role: None,
+                    preferred_role: None,
+                    expires_at: None,
+                    pose: None,
+                })
+                .collect();
+            let scenario = Scenario {
+                name: "test".to_owned(),
+                seed,
+                agents,
+                tasks,
+                ground_nodes: vec![],
+                base_station: None,
+            };
+            let run_config = RunConfig {
+                max_ticks: 50,
+                timeout_ticks: 3,
+                max_unassigned_ticks: 10,
+                packet_loss_rate: 0.0,
+                latency_ticks: 0,
+                latency_per_hop: 0,
+                failures: vec![],
+                dynamic_tasks: vec![],
+                partition_events: vec![],
+                gossip_interval_ticks: 999,
+                base_id: None,
+            };
+            (scenario, run_config)
+        })
+    }
+
+    #[test]
+    fn harness_runs_and_produces_report() {
+        let factories: Vec<StrategyFactory> =
+            vec![Box::new(|_scenario: &Scenario, _run_config: &RunConfig| {
+                Box::new(GreedyAllocator) as Box<dyn Strategy>
+            })];
+        let profiles = vec!["ideal".to_owned()];
+        let builder = make_scenario_builder();
+        let report = BenchmarkHarness::run_quick(&factories, &profiles, &builder);
+        assert!(report
+            .results
+            .contains_key(&("greedy".to_owned(), "ideal".to_owned())));
+    }
+
+    #[test]
+    fn centralized_present_in_report() {
+        let factories: Vec<StrategyFactory> = vec![
+            Box::new(|_scenario: &Scenario, _run_config: &RunConfig| {
+                Box::new(GreedyAllocator) as Box<dyn Strategy>
+            }),
+            Box::new(|scenario: &Scenario, _run_config: &RunConfig| {
+                let allocation_tasks: Vec<AllocationTask<'_>> = scenario
+                    .tasks
+                    .iter()
+                    .map(|t| AllocationTask { task: t })
+                    .collect();
+                let allocation_agents: Vec<AllocationAgent> = scenario
+                    .agents
+                    .iter()
+                    .map(|a| AllocationAgent {
+                        id: a.id.clone(),
+                        pose: a.pose,
+                        battery: a.battery,
+                        capabilities: a.capabilities.clone(),
+                        role: a.role.clone(),
+                        comms_range: a.comms_range,
+                    })
+                    .collect();
+                Box::new(CentralizedPlanner::new(
+                    &allocation_tasks,
+                    &allocation_agents,
+                )) as Box<dyn Strategy>
+            }),
+        ];
+        let profiles = vec!["ideal".to_owned()];
+        let builder = make_scenario_builder();
+        let report = BenchmarkHarness::run_quick(&factories, &profiles, &builder);
+        assert!(report
+            .results
+            .contains_key(&("centralized".to_owned(), "ideal".to_owned())));
+    }
+
+    #[test]
+    fn centralized_matches_or_beats_greedy_on_ideal() {
+        let factories: Vec<StrategyFactory> = vec![
+            Box::new(|_scenario: &Scenario, _run_config: &RunConfig| {
+                Box::new(GreedyAllocator) as Box<dyn Strategy>
+            }),
+            Box::new(|scenario: &Scenario, _run_config: &RunConfig| {
+                let allocation_tasks: Vec<AllocationTask<'_>> = scenario
+                    .tasks
+                    .iter()
+                    .map(|t| AllocationTask { task: t })
+                    .collect();
+                let allocation_agents: Vec<AllocationAgent> = scenario
+                    .agents
+                    .iter()
+                    .map(|a| AllocationAgent {
+                        id: a.id.clone(),
+                        pose: a.pose,
+                        battery: a.battery,
+                        capabilities: a.capabilities.clone(),
+                        role: a.role.clone(),
+                        comms_range: a.comms_range,
+                    })
+                    .collect();
+                Box::new(CentralizedPlanner::new(
+                    &allocation_tasks,
+                    &allocation_agents,
+                )) as Box<dyn Strategy>
+            }),
+        ];
+        let profiles = vec!["ideal".to_owned()];
+        let builder = make_scenario_builder();
+        let report = BenchmarkHarness::run_quick(&factories, &profiles, &builder);
+
+        let greedy_key = ("greedy".to_owned(), "ideal".to_owned());
+        let centralized_key = ("centralized".to_owned(), "ideal".to_owned());
+        let greedy = report.results.get(&greedy_key).unwrap();
+        let centralized = report.results.get(&centralized_key).unwrap();
+        assert!(
+            centralized.success_rate >= greedy.success_rate,
+            "centralized ({}) should match or beat greedy ({}) on ideal network",
+            centralized.success_rate,
+            greedy.success_rate
+        );
+    }
 }

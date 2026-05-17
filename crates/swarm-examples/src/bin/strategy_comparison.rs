@@ -1,19 +1,50 @@
 use swarm_alloc::{
-    AuctionAllocator, ConnectivityAwareAllocator, GreedyAllocator, StrategyRegistry,
+    AllocationAgent, AllocationTask, AuctionAllocator, CentralizedPlanner,
+    ConnectivityAwareAllocator, GreedyAllocator,
 };
 use swarm_scenarios::{build_coverage_scenario, CoverageConfig, StandardProfiles};
-use swarm_sim::{BenchmarkHarness, FailureEvent, RunConfig, Scenario};
+use swarm_sim::{BenchmarkHarness, FailureEvent, PartitionEvent, RunConfig, Scenario};
 use swarm_types::AgentId;
 
 type ScenarioBuilder = Box<dyn Fn(u64, &str) -> (Scenario, RunConfig)>;
+type StrategyFactory = Box<dyn Fn(&Scenario, &RunConfig) -> Box<dyn swarm_alloc::Strategy>>;
 
 fn main() {
-    let mut registry = StrategyRegistry::new();
-    registry.register(Box::new(GreedyAllocator));
-    registry.register(Box::new(AuctionAllocator::default()));
-    registry.register(Box::new(ConnectivityAwareAllocator {
-        base_allocator: AuctionAllocator::default(),
-    }));
+    // Register all 4 strategies using factories for per-run construction
+    let factories: Vec<StrategyFactory> = vec![
+        Box::new(|_scenario: &Scenario, _run_config: &RunConfig| Box::new(GreedyAllocator)),
+        Box::new(|_scenario: &Scenario, _run_config: &RunConfig| {
+            Box::new(AuctionAllocator::default())
+        }),
+        Box::new(|_scenario: &Scenario, _run_config: &RunConfig| {
+            Box::new(ConnectivityAwareAllocator {
+                base_allocator: AuctionAllocator::default(),
+            })
+        }),
+        Box::new(|scenario: &Scenario, _run_config: &RunConfig| {
+            let allocation_tasks: Vec<AllocationTask<'_>> = scenario
+                .tasks
+                .iter()
+                .map(|t| AllocationTask { task: t })
+                .collect();
+            let allocation_agents: Vec<AllocationAgent> = scenario
+                .agents
+                .iter()
+                .map(|a| AllocationAgent {
+                    id: a.id.clone(),
+                    pose: a.pose,
+                    battery: a.battery,
+                    capabilities: a.capabilities.clone(),
+                    role: a.role.clone(),
+                    comms_range: a.comms_range,
+                })
+                .collect();
+            Box::new(CentralizedPlanner::new(
+                &allocation_tasks,
+                &allocation_agents,
+            ))
+        }),
+    ];
 
     // For quick benchmark, use a reduced matrix of key profiles
     let profile_names: Vec<String> = vec![
@@ -24,22 +55,14 @@ fn main() {
     ];
 
     let scenario_builder: ScenarioBuilder = Box::new(|seed: u64, profile_name: &str| {
-        // Parse profile name like "ideal-no-failures" or "heavy-loss-cascade-failure"
         let parts: Vec<&str> = profile_name.split('-').collect();
-        // Find where network profile ends and failure profile begins
-        // This is a simple heuristic: join from the end until we match a failure profile name
         let mut net_name_parts = Vec::new();
         let mut fail_name_parts = Vec::new();
         let fail_names: Vec<&str> = StandardProfiles::failure_profiles()
             .iter()
             .map(|f| f.name)
             .collect();
-        let _net_names: Vec<&str> = StandardProfiles::network_profiles()
-            .iter()
-            .map(|n| n.name)
-            .collect();
 
-        // Try to find the split point
         let mut found_split = false;
         for i in 0..parts.len() {
             let candidate_fail: String = parts[i..].join("-");
@@ -52,7 +75,6 @@ fn main() {
         }
 
         if !found_split {
-            // Fallback: assume everything is network profile
             net_name_parts = parts.clone();
             fail_name_parts = vec!["no-failures"];
         }
@@ -69,8 +91,10 @@ fn main() {
             .find(|p| p.name == fail_name)
             .unwrap_or_else(|| StandardProfiles::failure_profiles()[0].clone());
 
+        // Use failure_tick_range from profile, deterministic by seed
         let failure_tick = if fail_profile.failure_count > 0 {
-            5 + (seed % 10)
+            let range = fail_profile.failure_tick_range;
+            range.0 + (seed % (range.1.saturating_sub(range.0) + 1).max(1))
         } else {
             999
         };
@@ -87,14 +111,39 @@ fn main() {
             max_ticks: 200,
         });
 
+        run_config.latency_per_hop = net_profile.latency_per_hop;
+
         if fail_profile.failure_count == 0 {
             run_config.failures.clear();
         } else if fail_profile.failure_count > 1 {
             for i in 1..fail_profile.failure_count {
                 let agent_id = AgentId::from(format!("agent-{}", i % 10));
-                let at_tick = failure_tick + (i as u64) * 5;
+                let range = fail_profile.failure_tick_range;
+                let at_tick =
+                    range.0 + ((seed + i as u64) % (range.1.saturating_sub(range.0) + 1).max(1));
                 if at_tick < run_config.max_ticks {
                     run_config.failures.push(FailureEvent { agent_id, at_tick });
+                }
+            }
+        }
+
+        // partition-prone profile: inject partition events
+        if net_name == "partition-prone" {
+            let group_a: Vec<AgentId> = (0..5)
+                .map(|i| AgentId::from(format!("agent-{i}")))
+                .collect();
+            let group_b: Vec<AgentId> = (5..10)
+                .map(|i| AgentId::from(format!("agent-{i}")))
+                .collect();
+            let partition_start = 10u64;
+            let partition_end = 30u64;
+            for a in &group_a {
+                for b in &group_b {
+                    run_config.partition_events.push(PartitionEvent {
+                        at_tick: partition_start,
+                        until_tick: Some(partition_end),
+                        agents: (a.clone(), b.clone()),
+                    });
                 }
             }
         }
@@ -102,8 +151,7 @@ fn main() {
         (scenario, run_config)
     });
 
-    let report =
-        BenchmarkHarness::run_quick(registry.strategies(), &profile_names, &scenario_builder);
+    let report = BenchmarkHarness::run_quick(&factories, &profile_names, &scenario_builder);
 
     println!("{}", report);
 

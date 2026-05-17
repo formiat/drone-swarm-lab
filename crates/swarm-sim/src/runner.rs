@@ -38,6 +38,7 @@ pub struct RunConfig {
     pub max_unassigned_ticks: u64,
     pub packet_loss_rate: f64,
     pub latency_ticks: u64,
+    pub latency_per_hop: u64,
     pub failures: Vec<FailureEvent>,
     pub dynamic_tasks: Vec<DynamicTaskEvent>,
     pub partition_events: Vec<PartitionEvent>,
@@ -62,7 +63,7 @@ impl ScenarioRunner {
         let bus = Rc::new(RefCell::new(InMemNetwork::new(NetworkConfig {
             packet_loss_rate: config.packet_loss_rate,
             latency_ticks: config.latency_ticks,
-            latency_per_hop: 0,
+            latency_per_hop: config.latency_per_hop,
             seed: scenario.seed,
             partitions: HashSet::new(),
         })));
@@ -636,6 +637,7 @@ mod tests {
             max_unassigned_ticks: 5,
             packet_loss_rate: 0.0,
             latency_ticks: 0,
+            latency_per_hop: 0,
             failures,
             dynamic_tasks: vec![],
             partition_events: vec![],

@@ -29,16 +29,14 @@ impl CentralizedPlanner {
                 .then_with(|| a.task.id.to_string().cmp(&b.task.id.to_string()))
         });
 
-        // Greedy bipartite matching: for each task pick the best available agent
-        let mut assigned_agents: std::collections::HashSet<AgentId> =
-            std::collections::HashSet::new();
-
+        // Greedy assignment: for each task pick the best agent.
+        // Unlike one-to-one matching, agents can receive multiple tasks
+        // (same semantics as GreedyAllocator and AuctionAllocator).
         for at in ordered {
             let best = agents
                 .iter()
                 .filter(|agent| {
-                    !assigned_agents.contains(&agent.id)
-                        && has_all_capabilities(agent, &at.task.required_capabilities)
+                    has_all_capabilities(agent, &at.task.required_capabilities)
                         && has_required_role(agent, &at.task.required_role)
                 })
                 .map(|agent| (agent, cost(at.task, agent)))
@@ -47,7 +45,6 @@ impl CentralizedPlanner {
 
             if let Some((agent, _)) = best {
                 assignments.push((at.task.id.clone(), agent.id.clone()));
-                assigned_agents.insert(agent.id.clone());
             }
         }
 
@@ -58,10 +55,18 @@ impl CentralizedPlanner {
 impl Allocator for CentralizedPlanner {
     fn allocate(
         &self,
-        _tasks: &[AllocationTask<'_>],
+        tasks: &[AllocationTask<'_>],
         _agents: &[AllocationAgent],
     ) -> Vec<(TaskId, AgentId)> {
-        self.assignments.clone()
+        // Only return assignments for tasks that are currently unassigned
+        // (avoids duplicate-assignment conflicts when called from every agent)
+        let unassigned_ids: std::collections::HashSet<String> =
+            tasks.iter().map(|at| at.task.id.to_string()).collect();
+        self.assignments
+            .iter()
+            .filter(|(task_id, _)| unassigned_ids.contains(task_id.as_ref()))
+            .cloned()
+            .collect()
     }
 }
 

@@ -41,6 +41,7 @@ pub fn build_partition_scenario(config: &PartitionConfig) -> (Scenario, RunConfi
         max_unassigned_ticks: 10,
         packet_loss_rate: 0.0,
         latency_ticks: 0,
+        latency_per_hop: 0,
         failures: vec![],
         dynamic_tasks: vec![],
         partition_events,

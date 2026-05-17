@@ -76,6 +76,7 @@ pub fn build_coverage_scenario(config: &CoverageConfig) -> (Scenario, RunConfig)
         max_unassigned_ticks: config.max_unassigned_ticks,
         packet_loss_rate: config.packet_loss_rate,
         latency_ticks: config.latency_ticks,
+        latency_per_hop: 0,
         failures: vec![FailureEvent {
             agent_id: AgentId::from("agent-0".to_owned()),
             at_tick: config.failure_tick,
