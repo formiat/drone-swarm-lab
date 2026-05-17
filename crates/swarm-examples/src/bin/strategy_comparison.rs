@@ -10,6 +10,9 @@ type ScenarioBuilder = Box<dyn Fn(u64, &str) -> (Scenario, RunConfig)>;
 type StrategyFactory = Box<dyn Fn(&Scenario, &RunConfig) -> Box<dyn swarm_alloc::Strategy>>;
 
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    let full_mode = args.iter().any(|a| a == "--full");
+
     // Register all 4 strategies using factories for per-run construction
     let factories: Vec<StrategyFactory> = vec![
         Box::new(|_scenario: &Scenario, _run_config: &RunConfig| Box::new(GreedyAllocator)),
@@ -46,13 +49,26 @@ fn main() {
         }),
     ];
 
-    // For quick benchmark, use a reduced matrix of key profiles
-    let profile_names: Vec<String> = vec![
-        "ideal-no-failures".to_owned(),
-        "ideal-single-failure".to_owned(),
-        "medium-loss-no-failures".to_owned(),
-        "medium-loss-single-failure".to_owned(),
-    ];
+    // Build profile names from StandardProfiles combinations
+    let profile_names: Vec<String> = if full_mode {
+        let nets = StandardProfiles::network_profiles();
+        let fails = StandardProfiles::failure_profiles();
+        let mut combos = Vec::new();
+        for net in &nets {
+            for fail in &fails {
+                combos.push(format!("{}-{}", net.name, fail.name));
+            }
+        }
+        combos
+    } else {
+        // Quick mode: reduced matrix for fast CI/testing
+        vec![
+            "ideal-no-failures".to_owned(),
+            "ideal-single-failure".to_owned(),
+            "medium-loss-no-failures".to_owned(),
+            "medium-loss-single-failure".to_owned(),
+        ]
+    };
 
     let scenario_builder: ScenarioBuilder = Box::new(|seed: u64, profile_name: &str| {
         let parts: Vec<&str> = profile_name.split('-').collect();
@@ -91,7 +107,6 @@ fn main() {
             .find(|p| p.name == fail_name)
             .unwrap_or_else(|| StandardProfiles::failure_profiles()[0].clone());
 
-        // Use failure_tick_range from profile, deterministic by seed
         let failure_tick = if fail_profile.failure_count > 0 {
             let range = fail_profile.failure_tick_range;
             range.0 + (seed % (range.1.saturating_sub(range.0) + 1).max(1))
@@ -151,7 +166,11 @@ fn main() {
         (scenario, run_config)
     });
 
-    let report = BenchmarkHarness::run_quick(&factories, &profile_names, &scenario_builder);
+    let report = if full_mode {
+        BenchmarkHarness::run_full(&factories, &profile_names, &scenario_builder)
+    } else {
+        BenchmarkHarness::run_quick(&factories, &profile_names, &scenario_builder)
+    };
 
     println!("{}", report);
 

@@ -32,7 +32,7 @@ impl std::fmt::Display for ComparisonReport {
                         strategy_name,
                         profile_name,
                         metrics.success_rate,
-                        metrics.avg_tasks_injected,
+                        metrics.avg_task_completion_rate,
                         metrics.avg_detection_ticks,
                         metrics.avg_reallocation_ticks,
                         metrics.avg_coverage_progress,
@@ -310,5 +310,39 @@ mod tests {
             centralized.success_rate,
             greedy.success_rate
         );
+    }
+
+    #[test]
+    fn report_completion_is_not_tasks_injected() {
+        // Regression test: "Завершение" must come from task_completion_rate,
+        // not avg_tasks_injected. With all_tasks_assigned=true and no dynamic
+        // tasks, completion should be 1.000, not 0.000.
+        let factories: Vec<StrategyFactory> =
+            vec![Box::new(|_scenario: &Scenario, _run_config: &RunConfig| {
+                Box::new(GreedyAllocator) as Box<dyn Strategy>
+            })];
+        let profiles = vec!["ideal".to_owned()];
+        let builder = make_scenario_builder();
+        let report = BenchmarkHarness::run_quick(&factories, &profiles, &builder);
+        let report_text = format!("{}", report);
+        // The report should contain "1.000" in the completion column
+        // (all_tasks_assigned is true for all runs in this simple scenario)
+        assert!(
+            report_text.contains("1.000"),
+            "Report should show non-zero completion rate when all tasks are assigned; got:\n{}",
+            report_text
+        );
+        // Ensure the report does NOT show "0.000" as the only value in every row
+        // for the completion column when tasks are assigned
+        let rows: Vec<&str> = report_text.lines().skip(2).collect();
+        for row in &rows {
+            if row.contains("greedy") {
+                assert!(
+                    row.contains("1.000"),
+                    "Completion column should be 1.000 when all_tasks_assigned=true, got row: {}",
+                    row
+                );
+            }
+        }
     }
 }

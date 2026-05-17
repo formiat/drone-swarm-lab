@@ -61,6 +61,7 @@ pub struct AggregateMetrics {
     pub avg_stale_state_age_ticks: f64,
     pub avg_battery_margin_min: f64,
     pub avg_battery_margin_avg: f64,
+    pub avg_task_completion_rate: f64,
 }
 
 impl AggregateMetrics {
@@ -85,6 +86,7 @@ impl AggregateMetrics {
                 avg_stale_state_age_ticks: 0.0,
                 avg_battery_margin_min: 0.0,
                 avg_battery_margin_avg: 0.0,
+                avg_task_completion_rate: 0.0,
             };
         }
 
@@ -103,6 +105,7 @@ impl AggregateMetrics {
         let total_stale_state_age: u64 = runs.iter().map(|run| run.stale_state_age_ticks).sum();
         let total_battery_margin_min: f64 = runs.iter().map(|run| run.battery_margin_min).sum();
         let total_battery_margin_avg: f64 = runs.iter().map(|run| run.battery_margin_avg).sum();
+        let task_completion_count = runs.iter().filter(|run| run.all_tasks_assigned).count() as f64;
         let n = runs.len() as f64;
 
         Self {
@@ -128,6 +131,7 @@ impl AggregateMetrics {
             avg_stale_state_age_ticks: total_stale_state_age as f64 / n,
             avg_battery_margin_min: total_battery_margin_min / n,
             avg_battery_margin_avg: total_battery_margin_avg / n,
+            avg_task_completion_rate: task_completion_count / n,
         }
     }
 }
@@ -187,10 +191,15 @@ impl fmt::Display for AggregateMetrics {
             "avg_battery_margin_min: {:.3}",
             self.avg_battery_margin_min
         )?;
-        write!(
+        writeln!(
             f,
             "avg_battery_margin_avg: {:.3}",
             self.avg_battery_margin_avg
+        )?;
+        write!(
+            f,
+            "avg_task_completion_rate: {:.3}",
+            self.avg_task_completion_rate
         )
     }
 }
