@@ -1,34 +1,44 @@
-# PLAN: Milestone 8 — Kinematic + Battery Foundation
+# PLAN: Milestone 9 — SAR v1 (Search and Rescue)
 
 ## Context
 
-Milestones 1-4 построили coordination runtime: membership, failure detection, task allocation, pluggable transport, partitions, gossip/convergence.
+Milestones 1-8 построили полноценный coordination runtime с физической моделью:
+- Milestones 1-4: membership, failure detection, task allocation, gossip convergence, partitions.
+- Milestone 5: connectivity-aware allocation, relay placement, network availability.
+- Milestone 6: strategy comparison platform (Greedy, Auction, ConnectivityAware, CentralizedPlanner).
+- Milestone 7: experiment infrastructure (replay, JSON/CSV export, proptest).
+- Milestone 8: kinematics + battery (movement, battery drain, capability gate, movement metrics).
 
-**Milestone 8 (v0.8)** добавляет физическую модель движения и батареи, превращая абстрактных неподвижных агентов в движущиеся ресурсы с ограниченной энергией. Это — foundation для всех будущих reference missions (SAR, Inspection, Emergency Mesh).
+**Milestone 9 (v0.9)** переводит проект от абстрактной coordination-проверки к первой настоящей reference mission — Search and Rescue. Агенты ищут скрытые цели на дискретизированной карте, используя ролевые сенсоры с вероятностью обнаружения. Это первый сценарий, где success зависит не только от allocation correctness, но и от физического покрытия области и sensor performance.
 
-**Источники контекста:** `DRONE_A.3.md` (Milestone 8: kinematic + battery), `DRONE_B.3.md` (SAR + kinematic model). INVESTIGATION.md отсутствует.
+**Источники контекста:** `DRONE_A.3.md` (SAR: grid, hidden targets, roles, PoD, time_to_find), `DRONE_B.3.md` (SAR + kinematic model как первый содержательный benchmark). INVESTIGATION.md отсутствует.
 
-**Текущее состояние (v0.4):**
-- `Agent.pose: Pose` — статичная позиция (не меняется во время симуляции)
-- `Agent.battery: f64` — всегда 100.0 (статичная)
-- `Velocity` тип существует, но не используется
-- `Agent.comms_range: f64` — уже добавлен (по умолчанию INFINITY, backward compat)
-- `ConnectivityModel` в `swarm-comms` — уже вычисляет link existence по range
+**Текущее состояние (v0.8):**
+- `Agent` имеет `speed`, `max_range`, `battery_drain_rate` — агенты двигаются к задачам.
+- `Role` enum: `Scout`, `Relay`, `Mapper`, `Inspector`, `Carrier`.
+- `Task` имеет `pose`, `required_role`, `preferred_role`.
+- `ConnectivityModel` вычисляет связность по `comms_range` и динамическим `pose`.
+- `ScenarioRunner` поддерживает `RunConfig` с `enable_movement`, `tick_duration_ms`.
+- Метрики: `final_battery_min`, `avg_distance_travelled`, `agents_exhausted`, `mission_completion_ticks`, `time_to_first_exhaustion`, `network_availability`.
 
 **Критерий готовности:**
-1. Агенты двигаются: `pose += velocity * dt` каждый тик при назначенной задаче с `pose`.
-2. Батарея расходуется пропорционально пройденному расстоянию.
-3. Агент с `battery = 0` не может быть назначен на новые задачи (capability gate).
-4. При `comms_range < INFINITY`, движение меняет связность между агентами (link появляется/исчезает при сближении/расхождении).
-5. Метрики: `final_battery_min`, `avg_distance_travelled`, `agents_exhausted`.
-6. **Mission time**: `total_ticks` (как прокси времени миссии) отражает влияние движения — агенты с высокой скоростью завершают миссию быстрее; агенты с низкой батареей могут не успеть дойти до удалённых задач за `max_ticks`.
-7. Все существующие тесты проходят (backward compat: `comms_range = INFINITY`, `speed = 0`).
+1. Есть `SearchGrid` — дискретизированная область поиска (cells).
+2. Есть `HiddenTarget` — цели размещены в ячейках, неизвестны агентам до сканирования.
+3. Роли влияют на поиск: `Scout` (стандартный PoD), `Thermal` (повышенный PoD), `Relay` (не ищет, поддерживает связь).
+4. `SensorModel` — вероятность обнаружения при сканировании ячейки (PoD зависит от роли).
+5. Метрики: `time_to_find` (тик нахождения первой цели), `coverage_over_time` (доля просканированных ячеек по времени), `probability_of_detection` (фактическая доля найденных целей).
+6. Сценарий SAR: N агентов, M целей на сетке, агенты назначаются на ячейки, двигаются, сканируют, расходуют батарею.
+7. Все существующие тесты проходят (backward compat).
 
 ---
 
 ## Investigation context
 
-INVESTIGATION.md отсутствует. Контекст из `DRONE_A.3.md` (Milestone 8: kinematic + battery) и `DRONE_B.3.md` (SAR + kinematic model) приведён в разделе Context.
+INVESTIGATION.md отсутствует. Контекст из DRONE_A.3.md и DRONE_B.3.md:
+
+- DRONE_A.3.md: SAR — это перевод от абстрактной проверки к reference mission. Состав: grid/area, hidden target, scout/thermal/relay roles, probability of detection, time_to_find, coverage over time, network availability.
+- DRONE_B.3.md: SAR + kinematic model — первый настоящий benchmark, который нельзя "сломать" trivially. Закрывает gap в "критерии не-песочницы".
+- Оба документа сходятся: после kinematics/battery (Milestone 8) SAR — логичный следующий шаг. CBBA (Milestone 10) строится поверх SAR как алгоритмический benchmark.
 
 ---
 
@@ -36,226 +46,357 @@ INVESTIGATION.md отсутствует. Контекст из `DRONE_A.3.md` (M
 
 | Компонент | Тип изменения |
 |---|---|
-| `crates/swarm-types/src/agent.rs` | Добавить `speed: f64` (m/s), `max_range: f64` (m), `battery_drain_rate: f64` (%/m) в `Agent` |
-| `crates/swarm-types/src/pose.rs` | Методы `Velocity::speed() -> f64`, `Pose::distance_to(&Pose) -> f64` |
-| `crates/swarm-runtime/src/membership.rs` | `AgentEntry`: добавить `speed`, `max_range`, `battery_drain_rate`; метод `apply_movement(dt)` |
-| `crates/swarm-runtime/src/node.rs` | `AgentNode`: вызывать `apply_movement` в tick loop; обновлять `AllocationAgent.battery` из membership |
-| `crates/swarm-alloc/src/allocator.rs` | Battery gate: `AllocationAgent.battery > 0.0` как capability constraint в `allocate()` |
-| `crates/swarm-sim/src/runner.rs` | Передавать `tick_duration_ms` в movement; метрики движения/батареи |
-| `crates/swarm-metrics/src/metrics.rs` | Новые поля: `final_battery_min`, `avg_distance_travelled`, `agents_exhausted` |
-| `crates/swarm-scenarios/src/coverage.rs` | Добавить `speed`, `range`, `battery_drain_rate` в агентов coverage-сценария |
-| `crates/swarm-scenarios/src/partition.rs` | Добавить движение в partition-сценарий (опционально) |
-| `README.md` | Обновить статус до Milestone 8 |
+| `crates/swarm-types/src/grid.rs` | **NEW** — `SearchGrid`, `GridCell`, `CellState`, `HiddenTarget`, `SensorModel` |
+| `crates/swarm-types/src/lib.rs` | Re-export новых типов |
+| `crates/swarm-types/src/task.rs` | Добавить `TaskType` enum (`ScanCell`, `Relay`, `Transport`) или `scan_required: bool` |
+| `crates/swarm-runtime/src/node.rs` | Интеграция scan action в tick loop: после `apply_movement` проверить достижение ячейки и вызвать `scan_cell()` |
+| `crates/swarm-runtime/src/grid_state.rs` | **NEW** — `GridState`: mutable grid scan progress, target placement, scan results |
+| `crates/swarm-sim/src/runner.rs` | `SarRunConfig` или расширение `RunConfig` grid-полями; SAR-специфичная логика в `run_with()` |
+| `crates/swarm-sim/src/sar_scenario.rs` | **NEW** — `SarScenario`: builder для SAR миссии |
+| `crates/swarm-metrics/src/metrics.rs` | Новые поля: `time_to_find`, `coverage_over_time`, `probability_of_detection`, `targets_found`, `targets_total`, `scan_count` |
+| `crates/swarm-scenarios/src/lib.rs` | Re-export `sar_scenario` |
+| `crates/swarm-examples/src/bin/sar_scenario.rs` | **NEW** — runnable SAR binary |
+| `README.md` | Обновить статус до Milestone 9, описать SAR миссию |
 
 ---
 
 ## Implementation Steps
 
-### Шаг 1 — Расширить Agent/AgentEntry кинематическими полями
+### Шаг 1 — Типы сетки и цели (`swarm-types`)
+
+Файл: `crates/swarm-types/src/grid.rs` (новый)
+
+```rust
+/// Discrete search area divided into cells.
+pub struct SearchGrid {
+    pub width: u32,       // cells in x
+    pub height: u32,      // cells in y
+    pub cell_size: f64,   // meters per cell
+}
+
+impl SearchGrid {
+    pub fn cell_center(&self, x: u32, y: u32) -> Pose { ... }
+    pub fn cell_at_pose(&self, pose: &Pose) -> Option<(u32, u32)> { ... }
+    pub fn total_cells(&self) -> u32 { self.width * self.height }
+}
+
+/// State of a single grid cell.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CellState {
+    Unvisited,
+    Visited { scanned_by: Vec<AgentId>, scan_tick: u64 },
+    TargetFound { target_id: String, found_by: AgentId, found_at_tick: u64 },
+}
+
+/// Hidden target placed on the grid.
+pub struct HiddenTarget {
+    pub id: String,
+    pub cell_x: u32,
+    pub cell_y: u32,
+    pub pose: Pose, // center of cell
+}
+
+/// Probability-of-Detection model based on agent role.
+pub struct SensorModel {
+    pub scout_pod: f64,    // base PoD for Scout role
+    pub thermal_pod: f64,  // elevated PoD for Thermal role
+    pub relay_pod: f64,    // reduced PoD for Relay (if they scan at all)
+}
+
+impl SensorModel {
+    pub fn probability(&self, role: Role) -> f64 {
+        match role {
+            Role::Scout => self.scout_pod,
+            Role::Thermal => self.thermal_pod,
+            _ => self.relay_pod,
+        }
+    }
+}
+```
+
+**Тесты (категория 1):**
+- `search_grid_cell_count` — total_cells correct
+- `cell_center_roundtrip` — cell_center → cell_at_pose roundtrips
+- `sensor_model_scout_vs_thermal` — thermal_pod > scout_pod
+
+---
+
+### Шаг 2 — GridState: mutable scan progress (`swarm-runtime`)
+
+Файл: `crates/swarm-runtime/src/grid_state.rs` (новый)
+
+```rust
+pub struct GridState {
+    pub grid: SearchGrid,
+    pub cells: Vec<CellState>,
+    pub targets: Vec<HiddenTarget>,
+    pub sensor: SensorModel,
+    pub targets_found: u32,
+    pub first_find_tick: Option<u64>,
+    pub scan_count: u32,
+}
+
+impl GridState {
+    pub fn new(grid: SearchGrid, targets: Vec<HiddenTarget>, sensor: SensorModel) -> Self { ... }
+
+    /// Scan a cell when an agent arrives at its center.
+    /// Returns true if a target was found in this scan.
+    pub fn scan_cell(&mut self, agent_id: AgentId, cell_idx: usize, role: Role, current_tick: u64) -> bool { ... }
+
+    pub fn coverage_fraction(&self) -> f64 {
+        let visited = self.cells.iter().filter(|c| !matches!(c, CellState::Unvisited)).count();
+        visited as f64 / self.cells.len() as f64
+    }
+
+    pub fn all_targets_found(&self) -> bool {
+        self.targets_found == self.targets.len() as u32
+    }
+}
+```
+
+Логика `scan_cell`:
+1. Если cell уже `Visited` или `TargetFound` — idempotent (не сканируем повторно, или повторное сканирование не даёт новой информации).
+2. Проверить, есть ли target в этой ячейке.
+3. Если target есть: сгенерировать случайное число, сравнить с `sensor.probability(role)`. Если >= PoD — target found.
+4. Обновить `CellState`, `targets_found`, `first_find_tick`.
+5. Вернуть `true` если target найден в этом сканировании.
+
+**Детерминизм:** `scan_cell` принимает `rng: &mut impl Rng` для воспроизводимости. В `ScenarioRunner` передаётся seeded RNG.
+
+**Тесты (категория 1):**
+- `scan_finds_target_when_pod_is_one` — PoD=1.0 → всегда находит
+- `scan_misses_target_when_pod_is_zero` — PoD=0.0 → никогда не находит
+- `scan_coverage_fraction` — 2 из 4 ячеек scanned → coverage=0.5
+- `scan_idempotent` — повторное сканирование той же ячейки не меняет state
+
+---
+
+### Шаг 3 — Связать задачи с ячейками сетки
+
+Файл: `crates/swarm-types/src/task.rs`
+
+Добавить к `Task`:
+
+```rust
+pub struct Task {
+    // ... existing fields ...
+    /// If set, this task represents scanning a specific grid cell.
+    pub grid_cell: Option<(u32, u32)>,
+}
+```
+
+Или альтернатива (менее инвазивная): использовать `pose` задачи как center of cell, а в `GridState` мапить `pose → cell`. Предпочтительнее добавить `grid_cell` для явности.
+
+**Backward compat:** `grid_cell: None` по умолчанию (`#[serde(default)]`).
+
+---
+
+### Шаг 4 — Интеграция scan в tick loop
+
+Файл: `crates/swarm-runtime/src/node.rs`
+
+В `process_inbox_and_allocate()` после `apply_movement` (если `enable_movement`):
+
+```rust
+// Step 4a: scan cells when agents arrive at task poses
+if let Some(ref mut grid_state) = self.grid_state {
+    for (agent_id, task_id) in &self.coordinator.registry.agent_assignments() {
+        if let Some(task) = self.coordinator.registry.get_task(task_id) {
+            if let Some((cell_x, cell_y)) = task.grid_cell {
+                // Check if agent pose is within cell center threshold
+                if let Some(entry) = self.coordinator.membership.get_agent(agent_id) {
+                    let cell_pose = grid_state.grid.cell_center(cell_x, cell_y);
+                    let dist = entry.pose.distance_to(&cell_pose);
+                    if dist < ARRIVAL_THRESHOLD {
+                        let cell_idx = (cell_y * grid_state.grid.width + cell_x) as usize;
+                        let found = grid_state.scan_cell(
+                            agent_id.clone(),
+                            cell_idx,
+                            entry.role,
+                            self.tick_count,
+                            &mut self.rng, // seeded RNG
+                        );
+                        if found {
+                            // Optional: trigger event for replay/metrics
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
+`ARRIVAL_THRESHOLD` — допустимое отклонение от центра ячейки (например, 0.1 м).
+
+**Тесты (категория 2):**
+- `agent_scans_cell_when_arrives` — интеграционный: агент назначен на задачу с grid_cell, двигается к центру, scan_cell вызывается.
+
+---
+
+### Шаг 5 — SAR Scenario Builder
+
+Файл: `crates/swarm-scenarios/src/sar_scenario.rs` (новый)
+
+```rust
+pub struct SarScenarioConfig {
+    pub grid: SearchGrid,
+    pub target_count: u32,
+    pub scout_count: u32,
+    pub thermal_count: u32,
+    pub relay_count: u32,
+    pub sensor: SensorModel,
+    pub enable_movement: bool,
+    pub tick_duration_ms: u64,
+    pub max_ticks: u64,
+    pub seed: u64,
+}
+
+pub fn build_sar_scenario(config: &SarScenarioConfig) -> (Vec<Agent>, Vec<Task>, Vec<HiddenTarget>) { ... }
+```
+
+Логика:
+1. Создать `SearchGrid`.
+2. Случайно разместить `target_count` целей в ячейках (seeded RNG для детерминизма).
+3. Создать задачи: одна задача на каждую ячейку (`Task { grid_cell: Some((x,y)), pose: grid.cell_center(x,y), required_role: None, ... }`).
+4. Создать агентов: scouts, thermals, relays с разными ролями и capabilities.
+   - Scouts: `role: Scout`, `speed: 5.0`, `comms_range: 15.0`.
+   - Thermals: `role: Thermal` (нужно добавить в `Role` enum?), `speed: 4.0`, `comms_range: 12.0`, capability `thermal`.
+   - Relays: `role: Relay`, `speed: 3.0`, `comms_range: 20.0`.
+
+**Примечание:** `Role::Thermal` — новый вариант в `Role` enum. Если не добавлять, можно использовать `Role::Scout` + `Capability::Thermal`. Предпочтительнее добавить `Role::Thermal` в enum для явности.
 
 Файл: `crates/swarm-types/src/agent.rs`
 
 ```rust
-pub struct Agent {
-    // ... existing fields ...
-    pub speed: f64,              // NEW: cruising speed (m/s)
-    pub max_range: f64,          // NEW: max travel distance on full battery (m)
-    pub battery_drain_rate: f64, // NEW: battery % per meter travelled (0.0..=1.0)
-}
-```
-
-`max_range` — максимальная дистанция, которую агент может пройти на полной батарее.
-`battery_drain_rate` = 100.0 / max_range (вычисляется автоматически при создании, если не задан явно).
-
-`speed` по умолчанию 0.0 для backward compat.
-
-Файл: `crates/swarm-runtime/src/membership.rs`
-
-```rust
-pub struct AgentEntry {
-    // ... existing fields ...
-    pub speed: f64,
-    pub max_range: f64,
-    pub battery_drain_rate: f64,
+pub enum Role {
+    Scout,
+    Relay,
+    Mapper,
+    Inspector,
+    Carrier,
+    Thermal, // NEW
 }
 ```
 
 **Тесты (категория 1):**
-- `agent_speed_defaults_to_zero` — backward compat
+- `sar_scenario_creates_correct_agent_count` — scout_count + thermal_count + relay_count агентов
+- `sar_scenario_targets_within_grid` — все цели внутри сетки
+- `sar_scenario_one_task_per_cell` — задач = width * height
 
 ---
 
-### Шаг 2 — Кинематика: position += velocity * dt
-
-Новый метод в `MembershipView` (или отдельная функция в `node.rs`):
-
-```rust
-impl MembershipView {
-    /// Move agents toward their assigned tasks. Updates pose and battery.
-    /// Returns list of agents that exhausted their battery this tick.
-    pub fn apply_movement(
-        &mut self,
-        registry: &TaskRegistry,
-        tick_duration_ms: u64,
-    ) -> (Vec<AgentId>, Vec<(AgentId, f64)>) // (exhausted, (agent_id, distance_moved))
-}
-```
-
-Логика:
-1. Для каждого alive агента с назначенной задачей:
-   - Получить `task.pose` (если задача без pose — движение не применяется)
-   - Вычислить направление к цели: `dx = task_pose.x - agent_pose.x`, `dy = task_pose.y - agent_pose.y`
-   - `distance_to_target = sqrt(dx² + dy²)`
-   - `max_step = speed * (tick_duration_ms / 1000.0)` — сколько метров можно пройти за тик
-   - Если `distance_to_target <= max_step`:
-     - `agent.pose = task.pose` (достигли цели)
-     - Пройденное расстояние = `distance_to_target`
-   - Иначе:
-     - `agent.pose.x += dx / distance_to_target * max_step`
-     - `agent.pose.y += dy / distance_to_target * max_step`
-     - Пройденное расстояние = `max_step`
-   - `battery_drain = distance_moved * battery_drain_rate`
-   - `agent.battery = max(0.0, agent.battery - battery_drain)`
-2. Вернуть список агентов с `battery <= 0` (exhausted) и расстояния.
-
-**Тесты (категория 1):**
-- `movement_toward_target_updates_pose` — агент движется к задаче
-- `movement_reaches_target_snaps_pose` — агент достигает цели и останавливается
-- `movement_drains_battery` — батарея уменьшается пропорционально расстоянию
-- `movement_exhausts_battery` — батарея достигает 0, агент помечается exhausted
-- `movement_no_target_no_movement` — агент без задачи не двигается
-- `movement_speed_zero_no_movement` — speed=0 → без движения (backward compat)
-
----
-
-### Шаг 3 — Battery gate в allocator
-
-Файл: `crates/swarm-alloc/src/allocator.rs`
-
-В `GreedyAllocator::allocate()` и `AuctionAllocator::allocate()`:
-
-```rust
-// Filter out agents with exhausted battery
-let capable: Vec<&AllocationAgent> = agents
-    .iter()
-    .filter(|agent| has_all_capabilities(agent, &at.task.required_capabilities))
-    .filter(|agent| agent.battery > 0.0) // NEW: battery gate
-    .collect();
-```
-
-При `battery = 0`, агент исключается из allocation (как и при несовпадении capabilities).
-
-**Тесты (категория 1):**
-- `battery_exhausted_agent_excluded_from_allocation` — greedy не назначает задачи агенту с battery=0
-- `battery_exhausted_agent_excluded_from_auction` — auction не назначает
-
----
-
-### Шаг 4 — Интеграция движения в tick loop
-
-Файл: `crates/swarm-runtime/src/node.rs`
-
-В `process_inbox_and_allocate()` после `allocator`:
-
-```rust
-if self.config.enable_movement {
-    let (exhausted, distances) = self.coordinator.membership.apply_movement(
-        &self.coordinator.registry,
-        self.config.tick_duration_ms,
-    );
-    // exhausted agents: release their tasks for reallocation
-    for agent_id in &exhausted {
-        self.coordinator.membership.mark_dead(agent_id);
-        self.coordinator.registry.release_agent_tasks(agent_id);
-    }
-    // Record distances for metrics
-    for (agent_id, distance) in &distances {
-        self.movement_this_tick.push((agent_id.clone(), *distance));
-    }
-}
-```
-
-Добавить `NodeConfig`:
-
-```rust
-pub struct NodeConfig {
-    pub tick_duration_ms: u64,  // milliseconds per tick
-    pub enable_movement: bool,  // default: false (backward compat)
-}
-```
-
-Передать `NodeConfig` в `AgentNode::new()`.
-
-Файл: `crates/swarm-sim/src/runner.rs`
-
-Добавить в `RunConfig`:
-```rust
-pub enable_movement: bool,
-pub tick_duration_ms: u64,  // default: 100
-```
-
-Передавать в `AgentNode` при создании.
-
-**Тесты (категория 1):**
-- `movement_disabled_by_default_does_not_change_pose` — backward compat
-
----
-
-### Шаг 5 — Влияние движения на связность
-
-Движение уже влияет на связность автоматически через `ConnectivityModel::direct_link(a.pose, range_a, b.pose, range_b)` — при изменении `pose` расстояние пересчитывается каждый тик. При `comms_range = INFINITY` (default) связность не меняется (backward compat).
-
-Дополнительно: при движении агент может выйти из `comms_range` другого агента и перестать с ним обмениваться heartbeats/gossip. Это эквивалентно динамическому partition.
-
-**Тесты (категория 1):**
-- `movement_changes_connectivity` — агент с `comms_range=10` уходит на расстояние 15 и теряет связь
-- `movement_restores_connectivity` — агент возвращается в range и связь восстанавливается
-
----
-
-### Шаг 6 — Метрики движения и батареи
+### Шаг 6 — SAR-специфичные метрики
 
 Файл: `crates/swarm-metrics/src/metrics.rs`
 
 Новые поля в `RunMetrics`:
 ```rust
-pub final_battery_min: f64,           // minimum battery among all agents at end
-pub avg_distance_travelled: f64,      // average distance per agent per run
-pub agents_exhausted: u64,            // count of agents that reached battery=0
-pub total_distance_travelled: f64,    // sum of all agent distances
-pub mission_completion_ticks: u64,    // ticks to completion (total_ticks); proxy for mission time
-pub time_to_first_exhaustion: Option<u64>, // tick when first agent reached battery=0
+#[serde(default)]
+pub time_to_find: Option<u64>,          // tick when first target found
+#[serde(default)]
+pub coverage_over_time: Vec<f64>,       // coverage fraction per tick (time series)
+#[serde(default)]
+pub probability_of_detection: f64,      // targets_found / targets_total
+#[serde(default)]
+pub targets_found: u32,
+#[serde(default)]
+pub targets_total: u32,
+#[serde(default)]
+pub scan_count: u32,
 ```
 
-Заполняются в `ScenarioRunner::run_with()`.
-
-Обновить `AggregateMetrics` и `Display`.
+Агрегация в `ScenarioRunner::run_with()`:
+- `time_to_find` = `grid_state.first_find_tick`
+- `targets_found` = `grid_state.targets_found`
+- `targets_total` = `grid_state.targets.len()`
+- `probability_of_detection` = `targets_found / targets_total`
+- `scan_count` = `grid_state.scan_count`
+- `coverage_over_time` — записывать `coverage_fraction()` каждый тик
 
 **Тесты (категория 1):**
-- `movement_metrics_present` — после симуляции с движением метрики содержат ненулевые значения
-- `mission_completion_ticks_lower_with_higher_speed` — агенты со `speed=10` завершают миссию быстрее (меньше `total_ticks`), чем со `speed=1`
-- `mission_completion_ticks_exceeds_max_with_low_battery` — агент с малой батареей не доходит до удалённой задачи за `max_ticks` → `success=false`
+- `sar_metrics_populated` — после SAR-симуляции метрики содержат ненулевые значения
+- `coverage_over_time_monotonic` — coverage не уменьшается (или non-decreasing)
 
 ---
 
-### Шаг 7 — Обновить существующие сценарии
+### Шаг 7 — ScenarioRunner поддержка SAR
 
-Файл: `crates/swarm-scenarios/src/coverage.rs`, `partition.rs`, `auction.rs`
+Файл: `crates/swarm-sim/src/runner.rs`
 
-Добавить `speed: 5.0`, `max_range: 500.0` к агентам в сценариях где это уместно.
-Для backward compat: `speed: 0.0` где движение не нужно.
+Добавить в `RunConfig` (или создать `SarRunConfig`):
+```rust
+pub struct RunConfig {
+    // ... existing fields ...
+    // SAR-specific (optional)
+    pub grid_state: Option<GridState>,
+}
+```
 
-Файл: `crates/swarm-examples/src/bin/partition_scenario.rs`
+Или лучше: `ScenarioRunner` принимает `Option<GridState>` отдельно от `RunConfig`.
 
-Опционально: добавить `enable_movement: true` и проверить что convergence работает при движении.
+В `run_with()`:
+1. Если `grid_state` передан — инициализировать `grid_state` на каждом `AgentNode`.
+2. В конце симуляции — собрать SAR-метрики из `grid_state`.
+3. Success criteria для SAR: `targets_found == targets_total` (или `targets_found >= min_required`).
+
+**Тесты (категория 2):**
+- `sar_scenario_finds_all_targets_with_pod_one` — PoD=1.0, все цели найдены за finite ticks
+- `sar_scenario_fails_with_pod_zero` — PoD=0.0, success=false (цели не найдены)
+- `sar_thermal_faster_than_scout` — thermal (PoD=0.8) находит быстрее, чем scout (PoD=0.3) при тех же условиях
 
 ---
 
-### Шаг 8 — Обновить README.md
+### Шаг 8 — Runnable SAR binary
 
-- Добавить Milestone 8 в `## Current Status`
-- Описать kinematic/battery модель
-- Документировать `speed`, `max_range`, `battery_drain_rate`
+Файл: `crates/swarm-examples/src/bin/sar_scenario.rs` (новый)
+
+```rust
+fn main() {
+    let config = SarScenarioConfig {
+        grid: SearchGrid { width: 10, height: 10, cell_size: 10.0 },
+        target_count: 3,
+        scout_count: 3,
+        thermal_count: 1,
+        relay_count: 1,
+        sensor: SensorModel { scout_pod: 0.3, thermal_pod: 0.8, relay_pod: 0.1 },
+        enable_movement: true,
+        tick_duration_ms: 1000,
+        max_ticks: 500,
+        seed: 42,
+    };
+
+    let (agents, tasks, targets) = build_sar_scenario(&config);
+    let grid_state = GridState::new(config.grid.clone(), targets, config.sensor.clone());
+
+    let runner = ScenarioRunner::new(agents, tasks, RunConfig {
+        // ... standard config ...
+        enable_movement: config.enable_movement,
+        tick_duration_ms: config.tick_duration_ms,
+    });
+
+    let result = runner.run_with(|nodes, tick| {
+        // Optional: print coverage every 50 ticks
+    });
+
+    println!("Targets found: {}/{}\n", result.metrics.targets_found, result.metrics.targets_total);
+    println!("Time to first find: {:?}\n", result.metrics.time_to_find);
+    println!("Final coverage: {:.2}\n", result.metrics.coverage_over_time.last().unwrap_or(&0.0));
+    println!("PoD: {:.2}\n", result.metrics.probability_of_detection);
+
+    assert!(result.metrics.targets_found > 0, "At least one target should be found");
+}
+```
+
+---
+
+### Шаг 9 — Обновить README.md
+
+Добавить раздел **Milestone 9**:
+- SAR v1: grid search, hidden targets, role-based sensors (Scout/Thermal/Relay).
+- Probability of Detection model: thermal has higher PoD than scout.
+- Metrics: `time_to_find`, `coverage_over_time`, `probability_of_detection`.
+- Команда запуска: `cargo run -p swarm-examples --bin sar_scenario`.
 
 ---
 
@@ -266,88 +407,93 @@ cargo fmt --all
 cargo clippy --all-targets -- -D warnings
 cargo build --workspace
 cargo test --workspace
+cargo run -p swarm-examples --bin sar_scenario
 cargo run -p swarm-examples --bin coverage_with_failure
-cargo run -p swarm-examples --bin dynamic_auction
-cargo run -p swarm-examples --bin multiprocess_scenario
-cargo run -p swarm-examples --bin partition_scenario
+cargo run -p swarm-examples --bin emergency_mesh_scenario
+cargo run -p swarm-examples --bin strategy_comparison
 ```
 
 ---
 
 ## Testing Strategy
 
-### Категория 1 — Без рефакторинга
+### Категория 1 — Без рефакторинга (unit тесты)
 
-**`swarm-types` — поля Agent (1 тест):**
-- `agent_speed_defaults_to_zero`
+**`swarm-types` — grid и sensor (3 теста):**
+- `search_grid_cell_count`
+- `cell_center_roundtrip`
+- `sensor_model_scout_vs_thermal`
 
-**`swarm-runtime` — kinematics (6 тестов):**
-- `movement_toward_target_updates_pose`
-- `movement_reaches_target_snaps_pose`
-- `movement_drains_battery`
-- `movement_exhausts_battery`
-- `movement_no_target_no_movement`
-- `movement_speed_zero_no_movement`
+**`swarm-runtime` — GridState scan (4 теста):**
+- `scan_finds_target_when_pod_is_one`
+- `scan_misses_target_when_pod_is_zero`
+- `scan_coverage_fraction`
+- `scan_idempotent`
 
-**`swarm-runtime` — backward compat (1 тест):**
-- `movement_disabled_by_default_does_not_change_pose`
+**`swarm-scenarios` — SAR builder (3 теста):**
+- `sar_scenario_creates_correct_agent_count`
+- `sar_scenario_targets_within_grid`
+- `sar_scenario_one_task_per_cell`
 
-**`swarm-alloc` — battery gate (2 теста):**
-- `battery_exhausted_agent_excluded_from_allocation`
-- `battery_exhausted_agent_excluded_from_auction`
+**`swarm-metrics` — SAR metrics (2 теста):**
+- `sar_metrics_populated`
+- `coverage_over_time_monotonic`
 
-**`swarm-comms` — connectivity + movement (2 теста):**
-- `movement_changes_connectivity`
-- `movement_restores_connectivity`
+**`swarm-types` — Role enum (1 тест):**
+- `role_thermal_serde_roundtrip`
 
-**`swarm-metrics` — новые метрики (1 тест):**
-- `movement_metrics_present`
+**Регрессия:** все существующие ~147 тестов должны пройти (backward compat через `grid_cell: None`, `Role::Thermal` как новый enum variant).
 
-**Регрессия:** все существующие ~130 тестов должны пройти (backward compat через default значения).
+### Категория 2 — Лёгкий рефакторинг (интеграционные)
 
-### Категория 2 — Лёгкий рефакторинг
+- **`agent_scans_cell_when_arrives`** — интеграция: AgentNode с enable_movement, grid_state, агент двигается к cell center, scan срабатывает.
+- **`sar_scenario_finds_all_targets_with_pod_one`** — end-to-end: PoD=1.0 → все цели найдены.
+- **`sar_scenario_fails_with_pod_zero`** — end-to-end: PoD=0.0 → success=false.
+- **`sar_thermal_faster_than_scout`** — сравнение: thermal (высокий PoD) vs scout (низкий PoD) на одной seed.
 
-- **Integration test с движением:** запустить in-process симуляцию с `speed > 0`, проверить что за N тиков агент приблизился к цели на ожидаемое расстояние.
-- **Battery exhaustion integration:** агент с маленькой батареей не доходит до удалённой задачи, задача остаётся unassigned → success=false для этой конфигурации.
+### Категория 3 — Тяжёлый (не для v0.9)
 
-### Категория 3 — Тяжёлый (не для v0.8)
-
-- **SAR mission с движением**: grid, hidden targets, multiple agents с разными скоростями и батареями. Отложен до v0.9.
-- **Relay placement с движением**: агенты двигаются чтобы поддерживать mesh. v0.9.
+- **Multi-target SAR с battery exhaustion** — агенты исчерпывают батарею до покрытия всей сетки. Требует tuning max_range и grid size.
+- **CBBA on SAR** — отложен до Milestone 10.
+- **Dynamic target injection** — цели появляются во время миссии. Требует изменения task lifecycle.
 
 ### Покрытие gap
 
-- **Gap**: wallclock battery drain vs simulation ticks. Текущая модель: drain за расстояние, не за время. Висение на месте не тратит батарею. Приемлемо для v0.8.
-- **Gap**: нет модели возврата на базу (return-to-base). Агент может исчерпать батарею на полпути и стать dead. Для SAR это важный параметр — отложен до v0.9.
-- **Gap**: нет charge/recharge модели. Батарея только тратится. Приемлемо для v0.8.
+- **Gap**: нет модели помех (false positives). Scan может "найти" target там, где его нет. Для v0.9 — не критично.
+- **Gap**: нет prioritization ячеек (все ячейки равнозначны). Для v0.9 — приемлемо; можно добавить heat map в v0.10.
+- **Gap**: `coverage_over_time` — Vec<f64> на каждый тик может быть большим для long runs. Можно сэмплировать каждые N тиков. Для v0.9 — записывать каждый тик, оптимизировать позже.
 
 ---
 
 ## Risks and Tradeoffs
 
-**1. Breaking change: `Agent` новые поля**
+**1. Новый enum variant `Role::Thermal`**
 
-`speed`, `max_range`, `battery_drain_rate` добавляются в `Agent`. Все конструкторы `Agent` должны быть обновлены. `#[serde(default)]` обеспечивает deserialization старых JSON-конфигов.
+Breaking change для deserialизации старых JSON с ролью "thermal" (если такие были). Но "thermal" раньше был только `Capability`, не `Role`. `#[serde(default)]` на Role не применим (enum). Риск: старые JSON с `role: "thermal"` (если создавались вручную) не десериализуются. Вероятность низкая — thermal не использовался как Role.
 
-**2. Battery drain = f(distance), не f(time)**
+**2. `grid_cell` в `Task`**
 
-Простая модель: батарея тратится только при движении. Не учитывает "standby drain" (расход на связь, сенсоры). Достаточно для v0.8; standby drain можно добавить позже как `battery_drain_rate * dt`.
+Новое поле `grid_cell: Option<(u32, u32)>` добавляется в `Task`. Все конструкторы `Task` обновляются. `#[serde(default)]` обеспечивает backward compat для старых JSON-конфигов.
 
-**3. Movement в `MembershipView` vs отдельный модуль**
+**3. GridState в tick loop**
 
-`apply_movement` в `MembershipView` изменяет mutable state `pose` и `battery`. Это нарушает SRP (MembershipView отвечает и за membership, и за физику). Но для v0.8 это простейший путь; рефакторинг в отдельный `KinematicModel` — v0.9.
+`GridState::scan_cell` вызывается каждый тик для каждого агента с назначенной задачей. Если агент стоит на месте (доехал до цели), scan будет idempotent (ячейка уже Visited). Производительность: O(agents) на тик, приемлемо.
 
-**4. `speed = 0` backward compat**
+**4. Детерминизм PoD**
 
-По умолчанию `speed = 0.0` — без движения. Все существующие тесты не затрагиваются. `enable_movement = false` в `NodeConfig` — дополнительная защита.
+`scan_cell` использует seeded RNG. Важно: один и тот же seed должен давать один и тот же результат. Проверить через `sar_scenario_finds_all_targets_with_pod_one` на фиксированном seed.
 
-**5. Battery=0 → mark_dead semantics**
+**5. ARRIVAL_THRESHOLD**
 
-При battery=0 агент помечается dead, его задачи освобождаются. Это консистентно с текущим failure detection: dead агент исключается из allocation и membership. Альтернатива: `Health::Exhausted` — но добавляет новый state без явной пользы для v0.8.
+Порог прибытия к центру ячейки (0.1 м) — магическая константа. Если `cell_size` маленький (1.0 м), threshold может быть слишком большим. Для v0.9: `ARRIVAL_THRESHOLD = cell_size * 0.1` (10% от размера ячейки).
 
-**6. Движение меняет аллокационные решения**
+**6. Task = one per cell**
 
-Поскольку battery теперь влияет на eligibility через allocator gate, а pose меняется — allocation decisions становятся нестатичными. Gossip/merge должен корректно обрабатывать случаи, когда агент «передумал» из-за движения. Это уже покрыто gossip convergence тестами из v0.4.
+В SAR-сценарии количество задач = width * height. Для сетки 10×10 это 100 задач. При 5 агентах coverage займёт ~20 тиков (последовательно) или меньше (параллельно). Для battery model: каждая ячейка 10×10 м, расстояние между соседними ячейками ~10 м. При speed=5 м/с и tick_duration=1 с: агент проходит 5 м/тик. До соседней ячейки — 2 тика. Battery drain: 2 тика * 5 м * drain_rate. При max_range=500 м — ~100 ячеек на полной батарее. Для 10×10 сетки хватает.
+
+**7. Coverage_over_time Vec<f64>**
+
+Для `max_ticks=500` — Vec из 500 элементов (~4KB). Для `max_ticks=10000` — ~80KB. Приемлемо для in-process, но для JSON export может раздуть отчёт. Можно сэмплировать каждые 10 тиков. Для v0.9 — записывать каждый тик, оптимизировать в v0.10 если нужно.
 
 ---
 
@@ -355,22 +501,36 @@ cargo run -p swarm-examples --bin partition_scenario
 
 | Риск | Что сломается | Как проверить |
 |---|---|---|
-| Новые поля в `Agent` | Все конструкторы Agent (в тестах, сценариях, agent_process) не компилируются | `cargo check --workspace` |
-| `serde(default)` для новых полей | Старые JSON-конфиги для `agent_process` не десериализуются | Тест `agent_comms_range_serde_default_infinity` — аналогично для speed/max_range |
-| `apply_movement` меняет pose | Координатор/allocator работают с устаревшим pose из `AllocationAgent` | Pose обновляется в membership → при построении AllocationAgent используется актуальный pose |
-| Battery drain при speed=0 | Не должно быть drain | Тест `movement_speed_zero_no_movement` |
-| Partitions + movement | Агент выходит из comms_range → partition; должен быть обработан gossip | Существующие gossip тесты из v0.4 |
-| `enable_movement = true` по умолчанию | Ломает все существующие тесты | `enable_movement = false` по умолчанию; тесты проверяют explicit opt-in |
+| Новый enum variant `Role::Thermal` | Старые JSON с `role: "thermal"` (если были) не десериализуются | `cargo test --workspace` (serde тесты) |
+| `grid_cell` в `Task` | Все конструкторы Task (в тестах, сценариях) не компилируются | `cargo check --workspace` |
+| `#[serde(default)]` для `grid_cell` | Старые JSON-конфиги для agent_process не десериализуются | Тест `task_serde_default` |
+| `GridState` в tick loop | Performance regression: O(agents) scan per tick | Benchmark: `cargo test` время выполнения не должно вырасти >20% |
+| `Role::Thermal` в allocator | Агенты с Thermal не назначаются на задачи без required_role | Тест `thermal_agent_allocatable_on_generic_task` |
+| `coverage_over_time` Vec | Memory usage growth для long runs | `sar_scenario` с max_ticks=1000 не паникует по памяти |
 | `Cargo.lock` изменился | Должен быть включён в commit | `git diff --stat` |
 
 ---
 
 ## Open Questions
 
-1. **Куда поместить `apply_movement`?** Варианты: (a) метод `MembershipView`, (b) отдельный `KinematicModel` в `swarm-runtime`, (c) в `AgentNode`. Для v0.8 — (a) как самый простой. Для v0.9 — рефакторить в (b).
+1. **Нужен ли `Role::Thermal` или достаточно `Capability::Thermal`?**
+   - `Role::Thermal` — явный, интуитивный для SAR.
+   - `Capability::Thermal` — не требует изменения enum, но менее явный.
+   - Рекомендация: добавить `Role::Thermal` в enum (breaking change минимальный, т.к. thermal не использовался как Role ранее).
 
-2. **`battery_drain_rate` вычислять или задавать?** `battery_drain_rate = 100.0 / max_range` если не задан явно. Упрощает конфигурацию сценариев.
+2. **`coverage_over_time` — Vec или HashMap<tick, fraction>?**
+   - Vec: простой, плотный, но большой для long runs.
+   - HashMap: разреженный, но теряет ordering guarantee.
+   - Рекомендация: Vec для v0.9; оптимизировать сэмплированием в v0.10.
 
-3. **Battery drain per time?** Сейчас: drain per distance. Для SAR это правильно (основной расход — на полёт). Для relay/standby нужен drain per time. Добавить позже как `battery_drain_rate_idle: f64`.
+3. **Нужен ли `min_targets_required` вместо `all_targets_found`?**
+   - Для SAR может быть достаточно найти 1 из 3 целей (partial success).
+   - Для v0.9: success = all_targets_found. Добавить `min_targets_required` в v0.10.
 
-4. **Нужен ли `Velocity` вектор в агенте?** Текущий `Velocity` тип не используется. Можно вычислять velocity из разницы позиций между тиками (`new_pose - old_pose`) делённой на dt. Не нужно хранить. Или хранить для сглаживания траектории. Для v0.8 — не хранить.
+4. **Как обрабатывать scan агентом без назначенной задачи?**
+   - В v0.9: scan только при назначении на задачу с `grid_cell`. Агент без задачи не сканирует.
+   - Альтернатива: "area search" — агент сканирует ячейку под собой каждый тик. Более реалистично, но сложнее (нужна autonomy без allocation). Для v0.10.
+
+5. **Нужна ли GridState сериализация для replay?**
+   - Да: `GridState` должен сериализоваться в `EventLog` для deterministic replay. Добавить `GridSnapshot` event.
+   - Для v0.9: достаточно сериализовать `SearchGrid`, `HiddenTarget` placement, и `seed`. Replay пересоздаёт `GridState` и воспроизводит scan логику.

@@ -224,3 +224,29 @@ Run with CSV export:
 ```bash
 cargo run -p swarm-examples --bin strategy_comparison -- --csv results.csv
 ```
+
+**Milestone 9** — planned. SAR v1 (Search and Rescue):
+
+- `SearchGrid` — discrete search area divided into cells; each cell is a Task with a pose.
+- `HiddenTarget` — targets randomly placed in cells; unknown to agents until scanned.
+- Role-based sensor model: `Scout` (standard PoD), `Thermal` (elevated PoD), `Relay` (maintains mesh, reduced search capability).
+- `SensorModel` — probability of detection (`scout_pod`, `thermal_pod`, `relay_pod`) applied when an agent scans a cell after arriving at its center.
+- `GridState` — tracks per-cell scan progress, coverage fraction, and target discovery.
+- New metrics: `time_to_find` (tick of first target discovery), `coverage_over_time` (fraction of cells scanned per tick), `probability_of_detection` (targets found / total), `targets_found`, `targets_total`, `scan_count`.
+- Deterministic: target placement and scan outcomes use seeded RNG; reproducible via replay.
+- Success criteria: all targets found before `max_ticks` or battery exhaustion.
+
+Run the SAR scenario:
+
+```bash
+cargo run -p swarm-examples --bin sar_scenario
+```
+
+Sample output:
+
+```
+Targets found: 2/3
+Time to first find: Some(145)
+Final coverage: 0.72
+PoD: 0.67
+```
