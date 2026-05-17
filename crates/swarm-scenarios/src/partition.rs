@@ -20,6 +20,8 @@ pub fn build_partition_scenario(config: &PartitionConfig) -> (Scenario, RunConfi
         seed: config.seed,
         agents: config.agents.clone(),
         tasks: config.tasks.clone(),
+        ground_nodes: vec![],
+        base_station: None,
     };
 
     let mut partition_events = Vec::new();
@@ -43,6 +45,7 @@ pub fn build_partition_scenario(config: &PartitionConfig) -> (Scenario, RunConfi
         dynamic_tasks: vec![],
         partition_events,
         gossip_interval_ticks: config.gossip_interval_ticks,
+        base_id: None,
     };
 
     (scenario, run_config)

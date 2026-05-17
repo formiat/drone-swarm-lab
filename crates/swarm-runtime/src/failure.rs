@@ -44,6 +44,7 @@ mod tests {
             capabilities: Vec::new(),
             current_task: None,
             battery: 100.0,
+            comms_range: f64::INFINITY,
             generation: 1,
         }
     }

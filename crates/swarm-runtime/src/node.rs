@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
-use swarm_alloc::{AllocationAgent, AllocationTask, Allocator};
-use swarm_comms::{RawMessage, Transport};
-use swarm_types::{AgentId, Task, TaskId};
+use swarm_alloc::{AllocationAgent, AllocationTask, Allocator, ConnectivityContext};
+use swarm_comms::{ConnectivitySnapshot, RawMessage, Transport};
+use swarm_types::{AgentId, Health, Task, TaskId};
 
 use crate::message::RuntimeMessage;
 use crate::Coordinator;
@@ -298,11 +298,36 @@ fn allocate_unassigned<A: Allocator>(coordinator: &mut Coordinator, allocator: &
             battery: entry.battery,
             capabilities: entry.capabilities.clone(),
             role: entry.role.clone(),
+            comms_range: entry.comms_range,
         })
         .collect();
     agents.sort_by(|a, b| a.id.as_ref().cmp(b.id.as_ref()));
 
-    let decisions = allocator.allocate(&allocation_tasks, &agents);
+    // Build connectivity context for v0.5+ allocators
+    let agent_entries: Vec<(AgentId, swarm_types::Pose, f64, Health)> = coordinator
+        .membership
+        .alive_agents()
+        .map(|(id, entry)| (id.clone(), entry.pose, entry.comms_range, Health::Alive))
+        .collect();
+    let base_id = agents
+        .first()
+        .map(|a| a.id.clone())
+        .unwrap_or_else(|| AgentId::from("base".to_owned()));
+    let base_pose = agents
+        .first()
+        .map(|a| a.pose)
+        .unwrap_or(swarm_types::Pose { x: 0.0, y: 0.0 });
+    let connectivity = ConnectivityContext {
+        snapshot: ConnectivitySnapshot {
+            agent_entries,
+            ground_nodes: vec![],
+            base_id: base_id.to_string(),
+            base_pose,
+        },
+        base_id: base_id.clone(),
+    };
+
+    let decisions = allocator.allocate_with_connectivity(&allocation_tasks, &agents, &connectivity);
 
     let mut seen = HashSet::new();
     let mut conflicts: u64 = 0;
@@ -337,6 +362,7 @@ mod tests {
             capabilities: vec![],
             current_task: None,
             battery: 100.0,
+            comms_range: f64::INFINITY,
             generation: 1,
         }
     }
@@ -348,6 +374,7 @@ mod tests {
             assigned_to: None,
             priority: 1,
             required_capabilities: vec![],
+            required_role: None,
             preferred_role: None,
             expires_at: None,
             pose: None,

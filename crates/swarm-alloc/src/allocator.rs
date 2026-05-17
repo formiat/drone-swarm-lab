@@ -1,6 +1,8 @@
+use swarm_comms::ConnectivitySnapshot;
 use swarm_types::{AgentId, Capability, Pose, Role, Task, TaskId};
 
 /// Enriched task context passed to allocators.
+#[derive(Clone)]
 pub struct AllocationTask<'a> {
     pub task: &'a Task,
 }
@@ -8,12 +10,20 @@ pub struct AllocationTask<'a> {
 /// Enriched agent context passed to allocators.
 ///
 /// Uses owned copies to avoid lifetime conflicts when building from MembershipView.
+#[derive(Clone)]
 pub struct AllocationAgent {
     pub id: AgentId,
     pub pose: Pose,
     pub battery: f64,
     pub capabilities: Vec<Capability>,
     pub role: Role,
+    pub comms_range: f64,
+}
+
+/// Connectivity context passed to allocators that need network awareness.
+pub struct ConnectivityContext {
+    pub snapshot: ConnectivitySnapshot,
+    pub base_id: AgentId,
 }
 
 /// value: `(task_id, agent_id)` — allocation decisions
@@ -23,6 +33,17 @@ pub trait Allocator {
         tasks: &[AllocationTask<'_>],
         agents: &[AllocationAgent],
     ) -> Vec<(TaskId, AgentId)>;
+
+    /// v0.5 extension for connectivity-aware allocation.
+    /// Default implementation delegates to `allocate`, preserving backward compatibility.
+    fn allocate_with_connectivity(
+        &self,
+        tasks: &[AllocationTask<'_>],
+        agents: &[AllocationAgent],
+        _connectivity: &ConnectivityContext,
+    ) -> Vec<(TaskId, AgentId)> {
+        self.allocate(tasks, agents)
+    }
 }
 
 pub struct GreedyAllocator;
@@ -51,7 +72,10 @@ impl Allocator for GreedyAllocator {
         for at in ordered {
             let capable: Vec<&AllocationAgent> = agents
                 .iter()
-                .filter(|agent| has_all_capabilities(agent, &at.task.required_capabilities))
+                .filter(|agent| {
+                    has_all_capabilities(agent, &at.task.required_capabilities)
+                        && has_required_role(agent, &at.task.required_role)
+                })
                 .collect();
 
             if capable.is_empty() {
@@ -135,7 +159,9 @@ impl Allocator for AuctionAllocator {
 
 impl AuctionAllocator {
     fn cost(&self, task: &Task, agent: &AllocationAgent) -> f64 {
-        if !has_all_capabilities(agent, &task.required_capabilities) {
+        if !has_all_capabilities(agent, &task.required_capabilities)
+            || !has_required_role(agent, &task.required_role)
+        {
             return f64::INFINITY;
         }
 
@@ -160,6 +186,10 @@ fn has_all_capabilities(agent: &AllocationAgent, required: &[Capability]) -> boo
     required.iter().all(|cap| agent.capabilities.contains(cap))
 }
 
+fn has_required_role(agent: &AllocationAgent, required: &Option<Role>) -> bool {
+    required.as_ref().is_none_or(|r| &agent.role == r)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -172,6 +202,7 @@ mod tests {
             assigned_to: None,
             priority,
             required_capabilities: vec![],
+            required_role: None,
             preferred_role: None,
             expires_at: None,
             pose: None,
@@ -185,6 +216,7 @@ mod tests {
             assigned_to: None,
             priority: 1,
             required_capabilities: vec![Capability::from(cap.to_owned())],
+            required_role: None,
             preferred_role: None,
             expires_at: None,
             pose: None,
@@ -198,6 +230,7 @@ mod tests {
             assigned_to: None,
             priority: 1,
             required_capabilities: vec![],
+            required_role: None,
             preferred_role: None,
             expires_at: None,
             pose: Some(Pose { x, y }),
@@ -211,6 +244,7 @@ mod tests {
             battery: 100.0,
             capabilities: vec![],
             role: Role::Scout,
+            comms_range: f64::INFINITY,
         }
     }
 
@@ -221,6 +255,7 @@ mod tests {
             battery: 100.0,
             capabilities: vec![Capability::from(cap.to_owned())],
             role: Role::Scout,
+            comms_range: f64::INFINITY,
         }
     }
 
@@ -231,6 +266,7 @@ mod tests {
             battery: 100.0,
             capabilities: vec![],
             role: Role::Scout,
+            comms_range: f64::INFINITY,
         }
     }
 
@@ -332,6 +368,7 @@ mod tests {
             battery: 100.0,
             capabilities: vec![],
             role: Role::Scout,
+            comms_range: f64::INFINITY,
         };
         let a_mapper = AllocationAgent {
             id: AgentId::from("mapper".to_owned()),
@@ -339,6 +376,7 @@ mod tests {
             battery: 100.0,
             capabilities: vec![],
             role: Role::Mapper,
+            comms_range: f64::INFINITY,
         };
         let result = AuctionAllocator::default().allocate(&[at(&t)], &[a_scout, a_mapper]);
         assert_eq!(result.len(), 1);
@@ -354,6 +392,7 @@ mod tests {
             battery: 100.0,
             capabilities: vec![],
             role: Role::Scout,
+            comms_range: f64::INFINITY,
         };
         let low = AllocationAgent {
             id: AgentId::from("low".to_owned()),
@@ -361,6 +400,7 @@ mod tests {
             battery: 10.0,
             capabilities: vec![],
             role: Role::Scout,
+            comms_range: f64::INFINITY,
         };
         let result = AuctionAllocator::default().allocate(&[at(&t)], &[full, low]);
         assert_eq!(result.len(), 1);
@@ -376,5 +416,39 @@ mod tests {
         let unique_tasks: std::collections::HashSet<_> =
             result.iter().map(|(tid, _)| tid.to_string()).collect();
         assert_eq!(unique_tasks.len(), result.len());
+    }
+
+    #[test]
+    fn greedy_required_role_blocks_scout() {
+        let mut t = task("t0", 1);
+        t.required_role = Some(Role::Relay);
+        let a_scout = agent("scout");
+        let result = GreedyAllocator.allocate(&[at(&t)], &[a_scout]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn greedy_required_role_allows_relay() {
+        let mut t = task("t0", 1);
+        t.required_role = Some(Role::Relay);
+        let a_relay = AllocationAgent {
+            id: AgentId::from("relay".to_owned()),
+            pose: Pose { x: 0.0, y: 0.0 },
+            battery: 100.0,
+            capabilities: vec![],
+            role: Role::Relay,
+            comms_range: f64::INFINITY,
+        };
+        let result = GreedyAllocator.allocate(&[at(&t)], &[a_relay]);
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn auction_required_role_blocks_scout() {
+        let mut t = task("t0", 1);
+        t.required_role = Some(Role::Relay);
+        let a_scout = agent("scout");
+        let result = AuctionAllocator::default().allocate(&[at(&t)], &[a_scout]);
+        assert!(result.is_empty());
     }
 }

@@ -76,6 +76,7 @@ mod tests {
             capabilities: vec![],
             current_task: None,
             battery: 100.0,
+            comms_range: f64::INFINITY,
             generation: 1,
         }
     }
@@ -87,6 +88,7 @@ mod tests {
             assigned_to: None,
             priority: 1,
             required_capabilities: vec![],
+            required_role: None,
             preferred_role: None,
             expires_at: None,
             pose: None,

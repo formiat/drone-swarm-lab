@@ -157,6 +157,7 @@ mod tests {
             assigned_to: None,
             priority: 1,
             required_capabilities: vec![],
+            required_role: None,
             preferred_role: None,
             expires_at: None,
             pose: None,

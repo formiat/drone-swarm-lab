@@ -21,6 +21,13 @@ pub struct RunMetrics {
     pub stale_messages_discarded: u64,
     pub convergence_ticks: Option<u64>,
     pub max_view_divergence: u64,
+    // v0.5 network availability metrics
+    pub network_availability: f64,
+    pub relay_reallocation_ticks: Option<u64>,
+    pub avg_hop_count: f64,
+    pub disconnected_agents_max: u64,
+    pub relay_tasks_assigned: u64,
+    pub relay_tasks_reassigned: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -34,6 +41,11 @@ pub struct AggregateMetrics {
     pub avg_tasks_injected: f64,
     pub avg_tasks_expired: f64,
     pub avg_conflicting_assignments: f64,
+    // v0.5
+    pub avg_network_availability: f64,
+    pub avg_relay_reallocation_ticks: f64,
+    pub avg_avg_hop_count: f64,
+    pub avg_disconnected_agents_max: f64,
 }
 
 impl AggregateMetrics {
@@ -49,6 +61,10 @@ impl AggregateMetrics {
                 avg_tasks_injected: 0.0,
                 avg_tasks_expired: 0.0,
                 avg_conflicting_assignments: 0.0,
+                avg_network_availability: 0.0,
+                avg_relay_reallocation_ticks: 0.0,
+                avg_avg_hop_count: 0.0,
+                avg_disconnected_agents_max: 0.0,
             };
         }
 
@@ -59,6 +75,9 @@ impl AggregateMetrics {
         let total_tasks_injected: u64 = runs.iter().map(|run| run.tasks_injected).sum();
         let total_tasks_expired: u64 = runs.iter().map(|run| run.tasks_expired).sum();
         let total_conflicting: u64 = runs.iter().map(|run| run.conflicting_assignments).sum();
+        let total_network_availability: f64 = runs.iter().map(|run| run.network_availability).sum();
+        let total_avg_hop_count: f64 = runs.iter().map(|run| run.avg_hop_count).sum();
+        let total_disconnected_max: u64 = runs.iter().map(|run| run.disconnected_agents_max).sum();
         let n = runs.len() as f64;
 
         Self {
@@ -73,6 +92,12 @@ impl AggregateMetrics {
             avg_tasks_injected: total_tasks_injected as f64 / n,
             avg_tasks_expired: total_tasks_expired as f64 / n,
             avg_conflicting_assignments: total_conflicting as f64 / n,
+            avg_network_availability: total_network_availability / n,
+            avg_relay_reallocation_ticks: average_optional(
+                runs.iter().map(|run| run.relay_reallocation_ticks),
+            ),
+            avg_avg_hop_count: total_avg_hop_count / n,
+            avg_disconnected_agents_max: total_disconnected_max as f64 / n,
         }
     }
 }
@@ -95,10 +120,26 @@ impl fmt::Display for AggregateMetrics {
         writeln!(f, "avg_messages_dropped: {:.3}", self.avg_messages_dropped)?;
         writeln!(f, "avg_tasks_injected: {:.3}", self.avg_tasks_injected)?;
         writeln!(f, "avg_tasks_expired: {:.3}", self.avg_tasks_expired)?;
-        write!(
+        writeln!(
             f,
             "avg_conflicting_assignments: {:.3}",
             self.avg_conflicting_assignments
+        )?;
+        writeln!(
+            f,
+            "avg_network_availability: {:.3}",
+            self.avg_network_availability
+        )?;
+        writeln!(
+            f,
+            "avg_relay_reallocation_ticks: {:.3}",
+            self.avg_relay_reallocation_ticks
+        )?;
+        writeln!(f, "avg_avg_hop_count: {:.3}", self.avg_avg_hop_count)?;
+        write!(
+            f,
+            "avg_disconnected_agents_max: {:.3}",
+            self.avg_disconnected_agents_max
         )
     }
 }
@@ -142,6 +183,12 @@ mod tests {
             stale_messages_discarded: 0,
             convergence_ticks: None,
             max_view_divergence: 0,
+            network_availability: 1.0,
+            relay_reallocation_ticks: None,
+            avg_hop_count: 0.0,
+            disconnected_agents_max: 0,
+            relay_tasks_assigned: 0,
+            relay_tasks_reassigned: 0,
         }
     }
 

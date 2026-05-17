@@ -4,5 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+swarm-comms = { workspace = true }
 swarm-types = { workspace = true }
 tracing     = { workspace = true }

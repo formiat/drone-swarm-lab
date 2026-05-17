@@ -35,6 +35,18 @@ Swarm Coordination Runtime is a Rust workspace for mission-level coordination of
 - New metrics: `partition_events`, `partitions_active`, `stale_messages_discarded`, `convergence_ticks`, `max_view_divergence`.
 - Partition scenario: 6 agents, tick 10 partition into two groups, tick 30 heal, gossip converges after heal.
 
+**Milestone 5** — complete. Emergency Mesh Network:
+
+- `comms_range` on `Agent`: range-based connectivity using distance and BFS reachability.
+- `GroundNode` type: passive mesh participants that do not receive tasks.
+- `required_role` on `Task`: hard constraint for role-specific tasks (e.g., relay tasks).
+- `ConnectivityModel` in `swarm-comms`: manual BFS/DFS on adjacency list for mesh reachability, hop count, and network availability fraction.
+- `ConnectivityAwareAllocator` in `swarm-alloc`: optimizes relay placement by simulating each candidate's effect on network availability.
+- `Allocator` trait extended with `allocate_with_connectivity` (default impl delegates to `allocate` for backward compatibility).
+- Pose update in `ScenarioRunner`: agents move to their assigned task's pose, changing the connectivity graph dynamically.
+- Network availability metrics: `network_availability`, `avg_hop_count`, `disconnected_agents_max`, `relay_reallocation_ticks`.
+- Emergency Mesh scenario: base station, scouts, relays, ground nodes; relay failure and reallocation; 1000 seeds with availability threshold >= 0.8.
+
 ## Workspace Layout
 
 | Crate | Purpose |
@@ -44,7 +56,7 @@ Swarm Coordination Runtime is a Rust workspace for mission-level coordination of
 | `swarm-runtime` | Membership, failure detection, task registry, coordinator, `AgentNode`. |
 | `swarm-alloc` | Greedy and auction allocation strategies. |
 | `swarm-sim` | Deterministic clock, scenario model, generic scenario runner. |
-| `swarm-scenarios` | Scenario builders: Coverage With Failure and Dynamic Auction. |
+| `swarm-scenarios` | Scenario builders: Coverage With Failure, Dynamic Auction, and Emergency Mesh. |
 | `swarm-metrics` | Per-run and aggregate metrics. |
 | `swarm-replay` | Placeholder for future replay support. |
 | `swarm-examples` | Runnable binaries. |
@@ -87,6 +99,12 @@ Run the Milestone 4 partition + convergence scenario (6 agents, in-process):
 
 ```bash
 cargo run -p swarm-examples --bin partition_scenario
+```
+
+Run the Milestone 5 Emergency Mesh scenario (1000 seeds, connectivity-aware allocation, relay reallocation):
+
+```bash
+cargo run -p swarm-examples --bin emergency_mesh_scenario
 ```
 
 Enable tracing for observability:
@@ -136,3 +154,10 @@ Prints `PASS` on success, exits code `0`; reports violations with `FAIL` and exi
 - All tasks assigned (`success: true`).
 
 Prints metrics and exits code `0` on success; panics on invariant violation.
+
+`emergency_mesh_scenario` runs 1000 seeds with 4 scouts, 2 relays, 2 ground nodes, and a base station in a 20×0 area with `comms_range = 15.0`. One relay fails at tick 15. The `ConnectivityAwareAllocator` assigns relay tasks to optimize mesh reachability. After reallocation, the new relay agent moves to the relay task pose, restoring connectivity. Verifies:
+- `network_availability >= 0.8` across all seeds.
+- `relay_reallocation_ticks` is set (relay tasks reassigned after failure).
+- All scout tasks assigned to capable agents.
+
+Prints aggregate metrics and exits code `0` on success, `1` on invariant violation.

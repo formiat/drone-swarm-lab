@@ -32,6 +32,7 @@ pub fn build_coverage_scenario(config: &CoverageConfig) -> (Scenario, RunConfig)
             capabilities: Vec::new(),
             current_task: None,
             battery: 100.0,
+            comms_range: f64::INFINITY,
             generation: 1,
         })
         .collect();
@@ -53,6 +54,7 @@ pub fn build_coverage_scenario(config: &CoverageConfig) -> (Scenario, RunConfig)
                 assigned_to,
                 priority: 1,
                 required_capabilities: vec![],
+                required_role: None,
                 preferred_role: None,
                 expires_at: None,
                 pose: None,
@@ -65,6 +67,8 @@ pub fn build_coverage_scenario(config: &CoverageConfig) -> (Scenario, RunConfig)
         seed: config.seed,
         agents,
         tasks,
+        ground_nodes: vec![],
+        base_station: None,
     };
     let run_config = RunConfig {
         max_ticks: config.max_ticks,
@@ -79,6 +83,7 @@ pub fn build_coverage_scenario(config: &CoverageConfig) -> (Scenario, RunConfig)
         dynamic_tasks: vec![],
         partition_events: vec![],
         gossip_interval_ticks: 999,
+        base_id: None,
     };
 
     (scenario, run_config)

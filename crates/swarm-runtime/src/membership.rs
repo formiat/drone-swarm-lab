@@ -10,6 +10,7 @@ pub struct AgentEntry {
     pub last_heartbeat_tick: u64,
     pub battery: f64,
     pub pose: Pose,
+    pub comms_range: f64,
     pub generation: u64,
 }
 
@@ -32,6 +33,7 @@ impl MembershipView {
                         last_heartbeat_tick: 0,
                         battery: agent.battery,
                         pose: agent.pose,
+                        comms_range: agent.comms_range,
                         generation: agent.generation,
                     },
                 )
@@ -88,6 +90,15 @@ impl MembershipView {
         }
     }
 
+    /// Update the pose of an alive agent (used for pose-update simulation in ScenarioRunner).
+    pub fn update_pose(&mut self, agent_id: &AgentId, new_pose: Pose) {
+        if let Some(entry) = self.agents.get_mut(agent_id) {
+            if entry.health == Health::Alive {
+                entry.pose = new_pose;
+            }
+        }
+    }
+
     pub fn alive_agents(&self) -> impl Iterator<Item = (&AgentId, &AgentEntry)> {
         self.agents
             .iter()
@@ -125,6 +136,7 @@ mod tests {
             capabilities: Vec::new(),
             current_task: None,
             battery: 100.0,
+            comms_range: f64::INFINITY,
             generation: 1,
         }
     }

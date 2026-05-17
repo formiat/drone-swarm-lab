@@ -3,10 +3,12 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use swarm_alloc::Allocator;
-use swarm_comms::{InMemAgentTransport, InMemNetwork, NetworkConfig};
+use swarm_comms::{
+    ConnectivityModel, ConnectivitySnapshot, InMemAgentTransport, InMemNetwork, NetworkConfig,
+};
 use swarm_metrics::RunMetrics;
 use swarm_runtime::{AgentNode, Coordinator, NodeTickOutput};
-use swarm_types::{AgentId, Task, TaskId};
+use swarm_types::{AgentId, Health, Role, Task, TaskId};
 
 use crate::{Clock, Scenario};
 
@@ -40,6 +42,8 @@ pub struct RunConfig {
     pub dynamic_tasks: Vec<DynamicTaskEvent>,
     pub partition_events: Vec<PartitionEvent>,
     pub gossip_interval_ticks: u64,
+    // v0.5: base station identifier for connectivity metrics
+    pub base_id: Option<AgentId>,
 }
 
 pub struct ScenarioRunner;
@@ -109,6 +113,21 @@ impl ScenarioRunner {
         let mut heal_tick: Option<u64> = None;
         let mut max_view_divergence: u64 = 0;
 
+        // v0.5 connectivity metrics
+        let mut availability_per_tick: Vec<f64> = Vec::new();
+        let mut disconnected_agents_max: u64 = 0;
+        let mut relay_reallocation_ticks: Option<u64> = None;
+        let mut relay_detection_tick: Option<u64> = None;
+        let mut total_hop_count_sum: f64 = 0.0;
+        let mut total_hop_count_ticks: u64 = 0;
+        let base_id = config
+            .base_id
+            .clone()
+            .unwrap_or_else(|| AgentId::from("base".to_owned()));
+        let base_pose = scenario
+            .base_station
+            .unwrap_or(swarm_types::Pose { x: 0.0, y: 0.0 });
+
         for _ in 0..config.max_ticks {
             clock.advance();
             let current_tick = u64::from(clock.now());
@@ -171,6 +190,81 @@ impl ScenarioRunner {
                     Err(_) => continue,
                 };
                 tick_outputs.push((agent_id.clone(), output));
+            }
+
+            // v0.5: Pose update — move alive agents to their assigned task's pose
+            for (node, agent_id) in &mut nodes {
+                if crashed_agents.contains(agent_id) {
+                    continue;
+                }
+                let assigned_tasks: Vec<(AgentId, Option<swarm_types::Pose>)> = node
+                    .coordinator
+                    .registry
+                    .tasks()
+                    .filter(|t| t.assigned_to.as_ref() == Some(agent_id))
+                    .map(|t| (agent_id.clone(), t.pose))
+                    .collect();
+                for (_aid, pose) in assigned_tasks {
+                    if let Some(p) = pose {
+                        node.coordinator.membership.update_pose(agent_id, p);
+                    }
+                }
+            }
+
+            // v0.5: Compute connectivity metrics for this tick
+            {
+                let first_alive = nodes.iter().find(|(_, id)| !crashed_agents.contains(id));
+                if let Some((node, _)) = first_alive {
+                    let agent_entries: Vec<(AgentId, swarm_types::Pose, f64, Health)> = node
+                        .coordinator
+                        .membership
+                        .alive_agents()
+                        .map(|(id, entry)| {
+                            (id.clone(), entry.pose, entry.comms_range, Health::Alive)
+                        })
+                        .collect();
+                    let snapshot = ConnectivitySnapshot {
+                        agent_entries,
+                        ground_nodes: scenario
+                            .ground_nodes
+                            .iter()
+                            .map(|gn| (gn.id.clone(), gn.pose, gn.comms_range))
+                            .collect(),
+                        base_id: base_id.to_string(),
+                        base_pose,
+                    };
+                    let reachability = ConnectivityModel::reachability_from_base(&snapshot);
+                    let alive_agent_ids: Vec<AgentId> = node
+                        .coordinator
+                        .membership
+                        .alive_agents()
+                        .map(|(id, _)| id.clone())
+                        .collect();
+                    let availability =
+                        ConnectivityModel::availability_fraction(&reachability, &alive_agent_ids);
+                    availability_per_tick.push(availability);
+
+                    let disconnected_count = alive_agent_ids.len()
+                        - alive_agent_ids
+                            .iter()
+                            .filter(|id| reachability.contains_key(id.as_ref()))
+                            .count();
+                    disconnected_agents_max =
+                        disconnected_agents_max.max(disconnected_count as u64);
+
+                    let hop_sum: usize = alive_agent_ids
+                        .iter()
+                        .filter_map(|id| reachability.get(id.as_ref()))
+                        .sum();
+                    let reachable_count = alive_agent_ids
+                        .iter()
+                        .filter(|id| reachability.contains_key(id.as_ref()))
+                        .count();
+                    if reachable_count > 0 {
+                        total_hop_count_sum += hop_sum as f64 / reachable_count as f64;
+                        total_hop_count_ticks += 1;
+                    }
+                }
             }
 
             // Aggregate outputs across all agents
@@ -251,6 +345,42 @@ impl ScenarioRunner {
                             }
                         }
                     }
+
+                    // v0.5: Track relay reallocation
+                    if relay_reallocation_ticks.is_none() {
+                        // Check if any relay agent was detected as failed this tick
+                        let relay_failed_this_tick: Vec<AgentId> = tick_outputs
+                            .iter()
+                            .flat_map(|(_, out)| out.newly_failed.iter().cloned())
+                            .filter(|failed_id| {
+                                node.coordinator
+                                    .membership
+                                    .get(failed_id)
+                                    .is_some_and(|e| e.role == Role::Relay)
+                            })
+                            .collect();
+                        if !relay_failed_this_tick.is_empty() {
+                            relay_detection_tick = Some(current_tick);
+                        }
+
+                        if let Some(det_at) = relay_detection_tick {
+                            // Check if all relay tasks are assigned to alive agents
+                            let all_relay_tasks_reassigned = node
+                                .coordinator
+                                .registry
+                                .tasks()
+                                .filter(|t| t.required_role == Some(Role::Relay))
+                                .all(|t| {
+                                    t.assigned_to.as_ref().is_some_and(|aid| {
+                                        node.coordinator.membership.is_alive(aid)
+                                    })
+                                });
+                            if all_relay_tasks_reassigned {
+                                relay_reallocation_ticks =
+                                    Some(current_tick.saturating_sub(det_at));
+                            }
+                        }
+                    }
                 }
             }
 
@@ -308,6 +438,17 @@ impl ScenarioRunner {
         let msgs_dropped = bus.borrow().messages_dropped();
         drop(bus);
 
+        let network_availability = if availability_per_tick.is_empty() {
+            1.0
+        } else {
+            availability_per_tick.iter().sum::<f64>() / availability_per_tick.len() as f64
+        };
+        let avg_hop_count = if total_hop_count_ticks > 0 {
+            total_hop_count_sum / total_hop_count_ticks as f64
+        } else {
+            0.0
+        };
+
         RunMetrics {
             seed: scenario.seed,
             total_ticks,
@@ -326,6 +467,12 @@ impl ScenarioRunner {
             stale_messages_discarded,
             convergence_ticks,
             max_view_divergence,
+            network_availability,
+            relay_reallocation_ticks,
+            avg_hop_count,
+            disconnected_agents_max,
+            relay_tasks_assigned: 0,
+            relay_tasks_reassigned: 0,
         }
     }
 }
@@ -377,6 +524,7 @@ mod tests {
                 capabilities: Vec::new(),
                 current_task: None,
                 battery: 100.0,
+                comms_range: f64::INFINITY,
                 generation: 1,
             })
             .collect();
@@ -387,6 +535,7 @@ mod tests {
                 assigned_to: None,
                 priority: 1,
                 required_capabilities: vec![],
+                required_role: None,
                 preferred_role: None,
                 expires_at: None,
                 pose: None,
@@ -397,6 +546,8 @@ mod tests {
             seed,
             agents,
             tasks,
+            ground_nodes: vec![],
+            base_station: None,
         }
     }
 
@@ -411,6 +562,7 @@ mod tests {
             dynamic_tasks: vec![],
             partition_events: vec![],
             gossip_interval_ticks: 999,
+            base_id: None,
         }
     }
 
@@ -478,6 +630,7 @@ mod tests {
             assigned_to: None,
             priority: 1,
             required_capabilities: vec![],
+            required_role: None,
             preferred_role: None,
             expires_at: None,
             pose: None,
@@ -503,6 +656,7 @@ mod tests {
             assigned_to: None,
             priority: 1,
             required_capabilities: vec![Capability::from("missing".to_owned())],
+            required_role: None,
             preferred_role: None,
             expires_at: Some(3),
             pose: None,
@@ -552,6 +706,7 @@ mod tests {
             assigned_to: None,
             priority: 1,
             required_capabilities: vec![Capability::from("unobtainium".to_owned())],
+            required_role: None,
             preferred_role: None,
             expires_at: None,
             pose: None,

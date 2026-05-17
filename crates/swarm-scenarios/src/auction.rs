@@ -50,6 +50,7 @@ pub fn build_dynamic_auction_scenario(config: &DynamicAuctionConfig) -> (Scenari
                 capabilities: vec![cap],
                 current_task: None,
                 battery: 100.0,
+                comms_range: f64::INFINITY,
                 generation: 1,
             }
         })
@@ -76,6 +77,7 @@ pub fn build_dynamic_auction_scenario(config: &DynamicAuctionConfig) -> (Scenari
                 assigned_to: None,
                 priority: ((i % 5) + 1) as u8,
                 required_capabilities: vec![cap],
+                required_role: None,
                 preferred_role: None,
                 expires_at: None,
                 pose: Some(Pose { x: tx, y: ty }),
@@ -108,6 +110,7 @@ pub fn build_dynamic_auction_scenario(config: &DynamicAuctionConfig) -> (Scenari
                     assigned_to: None,
                     priority: ((i % 5) + 1) as u8,
                     required_capabilities: vec![cap],
+                    required_role: None,
                     preferred_role: None,
                     expires_at: Some(injection_tick + config.task_expiry_ticks),
                     pose: Some(Pose { x: tx, y: ty }),
@@ -121,6 +124,8 @@ pub fn build_dynamic_auction_scenario(config: &DynamicAuctionConfig) -> (Scenari
         seed: config.seed,
         agents,
         tasks: initial_tasks,
+        ground_nodes: vec![],
+        base_station: None,
     };
 
     let run_config = RunConfig {
@@ -136,6 +141,7 @@ pub fn build_dynamic_auction_scenario(config: &DynamicAuctionConfig) -> (Scenari
         dynamic_tasks,
         partition_events: vec![],
         gossip_interval_ticks: 999,
+        base_id: None,
     };
 
     (scenario, run_config)

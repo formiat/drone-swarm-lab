@@ -18,6 +18,7 @@ fn main() {
             capabilities: vec![Capability::from("basic".to_owned())],
             current_task: None,
             battery: 100.0,
+            comms_range: f64::INFINITY,
             generation: 1,
         })
         .collect();
@@ -29,6 +30,7 @@ fn main() {
             assigned_to: None,
             priority: 1,
             required_capabilities: vec![Capability::from("basic".to_owned())],
+            required_role: None,
             preferred_role: None,
             expires_at: None,
             pose: None,
@@ -97,6 +99,7 @@ mod tests {
                 capabilities: vec![Capability::from("basic".to_owned())],
                 current_task: None,
                 battery: 100.0,
+                comms_range: f64::INFINITY,
                 generation: 1,
             })
             .collect();
@@ -108,6 +111,7 @@ mod tests {
                 assigned_to: None,
                 priority: 1,
                 required_capabilities: vec![Capability::from("basic".to_owned())],
+                required_role: None,
                 preferred_role: None,
                 expires_at: None,
                 pose: None,

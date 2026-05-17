@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use swarm_types::{Agent, Task};
+use swarm_types::{Agent, GroundNode, Pose, Task};
 
 /// A self-contained simulation scenario with initial fleet and task state.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -8,6 +8,10 @@ pub struct Scenario {
     pub seed: u64,
     pub agents: Vec<Agent>,
     pub tasks: Vec<Task>,
+    #[serde(default)]
+    pub ground_nodes: Vec<GroundNode>,
+    #[serde(default)]
+    pub base_station: Option<Pose>,
 }
 
 impl Scenario {
@@ -18,6 +22,8 @@ impl Scenario {
             seed,
             agents: Vec::new(),
             tasks: Vec::new(),
+            ground_nodes: Vec::new(),
+            base_station: None,
         }
     }
 }
