@@ -301,4 +301,18 @@ mod tests {
 
         assert_eq!(metrics.avg_tasks_expired, 3.0);
     }
+
+    #[test]
+    fn aggregate_avg_task_completion_rate() {
+        let runs = vec![run(true, None), run(true, None), run(false, None)];
+        // 2 out of 3 runs have all_tasks_assigned=true (set by run(success, ...))
+        // The third run has success=false, so all_tasks_assigned=false
+        let metrics = AggregateMetrics::from_runs(&runs);
+
+        assert!(
+            (metrics.avg_task_completion_rate - 0.666_666_7).abs() < 1e-6,
+            "Expected ~0.666667 for 2/3 completed runs, got {}",
+            metrics.avg_task_completion_rate
+        );
+    }
 }

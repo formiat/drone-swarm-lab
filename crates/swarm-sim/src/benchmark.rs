@@ -325,22 +325,20 @@ mod tests {
         let builder = make_scenario_builder();
         let report = BenchmarkHarness::run_quick(&factories, &profiles, &builder);
         let report_text = format!("{}", report);
-        // The report should contain "1.000" in the completion column
-        // (all_tasks_assigned is true for all runs in this simple scenario)
-        assert!(
-            report_text.contains("1.000"),
-            "Report should show non-zero completion rate when all tasks are assigned; got:\n{}",
-            report_text
-        );
-        // Ensure the report does NOT show "0.000" as the only value in every row
-        // for the completion column when tasks are assigned
+
+        // Parse the markdown table and check the "Завершение" column specifically.
+        // Column layout: | Стратегия | Профиль | Успех | Завершение | ...
+        // After splitting by '|', index 4 is the completion column.
         let rows: Vec<&str> = report_text.lines().skip(2).collect();
         for row in &rows {
             if row.contains("greedy") {
-                assert!(
-                    row.contains("1.000"),
-                    "Completion column should be 1.000 when all_tasks_assigned=true, got row: {}",
-                    row
+                let cols: Vec<&str> = row.split('|').collect();
+                let completion_col = cols.get(4).map(|s| s.trim());
+                assert_eq!(
+                    completion_col,
+                    Some("1.000"),
+                    "Completion column (index 4) should be 1.000 when all_tasks_assigned=true, got cols: {:?}",
+                    cols
                 );
             }
         }
