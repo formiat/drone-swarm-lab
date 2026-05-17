@@ -1,50 +1,50 @@
-# Plan: Milestone 6 — Strategy Comparison Platform
+# План: Этап 6 — Платформа сравнения стратегий
 
-## Context
+## Контекст
 
-After Milestone 5 (Emergency Mesh), the workspace has:
+После завершения Этапа 5 (Emergency Mesh) в workspace есть:
 
-- `GreedyAllocator` — round-robin over capable agents.
-- `AuctionAllocator` — cost-minimization over distance, battery, and role preference.
-- `ConnectivityAwareAllocator` — auction + network-availability optimization for relay placement.
-- 4 scenario types: `Coverage`, `DynamicAuction`, `Partition`, `EmergencyMesh`.
-- Per-run metrics (`RunMetrics`) and aggregation (`AggregateMetrics`).
-- Deterministic in-process simulation via `ScenarioRunner::run_with(scenario, config, allocator)`.
+- `GreedyAllocator` — round-robin по подходящим агентам.
+- `AuctionAllocator` — минимизация стоимости по расстоянию, батарее и предпочтительной роли.
+- `ConnectivityAwareAllocator` — аукцион + оптимизация доступности сети для размещения relay.
+- 4 типа сценариев: `Coverage`, `DynamicAuction`, `Partition`, `EmergencyMesh`.
+- Метрики за прогон (`RunMetrics`) и агрегация (`AggregateMetrics`).
+- Детерминированная in-process симуляция через `ScenarioRunner::run_with(scenario, config, allocator)`.
 
-Milestone 6 turns the project into a research platform by making strategy comparison a first-class feature. Instead of ad-hoc binaries that compare 2 strategies on 1 scenario, the platform will run 1000 scenarios × multiple strategies × multiple network/failure profiles and produce structured comparison reports.
+Этап 6 превращает проект в исследовательскую платформу, делая сравнение стратегий first-class функцией. Вместо ad-hoc бинарников, которые сравнивают 2 стратегии на 1 сценарии, платформа будет запускать 1000 сценариев × несколько стратегий × несколько профилей сети/отказов и выдавать структурированные отчёты сравнения.
 
-The long-term goal (per DRONE_A.1.md / DRONE_B.1.md) is to compare:
+Долгосрочная цель (согласно DRONE_A.1.md / DRONE_B.1.md) — сравнить:
 
-1. Centralized planner (optimal baseline with full global knowledge).
-2. Greedy decentralized (existing).
-3. Auction-based (existing).
-4. Relay-aware / connectivity-aware (existing).
-5. CBBA (Consensus-Based Bundle Algorithm) — later milestone.
+1. Централизованный планировщик (оптимальный baseline с полным глобальным знанием).
+2. Жадный децентрализованный (существующий).
+3. Аукционный (существующий).
+4. Relay-aware / connectivity-aware (существующий).
+5. CBBA (Consensus-Based Bundle Algorithm) — поздний этап.
 
-## Investigation Context
+## Контекст исследования
 
-DRONE_A.1.md and DRONE_B.1.md establish that the project should become a research platform comparing coordination strategies across reference missions. The current codebase already has the primitives (allocators, scenarios, metrics, deterministic runner). Milestone 6 builds the *comparison harness* and *additional metrics* needed for rigorous evaluation.
+DRONE_A.1.md и DRONE_B.1.md устанавливают, что проект должен стать исследовательской платформой для сравнения стратегий координации на эталонных миссиях. Текущая кодовая база уже имеет примитивы (аллокаторы, сценарии, метрики, детерминированный runner). Этап 6 строит *harness сравнения* и *дополнительные метрики*, необходимые для строгой оценки.
 
-## Affected Components
+## Затронутые компоненты
 
-| Crate | Changes |
-|-------|---------|
-| `swarm-alloc` | `Strategy` trait/wrapper; `CentralizedPlanner`; `StrategyRegistry`. |
-| `swarm-metrics` | New fields: `coverage_progress`, `bytes_sent`, `stale_state_age`, `battery_margin_min`, `battery_margin_avg`. |
-| `swarm-sim` | `BenchmarkHarness`, `NetworkProfile`, `FailureProfile`, comparison report generation. |
-| `swarm-scenarios` | Reusable profile builders: `StandardProfiles` (low/medium/high packet loss, partition rates). |
-| `swarm-examples` | `strategy_comparison.rs` — the main benchmark binary. |
-| `README.md` | Milestone 6 section with usage and sample report output. |
+| Crate | Изменения |
+|-------|-----------|
+| `swarm-alloc` | Трейт `Strategy`; `CentralizedPlanner`; `StrategyRegistry`. |
+| `swarm-metrics` | Новые поля: `coverage_progress`, `bytes_sent`, `stale_state_age`, `battery_margin_min`, `battery_margin_avg`. |
+| `swarm-sim` | `BenchmarkHarness`, `NetworkProfile`, `FailureProfile`, генерация отчёта сравнения. |
+| `swarm-scenarios` | Переиспользуемые конструкторы профилей: `StandardProfiles` (низкая/средняя/высокая потеря пакетов, частота partition). |
+| `swarm-examples` | `strategy_comparison.rs` — главный benchmark-бинарник. |
+| `README.md` | Раздел Этапа 6 с описанием использования и примером вывода отчёта. |
 
-## Implementation Steps
+## Шаги реализации
 
-### Step 1: Strategy abstraction (`swarm-alloc`)
+### Шаг 1: Абстракция стратегии (`swarm-alloc`)
 
-**Files:**
-- `crates/swarm-alloc/src/strategy.rs` (new)
+**Файлы:**
+- `crates/swarm-alloc/src/strategy.rs` (новый)
 - `crates/swarm-alloc/src/lib.rs`
 
-Create a `Strategy` trait that wraps any `Allocator` and provides metadata:
+Создать трейт `Strategy`, который оборачивает любой `Allocator` и предоставляет метаданные:
 
 ```rust
 pub trait Strategy: Allocator {
@@ -53,55 +53,55 @@ pub trait Strategy: Allocator {
 }
 ```
 
-Implement `Strategy` for:
+Реализовать `Strategy` для:
 - `GreedyAllocator`
 - `AuctionAllocator`
 - `ConnectivityAwareAllocator`
 
-Add a `StrategyRegistry` that holds a `Vec<Box<dyn Strategy>>` and can iterate over registered strategies.
+Добавить `StrategyRegistry`, который хранит `Vec<Box<dyn Strategy>>` и может итерироваться по зарегистрированным стратегиям.
 
-### Step 2: Centralized planner baseline (`swarm-alloc`)
+### Шаг 2: Централизованный планировщик — baseline (`swarm-alloc`)
 
-**Files:**
-- `crates/swarm-alloc/src/centralized.rs` (new)
+**Файлы:**
+- `crates/swarm-alloc/src/centralized.rs` (новый)
 - `crates/swarm-alloc/src/lib.rs`
 
-Implement `CentralizedPlanner` — an allocator that has *oracle* access to the full scenario state (all agent poses, all tasks, no communication constraints). It solves a bipartite matching problem using the Hungarian algorithm (or greedy if `petgraph` is unavailable) to minimize total cost (distance + battery penalty + role preference).
+Реализовать `CentralizedPlanner` — аллокатор с *оракуловским* доступом к полному состоянию сценария (все позы агентов, все задачи, без ограничений связи). Решает задачу bipartite matching с помощью венгерского алгоритма (или жадного, если `petgraph` недоступен) для минимизации суммарной стоимости (расстояние + штраф за батарею + предпочтение роли).
 
-This is an **upper bound baseline**: no decentralized strategy should beat it in ideal conditions. It answers the question "how much do we lose by being decentralized?"
+Это **upper bound baseline**: ни одна децентрализованная стратегия не должна превзойти его в идеальных условиях. Отвечает на вопрос «сколько мы теряем из-за децентрализации?»
 
-The `CentralizedPlanner` implements `Allocator` but requires a `Scenario` reference at construction time. For the benchmark harness, it will be constructed per-run with the current scenario.
+`CentralizedPlanner` реализует `Allocator`, но требует ссылку на `Scenario` при конструировании. Для harness сравнения он будет создаваться на каждый прогон с текущим сценарием.
 
-### Step 3: New metrics (`swarm-metrics`)
+### Шаг 3: Новые метрики (`swarm-metrics`)
 
-**Files:**
+**Файлы:**
 - `crates/swarm-metrics/src/metrics.rs`
 
-Extend `RunMetrics` and `AggregateMetrics` with:
+Расширить `RunMetrics` и `AggregateMetrics`:
 
 ```rust
-// Coverage: fraction of area covered by assigned agents (0.0..=1.0)
+// Покрытие: доля площади, покрытой назначенными агентами (0.0..=1.0)
 pub coverage_progress: f64,
-// Bytes sent: total payload bytes across all messages
+// Отправлено байт: суммарный размер payload всех сообщений
 pub bytes_sent: u64,
-// Stale state age: max difference between local tick and last seen remote tick
+// Возраст stale-состояния: макс. разница между локальным tick и последним seen remote tick
 pub stale_state_age_ticks: u64,
-// Battery margins (if battery model enabled)
+// Запас батареи (если включена модель батареи)
 pub battery_margin_min: f64,
 pub battery_margin_avg: f64,
 ```
 
-Update `AggregateMetrics::from_runs` to compute averages for the new fields.
+Обновить `AggregateMetrics::from_runs` для усреднения новых полей.
 
-Update `Display for AggregateMetrics` to include new fields.
+Обновить `Display for AggregateMetrics` для включения новых полей.
 
-### Step 4: Network and failure profiles (`swarm-scenarios`)
+### Шаг 4: Профили сети и отказов (`swarm-scenarios`)
 
-**Files:**
-- `crates/swarm-scenarios/src/profiles.rs` (new)
+**Файлы:**
+- `crates/swarm-scenarios/src/profiles.rs` (новый)
 - `crates/swarm-scenarios/src/lib.rs`
 
-Define reusable `NetworkProfile` and `FailureProfile` structs:
+Определить переиспользуемые структуры `NetworkProfile` и `FailureProfile`:
 
 ```rust
 pub struct NetworkProfile {
@@ -118,18 +118,18 @@ pub struct FailureProfile {
 }
 ```
 
-Provide a `StandardProfiles` module with pre-defined profiles:
+Предоставить модуль `StandardProfiles` с предопределёнными профилями:
 
-- Networks: `Ideal`, `LightLoss`, `MediumLoss`, `HeavyLoss`, `HighLatency`, `PartitionProne`
-- Failures: `NoFailures`, `SingleFailure`, `MultipleFailures`, `CascadeFailure`
+- Сети: `Ideal`, `LightLoss`, `MediumLoss`, `HeavyLoss`, `HighLatency`, `PartitionProne`
+- Отказы: `NoFailures`, `SingleFailure`, `MultipleFailures`, `CascadeFailure`
 
-### Step 5: Benchmark harness (`swarm-sim`)
+### Шаг 5: Harness сравнения (`swarm-sim`)
 
-**Files:**
-- `crates/swarm-sim/src/benchmark.rs` (new)
+**Файлы:**
+- `crates/swarm-sim/src/benchmark.rs` (новый)
 - `crates/swarm-sim/src/lib.rs`
 
-Create `BenchmarkHarness` that runs:
+Создать `BenchmarkHarness`, который запускает:
 
 ```
 for each seed in 0..1000:
@@ -141,7 +141,7 @@ for each seed in 0..1000:
         collect RunMetrics
 ```
 
-The harness produces a `ComparisonReport`:
+Harness производит `ComparisonReport`:
 
 ```rust
 pub struct ComparisonReport {
@@ -151,98 +151,98 @@ pub struct ComparisonReport {
 }
 ```
 
-Implement `Display for ComparisonReport` that prints a markdown-compatible table:
+Реализовать `Display for ComparisonReport`, который печатает markdown-совместимую таблицу:
 
 ```
 | Strategy | Profile | Success | Detection | Realloc | Coverage | Messages | Availability |
 |----------|---------|---------|-----------|---------|----------|----------|--------------|
 ```
 
-### Step 6: Strategy comparison binary (`swarm-examples`)
+### Шаг 6: Бинарник сравнения стратегий (`swarm-examples`)
 
-**Files:**
-- `crates/swarm-examples/src/bin/strategy_comparison.rs` (new)
+**Файлы:**
+- `crates/swarm-examples/src/bin/strategy_comparison.rs` (новый)
 
-The main benchmark binary:
+Главный benchmark-бинарник:
 
-1. Register all strategies: `Greedy`, `Auction`, `ConnectivityAware`, `Centralized`.
-2. Register all profiles from `StandardProfiles`.
-3. Run the benchmark harness.
-4. Print the comparison report.
-5. Assert invariants (e.g., `Centralized` success rate >= `Greedy` success rate under ideal network).
-6. Exit code `0` on success, `1` on invariant violation.
+1. Зарегистрировать все стратегии: `Greedy`, `Auction`, `ConnectivityAware`, `Centralized`.
+2. Зарегистрировать все профили из `StandardProfiles`.
+3. Запустить benchmark harness.
+4. Напечатать отчёт сравнения.
+5. Проверить инварианты (например, `Centralized` success rate >= `Greedy` success rate при идеальной сети).
+6. Код выхода `0` при успехе, `1` при нарушении инварианта.
 
-### Step 7: Update existing scenarios for new metrics
+### Шаг 7: Обновление существующих сценариев для новых метрик
 
-**Files:**
+**Файлы:**
 - `crates/swarm-sim/src/runner.rs`
 
-Update `ScenarioRunner::run_with` to compute and populate:
-- `coverage_progress` — geometric coverage of assigned task poses vs total area.
-- `bytes_sent` — sum of `msg.payload.len()` across all messages.
-- `stale_state_age_ticks` — max `current_tick - entry.last_heartbeat_tick` across all alive agents.
-- `battery_margin_min` / `battery_margin_avg` — min/avg battery of alive agents at end of run.
+Обновить `ScenarioRunner::run_with` для вычисления и заполнения:
+- `coverage_progress` — геометрическое покрытие поз задач назначенными агентами vs общая площадь.
+- `bytes_sent` — сумма `msg.payload.len()` по всем сообщениям.
+- `stale_state_age_ticks` — макс. `current_tick - entry.last_heartbeat_tick` по всем живым агентам.
+- `battery_margin_min` / `battery_margin_avg` — мин/средняя батарея живых агентов в конце прогона.
 
-### Step 8: README update
+### Шаг 8: Обновление README
 
-**Files:**
+**Файлы:**
 - `README.md`
 
-Add Milestone 6 section describing:
-- The strategy comparison platform.
-- How to run `strategy_comparison`.
-- Sample report output.
-- Interpretation of metrics (what success rate, coverage, and availability mean).
+Добавить раздел Этапа 6, описывающий:
+- Платформу сравнения стратегий.
+- Как запускать `strategy_comparison`.
+- Пример вывода отчёта.
+- Интерпретацию метрик (что означают success rate, coverage, availability).
 
-## Testing Strategy
+## Стратегия тестирования
 
-### Category 1: Pure unit tests (no refactoring needed)
+### Категория 1: Чистые unit-тесты (без рефакторинга)
 
-- `strategy.rs`: `StrategyRegistry` add/iteration.
-- `centralized.rs`: `CentralizedPlanner` assigns all tasks when enough agents exist; returns empty when no agents.
-- `profiles.rs`: `StandardProfiles` contains expected profile names and parameter ranges.
-- `benchmark.rs`: `ComparisonReport` aggregation and display formatting.
+- `strategy.rs`: добавление/итерация в `StrategyRegistry`.
+- `centralized.rs`: `CentralizedPlanner` назначает все задачи при достаточном числе агентов; возвращает пустой результат при отсутствии агентов.
+- `profiles.rs`: `StandardProfiles` содержит ожидаемые имена профилей и диапазоны параметров.
+- `benchmark.rs`: агрегация `ComparisonReport` и форматирование вывода.
 
-### Category 2: Light integration tests (in-process simulation)
+### Категория 2: Лёгкие интеграционные тесты (in-process симуляция)
 
-- `strategy_comparison.rs` binary test: run a small benchmark (10 seeds × 2 strategies × 2 profiles) and verify report structure and invariant assertions.
-- Verify that `CentralizedPlanner` outperforms or matches `GreedyAllocator` on ideal network (deterministic, no packet loss, no partitions).
-- Verify that `ConnectivityAwareAllocator` achieves higher `network_availability` than `AuctionAllocator` on `PartitionProne` profile in Emergency Mesh scenario.
+- Тест бинарника `strategy_comparison.rs`: запустить маленький benchmark (10 seeds × 2 стратегии × 2 профиля) и проверить структуру отчёта и проверки инвариантов.
+- Проверить, что `CentralizedPlanner` превосходит или совпадает с `GreedyAllocator` при идеальной сети (детерминированно, без потерь пакетов, без partition).
+- Проверить, что `ConnectivityAwareAllocator` достигает более высокой `network_availability`, чем `AuctionAllocator`, на профиле `PartitionProne` в сценарии Emergency Mesh.
 
-### Category 3: Heavy end-to-end tests (full benchmark)
+### Категория 3: Тяжёлые end-to-end тесты (полный benchmark)
 
-- Run `strategy_comparison` with 1000 seeds, all 4 strategies, all standard profiles.
-- Verify total runtime is reasonable (< 5 minutes on current hardware).
-- Verify report contains all expected rows and no NaN values.
-- Manual review of report for anomalies (e.g., negative success rate, impossible coverage > 1.0).
+- Запустить `strategy_comparison` с 1000 seeds, всеми 4 стратегиями, всеми стандартными профилями.
+- Проверить, что общее время выполнения разумно (< 5 минут на текущем железе).
+- Проверить, что отчёт содержит все ожидаемые строки и нет значений NaN.
+- Ручной просмотр отчёта на аномалии (например, отрицательный success rate, невозможное coverage > 1.0).
 
-## Risks and Tradeoffs
+## Риски и компромиссы
 
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| CentralizedPlanner requires scenario-level knowledge, breaking the `Allocator` abstraction. | Medium | Implement as a special-case `Allocator` that pre-computes optimal assignments from scenario data at construction time. Document that it is a benchmark-only strategy. |
-| Coverage progress metric is expensive to compute geometrically. | Low | Use a coarse grid approximation (e.g., 20×20 grid) or task-based proxy (fraction of tasks with assigned agents within sensor range). |
-| Benchmark runtime grows as O(seeds × strategies × networks × failures). | Medium | Default to a reduced matrix (e.g., 100 seeds) in CI/tests; full 1000 seeds only in release/benchmark mode. |
-| Adding new metrics breaks backward compatibility of saved `RunMetrics` JSON. | Low | Add `#[serde(default)]` on new fields. Existing replay data without new fields deserializes safely. |
-| CBBA deferred to later milestone creates gap in strategy comparison. | Low | Document CBBA as "planned for v0.7". The comparison framework supports adding new strategies without code changes. |
+| Риск | Влияние | Митигация |
+|------|---------|-----------|
+| CentralizedPlanner требует знания на уровне сценария, нарушая абстракцию `Allocator`. | Среднее | Реализовать как special-case `Allocator`, который предвычисляет оптимальные назначения из данных сценария при конструировании. Документировать как benchmark-only стратегию. |
+| Метрика coverage progress дорого вычислять геометрически. | Низкое | Использовать грубую аппроксимацию сеткой (например, 20×20) или task-based прокси (доля задач с агентами в пределах sensor range). |
+| Время выполнения benchmark растёт как O(seeds × strategies × networks × failures). | Среднее | По умолчанию использовать reduced матрицу (например, 100 seeds) в CI/тестах; полные 1000 seeds только в release/benchmark режиме. |
+| Добавление новых метрик ломает backward compatibility сохранённых JSON `RunMetrics`. | Низкое | Добавить `#[serde(default)]` на новые поля. Существующие replay-данные без новых полей десериализуются безопасно. |
+| Откладывание CBBA создаёт пробел в сравнении стратегий. | Низкое | Документировать CBBA как «запланировано для v0.7». Фреймворк сравнения поддерживает добавление новых стратегий без изменений кода. |
 
-## Open Questions
+## Открытые вопросы
 
-1. **Coverage metric precision**: Should coverage be task-based (assigned agents near task poses) or area-based (grid discretization)? Task-based is cheaper but less meaningful for Search and Rescue scenarios.
-2. **Battery model depth**: v0.3+ has static battery. Should Milestone 6 add a simple drain model (`battery -= distance * energy_per_meter`), or keep battery static and use `battery_margin` as a proxy for assignment quality?
-3. **CBBA scope**: Should CBBA be a quick win in Milestone 6 (simplified bundle-building without full consensus), or deferred to a dedicated milestone with proper message protocol extensions?
-4. **Report format**: Markdown table is human-readable but hard to parse programmatically. Should we also emit JSON/CSV for downstream analysis (Python/Polars)?
-5. **Statistical significance**: The current aggregate metrics use simple means. Should we add confidence intervals or use Mann-Whitney U-test for strategy comparison? This could be deferred to a later research-phase milestone.
+1. **Точность coverage-метрики**: coverage должна быть task-based (назначенные агенты рядом с позами задач) или area-based (дискретизация сеткой)? Task-based дешевле, но менее содержательна для сценариев Search and Rescue.
+2. **Глубина модели батареи**: в v0.3+ батарея статическая. Следует ли в Этапе 6 добавить простую модель разряда (`battery -= distance * energy_per_meter`) или оставить батарею статической и использовать `battery_margin` как прокси качества назначения?
+3. **Объём CBBA**: следует ли сделать CBBA быстрым выигрышем в Этапе 6 (упрощённое bundle-building без полного консенсуса) или отложить в dedicated milestone с правильными расширениями message protocol?
+4. **Формат отчётов**: Markdown-таблица читается человеком, но плохо парсится программно. Следует ли также выдавать JSON/CSV для downstream анализа (Python/Polars)?
+5. **Статистическая значимость**: текущие агрегированные метрики используют простые средние. Следует ли добавлять доверительные интервалы или использовать Mann-Whitney U-test для сравнения стратегий? Это можно отложить на поздний исследовательский milestone.
 
 ## Что могло сломаться
 
-- **Behavior**: Existing scenario binaries (`coverage_with_failure`, `dynamic_auction`, etc.) should not change behavior. The new metrics fields have serde defaults, so existing code paths are unaffected.
-- **API/Contracts**: `Allocator` trait is unchanged. `Strategy` is a new super-trait. Existing allocators continue to work.
-- **Performance**: `ScenarioRunner` gains additional metric computation per tick. Coverage grid calculation may add ~5-10% overhead. Mitigation: only compute coverage when `coverage_progress` field is used (feature flag or config flag).
-- **Determinism**: New metrics (bytes_sent, stale_state_age) must be computed deterministically from the same RNG seed and tick sequence. No new randomness should be introduced.
-- **Integration**: `CentralizedPlanner` is benchmark-only and should not be used in multi-process or real-flight scenarios. Document this clearly.
+- **Поведение**: Существующие бинарники сценариев (`coverage_with_failure`, `dynamic_auction` и др.) не должны менять поведение. Новые поля метрик имеют serde defaults, поэтому существующие пути кода не затронуты.
+- **API/контракты**: Трейт `Allocator` не меняется. `Strategy` — новый super-trait. Существующие аллокаторы продолжают работать.
+- **Производительность**: `ScenarioRunner` получает дополнительное вычисление метрик на каждый tick. Расчёт coverage-сетки может добавить ~5-10% overhead. Митигация: вычислять coverage только когда используется поле `coverage_progress` (feature flag или config flag).
+- **Детерминизм**: Новые метрики (`bytes_sent`, `stale_state_age`) должны вычисляться детерминированно из того же seed и последовательности tick'ов. Никакой новой случайности вводить нельзя.
+- **Интеграция**: `CentralizedPlanner` — только для benchmark'ов и не должен использоваться в multi-process или реальных полётных сценариях. Документировать это явно.
 
-## Verification Commands (for implement phase)
+## Команды верификации (для фазы implement)
 
 ```bash
 cargo fmt --all -- --check
