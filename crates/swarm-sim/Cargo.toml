@@ -4,10 +4,17 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+csv = { workspace = true }
 derive_more = { workspace = true }
-serde       = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 swarm-alloc = { workspace = true }
 swarm-comms = { workspace = true }
 swarm-metrics = { workspace = true }
+swarm-replay = { workspace = true }
 swarm-runtime = { workspace = true }
 swarm-types = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+swarm-scenarios = { workspace = true }

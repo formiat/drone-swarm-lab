@@ -60,6 +60,29 @@ impl ScenarioRunner {
         config: RunConfig,
         allocator: A,
     ) -> RunMetrics {
+        Self::run_internal(scenario, config, allocator, None).0
+    }
+
+    /// Run a scenario with optional event logging.
+    ///
+    /// Returns `(RunMetrics, Option<EventLog>)`. The `EventLog` is `Some` when
+    /// `enable_log` is `true`. Existing callers of `run_with` are unaffected.
+    pub fn run_with_log<A: Allocator>(
+        scenario: &Scenario,
+        config: RunConfig,
+        allocator: A,
+    ) -> (RunMetrics, Option<swarm_replay::EventLog>) {
+        let run_id = format!("{}_{}", scenario.name, scenario.seed);
+        let builder = swarm_replay::EventLogBuilder::new(run_id, scenario.seed, &scenario.name);
+        Self::run_internal(scenario, config, allocator, Some(builder))
+    }
+
+    fn run_internal<A: Allocator>(
+        scenario: &Scenario,
+        config: RunConfig,
+        allocator: A,
+        mut log_builder: Option<swarm_replay::EventLogBuilder>,
+    ) -> (RunMetrics, Option<swarm_replay::EventLog>) {
         let bus = Rc::new(RefCell::new(InMemNetwork::new(NetworkConfig {
             packet_loss_rate: config.packet_loss_rate,
             latency_ticks: config.latency_ticks,
@@ -135,12 +158,22 @@ impl ScenarioRunner {
             let current_tick = u64::from(clock.now());
             total_ticks = current_tick;
 
+            if let Some(ref mut builder) = log_builder {
+                builder.push(swarm_replay::Event::TickStart { tick: current_tick });
+            }
+
             for failure in config
                 .failures
                 .iter()
                 .filter(|failure| failure.at_tick == current_tick)
             {
                 crashed_agents.insert(failure.agent_id.clone());
+                if let Some(ref mut builder) = log_builder {
+                    builder.push(swarm_replay::Event::AgentFailed {
+                        agent_id: failure.agent_id.clone(),
+                        tick: current_tick,
+                    });
+                }
             }
 
             bus.borrow_mut().advance_tick();
@@ -152,11 +185,25 @@ impl ScenarioRunner {
                         .add_partition(pe.agents.0.clone(), pe.agents.1.clone());
                     partition_events += 1;
                     partitions_active = true;
+                    if let Some(ref mut builder) = log_builder {
+                        builder.push(swarm_replay::Event::PartitionAdded {
+                            agent_a: pe.agents.0.clone(),
+                            agent_b: pe.agents.1.clone(),
+                            tick: current_tick,
+                        });
+                    }
                 }
                 if pe.until_tick == Some(current_tick) {
                     bus.borrow_mut()
                         .remove_partition(pe.agents.0.clone(), pe.agents.1.clone());
                     heal_tick = Some(current_tick);
+                    if let Some(ref mut builder) = log_builder {
+                        builder.push(swarm_replay::Event::PartitionRemoved {
+                            agent_a: pe.agents.0.clone(),
+                            agent_b: pe.agents.1.clone(),
+                            tick: current_tick,
+                        });
+                    }
                 }
             }
 
@@ -525,34 +572,52 @@ impl ScenarioRunner {
                 0.0
             };
 
-        RunMetrics {
-            seed: scenario.seed,
-            total_ticks,
-            messages_attempted: msgs_attempted,
-            messages_dropped: msgs_dropped,
-            detection_time_ticks,
-            reallocation_time_ticks,
-            max_task_unassigned_ticks,
-            all_tasks_assigned,
-            success,
-            tasks_injected,
-            tasks_expired,
-            conflicting_assignments,
-            partition_events,
-            partitions_active,
-            stale_messages_discarded,
-            convergence_ticks,
-            max_view_divergence,
-            network_availability,
-            relay_reallocation_ticks,
-            avg_hop_count,
-            disconnected_agents_max,
-            coverage_progress,
-            bytes_sent,
-            stale_state_age_ticks,
-            battery_margin_min,
-            battery_margin_avg,
+        // Log final poses if event logging is enabled
+        if let Some(ref mut builder) = log_builder {
+            for (node, agent_id) in &nodes {
+                if let Some(entry) = node.coordinator.membership.get(agent_id) {
+                    builder.push(swarm_replay::Event::PoseUpdated {
+                        agent_id: agent_id.clone(),
+                        pose: entry.pose,
+                        tick: total_ticks,
+                    });
+                }
+            }
         }
+
+        let event_log = log_builder.map(|b| b.build());
+
+        (
+            RunMetrics {
+                seed: scenario.seed,
+                total_ticks,
+                messages_attempted: msgs_attempted,
+                messages_dropped: msgs_dropped,
+                detection_time_ticks,
+                reallocation_time_ticks,
+                max_task_unassigned_ticks,
+                all_tasks_assigned,
+                success,
+                tasks_injected,
+                tasks_expired,
+                conflicting_assignments,
+                partition_events,
+                partitions_active,
+                stale_messages_discarded,
+                convergence_ticks,
+                max_view_divergence,
+                network_availability,
+                relay_reallocation_ticks,
+                avg_hop_count,
+                disconnected_agents_max,
+                coverage_progress,
+                bytes_sent,
+                stale_state_age_ticks,
+                battery_margin_min,
+                battery_margin_avg,
+            },
+            event_log,
+        )
     }
 }
 

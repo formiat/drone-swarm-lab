@@ -7,6 +7,7 @@ use crate::{RunConfig, Scenario, ScenarioRunner};
 
 /// Report produced by a benchmark run comparing strategies across profiles.
 pub struct ComparisonReport {
+    pub benchmark_run_id: String,
     pub strategy_names: Vec<String>,
     pub profile_names: Vec<String>,
     pub results: HashMap<(String, String), AggregateMetrics>,
@@ -85,9 +86,10 @@ impl BenchmarkHarness {
         scenario_builder: &ScenarioBuilder,
         seeds: std::ops::Range<u64>,
     ) -> ComparisonReport {
+        let benchmark_run_id = generate_benchmark_run_id(seeds.start, seeds.end, "coverage");
         let mut results: HashMap<(String, String), Vec<swarm_metrics::RunMetrics>> = HashMap::new();
 
-        for seed in seeds {
+        for seed in seeds.clone() {
             for factory in strategies {
                 for profile_name in profile_names {
                     let (scenario, run_config) = scenario_builder(seed, profile_name);
@@ -119,11 +121,32 @@ impl BenchmarkHarness {
         }
 
         ComparisonReport {
+            benchmark_run_id,
             strategy_names,
             profile_names: report_profile_names,
             results: report_results,
         }
     }
+}
+
+fn generate_benchmark_run_id(start_seed: u64, end_seed: u64, scenario_name: &str) -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let mode = if end_seed - start_seed <= 10 {
+        "quick"
+    } else {
+        "full"
+    };
+    format!(
+        "{}_{}_{}_{}",
+        timestamp,
+        scenario_name,
+        end_seed - start_seed,
+        mode
+    )
 }
 
 fn run_with_strategy(

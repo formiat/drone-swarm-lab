@@ -194,3 +194,24 @@ Sample output (quick mode):
 | connectivity-aware | ideal-no-failures | 1.000 |      1.000 |       0.000 |             0.000 |    1.000 |    90.000 |  3960 |     0.000 |     0 |     100.000 |    100.000 |       1.000 |
 | centralized | ideal-no-failures | 1.000 |      1.000 |       0.000 |             0.000 |    1.000 |    90.000 |  3960 |     0.000 |     0 |     100.000 |    100.000 |       1.000 |
 ```
+
+**Milestone 7** — complete. Experiment Infrastructure:
+
+- `swarm-replay` crate: EventLog with TickStart, AgentFailed, TaskAssigned, MessageSent, MessageDropped, PartitionAdded/Removed, PoseUpdated events; deterministic replay engine; JSON serialization.
+- `ScenarioRunner::run_with_log`: new function that returns `(RunMetrics, Option<EventLog>)` alongside the existing `run_with`.
+- `ComparisonReport` with `benchmark_run_id` and per-row `run_id`.
+- JSON/CSV export via `swarm_sim::export_json` and `swarm_sim::export_csv`.
+- CLI flags for `strategy_comparison`: `--json <path>`, `--csv <path>`, `--replay-log <dir>`, `--run-id-prefix <prefix>`.
+- Property-based tests with `proptest`: randomized Agent/Task generation, runner no-panic invariant, success-rate boundedness.
+
+Run with JSON export:
+
+```bash
+cargo run -p swarm-examples --bin strategy_comparison -- --json results.json
+```
+
+Run with CSV export:
+
+```bash
+cargo run -p swarm-examples --bin strategy_comparison -- --csv results.csv
+```

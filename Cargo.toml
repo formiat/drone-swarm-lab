@@ -19,8 +19,12 @@ swarm-sim   = { path = "crates/swarm-sim" }
 swarm-runtime   = { path = "crates/swarm-runtime" }
 swarm-alloc     = { path = "crates/swarm-alloc" }
 swarm-metrics   = { path = "crates/swarm-metrics" }
+swarm-replay    = { path = "crates/swarm-replay" }
 swarm-scenarios = { path = "crates/swarm-scenarios" }
+chrono             = "0.4"
+csv                = "1"
 derive_more        = { version = "2", features = ["as_ref", "deref", "deref_mut", "display", "from", "into"] }
+proptest           = "1"
 rand               = { version = "0.8", features = ["small_rng"] }
 serde              = { version = "1", features = ["derive"] }
 serde_json         = "1"

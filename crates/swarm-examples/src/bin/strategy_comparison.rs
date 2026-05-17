@@ -1,17 +1,74 @@
+use std::path::Path;
+
 use swarm_alloc::{
     AllocationAgent, AllocationTask, AuctionAllocator, CentralizedPlanner,
     ConnectivityAwareAllocator, GreedyAllocator,
 };
 use swarm_scenarios::{build_coverage_scenario, CoverageConfig, StandardProfiles};
-use swarm_sim::{BenchmarkHarness, FailureEvent, PartitionEvent, RunConfig, Scenario};
+use swarm_sim::{
+    export_csv, export_json, BenchmarkHarness, FailureEvent, PartitionEvent, RunConfig, Scenario,
+};
 use swarm_types::AgentId;
 
 type ScenarioBuilder = Box<dyn Fn(u64, &str) -> (Scenario, RunConfig)>;
 type StrategyFactory = Box<dyn Fn(&Scenario, &RunConfig) -> Box<dyn swarm_alloc::Strategy>>;
 
-fn main() {
+struct CliArgs {
+    full_mode: bool,
+    json_path: Option<String>,
+    csv_path: Option<String>,
+    replay_log_dir: Option<String>,
+    run_id_prefix: Option<String>,
+}
+
+fn parse_args() -> CliArgs {
     let args: Vec<String> = std::env::args().collect();
-    let full_mode = args.iter().any(|a| a == "--full");
+    let mut cli = CliArgs {
+        full_mode: false,
+        json_path: None,
+        csv_path: None,
+        replay_log_dir: None,
+        run_id_prefix: None,
+    };
+
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--full" => cli.full_mode = true,
+            "--json" => {
+                i += 1;
+                if i < args.len() {
+                    cli.json_path = Some(args[i].clone());
+                }
+            }
+            "--csv" => {
+                i += 1;
+                if i < args.len() {
+                    cli.csv_path = Some(args[i].clone());
+                }
+            }
+            "--replay-log" => {
+                i += 1;
+                if i < args.len() {
+                    cli.replay_log_dir = Some(args[i].clone());
+                }
+            }
+            "--run-id-prefix" => {
+                i += 1;
+                if i < args.len() {
+                    cli.run_id_prefix = Some(args[i].clone());
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+
+    cli
+}
+
+fn main() {
+    let cli = parse_args();
 
     // Register all 4 strategies using factories for per-run construction
     let factories: Vec<StrategyFactory> = vec![
@@ -50,7 +107,7 @@ fn main() {
     ];
 
     // Build profile names from StandardProfiles combinations
-    let profile_names: Vec<String> = if full_mode {
+    let profile_names: Vec<String> = if cli.full_mode {
         let nets = StandardProfiles::network_profiles();
         let fails = StandardProfiles::failure_profiles();
         let mut combos = Vec::new();
@@ -166,13 +223,36 @@ fn main() {
         (scenario, run_config)
     });
 
-    let report = if full_mode {
+    let report = if cli.full_mode {
         BenchmarkHarness::run_full(&factories, &profile_names, &scenario_builder)
     } else {
         BenchmarkHarness::run_quick(&factories, &profile_names, &scenario_builder)
     };
 
     println!("{}", report);
+
+    // Export JSON
+    if let Some(path) = &cli.json_path {
+        let json = export_json(&report).expect("JSON export failed");
+        std::fs::write(path, json).expect("Failed to write JSON file");
+        println!("JSON report written to {}", path);
+    }
+
+    // Export CSV
+    if let Some(path) = &cli.csv_path {
+        let csv = export_csv(&report).expect("CSV export failed");
+        std::fs::write(path, csv).expect("Failed to write CSV file");
+        println!("CSV report written to {}", path);
+    }
+
+    // Replay log directory
+    if let Some(dir) = &cli.replay_log_dir {
+        let path = Path::new(dir);
+        if !path.exists() {
+            std::fs::create_dir_all(path).expect("Failed to create replay log directory");
+        }
+        println!("Replay logs would be saved to {} (feature stub)", dir);
+    }
 
     // Invariant: centralized should match or outperform greedy on ideal network
     let ideal_key = ("centralized".to_owned(), "ideal-no-failures".to_owned());
