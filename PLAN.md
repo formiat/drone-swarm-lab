@@ -21,7 +21,14 @@ Milestones 1-4 построили coordination runtime: membership, failure dete
 3. Агент с `battery = 0` не может быть назначен на новые задачи (capability gate).
 4. При `comms_range < INFINITY`, движение меняет связность между агентами (link появляется/исчезает при сближении/расхождении).
 5. Метрики: `final_battery_min`, `avg_distance_travelled`, `agents_exhausted`.
-6. Все существующие тесты проходят (backward compat: `comms_range = INFINITY`, `speed = 0`).
+6. **Mission time**: `total_ticks` (как прокси времени миссии) отражает влияние движения — агенты с высокой скоростью завершают миссию быстрее; агенты с низкой батареей могут не успеть дойти до удалённых задач за `max_ticks`.
+7. Все существующие тесты проходят (backward compat: `comms_range = INFINITY`, `speed = 0`).
+
+---
+
+## Investigation context
+
+INVESTIGATION.md отсутствует. Контекст из `DRONE_A.3.md` (Milestone 8: kinematic + battery) и `DRONE_B.3.md` (SAR + kinematic model) приведён в разделе Context.
 
 ---
 
@@ -216,14 +223,18 @@ pub final_battery_min: f64,           // minimum battery among all agents at end
 pub avg_distance_travelled: f64,      // average distance per agent per run
 pub agents_exhausted: u64,            // count of agents that reached battery=0
 pub total_distance_travelled: f64,    // sum of all agent distances
+pub mission_completion_ticks: u64,    // ticks to completion (total_ticks); proxy for mission time
+pub time_to_first_exhaustion: Option<u64>, // tick when first agent reached battery=0
 ```
 
 Заполняются в `ScenarioRunner::run_with()`.
 
 Обновить `AggregateMetrics` и `Display`.
 
-**Тест (категория 1):**
+**Тесты (категория 1):**
 - `movement_metrics_present` — после симуляции с движением метрики содержат ненулевые значения
+- `mission_completion_ticks_lower_with_higher_speed` — агенты со `speed=10` завершают миссию быстрее (меньше `total_ticks`), чем со `speed=1`
+- `mission_completion_ticks_exceeds_max_with_low_battery` — агент с малой батареей не доходит до удалённой задачи за `max_ticks` → `success=false`
 
 ---
 
