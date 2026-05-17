@@ -37,11 +37,12 @@ DRONE_B.3.md подчёркивает проверяемость (property-based
 | Компонент | Что меняется |
 |-----------|-------------|
 | `swarm-replay` | Placeholder → рабочий crate: event log, replay engine, сериализация |
-| `swarm-sim` | BenchmarkHarness: экспорт JSON/CSV, run_id |
+| `swarm-replay/Cargo.toml` | Добавление зависимостей: `serde`, `serde_json`, `swarm-types` |
+| `swarm-sim` | BenchmarkHarness: экспорт JSON/CSV, run_id; новая функция `run_with_log` |
 | `swarm-metrics` | AggregateMetrics: serde для JSON/CSV, возможно flatten |
-| `swarm-examples` | `strategy_comparison`: CLI `--json`, `--csv`, `--replay-log` |
-| `swarm-scenarios` | Property-based generators для Scenario/RunConfig |
-| workspace Cargo.toml | Добавление `proptest`, `csv`, `chrono` (для timestamps) |
+| `swarm-examples` | `strategy_comparison`: CLI `--json`, `--csv`, `--replay-log`; 5 бинарей обновляются для `run_with_log` |
+| `swarm-scenarios` | Property-based generators в `tests/` (dev-only) |
+| workspace Cargo.toml | Добавление `proptest`, `csv`, `chrono` в `[workspace.dependencies]` |
 | README.md | Новый раздел Milestone 7 |
 
 ## Implementation steps
@@ -50,8 +51,11 @@ DRONE_B.3.md подчёркивает проверяемость (property-based
 
 **Цель:** Генерация случайных, но валидных `Scenario` и `RunConfig` через `proptest`.
 
+**Подход:** Генераторы размещаются в `tests/` (dev-only), чтобы `proptest` не попадал в production-зависимости downstream crates.
+
 **Файлы:**
-- `crates/swarm-scenarios/src/proptest_generators.rs` (новый)
+- `crates/swarm-scenarios/tests/proptest_generators.rs` (новый)
+- `crates/swarm-scenarios/Cargo.toml` — добавить `proptest` в `[dev-dependencies]`
 
 **Что генерируется:**
 - `Agent` с валидными poses, capabilities, battery ∈ [10, 100].
@@ -69,6 +73,13 @@ DRONE_B.3.md подчёркивает проверяемость (property-based
 **Цель:** Сделать `swarm-replay` рабочим crate.
 
 **Файлы:**
+- `crates/swarm-replay/Cargo.toml` — добавить зависимости:
+  ```toml
+  [dependencies]
+  serde = { workspace = true }
+  serde_json = { workspace = true }
+  swarm-types = { workspace = true }
+  ```
 - `crates/swarm-replay/src/lib.rs` — основные типы
 - `crates/swarm-replay/src/event_log.rs` — структура событий
 - `crates/swarm-replay/src/replay.rs` — детерминированный replay
@@ -100,9 +111,15 @@ pub enum Event {
 - Воспроизводит состояние системы tick-by-tick.
 - Сравнивает финальные метрики с оригинальным прогоном (assert_eq).
 
-**Интеграция с `swarm-sim`:**
-- `ScenarioRunner::run_with` возвращает `(RunMetrics, EventLog)` при включённом логировании.
-- Флаг `enable_event_log: bool` в `RunConfig`.
+**Интеграция с `swarm-sim` (вариант A — новая функция, без ломания существующих вызовов):**
+- Существующая `ScenarioRunner::run_with<A: Allocator>(...) -> RunMetrics` **не меняется**.
+- Добавляется новая функция `ScenarioRunner::run_with_log<A: Allocator>(..., enable_log: bool) -> (RunMetrics, Option<EventLog>)`.
+- `run_with_log` вызывает внутри `run_with` + собирает события в `EventLog` когда `enable_log = true`.
+- **Затронутые файлы при использовании `run_with_log`:**
+  - `crates/swarm-sim/src/benchmark.rs:run_with_strategy` — обновить для передачи `Option<EventLog>`.
+  - `crates/swarm-examples/src/bin/strategy_comparison.rs` — добавить `--replay-log`, использовать `run_with_log`.
+  - `crates/swarm-sim/tests/proptest_runner.rs` — использовать `run_with_log` для проверки replay.
+- **НЕ затронуты (сохраняют `run_with`):** 14 тестов в `swarm-sim/src/runner.rs`, 4 бинаря (`coverage_with_failure`, `dynamic_auction`, `partition_scenario`, `emergency_mesh_scenario`).
 
 ### 3. Structured reports: JSON/CSV export
 
@@ -114,11 +131,12 @@ pub enum Event {
 **JSON формат:**
 ```json
 {
-  "run_id": "2026-05-17T12:00:00Z_seed42_ideal_greedy_coverage",
+  "benchmark_run_id": "2026-05-17T120000Z_coverage_10_quick",
   "strategy_names": ["greedy", "auction"],
   "profile_names": ["ideal-no-failures"],
   "results": {
     "(greedy, ideal-no-failures)": {
+      "run_id": "2026-05-17T120000Z_coverage_10_quick_greedy_ideal-no-failures",
       "total_runs": 10,
       "success_rate": 1.0,
       "avg_task_completion_rate": 1.0,
@@ -130,23 +148,31 @@ pub enum Event {
 
 **CSV формат:**
 - Одна строка на (strategy, profile) пару.
-- Колонки: run_id, strategy, profile, total_runs, success_rate, avg_task_completion_rate, ...
+- Колонки: benchmark_run_id, run_id, strategy, profile, total_runs, success_rate, avg_task_completion_rate, ...
 
-### 4. Стабильный `run_id`
+### 4. Стабильная идентификация прогонов
 
-**Цель:** Уникальная идентификация каждого прогона.
+**Два уровня идентификации:**
 
-**Формат:**
-```
-{timestamp}_{seed}_{profile}_{strategy}_{scenario}
-```
+**(a) `benchmark_run_id` — один на весь запуск `strategy_comparison`:**
+- Формат: `{timestamp}_{scenario_name}_{seed_count}_{mode}`
+- Пример: `2026-05-17T120000Z_coverage_10_quick`
+- Используется как:
+  - Имя выходного JSON/CSV файла (если не задано явно).
+  - Верхний ключ `benchmark_run_id` в JSON-структуре.
+  - Префикс директории для replay logs.
 
-Пример: `2026-05-17T120000Z_42_ideal-no-failures_greedy_coverage`
+**(b) `row_key` — одна (strategy, profile) строка отчёта:**
+- Формат: `{benchmark_run_id}_{strategy}_{profile}`
+- Пример: `2026-05-17T120000Z_coverage_10_quick_greedy_ideal-no-failures`
+- Используется как:
+  - `run_id` внутри каждой строки JSON/CSV.
+  - Имя отдельного replay log файла (`{row_key}.replay.json`).
 
 **Где используется:**
-- В `ComparisonReport` как поле `run_id`.
-- В JSON/CSV экспорте.
-- В имени replay log файла.
+- `ComparisonReport` получает поле `benchmark_run_id: String`.
+- Каждый `AggregateMetrics` в JSON/CSV содержит `run_id: String` (row_key).
+- Replay logs именуются по row_key.
 
 ### 5. CLI-флаги для `strategy_comparison`
 
@@ -206,9 +232,9 @@ cargo run -p swarm-examples --bin strategy_comparison -- --run-id-prefix batch-2
 
 ### Категория 2: Лёгкий рефакторинг
 
-- `ScenarioRunner` модификация для возврата EventLog.
-- `BenchmarkHarness` модификация для run_id и экспорта.
-- CLI parsing tests для strategy_comparison.
+- `ScenarioRunner` — добавление `run_with_log` (новая функция, `run_with` не трогается).
+- `BenchmarkHarness` — добавление `benchmark_run_id` и экспорта JSON/CSV.
+- CLI parsing tests для strategy_comparison (`--json`, `--csv`, `--replay-log`, `--run-id-prefix`).
 
 ### Категория 3: Тяжёлый рефакторинг / интеграция
 
