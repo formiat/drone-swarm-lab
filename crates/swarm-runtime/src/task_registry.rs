@@ -161,6 +161,7 @@ mod tests {
             preferred_role: None,
             expires_at: None,
             pose: None,
+            grid_cell: None,
         }
     }
 

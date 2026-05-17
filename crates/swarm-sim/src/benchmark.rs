@@ -292,6 +292,7 @@ mod tests {
                     required_role: None,
                     preferred_role: None,
                     expires_at: None,
+                    grid_cell: None,
                     pose: None,
                 })
                 .collect();
@@ -316,6 +317,7 @@ mod tests {
                 gossip_interval_ticks: 999,
                 base_id: None,
                 enable_movement: false,
+                grid_state: None,
                 tick_duration_ms: 100,
             };
             (scenario, run_config)

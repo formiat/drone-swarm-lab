@@ -208,6 +208,7 @@ mod tests {
             preferred_role: None,
             expires_at: None,
             pose: None,
+            grid_cell: None,
         }
     }
 
@@ -222,6 +223,7 @@ mod tests {
             preferred_role: None,
             expires_at: None,
             pose: None,
+            grid_cell: None,
         }
     }
 
@@ -236,6 +238,7 @@ mod tests {
             preferred_role: None,
             expires_at: None,
             pose: Some(Pose { x, y }),
+            grid_cell: None,
         }
     }
 

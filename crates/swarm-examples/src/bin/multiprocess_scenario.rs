@@ -63,6 +63,7 @@ fn make_task(id: &str) -> Task {
         preferred_role: None,
         expires_at: None,
         pose: None,
+        grid_cell: None,
     }
 }
 

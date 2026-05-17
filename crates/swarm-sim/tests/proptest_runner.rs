@@ -58,6 +58,7 @@ fn task_strategy() -> impl Strategy<Value = Task> {
         },
         preferred_role: None,
         expires_at: None,
+        grid_cell: None,
         pose: Some(Pose {
             x: (idx as f64) * 8.0,
             y: (idx as f64) * 4.0,
@@ -91,6 +92,7 @@ fn default_run_config() -> RunConfig {
         base_id: None,
         enable_movement: false,
         tick_duration_ms: 100,
+        grid_state: None,
     }
 }
 

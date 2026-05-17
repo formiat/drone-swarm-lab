@@ -7,6 +7,7 @@ edition = "2021"
 chrono = { workspace = true }
 csv = { workspace = true }
 derive_more = { workspace = true }
+rand = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 swarm-alloc = { workspace = true }

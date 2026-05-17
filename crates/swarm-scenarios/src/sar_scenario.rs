@@ -1,0 +1,193 @@
+use rand::rngs::StdRng;
+use rand::Rng;
+use rand::SeedableRng;
+
+use swarm_sim::{RunConfig, Scenario};
+use swarm_types::{
+    Agent, AgentId, Capability, Health, HiddenTarget, Pose, Role, SearchGrid, SensorModel, Task,
+    TaskId, TaskStatus,
+};
+
+pub struct SarScenarioConfig {
+    pub grid: SearchGrid,
+    pub target_count: u32,
+    pub scout_count: u32,
+    pub thermal_count: u32,
+    pub relay_count: u32,
+    pub sensor: SensorModel,
+    pub enable_movement: bool,
+    pub tick_duration_ms: u64,
+    pub max_ticks: u64,
+    pub seed: u64,
+}
+
+pub fn build_sar_scenario(config: &SarScenarioConfig) -> (Scenario, RunConfig) {
+    let mut rng = StdRng::seed_from_u64(config.seed);
+
+    // Place targets randomly in cells
+    let mut targets = Vec::new();
+    let total_cells = config.grid.total_cells();
+    for i in 0..config.target_count {
+        let cell_idx = rng.gen_range(0..total_cells);
+        let cell_x = cell_idx % config.grid.width;
+        let cell_y = cell_idx / config.grid.width;
+        targets.push(HiddenTarget {
+            id: format!("target-{i}"),
+            cell_x,
+            cell_y,
+        });
+    }
+
+    // Create one task per cell (scanning the cell)
+    let mut tasks = Vec::new();
+    for y in 0..config.grid.height {
+        for x in 0..config.grid.width {
+            let cell_idx = y * config.grid.width + x;
+            tasks.push(Task {
+                id: TaskId::from(format!("cell-{cell_idx}")),
+                status: TaskStatus::Unassigned,
+                assigned_to: None,
+                priority: 1,
+                required_capabilities: vec![],
+                required_role: None,
+                preferred_role: None,
+                expires_at: None,
+                pose: Some(config.grid.cell_center(x, y)),
+                grid_cell: Some((x, y)),
+            });
+        }
+    }
+
+    // Create agents with different roles
+    let mut agents = Vec::new();
+    let total_agents = config.scout_count + config.thermal_count + config.relay_count;
+
+    for i in 0..total_agents {
+        let role = if i < config.scout_count {
+            Role::Scout
+        } else if i < config.scout_count + config.thermal_count {
+            Role::Thermal
+        } else {
+            Role::Relay
+        };
+
+        let (speed, comms_range, capabilities) = match role {
+            Role::Scout => (5.0, 15.0, vec![]),
+            Role::Thermal => (4.0, 12.0, vec![Capability::from("thermal".to_owned())]),
+            Role::Relay => (3.0, 20.0, vec![]),
+            _ => (5.0, 15.0, vec![]),
+        };
+
+        let x = rng.gen_range(0.0..(config.grid.width as f64 * config.grid.cell_size));
+        let y = rng.gen_range(0.0..(config.grid.height as f64 * config.grid.cell_size));
+
+        agents.push(Agent {
+            id: AgentId::from(format!("agent-{i}")),
+            role,
+            health: Health::Alive,
+            pose: Pose { x, y },
+            capabilities,
+            current_task: None,
+            battery: 100.0,
+            comms_range,
+            generation: 1,
+            speed,
+            max_range: 500.0,
+            battery_drain_rate: 0.0,
+        });
+    }
+
+    let grid_state =
+        swarm_runtime::GridState::new(config.grid.clone(), targets.clone(), config.sensor.clone());
+
+    let scenario = Scenario {
+        name: "sar_v1".to_owned(),
+        seed: config.seed,
+        agents,
+        tasks,
+        ground_nodes: vec![],
+        base_station: None,
+    };
+
+    let run_config = RunConfig {
+        max_ticks: config.max_ticks,
+        timeout_ticks: 3,
+        max_unassigned_ticks: 10,
+        packet_loss_rate: 0.0,
+        latency_ticks: 0,
+        latency_per_hop: 0,
+        failures: vec![],
+        dynamic_tasks: vec![],
+        partition_events: vec![],
+        gossip_interval_ticks: 3,
+        base_id: None,
+        enable_movement: config.enable_movement,
+        tick_duration_ms: config.tick_duration_ms,
+        grid_state: Some(grid_state),
+    };
+
+    (scenario, run_config)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sar_scenario_creates_correct_agent_count() {
+        let config = SarScenarioConfig {
+            grid: SearchGrid::new(5, 5, 10.0),
+            target_count: 2,
+            scout_count: 3,
+            thermal_count: 1,
+            relay_count: 1,
+            sensor: SensorModel::new(0.3, 0.8, 0.1),
+            enable_movement: true,
+            tick_duration_ms: 1000,
+            max_ticks: 500,
+            seed: 42,
+        };
+        let (scenario, _) = build_sar_scenario(&config);
+        assert_eq!(scenario.agents.len(), 5);
+    }
+
+    #[test]
+    fn sar_scenario_targets_within_grid() {
+        let config = SarScenarioConfig {
+            grid: SearchGrid::new(5, 5, 10.0),
+            target_count: 3,
+            scout_count: 2,
+            thermal_count: 1,
+            relay_count: 1,
+            sensor: SensorModel::new(0.3, 0.8, 0.1),
+            enable_movement: true,
+            tick_duration_ms: 1000,
+            max_ticks: 500,
+            seed: 42,
+        };
+        let (_, run_config) = build_sar_scenario(&config);
+        let grid_state = run_config.grid_state.unwrap();
+        for target in &grid_state.targets {
+            assert!(target.cell_x < config.grid.width);
+            assert!(target.cell_y < config.grid.height);
+        }
+    }
+
+    #[test]
+    fn sar_scenario_one_task_per_cell() {
+        let config = SarScenarioConfig {
+            grid: SearchGrid::new(4, 3, 10.0),
+            target_count: 1,
+            scout_count: 2,
+            thermal_count: 0,
+            relay_count: 0,
+            sensor: SensorModel::new(0.3, 0.8, 0.1),
+            enable_movement: true,
+            tick_duration_ms: 1000,
+            max_ticks: 500,
+            seed: 42,
+        };
+        let (scenario, _) = build_sar_scenario(&config);
+        assert_eq!(scenario.tasks.len(), 12); // 4 * 3
+    }
+}

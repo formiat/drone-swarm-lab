@@ -324,6 +324,7 @@ mod tests {
             required_role: None,
             preferred_role: None,
             expires_at: None,
+            grid_cell: None,
             pose: Some(Pose { x: 10.0, y: 0.0 }),
         };
         let registry = TaskRegistry::new(vec![task]);
@@ -346,6 +347,7 @@ mod tests {
             required_role: None,
             preferred_role: None,
             expires_at: None,
+            grid_cell: None,
             pose: Some(Pose { x: 10.0, y: 0.0 }),
         };
         let registry = TaskRegistry::new(vec![task]);
@@ -379,6 +381,7 @@ mod tests {
             required_role: None,
             preferred_role: None,
             expires_at: None,
+            grid_cell: None,
             pose: Some(Pose { x: 3.0, y: 0.0 }),
         };
         let registry = TaskRegistry::new(vec![task]);
@@ -406,6 +409,7 @@ mod tests {
             required_role: None,
             preferred_role: None,
             expires_at: None,
+            grid_cell: None,
             pose: Some(Pose { x: 100.0, y: 0.0 }),
         };
         let registry = TaskRegistry::new(vec![task]);
@@ -434,6 +438,7 @@ mod tests {
             required_role: None,
             preferred_role: None,
             expires_at: None,
+            grid_cell: None,
             pose: Some(Pose { x: 100.0, y: 0.0 }),
         };
         let registry = TaskRegistry::new(vec![task]);

@@ -50,6 +50,19 @@ pub struct RunMetrics {
     pub mission_completion_ticks: u64,
     #[serde(default)]
     pub time_to_first_exhaustion: Option<u64>,
+    // v0.9 SAR metrics
+    #[serde(default)]
+    pub time_to_find: Option<u64>,
+    #[serde(default)]
+    pub coverage_over_time: Vec<f64>,
+    #[serde(default)]
+    pub probability_of_detection: f64,
+    #[serde(default)]
+    pub targets_found: u32,
+    #[serde(default)]
+    pub targets_total: u32,
+    #[serde(default)]
+    pub scan_count: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -271,6 +284,12 @@ mod tests {
             total_distance_travelled: 0.0,
             mission_completion_ticks: 0,
             time_to_first_exhaustion: None,
+            time_to_find: None,
+            coverage_over_time: vec![],
+            probability_of_detection: 0.0,
+            targets_found: 0,
+            targets_total: 0,
+            scan_count: 0,
         }
     }
 

@@ -2,12 +2,13 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
+use rand::SeedableRng;
 use swarm_alloc::Allocator;
 use swarm_comms::{
     ConnectivityModel, ConnectivitySnapshot, InMemAgentTransport, InMemNetwork, NetworkConfig,
 };
 use swarm_metrics::RunMetrics;
-use swarm_runtime::{AgentNode, Coordinator, NodeTickOutput};
+use swarm_runtime::{AgentNode, Coordinator, GridState, NodeTickOutput};
 use swarm_types::{AgentId, Health, Role, Task, TaskId};
 
 use crate::{Clock, Scenario};
@@ -48,6 +49,8 @@ pub struct RunConfig {
     // v0.8: movement config
     pub enable_movement: bool,
     pub tick_duration_ms: u64,
+    // v0.9: SAR grid state
+    pub grid_state: Option<GridState>,
 }
 
 pub struct ScenarioRunner;
@@ -147,6 +150,10 @@ impl ScenarioRunner {
         let mut total_distance_travelled: f64 = 0.0;
         let mut agents_exhausted: u64 = 0;
         let mut time_to_first_exhaustion: Option<u64> = None;
+
+        // v0.9 SAR metrics
+        let mut coverage_over_time: Vec<f64> = Vec::new();
+        let mut grid_state = config.grid_state;
 
         // v0.5 connectivity metrics
         let mut availability_per_tick: Vec<f64> = Vec::new();
@@ -280,23 +287,71 @@ impl ScenarioRunner {
                 tick_outputs.push((agent_id.clone(), output));
             }
 
-            // v0.5: Pose update — move alive agents to their assigned task's pose
-            for (node, agent_id) in &mut nodes {
-                if crashed_agents.contains(agent_id) {
-                    continue;
-                }
-                let assigned_tasks: Vec<(AgentId, Option<swarm_types::Pose>)> = node
-                    .coordinator
-                    .registry
-                    .tasks()
-                    .filter(|t| t.assigned_to.as_ref() == Some(agent_id))
-                    .map(|t| (agent_id.clone(), t.pose))
-                    .collect();
-                for (_aid, pose) in assigned_tasks {
-                    if let Some(p) = pose {
-                        node.coordinator.membership.update_pose(agent_id, p);
+            // v0.5: Pose update — only teleport when movement is disabled.
+            // When enable_movement=true, agents move gradually via apply_movement.
+            if !config.enable_movement {
+                for (node, agent_id) in &mut nodes {
+                    if crashed_agents.contains(agent_id) {
+                        continue;
+                    }
+                    let assigned_tasks: Vec<(AgentId, Option<swarm_types::Pose>)> = node
+                        .coordinator
+                        .registry
+                        .tasks()
+                        .filter(|t| t.assigned_to.as_ref() == Some(agent_id))
+                        .map(|t| (agent_id.clone(), t.pose))
+                        .collect();
+                    for (_aid, pose) in assigned_tasks {
+                        if let Some(p) = pose {
+                            node.coordinator.membership.update_pose(agent_id, p);
+                        }
                     }
                 }
+            }
+
+            // v0.9: SAR scan logic
+            if let Some(ref mut grid_state) = grid_state {
+                for (node, agent_id) in &mut nodes {
+                    if crashed_agents.contains(agent_id) {
+                        continue;
+                    }
+                    let assigned_tasks: Vec<_> = node
+                        .coordinator
+                        .registry
+                        .tasks()
+                        .filter(|t| t.assigned_to.as_ref() == Some(agent_id))
+                        .map(|t| (t.id.clone(), t.grid_cell))
+                        .collect();
+                    let mut scanned_task_ids = Vec::new();
+                    for (task_id, grid_cell) in assigned_tasks {
+                        if let Some((cell_x, cell_y)) = grid_cell {
+                            if let Some(entry) = node.coordinator.membership.get(agent_id) {
+                                let cell_pose = grid_state.grid.cell_center(cell_x, cell_y);
+                                let dist = entry.pose.distance_to(&cell_pose);
+                                let threshold = grid_state.grid.cell_size * 0.1;
+                                if dist < threshold {
+                                    let mut rng = rand::rngs::StdRng::seed_from_u64(
+                                        scenario.seed.wrapping_add(current_tick),
+                                    );
+                                    grid_state.scan_cell(
+                                        agent_id.clone(),
+                                        cell_x,
+                                        cell_y,
+                                        &entry.role,
+                                        current_tick,
+                                        &mut rng,
+                                    );
+                                    scanned_task_ids.push(task_id);
+                                }
+                            }
+                        }
+                    }
+                    // Release scanned tasks so agents can be reassigned to new cells
+                    for task_id in scanned_task_ids {
+                        node.coordinator.registry.release_task(&task_id);
+                    }
+                }
+                coverage_over_time.push(grid_state.coverage_fraction());
             }
 
             // v0.5: Compute connectivity metrics for this tick
@@ -520,12 +575,15 @@ impl ScenarioRunner {
                 .find(|(_, id)| !crashed_agents.contains(id))
                 .is_some_and(|(node, _)| node.coordinator.registry.all_assigned_or_completed());
 
+            let sar_complete = grid_state.as_ref().is_none_or(|g| g.all_targets_found());
+
             if all_tasks_assigned
                 && max_task_unassigned_ticks <= config.max_unassigned_ticks
                 && all_failure_ticks_passed
                 && all_expected_failures_detected
                 && all_dynamic_tasks_injected
                 && post_partition_converged
+                && sar_complete
             {
                 break;
             }
@@ -664,6 +722,19 @@ impl ScenarioRunner {
                 total_distance_travelled,
                 mission_completion_ticks: total_ticks,
                 time_to_first_exhaustion,
+                // v0.9 SAR
+                time_to_find: grid_state.as_ref().and_then(|g| g.first_find_tick),
+                coverage_over_time,
+                probability_of_detection: grid_state.as_ref().map_or(0.0, |g| {
+                    if g.targets.is_empty() {
+                        0.0
+                    } else {
+                        g.targets_found as f64 / g.targets.len() as f64
+                    }
+                }),
+                targets_found: grid_state.as_ref().map_or(0, |g| g.targets_found),
+                targets_total: grid_state.as_ref().map_or(0, |g| g.targets.len() as u32),
+                scan_count: grid_state.as_ref().map_or(0, |g| g.scan_count),
             },
             event_log,
         )
@@ -735,6 +806,7 @@ mod tests {
                 preferred_role: None,
                 expires_at: None,
                 pose: None,
+                grid_cell: None,
             })
             .collect();
         Scenario {
@@ -762,6 +834,7 @@ mod tests {
             base_id: None,
             enable_movement: false,
             tick_duration_ms: 100,
+            grid_state: None,
         }
     }
 
@@ -833,6 +906,7 @@ mod tests {
             preferred_role: None,
             expires_at: None,
             pose: None,
+            grid_cell: None,
         };
         let cfg = RunConfig {
             dynamic_tasks: vec![DynamicTaskEvent {
@@ -859,6 +933,7 @@ mod tests {
             preferred_role: None,
             expires_at: Some(3),
             pose: None,
+            grid_cell: None,
         };
         let cfg = RunConfig {
             dynamic_tasks: vec![DynamicTaskEvent {
@@ -909,6 +984,7 @@ mod tests {
             preferred_role: None,
             expires_at: None,
             pose: None,
+            grid_cell: None,
         };
         let cfg = RunConfig {
             dynamic_tasks: vec![DynamicTaskEvent {

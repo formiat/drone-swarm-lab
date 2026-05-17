@@ -61,6 +61,7 @@ pub fn build_coverage_scenario(config: &CoverageConfig) -> (Scenario, RunConfig)
                 preferred_role: None,
                 expires_at: None,
                 pose: None,
+                grid_cell: None,
             }
         })
         .collect();
@@ -86,6 +87,7 @@ pub fn build_coverage_scenario(config: &CoverageConfig) -> (Scenario, RunConfig)
         }],
         dynamic_tasks: vec![],
         partition_events: vec![],
+        grid_state: None,
         gossip_interval_ticks: 999,
         base_id: None,
         enable_movement: false,

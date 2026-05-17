@@ -743,6 +743,7 @@ dependencies = [
 name = "swarm-runtime"
 version = "0.1.0"
 dependencies = [
+ "rand 0.8.6",
  "serde",
  "serde_json",
  "swarm-alloc",
@@ -759,6 +760,7 @@ dependencies = [
  "proptest",
  "rand 0.8.6",
  "swarm-alloc",
+ "swarm-runtime",
  "swarm-sim",
  "swarm-types",
 ]
@@ -771,6 +773,7 @@ dependencies = [
  "csv",
  "derive_more",
  "proptest",
+ "rand 0.8.6",
  "serde",
  "serde_json",
  "swarm-alloc",

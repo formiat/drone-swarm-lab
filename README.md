@@ -225,7 +225,7 @@ Run with CSV export:
 cargo run -p swarm-examples --bin strategy_comparison -- --csv results.csv
 ```
 
-**Milestone 9** — planned. SAR v1 (Search and Rescue):
+**Milestone 9** — complete. SAR v1 (Search and Rescue):
 
 - `SearchGrid` — discrete search area divided into cells; each cell is a Task with a pose.
 - `HiddenTarget` — targets randomly placed in cells; unknown to agents until scanned.

@@ -84,6 +84,7 @@ pub fn build_dynamic_auction_scenario(config: &DynamicAuctionConfig) -> (Scenari
                 preferred_role: None,
                 expires_at: None,
                 pose: Some(Pose { x: tx, y: ty }),
+                grid_cell: None,
             }
         })
         .collect();
@@ -117,6 +118,7 @@ pub fn build_dynamic_auction_scenario(config: &DynamicAuctionConfig) -> (Scenari
                     preferred_role: None,
                     expires_at: Some(injection_tick + config.task_expiry_ticks),
                     pose: Some(Pose { x: tx, y: ty }),
+                    grid_cell: None,
                 },
             }
         })
@@ -148,6 +150,7 @@ pub fn build_dynamic_auction_scenario(config: &DynamicAuctionConfig) -> (Scenari
         base_id: None,
         enable_movement: false,
         tick_duration_ms: 100,
+        grid_state: None,
     };
 
     (scenario, run_config)
