@@ -3,6 +3,13 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use swarm_types::{AgentId, TaskId};
 
+/// A winning bid in the CBBA consensus algorithm.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CbbaBid {
+    pub agent_id: AgentId,
+    pub value: f64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum RuntimeMessage {
@@ -12,6 +19,12 @@ pub enum RuntimeMessage {
     Gossip {
         assignments: HashMap<TaskId, AgentId>,
         generations: HashMap<AgentId, u64>,
+    },
+    #[serde(rename = "cbba")]
+    Cbba {
+        round: u32,
+        winning_bids: HashMap<TaskId, CbbaBid>,
+        sender_bundle: Vec<TaskId>,
     },
 }
 
@@ -39,6 +52,19 @@ impl RuntimeMessage {
         Self::Gossip {
             assignments,
             generations,
+        }
+        .to_payload()
+    }
+
+    pub fn cbba(
+        round: u32,
+        winning_bids: HashMap<TaskId, CbbaBid>,
+        sender_bundle: Vec<TaskId>,
+    ) -> Vec<u8> {
+        Self::Cbba {
+            round,
+            winning_bids,
+            sender_bundle,
         }
         .to_payload()
     }

@@ -65,7 +65,7 @@ impl<T: Transport> AgentNode<T> {
     pub fn tick<A: Allocator>(
         &mut self,
         current_tick: u64,
-        allocator: &A,
+        allocator: &mut A,
         injected: Vec<Task>,
     ) -> Result<NodeTickOutput, T::Error> {
         self.send_heartbeats(current_tick)?;
@@ -91,7 +91,7 @@ impl<T: Transport> AgentNode<T> {
     pub fn process_inbox_and_allocate<A: Allocator>(
         &mut self,
         current_tick: u64,
-        allocator: &A,
+        allocator: &mut A,
         injected: Vec<Task>,
     ) -> Result<NodeTickOutput, T::Error> {
         let mut all_msgs: Vec<RawMessage> = Vec::new();
@@ -107,6 +107,7 @@ impl<T: Transport> AgentNode<T> {
 
         let mut hb_list: Vec<(AgentId, u64, u64)> = Vec::new();
         let mut gossip_buffer: Vec<RuntimeMessage> = Vec::new();
+        let mut cbba_buffer: Vec<RuntimeMessage> = Vec::new();
         for msg in &all_msgs {
             match RuntimeMessage::from_payload(&msg.payload) {
                 Some(RuntimeMessage::Heartbeat {
@@ -118,6 +119,11 @@ impl<T: Transport> AgentNode<T> {
                 Some(RuntimeMessage::Gossip { .. }) => {
                     if let Some(rt) = RuntimeMessage::from_payload(&msg.payload) {
                         gossip_buffer.push(rt);
+                    }
+                }
+                Some(RuntimeMessage::Cbba { .. }) => {
+                    if let Some(rt) = RuntimeMessage::from_payload(&msg.payload) {
+                        cbba_buffer.push(rt);
                     }
                 }
                 None => {
@@ -309,7 +315,7 @@ impl<T: Transport> AgentNode<T> {
     }
 }
 
-fn allocate_unassigned<A: Allocator>(coordinator: &mut Coordinator, allocator: &A) -> u64 {
+fn allocate_unassigned<A: Allocator>(coordinator: &mut Coordinator, allocator: &mut A) -> u64 {
     let mut tasks: Vec<Task> = coordinator
         .registry
         .unassigned()
@@ -460,8 +466,8 @@ mod tests {
         );
         node.gossip_interval_ticks = 999;
 
-        let allocator = GreedyAllocator;
-        node.tick(1, &allocator, vec![]).unwrap();
+        let mut allocator = GreedyAllocator;
+        node.tick(1, &mut allocator, vec![]).unwrap();
 
         let entry = node
             .coordinator
@@ -507,8 +513,8 @@ mod tests {
         );
         node.gossip_interval_ticks = 999;
 
-        let allocator = GreedyAllocator;
-        let out = node.tick(1, &allocator, vec![]).unwrap();
+        let mut allocator = GreedyAllocator;
+        let out = node.tick(1, &mut allocator, vec![]).unwrap();
 
         // Gossip-only message should NOT count as heartbeat
         assert!(out.newly_failed.is_empty());
@@ -540,8 +546,8 @@ mod tests {
         );
         node.gossip_interval_ticks = 999;
 
-        let allocator = GreedyAllocator;
-        let out = node.tick(1, &allocator, vec![]).unwrap();
+        let mut allocator = GreedyAllocator;
+        let out = node.tick(1, &mut allocator, vec![]).unwrap();
         assert_eq!(out.discarded_messages, 1);
     }
 

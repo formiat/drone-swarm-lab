@@ -142,11 +142,11 @@ impl BenchmarkHarness {
             for factory in strategies {
                 for profile_name in profile_names {
                     let (scenario, run_config) = scenario_builder(seed, profile_name);
-                    let strategy = factory(&scenario, &run_config);
+                    let mut strategy = factory(&scenario, &run_config);
                     let (metrics, log) = run_with_strategy(
                         &scenario,
                         run_config,
-                        strategy.as_ref(),
+                        &mut *strategy,
                         opts.enable_replay_log,
                     );
                     results
@@ -224,13 +224,13 @@ fn generate_benchmark_run_id(
 fn run_with_strategy(
     scenario: &Scenario,
     run_config: RunConfig,
-    strategy: &dyn Strategy,
+    strategy: &mut dyn Strategy,
     enable_log: bool,
 ) -> (swarm_metrics::RunMetrics, Option<swarm_replay::EventLog>) {
-    struct StrategyWrapper<'a>(&'a dyn Strategy);
+    struct StrategyWrapper<'a>(&'a mut dyn Strategy);
     impl<'a> swarm_alloc::Allocator for StrategyWrapper<'a> {
         fn allocate(
-            &self,
+            &mut self,
             tasks: &[swarm_alloc::AllocationTask<'_>],
             agents: &[swarm_alloc::AllocationAgent],
         ) -> Vec<(swarm_types::TaskId, swarm_types::AgentId)> {
@@ -238,7 +238,7 @@ fn run_with_strategy(
         }
 
         fn allocate_with_connectivity(
-            &self,
+            &mut self,
             tasks: &[swarm_alloc::AllocationTask<'_>],
             agents: &[swarm_alloc::AllocationAgent],
             connectivity: &swarm_alloc::ConnectivityContext,

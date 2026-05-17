@@ -29,7 +29,7 @@ pub struct ConnectivityContext {
 /// value: `(task_id, agent_id)` — allocation decisions
 pub trait Allocator {
     fn allocate(
-        &self,
+        &mut self,
         tasks: &[AllocationTask<'_>],
         agents: &[AllocationAgent],
     ) -> Vec<(TaskId, AgentId)>;
@@ -37,7 +37,7 @@ pub trait Allocator {
     /// v0.5 extension for connectivity-aware allocation.
     /// Default implementation delegates to `allocate`, preserving backward compatibility.
     fn allocate_with_connectivity(
-        &self,
+        &mut self,
         tasks: &[AllocationTask<'_>],
         agents: &[AllocationAgent],
         _connectivity: &ConnectivityContext,
@@ -50,7 +50,7 @@ pub struct GreedyAllocator;
 
 impl Allocator for GreedyAllocator {
     fn allocate(
-        &self,
+        &mut self,
         tasks: &[AllocationTask<'_>],
         agents: &[AllocationAgent],
     ) -> Vec<(TaskId, AgentId)> {
@@ -119,7 +119,7 @@ impl Default for AuctionAllocator {
 
 impl Allocator for AuctionAllocator {
     fn allocate(
-        &self,
+        &mut self,
         tasks: &[AllocationTask<'_>],
         agents: &[AllocationAgent],
     ) -> Vec<(TaskId, AgentId)> {
@@ -184,11 +184,11 @@ impl AuctionAllocator {
     }
 }
 
-fn has_all_capabilities(agent: &AllocationAgent, required: &[Capability]) -> bool {
+pub(crate) fn has_all_capabilities(agent: &AllocationAgent, required: &[Capability]) -> bool {
     required.iter().all(|cap| agent.capabilities.contains(cap))
 }
 
-fn has_required_role(agent: &AllocationAgent, required: &Option<Role>) -> bool {
+pub(crate) fn has_required_role(agent: &AllocationAgent, required: &Option<Role>) -> bool {
     required.as_ref().is_none_or(|r| &agent.role == r)
 }
 

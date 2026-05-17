@@ -54,7 +54,7 @@ impl CentralizedPlanner {
 
 impl Allocator for CentralizedPlanner {
     fn allocate(
-        &self,
+        &mut self,
         tasks: &[AllocationTask<'_>],
         _agents: &[AllocationAgent],
     ) -> Vec<(TaskId, AgentId)> {
@@ -143,7 +143,7 @@ mod tests {
         let tasks = vec![AllocationTask { task: &t1 }, AllocationTask { task: &t2 }];
         let agents = vec![agent("a1"), agent("a2")];
 
-        let planner = CentralizedPlanner::new(&tasks, &agents);
+        let mut planner = CentralizedPlanner::new(&tasks, &agents);
         let result = planner.allocate(&tasks, &agents);
 
         assert_eq!(result.len(), 2);
@@ -155,7 +155,7 @@ mod tests {
         let tasks = vec![AllocationTask { task: &t1 }];
         let agents: Vec<AllocationAgent> = vec![];
 
-        let planner = CentralizedPlanner::new(&tasks, &agents);
+        let mut planner = CentralizedPlanner::new(&tasks, &agents);
         let result = planner.allocate(&tasks, &agents);
 
         assert!(result.is_empty());

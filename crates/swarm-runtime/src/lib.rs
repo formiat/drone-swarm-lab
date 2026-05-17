@@ -12,6 +12,6 @@ pub use error::RuntimeError;
 pub use failure::FailureDetector;
 pub use grid_state::GridState;
 pub use membership::{AgentEntry, MembershipView};
-pub use message::RuntimeMessage;
+pub use message::{CbbaBid, RuntimeMessage};
 pub use node::{AgentNode, NodeConfig, NodeTickOutput};
 pub use task_registry::TaskRegistry;

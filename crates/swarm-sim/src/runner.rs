@@ -86,7 +86,7 @@ impl ScenarioRunner {
     fn run_internal<A: Allocator>(
         scenario: &Scenario,
         config: RunConfig,
-        allocator: A,
+        mut allocator: A,
         mut log_builder: Option<swarm_replay::EventLogBuilder>,
     ) -> (RunMetrics, Option<swarm_replay::EventLog>) {
         let bus = Rc::new(RefCell::new(InMemNetwork::new(NetworkConfig {
@@ -278,7 +278,7 @@ impl ScenarioRunner {
 
                 let output = match node.process_inbox_and_allocate(
                     current_tick,
-                    &allocator,
+                    &mut allocator,
                     injected.clone(),
                 ) {
                     Ok(out) => out,
@@ -735,6 +735,10 @@ impl ScenarioRunner {
                 targets_found: grid_state.as_ref().map_or(0, |g| g.targets_found),
                 targets_total: grid_state.as_ref().map_or(0, |g| g.targets.len() as u32),
                 scan_count: grid_state.as_ref().map_or(0, |g| g.scan_count),
+                // v0.10 CBBA
+                cbba_rounds_to_convergence: 0,
+                cbba_converged: false,
+                cbba_messages: 0,
             },
             event_log,
         )
@@ -1008,7 +1012,7 @@ mod tests {
 
     impl Allocator for DuplicateAllocator {
         fn allocate(
-            &self,
+            &mut self,
             tasks: &[AllocationTask<'_>],
             agents: &[AllocationAgent],
         ) -> Vec<(TaskId, AgentId)> {

@@ -65,7 +65,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     let mut node = AgentNode::new(config.agent_id.clone(), peer_ids, coordinator, transport);
 
-    let allocator = GreedyAllocator;
+    let mut allocator = GreedyAllocator;
     let mut detected_failures: Vec<AgentId> = Vec::new();
     let mut reallocation_count: u64 = 0;
 
@@ -75,7 +75,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     for tick in 0..config.max_ticks {
-        let output = match node.tick(tick, &allocator, vec![]) {
+        let output = match node.tick(tick, &mut allocator, vec![]) {
             Ok(out) => out,
             Err(e) => {
                 tracing::error!(error = %e, "tick failed");

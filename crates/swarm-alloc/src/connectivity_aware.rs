@@ -10,7 +10,7 @@ pub struct ConnectivityAwareAllocator {
 
 impl Allocator for ConnectivityAwareAllocator {
     fn allocate(
-        &self,
+        &mut self,
         tasks: &[AllocationTask<'_>],
         agents: &[AllocationAgent],
     ) -> Vec<(TaskId, AgentId)> {
@@ -18,7 +18,7 @@ impl Allocator for ConnectivityAwareAllocator {
     }
 
     fn allocate_with_connectivity(
-        &self,
+        &mut self,
         tasks: &[AllocationTask<'_>],
         agents: &[AllocationAgent],
         connectivity: &ConnectivityContext,
@@ -164,7 +164,7 @@ mod tests {
 
     #[test]
     fn connectivity_aware_prefers_relay_for_relay_task() {
-        let allocator = ConnectivityAwareAllocator {
+        let mut allocator = ConnectivityAwareAllocator {
             base_allocator: AuctionAllocator::default(),
         };
 
@@ -183,7 +183,7 @@ mod tests {
 
     #[test]
     fn connectivity_aware_scout_task_ignores_role() {
-        let allocator = ConnectivityAwareAllocator {
+        let mut allocator = ConnectivityAwareAllocator {
             base_allocator: AuctionAllocator::default(),
         };
 

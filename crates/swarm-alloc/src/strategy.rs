@@ -1,4 +1,6 @@
-use crate::{Allocator, AuctionAllocator, ConnectivityAwareAllocator, GreedyAllocator};
+use crate::{
+    Allocator, AuctionAllocator, CbbaAllocator, ConnectivityAwareAllocator, GreedyAllocator,
+};
 
 /// A named allocation strategy that can be compared against others.
 pub trait Strategy: Allocator {
@@ -36,6 +38,16 @@ impl Strategy for ConnectivityAwareAllocator {
     }
 }
 
+impl Strategy for CbbaAllocator {
+    fn name(&self) -> &'static str {
+        "cbba"
+    }
+
+    fn description(&self) -> &'static str {
+        "Consensus-Based Bundle Algorithm — distributed auction with bundle building"
+    }
+}
+
 /// Registry of all available strategies for benchmark harnesses.
 pub struct StrategyRegistry {
     strategies: Vec<Box<dyn Strategy>>,
@@ -69,6 +81,7 @@ impl Default for StrategyRegistry {
         reg.register(Box::new(ConnectivityAwareAllocator {
             base_allocator: AuctionAllocator::default(),
         }));
+        reg.register(Box::new(CbbaAllocator::default()));
         reg
     }
 }

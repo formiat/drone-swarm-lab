@@ -63,6 +63,13 @@ pub struct RunMetrics {
     pub targets_total: u32,
     #[serde(default)]
     pub scan_count: u32,
+    // v0.10 CBBA metrics
+    #[serde(default)]
+    pub cbba_rounds_to_convergence: u64,
+    #[serde(default)]
+    pub cbba_converged: bool,
+    #[serde(default)]
+    pub cbba_messages: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -290,6 +297,9 @@ mod tests {
             targets_found: 0,
             targets_total: 0,
             scan_count: 0,
+            cbba_rounds_to_convergence: 0,
+            cbba_converged: false,
+            cbba_messages: 0,
         }
     }
 
