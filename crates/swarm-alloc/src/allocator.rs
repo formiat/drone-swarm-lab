@@ -75,6 +75,7 @@ impl Allocator for GreedyAllocator {
                 .filter(|agent| {
                     has_all_capabilities(agent, &at.task.required_capabilities)
                         && has_required_role(agent, &at.task.required_role)
+                        && agent.battery > 0.0
                 })
                 .collect();
 
@@ -161,6 +162,7 @@ impl AuctionAllocator {
     fn cost(&self, task: &Task, agent: &AllocationAgent) -> f64 {
         if !has_all_capabilities(agent, &task.required_capabilities)
             || !has_required_role(agent, &task.required_role)
+            || agent.battery <= 0.0
         {
             return f64::INFINITY;
         }
@@ -449,6 +451,25 @@ mod tests {
         t.required_role = Some(Role::Relay);
         let a_scout = agent("scout");
         let result = AuctionAllocator::default().allocate(&[at(&t)], &[a_scout]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn battery_exhausted_agent_excluded_from_allocation() {
+        let tasks = [task("t0", 1)];
+        let mut a = agent("a0");
+        a.battery = 0.0;
+        let result = GreedyAllocator.allocate(&tasks.iter().map(at).collect::<Vec<_>>(), &[a]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn battery_exhausted_agent_excluded_from_auction() {
+        let tasks = [task("t0", 1)];
+        let mut a = agent("a0");
+        a.battery = 0.0;
+        let result =
+            AuctionAllocator::default().allocate(&tasks.iter().map(at).collect::<Vec<_>>(), &[a]);
         assert!(result.is_empty());
     }
 }

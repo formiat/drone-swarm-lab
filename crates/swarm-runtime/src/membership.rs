@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use swarm_types::{Agent, AgentId, Capability, Health, Pose, Role};
 
+use crate::task_registry::TaskRegistry;
+
 #[derive(Clone, Debug)]
 pub struct AgentEntry {
     pub role: Role,
@@ -12,6 +14,9 @@ pub struct AgentEntry {
     pub pose: Pose,
     pub comms_range: f64,
     pub generation: u64,
+    pub speed: f64,
+    pub max_range: f64,
+    pub battery_drain_rate: f64,
 }
 
 pub struct MembershipView {
@@ -35,6 +40,15 @@ impl MembershipView {
                         pose: agent.pose,
                         comms_range: agent.comms_range,
                         generation: agent.generation,
+                        speed: agent.speed,
+                        max_range: agent.max_range,
+                        battery_drain_rate: if agent.battery_drain_rate > 0.0 {
+                            agent.battery_drain_rate
+                        } else if agent.max_range > 0.0 {
+                            100.0 / agent.max_range
+                        } else {
+                            0.0
+                        },
                     },
                 )
             })
@@ -125,6 +139,67 @@ impl MembershipView {
     pub fn all_generations(&self) -> impl Iterator<Item = (&AgentId, u64)> {
         self.agents.iter().map(|(id, e)| (id, e.generation))
     }
+
+    /// Move agents toward their assigned tasks. Updates pose and drains battery.
+    /// Returns (exhausted agents, (agent_id, distance_moved) for all moving agents).
+    pub fn apply_movement(
+        &mut self,
+        registry: &TaskRegistry,
+        tick_duration_ms: u64,
+    ) -> (Vec<AgentId>, Vec<(AgentId, f64)>) {
+        let dt = tick_duration_ms as f64 / 1000.0;
+        let mut exhausted = Vec::new();
+        let mut distances = Vec::new();
+
+        for (agent_id, entry) in self.agents.iter_mut() {
+            if entry.health != Health::Alive || entry.speed <= 0.0 {
+                continue;
+            }
+
+            let task_id = match registry
+                .tasks()
+                .find(|t| t.assigned_to.as_ref() == Some(agent_id))
+            {
+                Some(t) => t.id.clone(),
+                None => continue,
+            };
+
+            let task = match registry.tasks().find(|t| t.id == task_id) {
+                Some(t) => t,
+                None => continue,
+            };
+
+            let target_pose = match task.pose {
+                Some(p) => p,
+                None => continue,
+            };
+
+            let dx = target_pose.x - entry.pose.x;
+            let dy = target_pose.y - entry.pose.y;
+            let distance_to_target = (dx * dx + dy * dy).sqrt();
+
+            if distance_to_target < 1e-9 {
+                continue;
+            }
+
+            let max_step = entry.speed * dt;
+            let distance_moved = distance_to_target.min(max_step);
+
+            let ratio = distance_moved / distance_to_target;
+            entry.pose.x += dx * ratio;
+            entry.pose.y += dy * ratio;
+
+            let drain = distance_moved * entry.battery_drain_rate;
+            entry.battery = (entry.battery - drain).max(0.0);
+
+            if entry.battery <= 0.0 {
+                exhausted.push(agent_id.clone());
+            }
+            distances.push((agent_id.clone(), distance_moved));
+        }
+
+        (exhausted, distances)
+    }
 }
 
 #[cfg(test)]
@@ -142,6 +217,9 @@ mod tests {
             battery: 100.0,
             comms_range: f64::INFINITY,
             generation: 1,
+            speed: 0.0,
+            max_range: 0.0,
+            battery_drain_rate: 0.0,
         }
     }
 
@@ -231,5 +309,155 @@ mod tests {
         assert_eq!(entry.battery, 50.0);
         assert_eq!(entry.pose.x, 1.0);
         assert_eq!(entry.pose.y, 2.0);
+    }
+
+    #[test]
+    fn movement_speed_zero_no_movement() {
+        use swarm_types::TaskStatus;
+
+        let task = swarm_types::Task {
+            id: swarm_types::TaskId::from("t0".to_owned()),
+            status: TaskStatus::Assigned,
+            assigned_to: Some(AgentId::from("agent-0".to_owned())),
+            priority: 1,
+            required_capabilities: vec![],
+            required_role: None,
+            preferred_role: None,
+            expires_at: None,
+            pose: Some(Pose { x: 10.0, y: 0.0 }),
+        };
+        let registry = TaskRegistry::new(vec![task]);
+        let mut view = MembershipView::new(vec![agent("agent-0")]);
+        let (exhausted, distances) = view.apply_movement(&registry, 1000);
+        assert!(exhausted.is_empty());
+        assert!(distances.is_empty());
+    }
+
+    #[test]
+    fn movement_toward_target_updates_pose() {
+        use swarm_types::{TaskId, TaskStatus};
+
+        let task = swarm_types::Task {
+            id: TaskId::from("t0".to_owned()),
+            status: TaskStatus::Assigned,
+            assigned_to: Some(AgentId::from("agent-0".to_owned())),
+            priority: 1,
+            required_capabilities: vec![],
+            required_role: None,
+            preferred_role: None,
+            expires_at: None,
+            pose: Some(Pose { x: 10.0, y: 0.0 }),
+        };
+        let registry = TaskRegistry::new(vec![task]);
+
+        let mut a = agent("agent-0");
+        a.speed = 5.0;
+        a.max_range = 500.0;
+        a.battery_drain_rate = 0.2;
+        let mut view = MembershipView::new(vec![a]);
+
+        let (exhausted, distances) = view.apply_movement(&registry, 1000);
+        assert!(exhausted.is_empty());
+        assert_eq!(distances.len(), 1);
+        assert!((distances[0].1 - 5.0).abs() < 0.01); // speed*dt = 5*1 = 5m
+
+        let entry = view.get(&AgentId::from("agent-0".to_owned())).unwrap();
+        assert!(entry.pose.x > 0.0);
+        assert!((entry.battery - 99.0).abs() < 0.1); // 5m * 0.2 = 1% drain
+    }
+
+    #[test]
+    fn movement_reaches_target_snaps_pose() {
+        use swarm_types::{TaskId, TaskStatus};
+
+        let task = swarm_types::Task {
+            id: TaskId::from("t0".to_owned()),
+            status: TaskStatus::Assigned,
+            assigned_to: Some(AgentId::from("agent-0".to_owned())),
+            priority: 1,
+            required_capabilities: vec![],
+            required_role: None,
+            preferred_role: None,
+            expires_at: None,
+            pose: Some(Pose { x: 3.0, y: 0.0 }),
+        };
+        let registry = TaskRegistry::new(vec![task]);
+
+        let mut a = agent("agent-0");
+        a.speed = 10.0;
+        let mut view = MembershipView::new(vec![a]);
+
+        view.apply_movement(&registry, 1000);
+        let entry = view.get(&AgentId::from("agent-0".to_owned())).unwrap();
+        assert!((entry.pose.x - 3.0).abs() < 0.01);
+        assert!((entry.pose.y - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn movement_drains_battery() {
+        use swarm_types::{TaskId, TaskStatus};
+
+        let task = swarm_types::Task {
+            id: TaskId::from("t0".to_owned()),
+            status: TaskStatus::Assigned,
+            assigned_to: Some(AgentId::from("agent-0".to_owned())),
+            priority: 1,
+            required_capabilities: vec![],
+            required_role: None,
+            preferred_role: None,
+            expires_at: None,
+            pose: Some(Pose { x: 100.0, y: 0.0 }),
+        };
+        let registry = TaskRegistry::new(vec![task]);
+
+        let mut a = agent("agent-0");
+        a.speed = 10.0;
+        a.max_range = 50.0; // 100/50 = 2% per meter
+        a.battery_drain_rate = 2.0;
+        let mut view = MembershipView::new(vec![a]);
+
+        view.apply_movement(&registry, 1000);
+        let entry = view.get(&AgentId::from("agent-0".to_owned())).unwrap();
+        assert!((entry.battery - 80.0).abs() < 0.1); // 10m * 2% = 20% drain
+    }
+
+    #[test]
+    fn movement_exhausts_battery() {
+        use swarm_types::{TaskId, TaskStatus};
+
+        let task = swarm_types::Task {
+            id: TaskId::from("t0".to_owned()),
+            status: TaskStatus::Assigned,
+            assigned_to: Some(AgentId::from("agent-0".to_owned())),
+            priority: 1,
+            required_capabilities: vec![],
+            required_role: None,
+            preferred_role: None,
+            expires_at: None,
+            pose: Some(Pose { x: 100.0, y: 0.0 }),
+        };
+        let registry = TaskRegistry::new(vec![task]);
+
+        let mut a = agent("agent-0");
+        a.speed = 10.0;
+        a.battery = 5.0;
+        a.battery_drain_rate = 2.0;
+        let mut view = MembershipView::new(vec![a]);
+
+        let (exhausted, _) = view.apply_movement(&registry, 1000);
+        assert_eq!(exhausted, vec![AgentId::from("agent-0".to_owned())]);
+    }
+
+    #[test]
+    fn movement_no_target_no_movement() {
+        let mut a = agent("agent-0");
+        a.speed = 5.0;
+        let view_before = Pose { x: 0.0, y: 0.0 };
+        let mut view = MembershipView::new(vec![a]);
+        let (exhausted, distances) = view.apply_movement(&TaskRegistry::new(vec![]), 1000);
+        assert!(exhausted.is_empty());
+        assert!(distances.is_empty());
+        let entry = view.get(&AgentId::from("agent-0".to_owned())).unwrap();
+        assert!((entry.pose.x - view_before.x).abs() < 0.01);
     }
 }

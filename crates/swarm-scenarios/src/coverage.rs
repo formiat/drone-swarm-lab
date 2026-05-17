@@ -34,6 +34,9 @@ pub fn build_coverage_scenario(config: &CoverageConfig) -> (Scenario, RunConfig)
             battery: 100.0,
             comms_range: f64::INFINITY,
             generation: 1,
+            speed: 0.0,
+            max_range: 0.0,
+            battery_drain_rate: 0.0,
         })
         .collect();
 

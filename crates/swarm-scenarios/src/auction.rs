@@ -52,6 +52,9 @@ pub fn build_dynamic_auction_scenario(config: &DynamicAuctionConfig) -> (Scenari
                 battery: 100.0,
                 comms_range: f64::INFINITY,
                 generation: 1,
+                speed: 0.0,
+                max_range: 0.0,
+                battery_drain_rate: 0.0,
             }
         })
         .collect();

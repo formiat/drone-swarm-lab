@@ -13,6 +13,21 @@ pub struct NodeTickOutput {
     pub expired_task_ids: Vec<TaskId>,
     pub conflicting_assignments: u64,
     pub discarded_messages: u64,
+    pub distance_travelled: Vec<(AgentId, f64)>,
+}
+
+pub struct NodeConfig {
+    pub tick_duration_ms: u64,
+    pub enable_movement: bool,
+}
+
+impl Default for NodeConfig {
+    fn default() -> Self {
+        Self {
+            tick_duration_ms: 100,
+            enable_movement: false,
+        }
+    }
 }
 
 pub struct AgentNode<T> {
@@ -22,6 +37,7 @@ pub struct AgentNode<T> {
     pub peer_ids: Vec<AgentId>,
     pub gossip_interval_ticks: u64,
     pub generation: u64,
+    pub config: NodeConfig,
     ticks_since_last_gossip: u64,
     discarded_this_tick: u64,
 }
@@ -40,6 +56,7 @@ impl<T: Transport> AgentNode<T> {
             peer_ids,
             gossip_interval_ticks: 3,
             generation: 1,
+            config: NodeConfig::default(),
             ticks_since_last_gossip: 0,
             discarded_this_tick: 0,
         }
@@ -148,12 +165,26 @@ impl<T: Transport> AgentNode<T> {
 
         let _ = self.maybe_send_gossip();
 
+        let mut distance_travelled = Vec::new();
+        if self.config.enable_movement {
+            let (exhausted, distances) = self
+                .coordinator
+                .membership
+                .apply_movement(&self.coordinator.registry, self.config.tick_duration_ms);
+            for agent_id in &exhausted {
+                self.coordinator.membership.mark_dead(agent_id);
+                self.coordinator.registry.release_agent_tasks(agent_id);
+            }
+            distance_travelled = distances;
+        }
+
         Ok(NodeTickOutput {
             newly_failed: output.newly_failed,
             released_tasks: output.released_tasks,
             expired_task_ids: output.expired_task_ids,
             conflicting_assignments,
             discarded_messages: self.discarded_this_tick,
+            distance_travelled,
         })
     }
 
@@ -364,6 +395,9 @@ mod tests {
             battery: 100.0,
             comms_range: f64::INFINITY,
             generation: 1,
+            speed: 0.0,
+            max_range: 0.0,
+            battery_drain_rate: 0.0,
         }
     }
 

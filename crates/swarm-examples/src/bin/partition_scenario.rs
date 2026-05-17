@@ -20,6 +20,9 @@ fn main() {
             battery: 100.0,
             comms_range: f64::INFINITY,
             generation: 1,
+            speed: 5.0,
+            max_range: 500.0,
+            battery_drain_rate: 0.2,
         })
         .collect();
 
@@ -101,6 +104,9 @@ mod tests {
                 battery: 100.0,
                 comms_range: f64::INFINITY,
                 generation: 1,
+                speed: 5.0,
+                max_range: 500.0,
+                battery_drain_rate: 0.2,
             })
             .collect();
 

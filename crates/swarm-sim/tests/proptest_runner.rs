@@ -37,6 +37,9 @@ fn agent_strategy() -> impl Strategy<Value = Agent> {
                 battery,
                 comms_range,
                 generation: 1,
+                speed: 0.0,
+                max_range: 0.0,
+                battery_drain_rate: 0.0,
             },
         )
 }

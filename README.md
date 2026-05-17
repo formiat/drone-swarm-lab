@@ -204,6 +204,15 @@ Sample output (quick mode):
 - CLI flags for `strategy_comparison`: `--json <path>`, `--csv <path>`, `--replay-log <dir>`, `--run-id-prefix <prefix>`.
 - Property-based tests with `proptest`: randomized Agent/Task generation, runner no-panic invariant, success-rate boundedness.
 
+**Milestone 8** — complete. Kinematic + Battery Foundation:
+
+- Kinematic model: `Agent` gains `speed` (m/s), `max_range` (max travel distance), `battery_drain_rate` (%/m). Movement: `position += direction * speed * dt` per tick toward assigned task's pose.
+- Battery drain: proportional to distance travelled. Agent with `battery <= 0` becomes dead and is excluded from allocation (battery gate in both Greedy and Auction allocators).
+- `MembershipView::apply_movement()` moves agents and drains battery; `NodeConfig { enable_movement, tick_duration_ms }` controls movement per node.
+- Movement affects connectivity automatically: `comms_range` + new pose recalculates links each tick via `ConnectivityModel`.
+- New metrics: `final_battery_min`, `avg_distance_travelled`, `agents_exhausted`, `total_distance_travelled`, `mission_completion_ticks`, `time_to_first_exhaustion`.
+- Backward compatible: `speed=0` / `enable_movement=false` by default means existing scenarios unchanged.
+
 Run with JSON export:
 
 ```bash

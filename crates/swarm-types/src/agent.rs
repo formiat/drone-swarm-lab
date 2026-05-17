@@ -69,13 +69,22 @@ pub struct Agent {
     pub pose: Pose,
     pub capabilities: Vec<Capability>,
     pub current_task: Option<TaskId>,
-    /// Remaining battery level (0.0..=100.0). Static in Milestone 2; drain modelled in v0.3+.
+    /// Remaining battery level (0.0..=100.0).
     pub battery: f64,
     /// Communication range in meters. Default INFINITY means fully connected (backward compat).
     #[serde(default = "default_comms_range")]
     pub comms_range: f64,
     /// Generation (epoch). Incremented on restart. Heartbeats with lower generation are discarded.
     pub generation: u64,
+    /// Cruising speed in m/s. Default 0.0 for backward compat (no movement).
+    #[serde(default)]
+    pub speed: f64,
+    /// Maximum travel distance on full battery (m). Used to derive battery_drain_rate.
+    #[serde(default)]
+    pub max_range: f64,
+    /// Battery % drained per meter travelled. Computed as 100.0/max_range if not set.
+    #[serde(default)]
+    pub battery_drain_rate: f64,
 }
 
 fn default_comms_range() -> f64 {
@@ -106,6 +115,9 @@ mod tests {
             battery: 100.0,
             comms_range: f64::INFINITY,
             generation: 1,
+            speed: 0.0,
+            max_range: 0.0,
+            battery_drain_rate: 0.0,
         }
     }
 
@@ -131,6 +143,15 @@ mod tests {
     fn agent_battery_default_100() {
         let a = agent("x");
         assert_eq!(a.battery, 100.0);
+    }
+
+    #[test]
+    fn agent_speed_defaults_to_zero() {
+        let json = r#"{"id":"a1","role":"scout","health":"alive","pose":{"x":0.0,"y":0.0},"capabilities":[],"current_task":null,"battery":100.0,"generation":1}"#;
+        let a: Agent = serde_json::from_str(json).unwrap();
+        assert_eq!(a.speed, 0.0);
+        assert_eq!(a.max_range, 0.0);
+        assert_eq!(a.battery_drain_rate, 0.0);
     }
 
     #[test]
