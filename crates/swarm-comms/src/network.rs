@@ -7,12 +7,13 @@ use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use swarm_types::AgentId;
 
-use crate::{RawMessage, Transport};
+use crate::{ConnectivityModel, ConnectivitySnapshot, RawMessage, Transport};
 
 #[derive(Clone, Debug)]
 pub struct NetworkConfig {
     pub packet_loss_rate: f64,
     pub latency_ticks: u64,
+    pub latency_per_hop: u64,
     pub seed: u64,
     pub partitions: HashSet<(AgentId, AgentId)>,
 }
@@ -25,6 +26,7 @@ pub struct InMemNetwork {
     messages_attempted: u64,
     messages_dropped: u64,
     partitions: HashSet<(AgentId, AgentId)>,
+    connectivity: Option<ConnectivitySnapshot>,
 }
 
 impl InMemNetwork {
@@ -38,7 +40,13 @@ impl InMemNetwork {
             messages_attempted: 0,
             messages_dropped: 0,
             partitions,
+            connectivity: None,
         }
+    }
+
+    /// Update the connectivity snapshot used for mesh reachability filtering.
+    pub fn set_connectivity_snapshot(&mut self, snapshot: ConnectivitySnapshot) {
+        self.connectivity = Some(snapshot);
     }
 
     pub fn advance_tick(&mut self) {
@@ -108,13 +116,30 @@ impl Transport for InMemNetwork {
             return Ok(());
         }
 
+        // Mesh reachability check: if connectivity snapshot is set, only deliver
+        // when there is a path between sender and recipient.
+        let hop_count = if let Some(ref snapshot) = self.connectivity {
+            match ConnectivityModel::hop_count_between(snapshot, msg.from.as_ref(), msg.to.as_ref())
+            {
+                Some(hops) => hops,
+                None => {
+                    self.messages_dropped += 1;
+                    return Ok(());
+                }
+            }
+        } else {
+            1 // No snapshot means fully connected, treat as 1 hop
+        };
+
         let packet_loss_rate = self.config.packet_loss_rate.clamp(0.0, 1.0);
         if self.rng.gen::<f64>() < packet_loss_rate {
             self.messages_dropped += 1;
             return Ok(());
         }
 
-        let delivery_tick = self.current_tick + self.config.latency_ticks;
+        let delivery_tick = self.current_tick
+            + self.config.latency_ticks
+            + (hop_count as u64) * self.config.latency_per_hop;
         self.in_flight
             .entry(msg.to.clone())
             .or_default()
@@ -183,6 +208,7 @@ mod tests {
         NetworkConfig {
             packet_loss_rate,
             latency_ticks,
+            latency_per_hop: 0,
             seed,
             partitions: HashSet::new(),
         }
@@ -359,5 +385,126 @@ mod tests {
             })
             .unwrap();
         assert_eq!(network.drain_ready(&a2).len(), 1);
+    }
+
+    fn make_snapshot(agents: Vec<(AgentId, (f64, f64), f64)>) -> ConnectivitySnapshot {
+        use swarm_types::{Health, Pose};
+        let agent_entries = agents
+            .into_iter()
+            .map(|(id, (x, y), range)| (id, Pose { x, y }, range, Health::Alive))
+            .collect();
+        ConnectivitySnapshot {
+            agent_entries,
+            ground_nodes: vec![],
+            base_id: "base".to_owned(),
+            base_pose: Pose { x: 0.0, y: 0.0 },
+        }
+    }
+
+    #[test]
+    fn connectivity_filter_unreachable_pair_drops() {
+        let mut network = InMemNetwork::new(make_network_config(0.0, 0, 7));
+        let a0 = AgentId::from("agent-0".to_owned());
+        let a1 = AgentId::from("agent-1".to_owned());
+
+        // agent-0 at (0,0), agent-1 at (100,0), range=10 -> unreachable
+        let snapshot = make_snapshot(vec![
+            (a0.clone(), (0.0, 0.0), 10.0),
+            (a1.clone(), (100.0, 0.0), 10.0),
+        ]);
+        network.set_connectivity_snapshot(snapshot);
+
+        network
+            .send(RawMessage {
+                from: a0.clone(),
+                to: a1.clone(),
+                payload: b"hi".to_vec(),
+            })
+            .unwrap();
+        assert!(network.drain_ready(&a1).is_empty());
+        assert_eq!(network.messages_dropped(), 1);
+    }
+
+    #[test]
+    fn connectivity_filter_reachable_multi_hop_delivers() {
+        let mut network = InMemNetwork::new(make_network_config(0.0, 0, 7));
+        let a0 = AgentId::from("agent-0".to_owned());
+        let relay = AgentId::from("relay".to_owned());
+        let a1 = AgentId::from("agent-1".to_owned());
+
+        // base at (0,0), agent-0 at (0,0), relay at (5,0), agent-1 at (10,0)
+        // range=6 -> agent-0 can reach relay, relay can reach agent-1
+        let snapshot = make_snapshot(vec![
+            (a0.clone(), (0.0, 0.0), 6.0),
+            (relay.clone(), (5.0, 0.0), 6.0),
+            (a1.clone(), (10.0, 0.0), 6.0),
+        ]);
+        network.set_connectivity_snapshot(snapshot);
+
+        network
+            .send(RawMessage {
+                from: a0.clone(),
+                to: a1.clone(),
+                payload: b"hi".to_vec(),
+            })
+            .unwrap();
+        assert_eq!(network.drain_ready(&a1).len(), 1);
+    }
+
+    #[test]
+    fn connectivity_filter_hop_latency_applies() {
+        let mut config = make_network_config(0.0, 1, 7);
+        config.latency_per_hop = 2;
+        let mut network = InMemNetwork::new(config);
+        let a0 = AgentId::from("agent-0".to_owned());
+        let relay = AgentId::from("relay".to_owned());
+        let a1 = AgentId::from("agent-1".to_owned());
+
+        // base at (0,0), agent-0 at (0,0), relay at (5,0), agent-1 at (10,0)
+        // range=6 -> path agent-0 -> relay -> agent-1 is 2 hops
+        let snapshot = make_snapshot(vec![
+            (a0.clone(), (0.0, 0.0), 6.0),
+            (relay.clone(), (5.0, 0.0), 6.0),
+            (a1.clone(), (10.0, 0.0), 6.0),
+        ]);
+        network.set_connectivity_snapshot(snapshot);
+
+        network
+            .send(RawMessage {
+                from: a0.clone(),
+                to: a1.clone(),
+                payload: b"hi".to_vec(),
+            })
+            .unwrap();
+
+        // base latency=1, 2 hops * 2 = 4, total = 5 ticks
+        assert!(network.drain_ready(&a1).is_empty()); // tick 0
+        network.advance_tick(); // tick 1
+        assert!(network.drain_ready(&a1).is_empty());
+        network.advance_tick(); // tick 2
+        assert!(network.drain_ready(&a1).is_empty());
+        network.advance_tick(); // tick 3
+        assert!(network.drain_ready(&a1).is_empty());
+        network.advance_tick(); // tick 4
+        assert!(network.drain_ready(&a1).is_empty());
+        network.advance_tick(); // tick 5
+        assert_eq!(network.drain_ready(&a1).len(), 1);
+    }
+
+    #[test]
+    fn connectivity_filter_no_snapshot_fully_connected() {
+        let mut network = InMemNetwork::new(make_network_config(0.0, 0, 7));
+        let a0 = AgentId::from("agent-0".to_owned());
+        let a1 = AgentId::from("agent-1".to_owned());
+
+        // No snapshot set -> should behave as fully connected (1 hop)
+        network
+            .send(RawMessage {
+                from: a0.clone(),
+                to: a1.clone(),
+                payload: b"hi".to_vec(),
+            })
+            .unwrap();
+        assert_eq!(network.drain_ready(&a1).len(), 1);
     }
 }

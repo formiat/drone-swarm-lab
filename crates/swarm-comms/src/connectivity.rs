@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use swarm_types::{AgentId, Health, Pose};
 
@@ -105,6 +105,36 @@ impl ConnectivityModel {
             .filter(|id| reachability.contains_key(id.as_ref()))
             .count();
         reachable_count as f64 / agent_ids.len() as f64
+    }
+
+    /// BFS from `from_id` to `to_id`. Returns hop count if reachable.
+    pub fn hop_count_between(
+        snapshot: &ConnectivitySnapshot,
+        from_id: &str,
+        to_id: &str,
+    ) -> Option<usize> {
+        let adjacency = Self::build_adjacency(snapshot);
+        let mut visited = HashSet::new();
+        let mut queue = VecDeque::new();
+
+        queue.push_back((from_id.to_owned(), 0usize));
+        visited.insert(from_id.to_owned());
+
+        while let Some((current_id, hops)) = queue.pop_front() {
+            if current_id == to_id {
+                return Some(hops);
+            }
+            if let Some(neighbors) = adjacency.get(&current_id) {
+                for neighbor in neighbors {
+                    if !visited.contains(neighbor) {
+                        visited.insert(neighbor.clone());
+                        queue.push_back((neighbor.clone(), hops + 1));
+                    }
+                }
+            }
+        }
+
+        None
     }
 }
 

@@ -62,6 +62,7 @@ impl ScenarioRunner {
         let bus = Rc::new(RefCell::new(InMemNetwork::new(NetworkConfig {
             packet_loss_rate: config.packet_loss_rate,
             latency_ticks: config.latency_ticks,
+            latency_per_hop: 0,
             seed: scenario.seed,
             partitions: HashSet::new(),
         })));
@@ -166,6 +167,35 @@ impl ScenarioRunner {
                 .collect();
             tasks_injected += injected.len() as u64;
 
+            // v0.5: Update connectivity snapshot on the network bus before heartbeats/gossip.
+            // Include all non-crashed agents (not just alive) so that partition-induced
+            // false failure detection does not permanently break mesh reachability after heal.
+            {
+                let first_alive = nodes.iter().find(|(_, id)| !crashed_agents.contains(id));
+                if let Some((node, _)) = first_alive {
+                    let agent_entries: Vec<(AgentId, swarm_types::Pose, f64, Health)> = node
+                        .coordinator
+                        .membership
+                        .all_agents()
+                        .filter(|(id, _)| !crashed_agents.contains(id))
+                        .map(|(id, entry)| {
+                            (id.clone(), entry.pose, entry.comms_range, Health::Alive)
+                        })
+                        .collect();
+                    let snapshot = ConnectivitySnapshot {
+                        agent_entries,
+                        ground_nodes: scenario
+                            .ground_nodes
+                            .iter()
+                            .map(|gn| (gn.id.clone(), gn.pose, gn.comms_range))
+                            .collect(),
+                        base_id: base_id.to_string(),
+                        base_pose,
+                    };
+                    bus.borrow_mut().set_connectivity_snapshot(snapshot);
+                }
+            }
+
             // Phase 1: All alive agents send heartbeats (uses AgentNode method)
             for (node, agent_id) in &mut nodes {
                 if crashed_agents.contains(agent_id) {
@@ -218,7 +248,8 @@ impl ScenarioRunner {
                     let agent_entries: Vec<(AgentId, swarm_types::Pose, f64, Health)> = node
                         .coordinator
                         .membership
-                        .alive_agents()
+                        .all_agents()
+                        .filter(|(id, _)| !crashed_agents.contains(id))
                         .map(|(id, entry)| {
                             (id.clone(), entry.pose, entry.comms_range, Health::Alive)
                         })
@@ -471,8 +502,6 @@ impl ScenarioRunner {
             relay_reallocation_ticks,
             avg_hop_count,
             disconnected_agents_max,
-            relay_tasks_assigned: 0,
-            relay_tasks_reassigned: 0,
         }
     }
 }

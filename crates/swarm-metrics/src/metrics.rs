@@ -26,8 +26,6 @@ pub struct RunMetrics {
     pub relay_reallocation_ticks: Option<u64>,
     pub avg_hop_count: f64,
     pub disconnected_agents_max: u64,
-    pub relay_tasks_assigned: u64,
-    pub relay_tasks_reassigned: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -187,8 +185,6 @@ mod tests {
             relay_reallocation_ticks: None,
             avg_hop_count: 0.0,
             disconnected_agents_max: 0,
-            relay_tasks_assigned: 0,
-            relay_tasks_reassigned: 0,
         }
     }
 

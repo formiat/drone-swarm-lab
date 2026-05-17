@@ -385,6 +385,7 @@ mod tests {
         NetworkConfig {
             packet_loss_rate: 0.0,
             latency_ticks: 0,
+            latency_per_hop: 0,
             seed: 42,
             partitions: HashSet::new(),
         }

@@ -72,9 +72,14 @@ pub struct Agent {
     /// Remaining battery level (0.0..=100.0). Static in Milestone 2; drain modelled in v0.3+.
     pub battery: f64,
     /// Communication range in meters. Default INFINITY means fully connected (backward compat).
+    #[serde(default = "default_comms_range")]
     pub comms_range: f64,
     /// Generation (epoch). Incremented on restart. Heartbeats with lower generation are discarded.
     pub generation: u64,
+}
+
+fn default_comms_range() -> f64 {
+    f64::INFINITY
 }
 
 /// A passive ground node that participates in the connectivity mesh but does not receive tasks.
@@ -126,5 +131,13 @@ mod tests {
     fn agent_battery_default_100() {
         let a = agent("x");
         assert_eq!(a.battery, 100.0);
+    }
+
+    #[test]
+    fn agent_comms_range_serde_default_infinity() {
+        // Old JSON without comms_range should deserialize with default INFINITY
+        let json = r#"{"id":"a1","role":"scout","health":"alive","pose":{"x":0.0,"y":0.0},"capabilities":[],"current_task":null,"battery":100.0,"generation":1}"#;
+        let a: Agent = serde_json::from_str(json).unwrap();
+        assert!(a.comms_range.is_infinite());
     }
 }

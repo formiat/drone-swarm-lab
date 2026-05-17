@@ -105,6 +105,10 @@ impl MembershipView {
             .filter(|(_, entry)| entry.health == Health::Alive)
     }
 
+    pub fn all_agents(&self) -> impl Iterator<Item = (&AgentId, &AgentEntry)> {
+        self.agents.iter()
+    }
+
     pub fn get(&self, agent_id: &AgentId) -> Option<&AgentEntry> {
         self.agents.get(agent_id)
     }
