@@ -44,7 +44,7 @@ fn make_agent(id: &str) -> Agent {
         capabilities: vec![Capability::from("basic".to_owned())],
         current_task: None,
         battery: 100.0,
-        comms_range: f64::INFINITY,
+        comms_range: 1e9, // large value instead of INFINITY (JSON compat)
         generation: 1,
         speed: 0.0,
         max_range: 0.0,

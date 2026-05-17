@@ -89,6 +89,8 @@ fn default_run_config() -> RunConfig {
         partition_events: vec![],
         gossip_interval_ticks: 999,
         base_id: None,
+        enable_movement: false,
+        tick_duration_ms: 100,
     }
 }
 

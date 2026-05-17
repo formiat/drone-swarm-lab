@@ -37,6 +37,19 @@ pub struct RunMetrics {
     pub battery_margin_min: f64,
     #[serde(default)]
     pub battery_margin_avg: f64,
+    // v0.8 kinematic metrics
+    #[serde(default)]
+    pub final_battery_min: f64,
+    #[serde(default)]
+    pub avg_distance_travelled: f64,
+    #[serde(default)]
+    pub agents_exhausted: u64,
+    #[serde(default)]
+    pub total_distance_travelled: f64,
+    #[serde(default)]
+    pub mission_completion_ticks: u64,
+    #[serde(default)]
+    pub time_to_first_exhaustion: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -252,6 +265,12 @@ mod tests {
             stale_state_age_ticks: 0,
             battery_margin_min: 0.0,
             battery_margin_avg: 0.0,
+            final_battery_min: 0.0,
+            avg_distance_travelled: 0.0,
+            agents_exhausted: 0,
+            total_distance_travelled: 0.0,
+            mission_completion_ticks: 0,
+            time_to_first_exhaustion: None,
         }
     }
 

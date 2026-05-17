@@ -153,6 +153,8 @@ pub fn build_emergency_mesh_scenario(config: &EmergencyMeshConfig) -> (Scenario,
         partition_events: vec![],
         gossip_interval_ticks: config.gossip_interval_ticks,
         base_id: Some(base_id),
+        enable_movement: false,
+        tick_duration_ms: 100,
     };
 
     (scenario, run_config)

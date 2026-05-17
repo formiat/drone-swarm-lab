@@ -45,6 +45,9 @@ pub struct RunConfig {
     pub gossip_interval_ticks: u64,
     // v0.5: base station identifier for connectivity metrics
     pub base_id: Option<AgentId>,
+    // v0.8: movement config
+    pub enable_movement: bool,
+    pub tick_duration_ms: u64,
 }
 
 pub struct ScenarioRunner;
@@ -110,6 +113,8 @@ impl ScenarioRunner {
                 );
                 let mut node = AgentNode::new(agent.id.clone(), peer_ids, coordinator, transport);
                 node.gossip_interval_ticks = config.gossip_interval_ticks;
+                node.config.enable_movement = config.enable_movement;
+                node.config.tick_duration_ms = config.tick_duration_ms;
                 (node, agent.id.clone())
             })
             .collect();
@@ -137,6 +142,11 @@ impl ScenarioRunner {
         let mut convergence_ticks: Option<u64> = None;
         let mut heal_tick: Option<u64> = None;
         let mut max_view_divergence: u64 = 0;
+
+        // v0.8 movement metrics
+        let mut total_distance_travelled: f64 = 0.0;
+        let mut agents_exhausted: u64 = 0;
+        let mut time_to_first_exhaustion: Option<u64> = None;
 
         // v0.5 connectivity metrics
         let mut availability_per_tick: Vec<f64> = Vec::new();
@@ -363,6 +373,26 @@ impl ScenarioRunner {
                     detection_tick = Some(current_tick);
                 }
                 detected_agents.extend(output.newly_failed.iter().cloned());
+
+                // v0.8: aggregate movement metrics
+                for (_agent_id, distance) in &output.distance_travelled {
+                    total_distance_travelled += distance;
+                }
+                if time_to_first_exhaustion.is_none()
+                    && output.newly_failed.iter().any(|id| {
+                        nodes
+                            .iter()
+                            .find(|(n, _)| &n.own_id == id)
+                            .is_some_and(|(n, _)| {
+                                n.coordinator
+                                    .membership
+                                    .get(id)
+                                    .is_some_and(|e| e.battery <= 0.0)
+                            })
+                    })
+                {
+                    time_to_first_exhaustion = Some(current_tick);
+                }
             }
 
             // Use first non-crashed agent's coordinator for state checks
@@ -530,28 +560,40 @@ impl ScenarioRunner {
         };
 
         // v0.6: Compute new metrics from final state
-        let (stale_state_age_ticks, battery_margin_min, battery_margin_avg) =
+        let (stale_state_age_ticks, final_battery_min, battery_margin_avg) =
             if let Some((node, _)) = nodes.iter().find(|(_, id)| !crashed_agents.contains(id)) {
-                let mut max_stale_age = 0u64;
-                let mut battery_sum = 0.0f64;
-                let mut battery_count = 0u64;
-                let mut battery_min = 100.0f64;
-                for (_, entry) in node.coordinator.membership.alive_agents() {
+                let mut max_stale_age: u64 = 0;
+                let mut battery_sum: f64 = 0.0;
+                let mut battery_count: u64 = 0;
+                let mut battery_min = f64::MAX;
+                let mut exhausted_count: u64 = 0;
+                for (_agent_id, entry) in node.coordinator.membership.all_agents() {
                     let stale_age = total_ticks.saturating_sub(entry.last_heartbeat_tick);
                     max_stale_age = max_stale_age.max(stale_age);
                     battery_sum += entry.battery;
                     battery_count += 1;
                     battery_min = battery_min.min(entry.battery);
+                    if entry.battery <= 0.0 {
+                        exhausted_count += 1;
+                    }
                 }
                 let battery_avg = if battery_count > 0 {
                     battery_sum / battery_count as f64
                 } else {
                     0.0
                 };
-                (max_stale_age, battery_min, battery_avg)
+                let final_min = if battery_count > 0 { battery_min } else { 0.0 };
+                agents_exhausted = exhausted_count;
+                (max_stale_age, final_min, battery_avg)
             } else {
                 (0, 0.0, 0.0)
             };
+
+        let avg_distance_travelled = if !nodes.is_empty() {
+            total_distance_travelled / nodes.len() as f64
+        } else {
+            0.0
+        };
 
         // v0.6: coverage_progress as fraction of tasks with assigned agents
         let coverage_progress =
@@ -613,8 +655,15 @@ impl ScenarioRunner {
                 coverage_progress,
                 bytes_sent,
                 stale_state_age_ticks,
-                battery_margin_min,
+                battery_margin_min: final_battery_min,
                 battery_margin_avg,
+                // v0.8
+                final_battery_min,
+                avg_distance_travelled,
+                agents_exhausted,
+                total_distance_travelled,
+                mission_completion_ticks: total_ticks,
+                time_to_first_exhaustion,
             },
             event_log,
         )
@@ -711,6 +760,8 @@ mod tests {
             partition_events: vec![],
             gossip_interval_ticks: 999,
             base_id: None,
+            enable_movement: false,
+            tick_duration_ms: 100,
         }
     }
 

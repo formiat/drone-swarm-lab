@@ -146,6 +146,8 @@ pub fn build_dynamic_auction_scenario(config: &DynamicAuctionConfig) -> (Scenari
         partition_events: vec![],
         gossip_interval_ticks: 999,
         base_id: None,
+        enable_movement: false,
+        tick_duration_ms: 100,
     };
 
     (scenario, run_config)

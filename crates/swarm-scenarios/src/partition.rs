@@ -47,6 +47,8 @@ pub fn build_partition_scenario(config: &PartitionConfig) -> (Scenario, RunConfi
         partition_events,
         gossip_interval_ticks: config.gossip_interval_ticks,
         base_id: None,
+        enable_movement: false,
+        tick_duration_ms: 100,
     };
 
     (scenario, run_config)
