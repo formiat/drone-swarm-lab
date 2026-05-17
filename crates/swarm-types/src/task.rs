@@ -42,6 +42,9 @@ pub struct Task {
     pub priority: u8,
     /// Hard constraint: agent must hold all listed capabilities to be assigned this task.
     pub required_capabilities: Vec<Capability>,
+    /// Hard constraint: agent must have this role to be assigned this task.
+    #[serde(default)]
+    pub required_role: Option<Role>,
     /// Soft constraint: agent matching this role gets a cost bonus.
     pub preferred_role: Option<Role>,
     /// Task expires (is removed) when the simulation tick reaches this value.
@@ -61,6 +64,7 @@ mod tests {
             assigned_to: None,
             priority: 1,
             required_capabilities: vec![],
+            required_role: None,
             preferred_role: None,
             expires_at: None,
             pose: None,

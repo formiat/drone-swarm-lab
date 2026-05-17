@@ -71,8 +71,19 @@ pub struct Agent {
     pub current_task: Option<TaskId>,
     /// Remaining battery level (0.0..=100.0). Static in Milestone 2; drain modelled in v0.3+.
     pub battery: f64,
+    /// Communication range in meters. Default INFINITY means fully connected (backward compat).
+    pub comms_range: f64,
     /// Generation (epoch). Incremented on restart. Heartbeats with lower generation are discarded.
     pub generation: u64,
+}
+
+/// A passive ground node that participates in the connectivity mesh but does not receive tasks.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GroundNode {
+    pub id: String,
+    pub pose: Pose,
+    /// Communication range in meters.
+    pub comms_range: f64,
 }
 
 #[cfg(test)]
@@ -88,6 +99,7 @@ mod tests {
             capabilities: Vec::new(),
             current_task: None,
             battery: 100.0,
+            comms_range: f64::INFINITY,
             generation: 1,
         }
     }
