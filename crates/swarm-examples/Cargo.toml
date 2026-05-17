@@ -27,6 +27,10 @@ path = "src/bin/multiprocess_scenario.rs"
 name = "partition_scenario"
 path = "src/bin/partition_scenario.rs"
 
+[[bin]]
+name = "strategy_comparison"
+path = "src/bin/strategy_comparison.rs"
+
 [dependencies]
 serde              = { workspace = true }
 serde_json         = { workspace = true }

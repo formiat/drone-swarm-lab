@@ -467,6 +467,7 @@ impl ScenarioRunner {
 
         let msgs_attempted = bus.borrow().messages_attempted();
         let msgs_dropped = bus.borrow().messages_dropped();
+        let bytes_sent = bus.borrow().bytes_sent();
         drop(bus);
 
         let network_availability = if availability_per_tick.is_empty() {
@@ -479,6 +480,49 @@ impl ScenarioRunner {
         } else {
             0.0
         };
+
+        // v0.6: Compute new metrics from final state
+        let (stale_state_age_ticks, battery_margin_min, battery_margin_avg) =
+            if let Some((node, _)) = nodes.iter().find(|(_, id)| !crashed_agents.contains(id)) {
+                let mut max_stale_age = 0u64;
+                let mut battery_sum = 0.0f64;
+                let mut battery_count = 0u64;
+                let mut battery_min = 100.0f64;
+                for (_, entry) in node.coordinator.membership.alive_agents() {
+                    let stale_age = total_ticks.saturating_sub(entry.last_heartbeat_tick);
+                    max_stale_age = max_stale_age.max(stale_age);
+                    battery_sum += entry.battery;
+                    battery_count += 1;
+                    battery_min = battery_min.min(entry.battery);
+                }
+                let battery_avg = if battery_count > 0 {
+                    battery_sum / battery_count as f64
+                } else {
+                    0.0
+                };
+                (max_stale_age, battery_min, battery_avg)
+            } else {
+                (0, 0.0, 0.0)
+            };
+
+        // v0.6: coverage_progress as fraction of tasks with assigned agents
+        let coverage_progress =
+            if let Some((node, _)) = nodes.iter().find(|(_, id)| !crashed_agents.contains(id)) {
+                let total_tasks = node.coordinator.registry.tasks().count() as f64;
+                let assigned_tasks = node
+                    .coordinator
+                    .registry
+                    .tasks()
+                    .filter(|t| t.assigned_to.is_some())
+                    .count() as f64;
+                if total_tasks > 0.0 {
+                    assigned_tasks / total_tasks
+                } else {
+                    1.0
+                }
+            } else {
+                0.0
+            };
 
         RunMetrics {
             seed: scenario.seed,
@@ -502,6 +546,11 @@ impl ScenarioRunner {
             relay_reallocation_ticks,
             avg_hop_count,
             disconnected_agents_max,
+            coverage_progress,
+            bytes_sent,
+            stale_state_age_ticks,
+            battery_margin_min,
+            battery_margin_avg,
         }
     }
 }

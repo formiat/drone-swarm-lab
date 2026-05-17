@@ -25,6 +25,7 @@ pub struct InMemNetwork {
     current_tick: u64,
     messages_attempted: u64,
     messages_dropped: u64,
+    bytes_sent: u64,
     partitions: HashSet<(AgentId, AgentId)>,
     connectivity: Option<ConnectivitySnapshot>,
 }
@@ -39,6 +40,7 @@ impl InMemNetwork {
             current_tick: 0,
             messages_attempted: 0,
             messages_dropped: 0,
+            bytes_sent: 0,
             partitions,
             connectivity: None,
         }
@@ -81,6 +83,10 @@ impl InMemNetwork {
         self.messages_dropped
     }
 
+    pub fn bytes_sent(&self) -> u64 {
+        self.bytes_sent
+    }
+
     pub fn add_partition(&mut self, a: AgentId, b: AgentId) {
         let pair = if a.as_ref() <= b.as_ref() {
             (a, b)
@@ -105,6 +111,7 @@ impl Transport for InMemNetwork {
 
     fn send(&mut self, msg: RawMessage) -> Result<(), Self::Error> {
         self.messages_attempted += 1;
+        self.bytes_sent += msg.payload.len() as u64;
 
         let pair = if msg.from.as_ref() <= msg.to.as_ref() {
             (msg.from.clone(), msg.to.clone())

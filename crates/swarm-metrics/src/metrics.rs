@@ -26,6 +26,17 @@ pub struct RunMetrics {
     pub relay_reallocation_ticks: Option<u64>,
     pub avg_hop_count: f64,
     pub disconnected_agents_max: u64,
+    // v0.6 strategy comparison metrics
+    #[serde(default)]
+    pub coverage_progress: f64,
+    #[serde(default)]
+    pub bytes_sent: u64,
+    #[serde(default)]
+    pub stale_state_age_ticks: u64,
+    #[serde(default)]
+    pub battery_margin_min: f64,
+    #[serde(default)]
+    pub battery_margin_avg: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -44,6 +55,12 @@ pub struct AggregateMetrics {
     pub avg_relay_reallocation_ticks: f64,
     pub avg_avg_hop_count: f64,
     pub avg_disconnected_agents_max: f64,
+    // v0.6
+    pub avg_coverage_progress: f64,
+    pub avg_bytes_sent: f64,
+    pub avg_stale_state_age_ticks: f64,
+    pub avg_battery_margin_min: f64,
+    pub avg_battery_margin_avg: f64,
 }
 
 impl AggregateMetrics {
@@ -63,6 +80,11 @@ impl AggregateMetrics {
                 avg_relay_reallocation_ticks: 0.0,
                 avg_avg_hop_count: 0.0,
                 avg_disconnected_agents_max: 0.0,
+                avg_coverage_progress: 0.0,
+                avg_bytes_sent: 0.0,
+                avg_stale_state_age_ticks: 0.0,
+                avg_battery_margin_min: 0.0,
+                avg_battery_margin_avg: 0.0,
             };
         }
 
@@ -76,6 +98,11 @@ impl AggregateMetrics {
         let total_network_availability: f64 = runs.iter().map(|run| run.network_availability).sum();
         let total_avg_hop_count: f64 = runs.iter().map(|run| run.avg_hop_count).sum();
         let total_disconnected_max: u64 = runs.iter().map(|run| run.disconnected_agents_max).sum();
+        let total_coverage_progress: f64 = runs.iter().map(|run| run.coverage_progress).sum();
+        let total_bytes_sent: u64 = runs.iter().map(|run| run.bytes_sent).sum();
+        let total_stale_state_age: u64 = runs.iter().map(|run| run.stale_state_age_ticks).sum();
+        let total_battery_margin_min: f64 = runs.iter().map(|run| run.battery_margin_min).sum();
+        let total_battery_margin_avg: f64 = runs.iter().map(|run| run.battery_margin_avg).sum();
         let n = runs.len() as f64;
 
         Self {
@@ -96,6 +123,11 @@ impl AggregateMetrics {
             ),
             avg_avg_hop_count: total_avg_hop_count / n,
             avg_disconnected_agents_max: total_disconnected_max as f64 / n,
+            avg_coverage_progress: total_coverage_progress / n,
+            avg_bytes_sent: total_bytes_sent as f64 / n,
+            avg_stale_state_age_ticks: total_stale_state_age as f64 / n,
+            avg_battery_margin_min: total_battery_margin_min / n,
+            avg_battery_margin_avg: total_battery_margin_avg / n,
         }
     }
 }
@@ -134,10 +166,31 @@ impl fmt::Display for AggregateMetrics {
             self.avg_relay_reallocation_ticks
         )?;
         writeln!(f, "avg_avg_hop_count: {:.3}", self.avg_avg_hop_count)?;
-        write!(
+        writeln!(
             f,
             "avg_disconnected_agents_max: {:.3}",
             self.avg_disconnected_agents_max
+        )?;
+        writeln!(
+            f,
+            "avg_coverage_progress: {:.3}",
+            self.avg_coverage_progress
+        )?;
+        writeln!(f, "avg_bytes_sent: {:.3}", self.avg_bytes_sent)?;
+        writeln!(
+            f,
+            "avg_stale_state_age_ticks: {:.3}",
+            self.avg_stale_state_age_ticks
+        )?;
+        writeln!(
+            f,
+            "avg_battery_margin_min: {:.3}",
+            self.avg_battery_margin_min
+        )?;
+        write!(
+            f,
+            "avg_battery_margin_avg: {:.3}",
+            self.avg_battery_margin_avg
         )
     }
 }
@@ -185,6 +238,11 @@ mod tests {
             relay_reallocation_ticks: None,
             avg_hop_count: 0.0,
             disconnected_agents_max: 0,
+            coverage_progress: 0.0,
+            bytes_sent: 0,
+            stale_state_age_ticks: 0,
+            battery_margin_min: 0.0,
+            battery_margin_avg: 0.0,
         }
     }
 

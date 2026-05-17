@@ -161,3 +161,29 @@ Prints metrics and exits code `0` on success; panics on invariant violation.
 - All scout tasks assigned to capable agents.
 
 Prints aggregate metrics and exits code `0` on success, `1` on invariant violation.
+
+**Milestone 6** — complete. Strategy Comparison Platform:
+
+- `Strategy` trait that wraps any `Allocator` and provides metadata (name, description).
+- `StrategyRegistry` that holds all registered strategies for benchmark harnesses.
+- `CentralizedPlanner` — oracle baseline with full global knowledge, greedy bipartite matching.
+- New metrics: `coverage_progress`, `bytes_sent`, `stale_state_age_ticks`, `battery_margin_min`, `battery_margin_avg`.
+- `NetworkProfile` and `FailureProfile` with `StandardProfiles` (Ideal, LightLoss, MediumLoss, HeavyLoss, HighLatency, PartitionProne × NoFailures, SingleFailure, MultipleFailures, CascadeFailure).
+- `BenchmarkHarness` that runs strategies across seeds and profiles, producing `ComparisonReport` with markdown-compatible table output.
+- `strategy_comparison` binary that runs all strategies against a reduced profile matrix and verifies invariants (e.g., centralized >= greedy on ideal network).
+
+Run the Milestone 6 strategy comparison (quick benchmark, 10 seeds × 4 profiles × 3 strategies):
+
+```bash
+cargo run -p swarm-examples --bin strategy_comparison
+```
+
+Sample output:
+
+```
+| Стратегия | Профиль | Успех | Обнаружение | Перераспределение | Покрытие | Сообщения | Доступность |
+|-----------|---------|-------|-------------|-------------------|----------|-----------|-------------|
+| greedy    | ideal-no-failures | 1.000 |       0.000 |             0.000 |    1.000 |    90.000 |       1.000 |
+| auction   | ideal-no-failures | 1.000 |       0.000 |             0.000 |    1.000 |    90.000 |       1.000 |
+| connectivity-aware | ideal-no-failures | 1.000 |       0.000 |             0.000 |    1.000 |    90.000 |       1.000 |
+```
