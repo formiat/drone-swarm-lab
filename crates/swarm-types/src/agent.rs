@@ -40,6 +40,7 @@ pub enum Role {
     Mapper,
     Inspector,
     Carrier,
+    Thermal,
 }
 
 /// A named capability that an agent can provide (e.g. "thermal", "optical").

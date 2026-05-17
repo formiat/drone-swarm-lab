@@ -51,6 +51,9 @@ pub struct Task {
     pub expires_at: Option<u64>,
     /// Geographic position of the task used in the distance cost function.
     pub pose: Option<Pose>,
+    /// If set, this task represents scanning a specific grid cell.
+    #[serde(default)]
+    pub grid_cell: Option<(u32, u32)>,
 }
 
 #[cfg(test)]
@@ -68,6 +71,7 @@ mod tests {
             preferred_role: None,
             expires_at: None,
             pose: None,
+            grid_cell: None,
         }
     }
 
