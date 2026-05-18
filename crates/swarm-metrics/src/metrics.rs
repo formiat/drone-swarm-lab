@@ -249,7 +249,7 @@ impl fmt::Display for AggregateMetrics {
             "avg_battery_margin_avg: {:.3}",
             self.avg_battery_margin_avg
         )?;
-        write!(
+        writeln!(
             f,
             "avg_task_completion_rate: {:.3}",
             self.avg_task_completion_rate

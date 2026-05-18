@@ -8,6 +8,11 @@ use crate::{RunConfig, Scenario, ScenarioRunner};
 /// Report produced by a benchmark run comparing strategies across profiles.
 pub struct ComparisonReport {
     pub benchmark_run_id: String,
+    pub seed_range_start: u64,
+    pub seed_range_end: u64,
+    pub total_runs_per_cell: u64,
+    pub mission_names: Vec<String>,
+    pub scenario_names: Vec<String>,
     pub strategy_names: Vec<String>,
     pub profile_names: Vec<String>,
     pub results: HashMap<(String, String), AggregateMetrics>,
@@ -180,6 +185,11 @@ impl BenchmarkHarness {
         BenchmarkResult {
             report: ComparisonReport {
                 benchmark_run_id,
+                seed_range_start: seeds.start,
+                seed_range_end: seeds.end,
+                total_runs_per_cell: seeds.end.saturating_sub(seeds.start),
+                mission_names: vec![],
+                scenario_names: vec![],
                 strategy_names,
                 profile_names: report_profile_names,
                 results: report_results,

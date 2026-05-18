@@ -41,9 +41,13 @@ pub fn export_json(report: &ComparisonReport) -> Result<String, serde_json::Erro
                     avg_stale_state_age_ticks: metrics.avg_stale_state_age_ticks,
                     avg_battery_margin_min: metrics.avg_battery_margin_min,
                     avg_battery_margin_avg: metrics.avg_battery_margin_avg,
-                    time_to_find: None,
-                    probability_of_detection: 0.0,
-                    targets_found: 0.0,
+                    time_to_find: if metrics.avg_time_to_find > 0.0 {
+                        Some(metrics.avg_time_to_find)
+                    } else {
+                        None
+                    },
+                    probability_of_detection: metrics.avg_probability_of_detection,
+                    targets_found: metrics.avg_targets_found,
                 });
             }
         }
@@ -64,6 +68,10 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
     wtr.write_record([
         "benchmark_run_id",
         "run_id",
+        "mission",
+        "scenario",
+        "seed_range_start",
+        "seed_range_end",
         "strategy",
         "profile",
         "total_runs",
@@ -85,6 +93,9 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
         "avg_stale_state_age_ticks",
         "avg_battery_margin_min",
         "avg_battery_margin_avg",
+        "time_to_find",
+        "probability_of_detection",
+        "targets_found",
     ])?;
 
     for strategy_name in &report.strategy_names {
@@ -98,6 +109,10 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
                 wtr.write_record([
                     report.benchmark_run_id.as_str(),
                     row_id.as_str(),
+                    "",
+                    "",
+                    format!("{}", report.seed_range_start).as_str(),
+                    format!("{}", report.seed_range_end).as_str(),
                     strategy_name,
                     profile_name,
                     m.total_runs.to_string().as_str(),
@@ -119,6 +134,9 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
                     format!("{:.3}", m.avg_stale_state_age_ticks).as_str(),
                     format!("{:.3}", m.avg_battery_margin_min).as_str(),
                     format!("{:.3}", m.avg_battery_margin_avg).as_str(),
+                    format!("{:.3}", m.avg_time_to_find).as_str(),
+                    format!("{:.3}", m.avg_probability_of_detection).as_str(),
+                    format!("{:.3}", m.avg_targets_found).as_str(),
                 ])?;
             }
         }
@@ -210,6 +228,11 @@ mod tests {
         );
         ComparisonReport {
             benchmark_run_id: "test_10_quick".to_owned(),
+            seed_range_start: 0,
+            seed_range_end: 999,
+            total_runs_per_cell: 10,
+            mission_names: vec![],
+            scenario_names: vec![],
             strategy_names: vec!["greedy".to_owned()],
             profile_names: vec!["ideal".to_owned()],
             results,
