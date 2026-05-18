@@ -218,6 +218,11 @@ impl Allocator for CbbaAllocator {
     ) -> Vec<(TaskId, AgentId)> {
         self.current_round += 1;
 
+        // Reset convergence when new unassigned tasks appear (agent failure, task release)
+        if !tasks.is_empty() && self.converged {
+            self.converged = false;
+        }
+
         // Clear stale state for released tasks and dead agents
         let alive_ids: std::collections::HashSet<&AgentId> = agents.iter().map(|a| &a.id).collect();
         self.bundles
@@ -366,5 +371,25 @@ mod tests {
         // a1 (distance=1, score=-1+50=49) beats a0 (distance=5, score=-5+50=45)
         let winner = &cbba.winning_bids[&TaskId::from("t0".to_owned())].0;
         assert_eq!(*winner, AgentId::from("a1".to_owned()));
+    }
+
+    #[test]
+    fn cbba_reassigns_after_agent_removal() {
+        let mut cbba = CbbaAllocator::default();
+        let tasks: Vec<Task> = vec![task("t0", 1, 5.0, 0.0), task("t1", 1, 10.0, 0.0)];
+        let agents = vec![agent("a0", 0.0, 0.0), agent("a1", 8.0, 0.0)];
+        let atasks: Vec<AllocationTask<'_>> = tasks.iter().map(|t| at(t)).collect();
+
+        // Round 1: a0 gets t0 (closer), a1 gets t1 (closer)
+        let result = cbba.allocate(&atasks, &agents);
+        assert_eq!(result.len(), 2);
+
+        // Simulate a0 failing: call allocate with only a1
+        let survivors = vec![agent("a1", 8.0, 0.0)];
+        let result = cbba.allocate(&atasks, &survivors);
+        // t0 should be reassigned to a1
+        assert!(result.iter().any(|(task_id, agent_id)| {
+            *task_id == TaskId::from("t0".to_owned()) && *agent_id == AgentId::from("a1".to_owned())
+        }));
     }
 }

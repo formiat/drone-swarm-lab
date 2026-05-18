@@ -246,6 +246,10 @@ fn run_with_strategy(
             self.0
                 .allocate_with_connectivity(tasks, agents, connectivity)
         }
+
+        fn allocation_metrics(&self) -> (u64, bool, u64) {
+            self.0.allocation_metrics()
+        }
     }
 
     if enable_log {
