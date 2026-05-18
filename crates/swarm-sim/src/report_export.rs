@@ -16,6 +16,10 @@ pub fn export_json(report: &ComparisonReport) -> Result<String, serde_json::Erro
                 rows.push(ReportRow {
                     benchmark_run_id: report.benchmark_run_id.clone(),
                     run_id: row_id,
+                    mission: String::new(),
+                    scenario: String::new(),
+                    seed_range_start: 0,
+                    seed_range_end: 0,
                     strategy: strategy_name.clone(),
                     profile: profile_name.clone(),
                     total_runs: metrics.total_runs,
@@ -37,6 +41,9 @@ pub fn export_json(report: &ComparisonReport) -> Result<String, serde_json::Erro
                     avg_stale_state_age_ticks: metrics.avg_stale_state_age_ticks,
                     avg_battery_margin_min: metrics.avg_battery_margin_min,
                     avg_battery_margin_avg: metrics.avg_battery_margin_avg,
+                    time_to_find: None,
+                    probability_of_detection: 0.0,
+                    targets_found: 0.0,
                 });
             }
         }
@@ -196,6 +203,9 @@ mod tests {
                 avg_battery_margin_min: 100.0,
                 avg_battery_margin_avg: 100.0,
                 avg_task_completion_rate: 1.0,
+                avg_time_to_find: 0.0,
+                avg_probability_of_detection: 0.0,
+                avg_targets_found: 0.0,
             },
         );
         ComparisonReport {

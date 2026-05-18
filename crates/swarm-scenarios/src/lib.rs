@@ -13,6 +13,4 @@ pub use emergency_mesh::{
 };
 pub use partition::{build_partition_scenario, PartitionConfig};
 pub use profiles::{FailureProfile, NetworkProfile, StandardProfiles};
-pub use sar_scenario::{
-    build_sar_scenario, SarProfile, SarScenarioConfig, SarStandardProfiles,
-};
+pub use sar_scenario::{build_sar_scenario, SarProfile, SarScenarioConfig, SarStandardProfiles};

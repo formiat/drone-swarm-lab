@@ -104,7 +104,13 @@ pub struct EmergencyMeshStandardProfiles;
 
 impl EmergencyMeshStandardProfiles {
     pub fn profile_names() -> Vec<&'static str> {
-        vec!["ideal", "low-loss", "medium-loss", "single-failure", "packet-loss-10"]
+        vec![
+            "ideal",
+            "low-loss",
+            "medium-loss",
+            "single-failure",
+            "packet-loss-10",
+        ]
     }
 }
 
@@ -311,9 +317,18 @@ mod tests {
 
     #[test]
     fn emergency_mesh_profile_from_str_roundtrip() {
-        assert_eq!(EmergencyMeshProfile::from_str("ideal"), Some(EmergencyMeshProfile::Ideal));
-        assert_eq!(EmergencyMeshProfile::from_str("low-loss"), Some(EmergencyMeshProfile::LowLoss));
-        assert_eq!(EmergencyMeshProfile::from_str("lowloss"), Some(EmergencyMeshProfile::LowLoss));
+        assert_eq!(
+            EmergencyMeshProfile::from_str("ideal"),
+            Some(EmergencyMeshProfile::Ideal)
+        );
+        assert_eq!(
+            EmergencyMeshProfile::from_str("low-loss"),
+            Some(EmergencyMeshProfile::LowLoss)
+        );
+        assert_eq!(
+            EmergencyMeshProfile::from_str("lowloss"),
+            Some(EmergencyMeshProfile::LowLoss)
+        );
         assert_eq!(
             EmergencyMeshProfile::from_str("medium-loss"),
             Some(EmergencyMeshProfile::MediumLoss)

@@ -289,7 +289,10 @@ mod tests {
             SarProfile::from_str("battery-constrained"),
             Some(SarProfile::BatteryConstrained)
         );
-        assert_eq!(SarProfile::from_str("batteryconstrained"), Some(SarProfile::BatteryConstrained));
+        assert_eq!(
+            SarProfile::from_str("batteryconstrained"),
+            Some(SarProfile::BatteryConstrained)
+        );
         assert_eq!(SarProfile::from_str("unknown"), None);
     }
 

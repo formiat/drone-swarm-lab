@@ -21,6 +21,7 @@ fn main() {
             max_ticks: 80,
             timeout_ticks: 5,
             gossip_interval_ticks: 3,
+            packet_loss_rate: 0.0,
         };
 
         let (scenario, run_config) = build_emergency_mesh_scenario(&config);
