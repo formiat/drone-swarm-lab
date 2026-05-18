@@ -136,6 +136,10 @@ struct JsonReport {
 struct ReportRow {
     benchmark_run_id: String,
     run_id: String,
+    mission: String,
+    scenario: String,
+    seed_range_start: u64,
+    seed_range_end: u64,
     strategy: String,
     profile: String,
     total_runs: u64,
@@ -157,6 +161,9 @@ struct ReportRow {
     avg_stale_state_age_ticks: f64,
     avg_battery_margin_min: f64,
     avg_battery_margin_avg: f64,
+    time_to_find: Option<f64>,
+    probability_of_detection: f64,
+    targets_found: f64,
 }
 
 #[cfg(test)]

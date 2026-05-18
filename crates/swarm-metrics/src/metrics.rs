@@ -95,6 +95,10 @@ pub struct AggregateMetrics {
     pub avg_battery_margin_min: f64,
     pub avg_battery_margin_avg: f64,
     pub avg_task_completion_rate: f64,
+    // v0.11 SAR aggregation
+    pub avg_time_to_find: f64,
+    pub avg_probability_of_detection: f64,
+    pub avg_targets_found: f64,
 }
 
 impl AggregateMetrics {
@@ -120,6 +124,9 @@ impl AggregateMetrics {
                 avg_battery_margin_min: 0.0,
                 avg_battery_margin_avg: 0.0,
                 avg_task_completion_rate: 0.0,
+                avg_time_to_find: 0.0,
+                avg_probability_of_detection: 0.0,
+                avg_targets_found: 0.0,
             };
         }
 
@@ -139,6 +146,11 @@ impl AggregateMetrics {
         let total_battery_margin_min: f64 = runs.iter().map(|run| run.battery_margin_min).sum();
         let total_battery_margin_avg: f64 = runs.iter().map(|run| run.battery_margin_avg).sum();
         let task_completion_count = runs.iter().filter(|run| run.all_tasks_assigned).count() as f64;
+        let total_time_to_find: u64 = runs.iter().filter_map(|run| run.time_to_find).sum();
+        let time_to_find_count = runs.iter().filter(|run| run.time_to_find.is_some()).count() as f64;
+        let total_probability_of_detection: f64 =
+            runs.iter().map(|run| run.probability_of_detection).sum();
+        let total_targets_found: u64 = runs.iter().map(|run| run.targets_found as u64).sum();
         let n = runs.len() as f64;
 
         Self {
@@ -165,6 +177,13 @@ impl AggregateMetrics {
             avg_battery_margin_min: total_battery_margin_min / n,
             avg_battery_margin_avg: total_battery_margin_avg / n,
             avg_task_completion_rate: task_completion_count / n,
+            avg_time_to_find: if time_to_find_count > 0.0 {
+                total_time_to_find as f64 / time_to_find_count
+            } else {
+                0.0
+            },
+            avg_probability_of_detection: total_probability_of_detection / n,
+            avg_targets_found: total_targets_found as f64 / n,
         }
     }
 }
@@ -233,6 +252,21 @@ impl fmt::Display for AggregateMetrics {
             f,
             "avg_task_completion_rate: {:.3}",
             self.avg_task_completion_rate
+        )?;
+        writeln!(
+            f,
+            "avg_time_to_find: {:.3}",
+            self.avg_time_to_find
+        )?;
+        writeln!(
+            f,
+            "avg_probability_of_detection: {:.3}",
+            self.avg_probability_of_detection
+        )?;
+        write!(
+            f,
+            "avg_targets_found: {:.3}",
+            self.avg_targets_found
         )
     }
 }
@@ -362,5 +396,30 @@ mod tests {
             "Expected ~0.666667 for 2/3 completed runs, got {}",
             metrics.avg_task_completion_rate
         );
+    }
+
+    #[test]
+    fn aggregate_sar_fields() {
+        let mut runs = Vec::new();
+        for i in 0..10 {
+            let mut r = run(true, None);
+            r.time_to_find = if i < 5 { Some(100) } else { None };
+            r.probability_of_detection = 0.8;
+            r.targets_found = 3;
+            runs.push(r);
+        }
+
+        let metrics = AggregateMetrics::from_runs(&runs);
+        assert_eq!(metrics.avg_time_to_find, 100.0);
+        assert_eq!(metrics.avg_probability_of_detection, 0.8);
+        assert_eq!(metrics.avg_targets_found, 3.0);
+    }
+
+    #[test]
+    fn aggregate_sar_fields_empty() {
+        let metrics = AggregateMetrics::from_runs(&[]);
+        assert_eq!(metrics.avg_time_to_find, 0.0);
+        assert_eq!(metrics.avg_probability_of_detection, 0.0);
+        assert_eq!(metrics.avg_targets_found, 0.0);
     }
 }

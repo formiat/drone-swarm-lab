@@ -3,6 +3,111 @@ use rand::{Rng, SeedableRng};
 use swarm_sim::{FailureEvent, RunConfig, Scenario};
 use swarm_types::{Agent, AgentId, GroundNode, Health, Pose, Role, Task, TaskId, TaskStatus};
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum EmergencyMeshProfile {
+    Ideal,
+    LowLoss,
+    MediumLoss,
+    SingleFailure,
+    PacketLoss10,
+}
+
+impl EmergencyMeshProfile {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "ideal" => Some(Self::Ideal),
+            "low-loss" | "lowloss" => Some(Self::LowLoss),
+            "medium-loss" | "mediumloss" => Some(Self::MediumLoss),
+            "single-failure" | "singlefailure" => Some(Self::SingleFailure),
+            "packet-loss-10" | "packetloss10" => Some(Self::PacketLoss10),
+            _ => None,
+        }
+    }
+
+    pub fn config(&self, seed: u64) -> EmergencyMeshConfig {
+        match self {
+            Self::Ideal => EmergencyMeshConfig {
+                seed,
+                scout_count: 3,
+                relay_count: 3,
+                ground_node_count: 2,
+                base_pose: Pose { x: 0.0, y: 0.0 },
+                area_size: 100.0,
+                comms_range: 30.0,
+                failure_tick: 999,
+                max_ticks: 200,
+                timeout_ticks: 3,
+                gossip_interval_ticks: 3,
+                packet_loss_rate: 0.0,
+            },
+            Self::LowLoss => EmergencyMeshConfig {
+                seed,
+                scout_count: 3,
+                relay_count: 3,
+                ground_node_count: 2,
+                base_pose: Pose { x: 0.0, y: 0.0 },
+                area_size: 100.0,
+                comms_range: 30.0,
+                failure_tick: 999,
+                max_ticks: 200,
+                timeout_ticks: 3,
+                gossip_interval_ticks: 3,
+                packet_loss_rate: 0.05,
+            },
+            Self::MediumLoss => EmergencyMeshConfig {
+                seed,
+                scout_count: 3,
+                relay_count: 3,
+                ground_node_count: 2,
+                base_pose: Pose { x: 0.0, y: 0.0 },
+                area_size: 100.0,
+                comms_range: 25.0,
+                failure_tick: 999,
+                max_ticks: 250,
+                timeout_ticks: 5,
+                gossip_interval_ticks: 3,
+                packet_loss_rate: 0.10,
+            },
+            Self::SingleFailure => EmergencyMeshConfig {
+                seed,
+                scout_count: 3,
+                relay_count: 3,
+                ground_node_count: 2,
+                base_pose: Pose { x: 0.0, y: 0.0 },
+                area_size: 100.0,
+                comms_range: 30.0,
+                failure_tick: 10,
+                max_ticks: 200,
+                timeout_ticks: 3,
+                gossip_interval_ticks: 3,
+                packet_loss_rate: 0.0,
+            },
+            Self::PacketLoss10 => EmergencyMeshConfig {
+                seed,
+                scout_count: 3,
+                relay_count: 3,
+                ground_node_count: 2,
+                base_pose: Pose { x: 0.0, y: 0.0 },
+                area_size: 100.0,
+                comms_range: 30.0,
+                failure_tick: 999,
+                max_ticks: 200,
+                timeout_ticks: 3,
+                gossip_interval_ticks: 3,
+                packet_loss_rate: 0.10,
+            },
+        }
+    }
+}
+
+pub struct EmergencyMeshStandardProfiles;
+
+impl EmergencyMeshStandardProfiles {
+    pub fn profile_names() -> Vec<&'static str> {
+        vec!["ideal", "low-loss", "medium-loss", "single-failure", "packet-loss-10"]
+    }
+}
+
 pub struct EmergencyMeshConfig {
     pub seed: u64,
     pub scout_count: usize,
@@ -15,6 +120,7 @@ pub struct EmergencyMeshConfig {
     pub max_ticks: u64,
     pub timeout_ticks: u64,
     pub gossip_interval_ticks: u64,
+    pub packet_loss_rate: f64,
 }
 
 pub fn build_emergency_mesh_scenario(config: &EmergencyMeshConfig) -> (Scenario, RunConfig) {
@@ -147,7 +253,7 @@ pub fn build_emergency_mesh_scenario(config: &EmergencyMeshConfig) -> (Scenario,
         max_ticks: config.max_ticks,
         timeout_ticks: config.timeout_ticks,
         max_unassigned_ticks: 10,
-        packet_loss_rate: 0.0,
+        packet_loss_rate: config.packet_loss_rate,
         latency_ticks: 0,
         latency_per_hop: 0,
         failures: failure,
@@ -162,4 +268,75 @@ pub fn build_emergency_mesh_scenario(config: &EmergencyMeshConfig) -> (Scenario,
     };
 
     (scenario, run_config)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn emergency_mesh_ideal_profile_params() {
+        let config = EmergencyMeshProfile::Ideal.config(42);
+        assert_eq!(config.scout_count, 3);
+        assert_eq!(config.relay_count, 3);
+        assert_eq!(config.packet_loss_rate, 0.0);
+        assert_eq!(config.failure_tick, 999);
+    }
+
+    #[test]
+    fn emergency_mesh_low_loss_profile_params() {
+        let config = EmergencyMeshProfile::LowLoss.config(42);
+        assert_eq!(config.packet_loss_rate, 0.05);
+    }
+
+    #[test]
+    fn emergency_mesh_medium_loss_profile_params() {
+        let config = EmergencyMeshProfile::MediumLoss.config(42);
+        assert_eq!(config.packet_loss_rate, 0.10);
+        assert_eq!(config.comms_range, 25.0);
+    }
+
+    #[test]
+    fn emergency_mesh_single_failure_profile_params() {
+        let config = EmergencyMeshProfile::SingleFailure.config(42);
+        assert_eq!(config.failure_tick, 10);
+        assert_eq!(config.packet_loss_rate, 0.0);
+    }
+
+    #[test]
+    fn emergency_mesh_packet_loss_10_profile_params() {
+        let config = EmergencyMeshProfile::PacketLoss10.config(42);
+        assert_eq!(config.packet_loss_rate, 0.10);
+    }
+
+    #[test]
+    fn emergency_mesh_profile_from_str_roundtrip() {
+        assert_eq!(EmergencyMeshProfile::from_str("ideal"), Some(EmergencyMeshProfile::Ideal));
+        assert_eq!(EmergencyMeshProfile::from_str("low-loss"), Some(EmergencyMeshProfile::LowLoss));
+        assert_eq!(EmergencyMeshProfile::from_str("lowloss"), Some(EmergencyMeshProfile::LowLoss));
+        assert_eq!(
+            EmergencyMeshProfile::from_str("medium-loss"),
+            Some(EmergencyMeshProfile::MediumLoss)
+        );
+        assert_eq!(
+            EmergencyMeshProfile::from_str("single-failure"),
+            Some(EmergencyMeshProfile::SingleFailure)
+        );
+        assert_eq!(
+            EmergencyMeshProfile::from_str("packet-loss-10"),
+            Some(EmergencyMeshProfile::PacketLoss10)
+        );
+        assert_eq!(EmergencyMeshProfile::from_str("unknown"), None);
+    }
+
+    #[test]
+    fn emergency_mesh_standard_profiles_names() {
+        let names = EmergencyMeshStandardProfiles::profile_names();
+        assert_eq!(names.len(), 5);
+        assert!(names.contains(&"ideal"));
+        assert!(names.contains(&"low-loss"));
+        assert!(names.contains(&"medium-loss"));
+        assert!(names.contains(&"single-failure"));
+        assert!(names.contains(&"packet-loss-10"));
+    }
 }

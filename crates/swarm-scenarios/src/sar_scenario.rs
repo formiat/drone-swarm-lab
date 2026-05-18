@@ -21,6 +21,87 @@ pub struct SarScenarioConfig {
     pub seed: u64,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum SarProfile {
+    Ideal,
+    Standard,
+    Challenging,
+    BatteryConstrained,
+}
+
+impl SarProfile {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "ideal" => Some(Self::Ideal),
+            "standard" => Some(Self::Standard),
+            "challenging" => Some(Self::Challenging),
+            "battery-constrained" | "batteryconstrained" => Some(Self::BatteryConstrained),
+            _ => None,
+        }
+    }
+
+    pub fn config(&self, seed: u64) -> SarScenarioConfig {
+        match self {
+            Self::Ideal => SarScenarioConfig {
+                grid: SearchGrid::new(6, 6, 10.0),
+                target_count: 2,
+                scout_count: 3,
+                thermal_count: 1,
+                relay_count: 1,
+                sensor: SensorModel::new(0.6, 0.95, 0.2),
+                enable_movement: true,
+                tick_duration_ms: 1000,
+                max_ticks: 300,
+                seed,
+            },
+            Self::Standard => SarScenarioConfig {
+                grid: SearchGrid::new(8, 8, 10.0),
+                target_count: 3,
+                scout_count: 3,
+                thermal_count: 2,
+                relay_count: 2,
+                sensor: SensorModel::new(0.4, 0.85, 0.15),
+                enable_movement: true,
+                tick_duration_ms: 1000,
+                max_ticks: 400,
+                seed,
+            },
+            Self::Challenging => SarScenarioConfig {
+                grid: SearchGrid::new(10, 10, 10.0),
+                target_count: 5,
+                scout_count: 4,
+                thermal_count: 2,
+                relay_count: 2,
+                sensor: SensorModel::new(0.3, 0.75, 0.1),
+                enable_movement: true,
+                tick_duration_ms: 1000,
+                max_ticks: 500,
+                seed,
+            },
+            Self::BatteryConstrained => SarScenarioConfig {
+                grid: SearchGrid::new(6, 6, 10.0),
+                target_count: 3,
+                scout_count: 3,
+                thermal_count: 1,
+                relay_count: 1,
+                sensor: SensorModel::new(0.5, 0.9, 0.15),
+                enable_movement: true,
+                tick_duration_ms: 1000,
+                max_ticks: 300,
+                seed,
+            },
+        }
+    }
+}
+
+pub struct SarStandardProfiles;
+
+impl SarStandardProfiles {
+    pub fn profile_names() -> Vec<&'static str> {
+        vec!["ideal", "standard", "challenging", "battery-constrained"]
+    }
+}
+
 pub fn build_sar_scenario(config: &SarScenarioConfig) -> (Scenario, RunConfig) {
     let mut rng = StdRng::seed_from_u64(config.seed);
 
@@ -172,6 +253,54 @@ mod tests {
             assert!(target.cell_x < config.grid.width);
             assert!(target.cell_y < config.grid.height);
         }
+    }
+
+    #[test]
+    fn sar_ideal_profile_params() {
+        let config = SarProfile::Ideal.config(42);
+        assert_eq!(config.grid.width, 6);
+        assert_eq!(config.grid.height, 6);
+        assert_eq!(config.target_count, 2);
+        assert_eq!(config.scout_count, 3);
+        assert_eq!(config.thermal_count, 1);
+        assert_eq!(config.relay_count, 1);
+        assert_eq!(config.sensor.scout_pod, 0.6);
+        assert_eq!(config.sensor.thermal_pod, 0.95);
+        assert_eq!(config.max_ticks, 300);
+    }
+
+    #[test]
+    fn sar_battery_constrained_profile_params() {
+        let config = SarProfile::BatteryConstrained.config(42);
+        assert_eq!(config.grid.width, 6);
+        assert_eq!(config.grid.height, 6);
+        assert_eq!(config.max_ticks, 300);
+    }
+
+    #[test]
+    fn sar_profile_from_str_roundtrip() {
+        assert_eq!(SarProfile::from_str("ideal"), Some(SarProfile::Ideal));
+        assert_eq!(SarProfile::from_str("standard"), Some(SarProfile::Standard));
+        assert_eq!(
+            SarProfile::from_str("challenging"),
+            Some(SarProfile::Challenging)
+        );
+        assert_eq!(
+            SarProfile::from_str("battery-constrained"),
+            Some(SarProfile::BatteryConstrained)
+        );
+        assert_eq!(SarProfile::from_str("batteryconstrained"), Some(SarProfile::BatteryConstrained));
+        assert_eq!(SarProfile::from_str("unknown"), None);
+    }
+
+    #[test]
+    fn sar_standard_profiles_names() {
+        let names = SarStandardProfiles::profile_names();
+        assert_eq!(names.len(), 4);
+        assert!(names.contains(&"ideal"));
+        assert!(names.contains(&"standard"));
+        assert!(names.contains(&"challenging"));
+        assert!(names.contains(&"battery-constrained"));
     }
 
     #[test]
