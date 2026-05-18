@@ -486,4 +486,9 @@ mod tests {
             AuctionAllocator::default().allocate(&tasks.iter().map(at).collect::<Vec<_>>(), &[a]);
         assert!(result.is_empty());
     }
+
+    #[test]
+    fn greedy_is_not_distributed() {
+        assert!(!GreedyAllocator.is_distributed());
+    }
 }

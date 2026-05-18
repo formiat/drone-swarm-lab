@@ -396,4 +396,9 @@ mod tests {
             *task_id == TaskId::from("t0".to_owned()) && *agent_id == AgentId::from("a1".to_owned())
         }));
     }
+
+    #[test]
+    fn cbba_is_distributed() {
+        assert!(CbbaAllocator::default().is_distributed());
+    }
 }

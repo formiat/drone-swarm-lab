@@ -1055,4 +1055,17 @@ mod tests {
         let metrics = ScenarioRunner::run_with(&s, cfg, DuplicateAllocator);
         assert!(metrics.conflicting_assignments > 0);
     }
+
+    #[test]
+    fn cbba_distributed_path_succeeds() {
+        use swarm_alloc::CbbaAllocator;
+        let s = scenario(0, 3, 2);
+        let mut cfg = config(vec![]);
+        cfg.enable_cbba = true;
+        cfg.gossip_interval_ticks = 1;
+        cfg.max_ticks = 30;
+        let metrics = ScenarioRunner::run_with(&s, cfg, CbbaAllocator::default());
+        // Distributed CBBA should converge and complete the mission
+        assert!(metrics.success, "CBBA did not complete the mission");
+    }
 }

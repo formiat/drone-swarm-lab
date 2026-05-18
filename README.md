@@ -258,6 +258,15 @@ PoD: 0.67
 - `StrategyRegistry` includes 5 strategies: greedy, auction, connectivity-aware, centralized, cbba.
 - CBBA metrics: `cbba_rounds_to_convergence`, `cbba_converged`, `cbba_messages`.
 
+**Milestone 10 Phase 1** — complete. True Distributed CBBA:
+
+- Per-agent `CbbaAllocator` state (not shared facade) — each agent independently builds bundles.
+- `send_cbba_bids()` broadcasts winning bids via `RuntimeMessage::Cbba` through transport.
+- `apply_remote_bids()` called with real remote bids from other agents in simulation path.
+- Registry sync: remote assignments registered locally via `assign()` so `all_tasks_assigned` works correctly.
+- `Allocator::is_distributed()` distinguishes distributed strategies (CBBA returns `true`).
+- `RunConfig.enable_cbba: bool` (default `false`) controls distributed CBBA per scenario.
+
 ```bash
 cargo run -p swarm-examples --bin strategy_comparison -- --json results.json
 ```
