@@ -20,23 +20,42 @@ pub struct ComparisonReport {
 
 impl std::fmt::Display for ComparisonReport {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mission = self
+            .mission_names
+            .first()
+            .map(|s| s.as_str())
+            .unwrap_or("-");
+        let scenario = self
+            .scenario_names
+            .first()
+            .map(|s| s.as_str())
+            .unwrap_or("-");
+        let seeds = format!("{}-{}", self.seed_range_start, self.seed_range_end);
         writeln!(
             f,
-            "| Стратегия | Профиль | Успех | Завершение | Обнаружение | Перераспределение | Покрытие | Сообщения | Байты | Конфликты | Stale | Батарея мин | Батарея ср | Доступность |"
+            "| Mission | Scenario | Strategy | Profile | Seeds | Success | Completion | Detection | Realloc | Coverage | Messages | Bytes | Conflicts | Stale | BatteryMin | BatteryAvg | Availability | TimeToFind | PoD | Targets |"
         )?;
         writeln!(
             f,
-            "|-----------|---------|-------|------------|-------------|-------------------|----------|-----------|-------|-----------|-------|-------------|------------|-------------|"
+            "|---------|----------|----------|---------|-------|---------|------------|-----------|---------|----------|----------|-------|-----------|-------|------------|------------|--------------|------------|-----|---------|"
         )?;
         for strategy_name in &self.strategy_names {
             for profile_name in &self.profile_names {
                 let key = (strategy_name.clone(), profile_name.clone());
                 if let Some(metrics) = self.results.get(&key) {
+                    let ttf = if metrics.avg_time_to_find > 0.0 {
+                        format!("{:.1}", metrics.avg_time_to_find)
+                    } else {
+                        "-".to_owned()
+                    };
                     writeln!(
                         f,
-                        "| {:9} | {:7} | {:5.3} | {:10.3} | {:11.3} | {:17.3} | {:8.3} | {:9.3} | {:5.0} | {:9.3} | {:5.0} | {:11.3} | {:10.3} | {:11.3} |",
+                        "| {:7} | {:8} | {:8} | {:7} | {:5} | {:7.3} | {:10.3} | {:9.3} | {:7.3} | {:8.3} | {:8.3} | {:5.0} | {:9.3} | {:5.0} | {:10.3} | {:10.3} | {:12.3} | {:>10} | {:3.3} | {:7.1} |",
+                        mission,
+                        scenario,
                         strategy_name,
                         profile_name,
+                        seeds,
                         metrics.success_rate,
                         metrics.avg_task_completion_rate,
                         metrics.avg_detection_ticks,
@@ -49,6 +68,9 @@ impl std::fmt::Display for ComparisonReport {
                         metrics.avg_battery_margin_min,
                         metrics.avg_battery_margin_avg,
                         metrics.avg_network_availability,
+                        ttf,
+                        metrics.avg_probability_of_detection,
+                        metrics.avg_targets_found,
                     )?;
                 }
             }
@@ -451,18 +473,18 @@ mod tests {
         let report = BenchmarkHarness::run_quick(&factories, &profiles, &builder);
         let report_text = format!("{}", report);
 
-        // Parse the markdown table and check the "Завершение" column specifically.
-        // Column layout: | Стратегия | Профиль | Успех | Завершение | ...
-        // After splitting by '|', index 4 is the completion column.
+        // Parse the markdown table and check the "Completion" column specifically.
+        // Column layout: | Mission | Scenario | Strategy | Profile | Seeds | Success | Completion | ...
+        // After splitting by '|', index 7 is the completion column.
         let rows: Vec<&str> = report_text.lines().skip(2).collect();
         for row in &rows {
             if row.contains("greedy") {
                 let cols: Vec<&str> = row.split('|').collect();
-                let completion_col = cols.get(4).map(|s| s.trim());
+                let completion_col = cols.get(7).map(|s| s.trim());
                 assert_eq!(
                     completion_col,
                     Some("1.000"),
-                    "Completion column (index 4) should be 1.000 when all_tasks_assigned=true, got cols: {:?}",
+                    "Completion column (index 7) should be 1.000 when all_tasks_assigned=true, got cols: {:?}",
                     cols
                 );
             }
