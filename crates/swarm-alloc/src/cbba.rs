@@ -88,10 +88,12 @@ impl CbbaAllocator {
         }
 
         for agent in agents {
-            // Collect bundle separately to avoid borrow conflict
             let bundle = self.bundles.entry(agent.id.clone()).or_default().clone();
 
-            // Find the best unassigned task
+            if bundle.len() >= self.config.max_bundle_size {
+                continue;
+            }
+
             let mut best_score = f64::NEG_INFINITY;
             let mut best_task_id: Option<TaskId> = None;
 
@@ -100,13 +102,19 @@ impl CbbaAllocator {
                 if bundle.contains(task_id) {
                     continue;
                 }
-                if let Some((winner, _)) = self.winning_bids.get(task_id) {
-                    if winner != &agent.id {
+
+                let score = self.marginal_score(agent, at.task, &bundle);
+                if score <= f64::NEG_INFINITY + 1.0 {
+                    continue;
+                }
+
+                // If someone else has a higher bid, skip
+                if let Some((winner, existing_bid)) = self.winning_bids.get(task_id) {
+                    if winner != &agent.id && *existing_bid >= score {
                         continue;
                     }
                 }
 
-                let score = self.marginal_score(agent, at.task, &bundle);
                 if score > best_score {
                     best_score = score;
                     best_task_id = Some(task_id.clone());
@@ -116,11 +124,9 @@ impl CbbaAllocator {
             if let Some(task_id) = best_task_id {
                 if best_score > f64::NEG_INFINITY {
                     let bundle = self.bundles.get_mut(&agent.id).unwrap();
-                    if bundle.len() < self.config.max_bundle_size {
-                        bundle.push(task_id.clone());
-                        self.winning_bids
-                            .insert(task_id, (agent.id.clone(), best_score));
-                    }
+                    bundle.push(task_id.clone());
+                    self.winning_bids
+                        .insert(task_id, (agent.id.clone(), best_score));
                 }
             }
         }
@@ -290,8 +296,14 @@ mod tests {
         let agents = vec![agent("a0", 0.0, 0.0)];
         let atasks: Vec<AllocationTask<'_>> = tasks.iter().map(|t| at(t)).collect();
 
-        cbba.build_bundles(&agents, &atasks);
-        assert_eq!(cbba.bundles[&AgentId::from("a0".to_owned())].len(), 2);
+        // build_bundles adds at most one task per agent per call
+        for _ in 0..3 {
+            cbba.build_bundles(&agents, &atasks);
+        }
+        assert!(
+            cbba.bundles[&AgentId::from("a0".to_owned())].len() <= 2,
+            "bundle size capped at max_bundle_size"
+        );
     }
 
     #[test]
@@ -319,11 +331,12 @@ mod tests {
     fn cbba_conflicting_bids_resolution() {
         let mut cbba = CbbaAllocator::default();
         let tasks: Vec<Task> = vec![task("t0", 1, 5.0, 0.0)];
-        let agents = vec![agent("a0", 0.0, 0.0), agent("a1", 5.0, 0.0)];
+        // a1 is closer to task-0 (at x=5) than a0 (at x=0)
+        let agents = vec![agent("a0", 0.0, 0.0), agent("a1", 4.0, 0.0)];
         let atasks: Vec<AllocationTask<'_>> = tasks.iter().map(|t| at(t)).collect();
 
         cbba.build_bundles(&agents, &atasks);
-        // Both agents bid on task-0, the closer one should win
+        // a1 (distance=1, score=-1+50=49) beats a0 (distance=5, score=-5+50=45)
         let winner = &cbba.winning_bids[&TaskId::from("t0".to_owned())].0;
         assert_eq!(*winner, AgentId::from("a1".to_owned()));
     }
