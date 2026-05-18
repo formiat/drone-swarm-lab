@@ -227,26 +227,39 @@ fn main() {
         all_replay_logs.extend(result.replay_logs);
     }
 
-    // Print each mission report
-    for report in &all_reports {
-        println!("{}", report);
-    }
+    // Merge all mission reports into one with 3-part key
+    let merged = merge_reports(&all_reports);
 
-    // Export JSON (all missions)
+    // Print and export
+    println!("{}", merged);
+
+    // Export JSON
     if let Some(path) = &cli.json_path {
-        if let Some(report) = all_reports.first() {
-            let json = export_json(report).expect("JSON export failed");
-            std::fs::write(path, json).expect("Failed to write JSON file");
-            println!("JSON report written to {}", path);
-        }
+        let json = export_json(&merged).expect("JSON export failed");
+        std::fs::write(path, json).expect("Failed to write JSON file");
+        println!("JSON report written to {}", path);
     }
 
-    // Export CSV (all missions)
+    // Export CSV
     if let Some(path) = &cli.csv_path {
-        if let Some(report) = all_reports.first() {
-            let csv = export_csv(report).expect("CSV export failed");
-            std::fs::write(path, csv).expect("Failed to write CSV file");
-            println!("CSV report written to {}", path);
+        let csv = export_csv(&merged).expect("CSV export failed");
+        std::fs::write(path, csv).expect("Failed to write CSV file");
+        println!("CSV report written to {}", path);
+    }
+
+    // Invariant: centralized should match or outperform greedy on ideal network (coverage mission)
+    let ideal_key = ("centralized".to_owned(), "ideal-no-failures".to_owned());
+    let greedy_key = ("greedy".to_owned(), "ideal-no-failures".to_owned());
+    for report in &all_reports {
+        if let (Some(centralized), Some(greedy)) = (
+            report.results.get(&ideal_key),
+            report.results.get(&greedy_key),
+        ) {
+            assert!(
+                centralized.success_rate >= greedy.success_rate,
+                "Centralized planner should outperform or match greedy on ideal network"
+            );
+            break;
         }
     }
 
@@ -269,6 +282,59 @@ fn main() {
     }
 
     std::process::exit(0);
+}
+
+fn merge_reports(reports: &[swarm_sim::ComparisonReport]) -> swarm_sim::ComparisonReport {
+    use std::collections::HashMap;
+    let first = &reports[0];
+    let mut merged_results: HashMap<(String, String), swarm_metrics::AggregateMetrics> =
+        HashMap::new();
+    for report in reports {
+        let mission = report.mission_names.first().cloned().unwrap_or_default();
+        let scenario = report.scenario_names.first().cloned().unwrap_or_default();
+        for strategy_name in &report.strategy_names {
+            for profile_name in &report.profile_names {
+                let old_key = (strategy_name.clone(), profile_name.clone());
+                let new_key = (
+                    format!("{}/{}", mission, strategy_name),
+                    format!("{}/{}", scenario, profile_name),
+                );
+                if let Some(metrics) = report.results.get(&old_key) {
+                    merged_results.insert(new_key, metrics.clone());
+                }
+            }
+        }
+    }
+    swarm_sim::ComparisonReport {
+        benchmark_run_id: first.benchmark_run_id.clone(),
+        seed_range_start: reports
+            .iter()
+            .map(|r| r.seed_range_start)
+            .min()
+            .unwrap_or(0),
+        seed_range_end: reports.iter().map(|r| r.seed_range_end).max().unwrap_or(0),
+        total_runs_per_cell: first.total_runs_per_cell,
+        mission_names: reports
+            .iter()
+            .flat_map(|r| r.mission_names.clone())
+            .collect(),
+        scenario_names: reports
+            .iter()
+            .flat_map(|r| r.scenario_names.clone())
+            .collect(),
+        strategy_names: first.strategy_names.clone(),
+        profile_names: {
+            let mut p = Vec::new();
+            for r in reports {
+                let mission = r.mission_names.first().cloned().unwrap_or_default();
+                for name in &r.profile_names {
+                    p.push(format!("{}/{}", mission, name));
+                }
+            }
+            p
+        },
+        results: merged_results,
+    }
 }
 
 fn build_coverage_profile(seed: u64, profile_name: &str) -> (Scenario, RunConfig) {

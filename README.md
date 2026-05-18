@@ -270,3 +270,17 @@ PoD: 0.67
 ```bash
 cargo run -p swarm-examples --bin strategy_comparison -- --json results.json
 ```
+
+**Phase 2** — complete. Unified Experiment Runner:
+
+- `--mission coverage|emergency-mesh|sar|all` CLI flag for multi-mission benchmarks.
+- `SarProfile` (Ideal, Standard, Challenging, BatteryConstrained) and `EmergencyMeshProfile` (Ideal, LowLoss, MediumLoss).
+- `ComparisonReport` with mission, scenario, seed_range, and SAR metric columns (TimeToFind, PoD, TargetsFound).
+- `AggregateMetrics` includes SAR fields: `avg_time_to_find`, `avg_probability_of_detection`, `avg_targets_found`.
+- `ReportRow` with new columns in JSON/CSV export: mission, scenario, seed_range, time_to_find, probability_of_detection, targets_found.
+
+Run all 3 missions with CBBA included:
+
+```bash
+cargo run -p swarm-examples --bin strategy_comparison --mission all --json all.json --csv all.csv
+```
