@@ -291,13 +291,12 @@ fn merge_reports(reports: &[swarm_sim::ComparisonReport]) -> swarm_sim::Comparis
         HashMap::new();
     for report in reports {
         let mission = report.mission_names.first().cloned().unwrap_or_default();
-        let scenario = report.scenario_names.first().cloned().unwrap_or_default();
         for strategy_name in &report.strategy_names {
             for profile_name in &report.profile_names {
                 let old_key = (strategy_name.clone(), profile_name.clone());
                 let new_key = (
-                    format!("{}/{}", mission, strategy_name),
-                    format!("{}/{}", scenario, profile_name),
+                    strategy_name.clone(),
+                    format!("{}/{}", mission, profile_name),
                 );
                 if let Some(metrics) = report.results.get(&old_key) {
                     merged_results.insert(new_key, metrics.clone());
