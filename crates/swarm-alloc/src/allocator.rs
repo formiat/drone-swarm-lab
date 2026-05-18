@@ -50,6 +50,11 @@ pub trait Allocator {
     fn allocation_metrics(&self) -> (u64, bool, u64) {
         (0, false, 0)
     }
+
+    /// Whether this allocator uses distributed message exchange.
+    fn is_distributed(&self) -> bool {
+        false
+    }
 }
 
 pub struct GreedyAllocator;

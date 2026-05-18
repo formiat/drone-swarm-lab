@@ -92,6 +92,7 @@ pub fn build_coverage_scenario(config: &CoverageConfig) -> (Scenario, RunConfig)
         base_id: None,
         enable_movement: false,
         tick_duration_ms: 100,
+        enable_cbba: false,
     };
 
     (scenario, run_config)

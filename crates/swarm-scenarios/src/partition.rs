@@ -50,6 +50,7 @@ pub fn build_partition_scenario(config: &PartitionConfig) -> (Scenario, RunConfi
         enable_movement: false,
         tick_duration_ms: 100,
         grid_state: None,
+        enable_cbba: false,
     };
 
     (scenario, run_config)

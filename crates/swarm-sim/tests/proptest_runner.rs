@@ -93,6 +93,7 @@ fn default_run_config() -> RunConfig {
         enable_movement: false,
         tick_duration_ms: 100,
         grid_state: None,
+        enable_cbba: false,
     }
 }
 

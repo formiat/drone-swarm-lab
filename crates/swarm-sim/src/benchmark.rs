@@ -323,6 +323,7 @@ mod tests {
                 enable_movement: false,
                 grid_state: None,
                 tick_duration_ms: 100,
+                enable_cbba: false,
             };
             (scenario, run_config)
         })

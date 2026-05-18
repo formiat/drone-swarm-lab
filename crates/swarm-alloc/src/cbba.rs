@@ -246,6 +246,10 @@ impl Allocator for CbbaAllocator {
             self.messages_exchanged,
         )
     }
+
+    fn is_distributed(&self) -> bool {
+        true
+    }
 }
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use swarm_alloc::{AllocationAgent, AllocationTask, Allocator, ConnectivityContext};
+use swarm_alloc::{AllocationAgent, AllocationTask, Allocator, CbbaAllocator, ConnectivityContext};
 use swarm_comms::{ConnectivitySnapshot, RawMessage, Transport};
 use swarm_types::{AgentId, Health, Task, TaskId};
 
@@ -40,6 +40,7 @@ pub struct AgentNode<T> {
     pub config: NodeConfig,
     ticks_since_last_gossip: u64,
     discarded_this_tick: u64,
+    pub cbba: Option<CbbaAllocator>,
 }
 
 impl<T: Transport> AgentNode<T> {
@@ -59,6 +60,7 @@ impl<T: Transport> AgentNode<T> {
             config: NodeConfig::default(),
             ticks_since_last_gossip: 0,
             discarded_this_tick: 0,
+            cbba: None,
         }
     }
 
@@ -120,8 +122,33 @@ impl<T: Transport> AgentNode<T> {
                         gossip_buffer.push(rt);
                     }
                 }
-                Some(RuntimeMessage::Cbba { .. }) => {
-                    // CBBA messages handled at ScenarioRunner level
+                Some(RuntimeMessage::Cbba {
+                    round: _,
+                    winning_bids,
+                    sender_bundle: _,
+                }) => {
+                    if let Some(ref mut cbba) = self.cbba {
+                        #[allow(clippy::type_complexity)]
+                        let remote_bids: Vec<(
+                            AgentId,
+                            HashMap<TaskId, (AgentId, f64)>,
+                        )> = vec![(
+                            msg.from.clone(),
+                            winning_bids
+                                .iter()
+                                .map(|(tid, bid)| (tid.clone(), (bid.agent_id.clone(), bid.value)))
+                                .collect(),
+                        )];
+                        cbba.apply_remote_bids(&remote_bids);
+                        for (task_id, bid) in winning_bids {
+                            if self.coordinator.registry.tasks().any(|t| t.id == task_id) {
+                                let _ = self
+                                    .coordinator
+                                    .registry
+                                    .assign(&task_id, bid.agent_id.clone());
+                            }
+                        }
+                    }
                 }
                 None => {
                     self.discarded_this_tick += 1;
@@ -166,6 +193,35 @@ impl<T: Transport> AgentNode<T> {
             conflicting_assignments += allocate_unassigned(&mut self.coordinator, allocator);
         }
 
+        // CBBA Phase 1: Bundle building (local)
+        if let Some(ref mut cbba) = self.cbba {
+            let agents: Vec<AllocationAgent> = self
+                .coordinator
+                .membership
+                .alive_agents()
+                .map(|(id, entry)| AllocationAgent {
+                    id: id.clone(),
+                    pose: entry.pose,
+                    battery: entry.battery,
+                    capabilities: entry.capabilities.clone(),
+                    role: entry.role.clone(),
+                    comms_range: entry.comms_range,
+                })
+                .collect();
+            let all_tasks: Vec<AllocationTask<'_>> = self
+                .coordinator
+                .registry
+                .tasks()
+                .map(|t| AllocationTask { task: t })
+                .collect();
+            cbba.build_bundles(&agents, &all_tasks);
+            for (task_id, agent_id) in cbba.current_assignments() {
+                if agent_id == self.own_id {
+                    let _ = self.coordinator.registry.assign(&task_id, agent_id);
+                }
+            }
+        }
+
         let _ = self.maybe_send_gossip();
 
         let mut distance_travelled = Vec::new();
@@ -196,6 +252,9 @@ impl<T: Transport> AgentNode<T> {
         if self.ticks_since_last_gossip >= self.gossip_interval_ticks {
             self.send_gossip()?;
             self.ticks_since_last_gossip = 0;
+            if self.cbba.is_some() {
+                let _ = self.send_cbba_bids();
+            }
         }
         Ok(())
     }
@@ -222,6 +281,39 @@ impl<T: Transport> AgentNode<T> {
             payload,
         };
 
+        for peer_id in &self.peer_ids {
+            let mut m = msg.clone();
+            m.to = peer_id.clone();
+            self.transport.send(m)?;
+        }
+        Ok(())
+    }
+
+    pub fn send_cbba_bids(&mut self) -> Result<(), T::Error> {
+        let Some(ref cbba) = self.cbba else {
+            return Ok(());
+        };
+        let winning_bids: std::collections::HashMap<_, _> = cbba
+            .winning_bids
+            .iter()
+            .map(|(tid, (aid, v))| {
+                (
+                    tid.clone(),
+                    crate::message::CbbaBid {
+                        agent_id: aid.clone(),
+                        value: *v,
+                    },
+                )
+            })
+            .collect();
+        let bundle = cbba.bundles.get(&self.own_id).cloned().unwrap_or_default();
+        let payload =
+            crate::message::RuntimeMessage::cbba(cbba.current_round, winning_bids, bundle);
+        let msg = RawMessage {
+            from: self.own_id.clone(),
+            to: AgentId::from("".to_owned()),
+            payload,
+        };
         for peer_id in &self.peer_ids {
             let mut m = msg.clone();
             m.to = peer_id.clone();

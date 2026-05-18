@@ -51,6 +51,8 @@ pub struct RunConfig {
     pub tick_duration_ms: u64,
     // v0.9: SAR grid state
     pub grid_state: Option<GridState>,
+    // v0.10 Phase 1
+    pub enable_cbba: bool,
 }
 
 pub struct ScenarioRunner;
@@ -118,6 +120,9 @@ impl ScenarioRunner {
                 node.gossip_interval_ticks = config.gossip_interval_ticks;
                 node.config.enable_movement = config.enable_movement;
                 node.config.tick_duration_ms = config.tick_duration_ms;
+                if config.enable_cbba {
+                    node.cbba = Some(swarm_alloc::CbbaAllocator::default());
+                }
                 (node, agent.id.clone())
             })
             .collect();
@@ -736,9 +741,18 @@ impl ScenarioRunner {
                 targets_total: grid_state.as_ref().map_or(0, |g| g.targets.len() as u32),
                 scan_count: grid_state.as_ref().map_or(0, |g| g.scan_count),
                 // v0.10 CBBA
-                cbba_rounds_to_convergence: allocator.allocation_metrics().0,
-                cbba_converged: allocator.allocation_metrics().1,
-                cbba_messages: allocator.allocation_metrics().2,
+                cbba_rounds_to_convergence: nodes
+                    .iter()
+                    .filter_map(|(n, _)| n.cbba.as_ref().map(|c| c.current_round as u64))
+                    .max()
+                    .unwrap_or(0),
+                cbba_converged: nodes
+                    .iter()
+                    .all(|(n, _)| n.cbba.as_ref().is_none_or(|c| c.converged)),
+                cbba_messages: nodes
+                    .iter()
+                    .filter_map(|(n, _)| n.cbba.as_ref().map(|c| c.messages_exchanged))
+                    .sum(),
             },
             event_log,
         )
@@ -839,6 +853,7 @@ mod tests {
             enable_movement: false,
             tick_duration_ms: 100,
             grid_state: None,
+            enable_cbba: false,
         }
     }
 

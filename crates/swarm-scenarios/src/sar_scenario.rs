@@ -124,6 +124,7 @@ pub fn build_sar_scenario(config: &SarScenarioConfig) -> (Scenario, RunConfig) {
         enable_movement: config.enable_movement,
         tick_duration_ms: config.tick_duration_ms,
         grid_state: Some(grid_state),
+        enable_cbba: false,
     };
 
     (scenario, run_config)
