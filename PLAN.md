@@ -14,24 +14,25 @@ Milestone 10 реализовал `CbbaAllocator` как Allocator facade: bundl
 - CBBA работает через `allocate()` → все agents разделяют один allocator (shared state)
 - `apply_remote_bids()` — dead code, нигде не вызывается
 - Gossip канал (v0.4) обменивается assignment maps через `send_gossip()`/`apply_gossip_buffer()`
-- `ScenarioRunner` использует two-phase tick: send heartbeats → process inbox
+- `Allocator` trait не различает distributed vs local стратегии
 
 **Критерий готовности:**
 1. Каждый агент независимо строит bundle (Phase 1) и обменивается winning bids через `RuntimeMessage::Cbba` сообщения (Phase 2).
 2. `apply_remote_bids()` вызывается с реальными remote bids, полученными из transport.
 3. CBBA convergence: после N раундов обмена пакетами, bundles всех агентов консистентны.
-4. Метрики `cbba_rounds_to_convergence`, `cbba_messages` отражают реальные значения.
-5. Тест `cbba_fails_without_message_delivery` — CBBA не находит цели, если сообщения не доставляются (доказывает, что message exchange работает).
-6. Proptest `cbba_no_panic_under_random_conditions` — CBBA не паникует при случайных agents/tasks/packet loss/partitions.
-7. Все существующие тесты проходят.
+4. `Allocator::is_distributed()` различает distributed (CBBA) от local стратегий для runner logic.
+5. Метрики `cbba_rounds_to_convergence`, `cbba_messages` отражают реальные значения.
+6. Тест `cbba_fails_without_message_delivery` — CBBA не находит цели при packet_loss=1.0.
+7. Proptest `cbba_no_panic_under_random_conditions` — CBBA не паникует при случайных agents/tasks/packet loss/partitions.
+8. Все существующие тесты проходят.
 
 ---
 
 ## Investigation context
 
 INVESTIGATION.md отсутствует. Контекст из `docs/DRONE_A.5.md` и `docs/DRONE_B.5.md`:
-- Оба документа требуют закрыть CBBA-gap: CBBA должен отличаться от greedy/auction не только scoring function, но и распределённым consensus loop.
-- "Если сразу строить publishable benchmark, то CBBA-строка в таблице будет методологически сомнительной."
+- DRONE_A.5.md требует: (a) добавить `is_distributed() -> bool` в `Allocator` trait, (b) real message-driven CBBA consensus, (c) proptest.
+- Оба документа: CBBA должен отличаться от greedy/auction не только scoring function, но и распределённым consensus loop.
 
 ---
 
@@ -39,9 +40,10 @@ INVESTIGATION.md отсутствует. Контекст из `docs/DRONE_A.5.m
 
 | Компонент | Тип изменения |
 |---|---|
-| `crates/swarm-runtime/src/node.rs` | Добавить `send_cbba_bids()` — broadcast winning_bids; расширить dispatch для приёма CBBA сообщений |
-| `crates/swarm-alloc/src/cbba.rs` | `CbbaAllocator` остаётся как shared state; метод `build_bundles_for_agent()` для per-agent Phase 1 |
-| `crates/swarm-sim/src/runner.rs` | CBBA orchestration: Phase 1 (per-agent bundle building) → Phase 2 (exchange bids → apply_remote_bids) |
+| `crates/swarm-alloc/src/allocator.rs` | Добавить `is_distributed() -> bool` в `Allocator` trait; Greedy/Auction/CentralizedPlanner → false, CbbaAllocator → true |
+| `crates/swarm-alloc/src/cbba.rs` | Per-agent CBBA state; `winning_bids_to_remote()` helper; убрать сброс converged при empty tasks |
+| `crates/swarm-runtime/src/node.rs` | `pub cbba: Option<CbbaAllocator>`; `send_cbba_bids()`; расширить CBBA dispatch в process_inbox |
+| `crates/swarm-sim/src/runner.rs` | `RunConfig.enable_cbba: bool`; runner-level registry sync после convergence; метрики из AgentNodes |
 | `crates/swarm-runtime/src/message.rs` | Без изменений (`Cbba` variant уже существует) |
 | `crates/swarm-metrics/src/metrics.rs` | Без изменений (поля уже есть) |
 | `crates/swarm-examples/src/bin/strategy_comparison.rs` | Без изменений (CBBA уже в реестре) |
@@ -52,9 +54,43 @@ INVESTIGATION.md отсутствует. Контекст из `docs/DRONE_A.5.m
 
 ## Implementation Steps
 
-### Шаг 1 — Per-agent CBBA state
+### Шаг 1 — `is_distributed()` в Allocator trait
 
-Перенести CBBA state из `ScenarioRunner` в `AgentNode`. Каждый агент имеет свой экземпляр `CbbaAllocator`:
+Файл: `crates/swarm-alloc/src/allocator.rs`
+
+```rust
+pub trait Allocator {
+    fn allocate(&mut self, ...) -> Vec<(TaskId, AgentId)>;
+    fn allocate_with_connectivity(&mut self, ...) -> Vec<(TaskId, AgentId)> { ... }
+    fn allocation_metrics(&self) -> (u64, bool, u64) { (0, false, 0) }
+
+    /// Whether this allocator uses distributed message exchange.
+    fn is_distributed(&self) -> bool { false }
+}
+```
+
+`impl Allocator for CbbaAllocator` → `fn is_distributed(&self) -> bool { true }`.
+
+**Тесты (категория 1):**
+- `cbba_is_distributed` — CbbaAllocator.is_distributed() == true
+- `greedy_is_not_distributed` — GreedyAllocator.is_distributed() == false
+
+### Шаг 2 — `enable_cbba` в RunConfig
+
+Файл: `crates/swarm-sim/src/runner.rs`
+
+```rust
+pub struct RunConfig {
+    // ... existing fields ...
+    pub enable_cbba: bool,  // NEW, default false
+}
+```
+
+Все конструкторы `RunConfig` добавить `enable_cbba: false`.
+
+### Шаг 3 — Per-agent CBBA state
+
+Файл: `crates/swarm-runtime/src/node.rs`
 
 ```rust
 pub struct AgentNode<T> {
@@ -63,125 +99,100 @@ pub struct AgentNode<T> {
 }
 ```
 
-При создании `AgentNode`: если `config.enable_cbba` — создать `CbbaAllocator::default()`.
+Создание: `AgentNode::new()` — `cbba: if config.enable_cbba { Some(CbbaAllocator::default()) } else { None }`.
 
-**Почему не shared state:** shared state (один CbbaAllocator на все агенты) эквивалентен centralised planner. True CBBA требует per-agent state — каждый агент строит свой bundle независимо, и consensus достигается через message exchange.
-
-### Шаг 2 — `send_cbba_bids()` + `collect_cbba_messages()`
+### Шаг 4 — `send_cbba_bids()`
 
 Файл: `crates/swarm-runtime/src/node.rs`
 
-Добавить методы:
 ```rust
 impl<T: Transport> AgentNode<T> {
-    /// Broadcast current winning bids to all peers.
     pub fn send_cbba_bids(&mut self) -> Result<(), T::Error> {
-        if let Some(ref cbba) = self.cbba {
-            let payload = RuntimeMessage::cbba(
-                cbba.current_round,
-                cbba.winning_bids_to_remote(),
-                cbba.bundles.get(&self.own_id).cloned().unwrap_or_default(),
-            );
-            let msg = RawMessage {
-                from: self.own_id.clone(),
-                to: AgentId::from("placeholder".to_owned()),
-                payload,
-            };
-            for peer_id in &self.peer_ids {
-                let mut m = msg.clone();
-                m.to = peer_id.clone();
-                self.transport.send(m)?;
-            }
+        let Some(ref cbba) = self.cbba else { return Ok(()); };
+        let payload = RuntimeMessage::cbba(
+            cbba.current_round,
+            cbba.winning_bids_to_hashmap(),
+            cbba.bundles.get(&self.own_id).cloned().unwrap_or_default(),
+        );
+        let msg = RawMessage { from: self.own_id.clone(), to: AgentId::from("".to_owned()), payload };
+        for peer_id in &self.peer_ids {
+            let mut m = msg.clone();
+            m.to = peer_id.clone();
+            self.transport.send(m)?;
         }
         Ok(())
     }
 }
 ```
 
-В `process_inbox_and_allocate()`: изменить dispatch `Cbba` ветки:
+Вызов: в `maybe_send_gossip()` после отправки gossip, если `self.cbba.is_some()` → `self.send_cbba_bids()?`.
+
+### Шаг 5 — CBBA dispatch + registry sync
+
+Файл: `crates/swarm-runtime/src/node.rs`
+
+В `process_inbox_and_allocate()` изменить dispatch CBBA ветки:
+
 ```rust
-Some(RuntimeMessage::Cbba { round, winning_bids, sender_bundle }) => {
+Some(RuntimeMessage::Cbba { round: _, winning_bids, sender_bundle: _ }) => {
     if let Some(ref mut cbba) = self.cbba {
-        cbba.collect_remote_bid(msg.from, winning_bids);
+        cbba.apply_remote_bids(&[(msg.from.clone(), winning_bids.clone())]);
+        // Registry sync: if remote bid claims a task for a remote agent,
+        // register the assignment locally so all_tasks_assigned works.
+        for (task_id, bid) in winning_bids {
+            if self.coordinator.registry.tasks().any(|t| &t.id == &task_id) {
+                let _ = self.coordinator.registry.assign(&task_id, bid.agent_id);
+            }
+        }
     }
 }
 ```
 
-### Шаг 3 — CBBA round в tick loop
-
-Файл: `crates/swarm-runtime/src/node.rs`
-
-В `process_inbox_and_allocate()` после `allocate_unassigned()`:
+После dispatch вставить CBBA Phase 1:
 
 ```rust
-// CBBA Phase 1: Bundle building (local)
+// CBBA Phase 1: Bundle building (local to this agent)
 if let Some(ref mut cbba) = self.cbba {
-    let atasks = build_allocation_tasks(&self.coordinator.registry);
-    let aagents = build_allocation_agents(&self.coordinator.membership);
-    cbba.build_bundles(&aagents, &atasks);
-    
-    // Apply CBBA decisions to registry
+    let alive_agents = build_allocation_agents(&self.coordinator.membership);
+    let all_tasks = build_allocation_tasks(&self.coordinator.registry);
+    cbba.build_bundles(&alive_agents, &all_tasks);
+    // Register local assignments
     for (task_id, agent_id) in cbba.current_assignments() {
         if agent_id == self.own_id {
-            // Local decision — register
             let _ = self.coordinator.registry.assign(&task_id, agent_id);
         }
     }
 }
 ```
 
-В `maybe_send_gossip()` (после отправки gossip):
-
-```rust
-// CBBA Phase 2: Exchange winning bids via transport
-if self.cbba.is_some() {
-    self.send_cbba_bids()?;
-}
-```
-
-### Шаг 4 — Convergence detection per-agent
-
-Файл: `crates/swarm-alloc/src/cbba.rs`
-
-Каждый агент независимо проверяет convergence:
-```rust
-pub fn check_convergence(&mut self) -> bool {
-    // Convergence: winning_bids stable 2 rounds AND all bundles stable
-    if self.prev_winning_bids == self.winning_bids && !self.winning_bids.is_empty() {
-        self.converged = true;
-        return true;
-    }
-    self.prev_winning_bids = self.winning_bids.clone();
-    false
-}
-```
-
-`collect_remote_bid()`: при получении remote bid обновляет локальные `winning_bids` и сбрасывает `converged = false` если remote bid отличается.
-
-### Шаг 5 — CBBA metric aggregation
+### Шаг 6 — CBBA metric aggregation
 
 Файл: `crates/swarm-sim/src/runner.rs`
 
 После симуляции агрегировать метрики из всех AgentNodes:
-- `cbba_rounds_to_convergence` = max rounds across agents
-- `cbba_converged` = all agents converged
-- `cbba_messages` = total messages exchanged across agents
 
-Добавить helper `pub fn cbba_metrics(&self) -> (u64, bool, u64)` в AgentNode.
+```rust
+let cbba_nodes: Vec<_> = nodes.iter().filter(|(n, _)| n.cbba.is_some()).collect();
+let cbba_rounds_to_convergence = cbba_nodes.iter()
+    .filter_map(|(n, _)| n.cbba.as_ref().map(|c| c.current_round as u64))
+    .max().unwrap_or(0);
+let cbba_converged = cbba_nodes.iter()
+    .all(|(n, _)| n.cbba.as_ref().is_some_and(|c| c.converged));
+let cbba_messages = cbba_nodes.iter()
+    .filter_map(|(n, _)| n.cbba.as_ref().map(|c| c.messages_exchanged))
+    .sum();
+```
 
-### Шаг 6 — Интеграционный тест message delivery
+Заменить хардкоженные `cbba_rounds_to_convergence: 0, cbba_converged: false, cbba_messages: 0` на эти вычисления.
 
-Файл: `crates/swarm-alloc/src/cbba.rs`
+### Шаг 7 — Интеграционные тесты + proptest
 
-Тест `cbba_converges_via_message_exchange`:
-- 2 агента, 2 задачи, network с packet_loss=0
-- Agent-0 строит bundle, отправляет CBBA сообщение
-- Agent-1 получает, строит свой bundle, отправляет ответ
-- После N раундов bundles консистентны
+Файл: `crates/swarm-alloc/src/cbba.rs` — тесты:
 
-### Шаг 7 — Proptest для CBBA
+- `cbba_converges_via_message_exchange` — 2 агента, direct exchange, convergence
+- `cbba_fails_without_message_delivery` — packet_loss=1.0 → CBBA не конвергирует
 
-Файл: `crates/swarm-sim/tests/proptest_cbba.rs` (новый)
+Файл: `crates/swarm-sim/tests/proptest_cbba.rs` (новый):
 
 ```rust
 proptest! {
@@ -190,27 +201,16 @@ proptest! {
         agents in agent_strategy(2..=8),
         tasks in task_strategy(1..=10),
         packet_loss in 0.0f64..0.5,
-        partitions in partition_strategy(),
     ) {
         let config = RunConfig {
-            packet_loss_rate: packet_loss,
-            partition_events: partitions,
             enable_cbba: true,
-            ..RunConfig::default_for_cbba()
+            packet_loss_rate: packet_loss,
+            ..RunConfig::default()
         };
-        let scenario = Scenario { agents, tasks, ... };
-        let result = ScenarioRunner::run(&scenario, config);
-        // No panic — invariant check
+        ScenarioRunner::run(&scenario, config);
     }
 }
 ```
-
-**Тесты (категория 1):**
-- `cbba_converges_via_message_exchange` — 2 агента, bid exchange, convergence
-- `cbba_fails_without_message_delivery` — packet_loss=1.0 → CBBA не сходится
-- `cbba_handles_partition` — partition во время rounds → convergence after heal
-- `cbba_message_serde_roundtrip` — обновить существующий тест
-- `cbba_no_panic_under_random_conditions` — proptest (категория 2/3)
 
 ### Шаг 8 — Обновить README
 
@@ -235,18 +235,23 @@ cargo run -p swarm-examples --bin strategy_comparison
 
 ### Категория 1 — unit тесты
 
-- `cbba_converges_via_message_exchange` — message-driven convergence
-- `cbba_fails_without_message_delivery` — без доставки сообщений CBBA не сходится
+- `cbba_is_distributed` / `greedy_is_not_distributed` — `is_distributed()` на trait
+- `cbba_converges_via_message_exchange` — 2 агента, real message exchange, convergence
+- `cbba_fails_without_message_delivery` — packet_loss=1.0, CBBA не конвергирует
 - `cbba_handles_partition` — partition → convergence after heal
-- `cbba_per_agent_state_independent` — два агента с разными bundles → сходятся через exchange
+- `cbba_registry_sync` — remote bid регистрируется в локальном registry
 
 ### Категория 2 — proptest
 
-- `cbba_no_panic_under_random_conditions` — случайные agents/tasks/packet_loss/partitions → no panic
+- `cbba_no_panic_under_random_conditions` — случайные agents/tasks/packet_loss → no panic
 
 ### Категория 3 — тяжёлый (не для Phase 1)
 
-- CBBA на SAR + EmergencyMesh с message exchange (через `strategy_comparison`)
+- CBBA на SAR + EmergencyMesh с полным message exchange (через `strategy_comparison`)
+
+### Покрытие gap
+
+- **Gap**: full network topology CBBA (mesh with routing). Текущая модель: point-to-point broadcast. Приемлемо для v0.10.
 
 ---
 
@@ -254,15 +259,15 @@ cargo run -p swarm-examples --bin strategy_comparison
 
 **1. Per-agent CBBA state vs shared state**
 
-Переход от shared state к per-agent state увеличивает memory (N экземпляров CbbaAllocator), но даёт истинную distributed архитектуру. Shared state facade остаётся для бенчмарков через `allocate()`.
+Переход к per-agent state даёт истинную distributed архитектуру. Memory overhead: ~1KB per agent × 5 agents = 5KB — незначительно.
 
-**2. CBBA messages vs gossip messages**
+**2. Registry sync через `assign()`**
 
-CBBA winning_bids идут через тот же transport что heartbeats и gossip. При большом числе агентов может создавать contention. Для v0.10 с ~5 агентами — приемлемо.
+При получении remote bid, локальный registry получает `assign(task_id, remote_agent_id)`. Это может создать дубликаты (если gossip тоже синхронизирует assignments). `registry.assign()` возвращает Err на дубликат — безопасно.
 
-**3. Convergence detection per-agent**
+**3. `is_distributed()` runner check**
 
-Каждый агент независимо проверяет convergence. Это более реалистично чем centralised convergence check. Но метрика `cbba_converged` требует all-agents agreement.
+Runner должен проверять `is_distributed()` перед запуском CBBA-specific логики. Если CBBA используется но `is_distributed()` не реализован — runner должен пропустить CBBA фазу (graceful degradation).
 
 ---
 
@@ -270,15 +275,15 @@ CBBA winning_bids идут через тот же transport что heartbeats и
 
 | Риск | Что сломается | Как проверить |
 |---|---|---|
-| `CbbaAllocator` в каждом AgentNode | Удвоение памяти, но ~5 агентов — незначительно | `cargo test --workspace` |
-| CBBA сообщения через gossip канал | Контенция с heartbeats/gossip | benchmark timing |
-| `send_cbba_bids()` каждый CBBA-тик | N² messages per round | CBBA messages метрика |
-| Per-agent convergence может расходиться | Один агент считает CBBA converged, другой нет | Тест `cbba_handles_partition` |
+| `enable_cbba` не добавлен в RunConfig конструкторы | Компиляция падает во всех сценариях | `cargo check --workspace` |
+| `is_distributed()` не реализован в StrategyWrapper | strategy_comparison не использует CBBA distributed logic | `cbba_is_distributed` тест |
+| Registry sync создаёт дубликаты | `assign()` возвращает Err → counted as конфликт | `cbba_registry_sync` тест |
+| Per-agent convergence расходится | Один агент converged, другой нет | `cbba_handles_partition` тест |
 
 ---
 
 ## Open Questions
 
-1. **CBBA rounds per tick?** — 1 round = 1 tick. Phase 1 + Phase 2 в одном тике.
-2. **Когда CBBA запускается?** — На каждом тике, если `enable_cbba = true`.
-3. **Shared CbbaAllocator wrapper для бенчмарков?** — Оставить `allocate()` facade для `strategy_comparison`, но основной runtime использует per-agent state.
+1. **CBBA rounds per tick?** — 1 round = 1 tick. Phase 1 (bundle) + Phase 2 (send bids) в одном тике.
+2. **Когда CBBA запускается?** — На каждом тике, если `enable_cbba = true` и `is_distributed()`.
+3. **Shared Allocator facade для бенчмарков?** — Оставить `allocate()` facade для `strategy_comparison`, но основной runtime использует per-agent state.
