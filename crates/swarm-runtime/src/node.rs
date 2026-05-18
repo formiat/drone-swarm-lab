@@ -190,11 +190,16 @@ impl<T: Transport> AgentNode<T> {
             || !output.expired_task_ids.is_empty()
             || !self.coordinator.registry.unassigned().is_empty()
         {
-            conflicting_assignments += allocate_unassigned(&mut self.coordinator, allocator);
+            // Skip centralized allocation when CBBA is active (distributed path)
+            if self.cbba.is_none() {
+                conflicting_assignments += allocate_unassigned(&mut self.coordinator, allocator);
+            }
         }
 
         // CBBA Phase 1: Bundle building (local)
         if let Some(ref mut cbba) = self.cbba {
+            cbba.current_round += 1;
+            cbba.check_convergence();
             let agents: Vec<AllocationAgent> = self
                 .coordinator
                 .membership

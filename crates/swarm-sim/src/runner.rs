@@ -1065,7 +1065,11 @@ mod tests {
         cfg.gossip_interval_ticks = 1;
         cfg.max_ticks = 30;
         let metrics = ScenarioRunner::run_with(&s, cfg, CbbaAllocator::default());
-        // Distributed CBBA should converge and complete the mission
         assert!(metrics.success, "CBBA did not complete the mission");
+        assert!(metrics.cbba_messages > 0, "No CBBA messages were exchanged");
+        assert!(
+            metrics.cbba_rounds_to_convergence > 0,
+            "CBBA did not converge"
+        );
     }
 }
