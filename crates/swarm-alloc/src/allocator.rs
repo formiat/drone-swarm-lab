@@ -44,6 +44,12 @@ pub trait Allocator {
     ) -> Vec<(TaskId, AgentId)> {
         self.allocate(tasks, agents)
     }
+
+    /// v0.10 extension for allocator-specific metrics.
+    /// Default returns (0, false, 0). CBBA overrides with real values.
+    fn allocation_metrics(&self) -> (u64, bool, u64) {
+        (0, false, 0)
+    }
 }
 
 pub struct GreedyAllocator;

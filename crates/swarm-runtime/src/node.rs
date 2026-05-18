@@ -107,7 +107,6 @@ impl<T: Transport> AgentNode<T> {
 
         let mut hb_list: Vec<(AgentId, u64, u64)> = Vec::new();
         let mut gossip_buffer: Vec<RuntimeMessage> = Vec::new();
-        let mut cbba_buffer: Vec<RuntimeMessage> = Vec::new();
         for msg in &all_msgs {
             match RuntimeMessage::from_payload(&msg.payload) {
                 Some(RuntimeMessage::Heartbeat {
@@ -122,9 +121,7 @@ impl<T: Transport> AgentNode<T> {
                     }
                 }
                 Some(RuntimeMessage::Cbba { .. }) => {
-                    if let Some(rt) = RuntimeMessage::from_payload(&msg.payload) {
-                        cbba_buffer.push(rt);
-                    }
+                    // CBBA messages handled at ScenarioRunner level
                 }
                 None => {
                     self.discarded_this_tick += 1;

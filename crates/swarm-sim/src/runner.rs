@@ -736,9 +736,9 @@ impl ScenarioRunner {
                 targets_total: grid_state.as_ref().map_or(0, |g| g.targets.len() as u32),
                 scan_count: grid_state.as_ref().map_or(0, |g| g.scan_count),
                 // v0.10 CBBA
-                cbba_rounds_to_convergence: 0,
-                cbba_converged: false,
-                cbba_messages: 0,
+                cbba_rounds_to_convergence: allocator.allocation_metrics().0,
+                cbba_converged: allocator.allocation_metrics().1,
+                cbba_messages: allocator.allocation_metrics().2,
             },
             event_log,
         )

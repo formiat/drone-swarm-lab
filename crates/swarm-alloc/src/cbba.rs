@@ -217,9 +217,29 @@ impl Allocator for CbbaAllocator {
         agents: &[AllocationAgent],
     ) -> Vec<(TaskId, AgentId)> {
         self.current_round += 1;
+
+        // Clear stale state for released tasks and dead agents
+        let alive_ids: std::collections::HashSet<&AgentId> = agents.iter().map(|a| &a.id).collect();
+        self.bundles
+            .retain(|agent_id, _| alive_ids.contains(agent_id));
+        self.winning_bids.retain(|task_id, (agent_id, _)| {
+            alive_ids.contains(agent_id) && tasks.iter().any(|t| &t.task.id == task_id)
+        });
+        self.prev_winning_bids.retain(|task_id, (agent_id, _)| {
+            alive_ids.contains(agent_id) && tasks.iter().any(|t| &t.task.id == task_id)
+        });
+
         self.build_bundles(agents, tasks);
         self.check_convergence();
         self.current_assignments()
+    }
+
+    fn allocation_metrics(&self) -> (u64, bool, u64) {
+        (
+            self.current_round as u64,
+            self.converged,
+            self.messages_exchanged,
+        )
     }
 }
 
