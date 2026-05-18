@@ -141,6 +141,31 @@ impl CbbaAllocator {
         &mut self,
         remote_bids: &[(AgentId, HashMap<TaskId, (AgentId, f64)>)],
     ) {
+        if self.converged {
+            return;
+        }
+
+        for (_sender, bids) in remote_bids {
+            for (task_id, (remote_agent_id, remote_bid)) in bids {
+                match self.winning_bids.get(task_id) {
+                    None => {
+                        self.winning_bids
+                            .insert(task_id.clone(), (remote_agent_id.clone(), *remote_bid));
+                    }
+                    Some((_local_agent, local_bid)) => {
+                        if *remote_bid > *local_bid {
+                            if let Some(bundle) = self.bundles.get_mut(remote_agent_id) {
+                                if !bundle.contains(task_id) {
+                                    bundle.push(task_id.clone());
+                                }
+                            }
+                            self.winning_bids
+                                .insert(task_id.clone(), (remote_agent_id.clone(), *remote_bid));
+                        }
+                    }
+                }
+            }
+        }
         self.messages_exchanged += remote_bids.len() as u64;
     }
 
