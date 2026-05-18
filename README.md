@@ -284,3 +284,17 @@ Run all 3 missions with CBBA included:
 ```bash
 cargo run -p swarm-examples --bin strategy_comparison --mission all --json all.json --csv all.csv
 ```
+
+### Benchmark Results (10 seeds per cell)
+
+| Strategy | Profile | Success | Coverage | Conflicts | BatteryAvg | TimeToFind | PoD | Targets |
+|----------|---------|---------|----------|-----------|------------|------------|-----|---------|
+| greedy   | coverage/ideal | 1.000 | 1.000 | 0 | 100.0 | - | - | - |
+| greedy   | sar/ideal | 0.600 | 0.992 | 2679 | 92.0 | 3.0 | 0.10 | 0.2 |
+| auction  | coverage/ideal | 1.000 | 1.000 | 0 | 100.0 | - | - | - |
+| centralized | coverage/ideal | 1.000 | 1.000 | 0 | 100.0 | - | - | - |
+| cbba     | coverage/ideal | 1.000 | 1.000 | 0 | 100.0 | - | - | - |
+| cbba     | coverage/ideal-single-failure | 1.000 | 1.000 | 36 | 100.0 | - | - | - |
+| cbba     | emergency-mesh/ideal | 0.200 | 0.800 | 104 | 100.0 | - | - | - |
+| cbba     | sar/ideal | 0.000 | 0.347 | 1020 | 95.2 | 2.0 | 0.15 | 0.3 |
+```
