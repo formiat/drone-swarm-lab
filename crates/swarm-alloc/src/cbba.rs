@@ -152,8 +152,13 @@ impl CbbaAllocator {
                         self.winning_bids
                             .insert(task_id.clone(), (remote_agent_id.clone(), *remote_bid));
                     }
-                    Some((_local_agent, local_bid)) => {
+                    Some((local_agent, local_bid)) => {
                         if *remote_bid > *local_bid {
+                            // Remove task from losing agent's bundle
+                            if let Some(local_bundle) = self.bundles.get_mut(local_agent) {
+                                local_bundle.retain(|t| t != task_id);
+                            }
+                            // Add task to winning agent's bundle
                             if let Some(bundle) = self.bundles.get_mut(remote_agent_id) {
                                 if !bundle.contains(task_id) {
                                     bundle.push(task_id.clone());
