@@ -250,3 +250,14 @@ Time to first find: Some(145)
 Final coverage: 0.72
 PoD: 0.67
 ```
+
+**Milestone 10** — complete. CBBA (Consensus-Based Bundle Algorithm):
+
+- `CbbaAllocator` in `swarm-alloc` — first truly distributed allocation algorithm. Phase 1: bundle building (marginal score with distance + battery + position penalty). Phase 2: consensus (exchange winning bids via gossip, remote bids override local if higher).
+- `Allocator` trait changed from `&self` to `&mut self` for stateful CBBA (28 call sites across 8 files).
+- `StrategyRegistry` includes 5 strategies: greedy, auction, connectivity-aware, centralized, cbba.
+- CBBA metrics: `cbba_rounds_to_convergence`, `cbba_converged`, `cbba_messages`.
+
+```bash
+cargo run -p swarm-examples --bin strategy_comparison -- --json results.json
+```

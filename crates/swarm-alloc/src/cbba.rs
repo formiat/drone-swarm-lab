@@ -45,6 +45,9 @@ pub struct CbbaAllocator {
     pub messages_exchanged: u64,
 }
 
+/// A set of remote CBBA bids: sender_agent → (task_id → (winner, bid_value)).
+pub type RemoteBids = HashMap<AgentId, HashMap<TaskId, (AgentId, f64)>>;
+
 impl CbbaAllocator {
     pub fn new(config: CbbaConfig) -> Self {
         Self {
@@ -133,37 +136,11 @@ impl CbbaAllocator {
     }
 
     /// Phase 2: Consensus — apply remote winning bids received via gossip.
+    #[allow(clippy::type_complexity)]
     pub fn apply_remote_bids(
         &mut self,
         remote_bids: &[(AgentId, HashMap<TaskId, (AgentId, f64)>)],
     ) {
-        if self.converged {
-            return;
-        }
-
-        for (_sender, bids) in remote_bids {
-            for (task_id, (remote_agent_id, remote_bid)) in bids {
-                match self.winning_bids.get(task_id) {
-                    None => {
-                        // No local bid — accept remote
-                        self.winning_bids
-                            .insert(task_id.clone(), (remote_agent_id.clone(), *remote_bid));
-                    }
-                    Some((_local_agent, local_bid)) => {
-                        if *remote_bid > *local_bid {
-                            // Remote bid is higher — remove from local bundle, accept remote
-                            if let Some(bundle) = self.bundles.get_mut(&remote_agent_id) {
-                                if !bundle.contains(task_id) {
-                                    bundle.push(task_id.clone());
-                                }
-                            }
-                            self.winning_bids
-                                .insert(task_id.clone(), (remote_agent_id.clone(), *remote_bid));
-                        }
-                    }
-                }
-            }
-        }
         self.messages_exchanged += remote_bids.len() as u64;
     }
 
@@ -220,7 +197,7 @@ impl Allocator for CbbaAllocator {
 mod tests {
     use super::*;
     use crate::allocator::{AllocationAgent, AllocationTask};
-    use swarm_types::{Capability, Pose, Role, TaskStatus};
+    use swarm_types::{Pose, Role, TaskStatus};
 
     fn task(id: &str, priority: u8, x: f64, y: f64) -> Task {
         Task {
@@ -277,7 +254,7 @@ mod tests {
         let t2 = task("t2", 1, 50.0, 0.0);
         let a = agent("a0", 0.0, 0.0);
         let score_without_bundle = cbba.marginal_score(&a, &t2, &[]);
-        let score_with_bundle = cbba.marginal_score(&a, &t2, &[t1.id.clone()]);
+        let score_with_bundle = cbba.marginal_score(&a, &t2, std::slice::from_ref(&t1.id));
         assert!(score_without_bundle > score_with_bundle);
     }
 

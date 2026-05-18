@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use swarm_alloc::{
-    AllocationAgent, AllocationTask, AuctionAllocator, CentralizedPlanner,
+    AllocationAgent, AllocationTask, AuctionAllocator, CbbaAllocator, CentralizedPlanner,
     ConnectivityAwareAllocator, GreedyAllocator,
 };
 use swarm_scenarios::{build_coverage_scenario, CoverageConfig, StandardProfiles};
@@ -105,6 +105,9 @@ fn main() {
                 &allocation_agents,
             ))
         }),
+        Box::new(
+            |_scenario: &Scenario, _run_config: &RunConfig| Box::new(CbbaAllocator::default()),
+        ),
     ];
 
     // Build profile names from StandardProfiles combinations
