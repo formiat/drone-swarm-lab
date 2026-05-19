@@ -297,4 +297,13 @@ cargo run -p swarm-examples --bin strategy_comparison --mission all --json all.j
 | cbba     | coverage/ideal-single-failure | 1.000 | 1.000 | 36 | 100.0 | - | - | - |
 | cbba     | emergency-mesh/ideal | 0.200 | 0.800 | 104 | 100.0 | - | - | - |
 | cbba     | sar/ideal | 0.000 | 0.347 | 1020 | 95.2 | 2.0 | 0.15 | 0.3 |
+
+*(10 seeds per cell, quick mode)*
+
+### M11 Hardening
+
+- `mission` и `scenario` колонки в JSON/CSV заполняются реальными значениями (не пустые строки).
+- `benchmark_run_id` включает имя миссии вместо хардкоженного "coverage".
+- Property-based тесты для distributed CBBA: 2 proptest (100 случаев, ~3.4s).
+- `seed_range_start`/`seed_range_end` в export из отчёта.
 ```
