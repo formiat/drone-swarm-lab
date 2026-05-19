@@ -55,7 +55,7 @@ Swarm Coordination Runtime is a Rust workspace for mission-level coordination of
 | `swarm-comms` | Transport trait, in-memory network, UDP transport. |
 | `swarm-runtime` | Membership, failure detection, task registry, coordinator, `AgentNode`. |
 | `swarm-alloc` | Greedy and auction allocation strategies. |
-| `swarm-sim` | Deterministic clock, scenario model, generic scenario runner. |
+| `swarm-sim` | Deterministic clock, scenario model, generic scenario runner, DSL loader, JSON/CSV export. |
 | `swarm-scenarios` | Scenario builders: Coverage With Failure, Dynamic Auction, and Emergency Mesh. |
 | `swarm-metrics` | Per-run and aggregate metrics. |
 | `swarm-replay` | Placeholder for future replay support. |
@@ -306,4 +306,48 @@ cargo run -p swarm-examples --bin strategy_comparison --mission all --json all.j
 - `benchmark_run_id` включает имя миссии вместо хардкоженного "coverage".
 - Property-based тесты для distributed CBBA: 2 proptest (100 случаев, ~3.4s).
 - `seed_range_start`/`seed_range_end` в export из отчёта.
+
+### Mission DSL v0.12
+
+Декларативное описание сценариев в JSON. Сценарии становятся воспроизводимыми артефактами, новые benchmark cases добавляются без перекомпиляции.
+
+Структура `ScenarioSuite`:
+```json
+{
+  "name": "My Suite",
+  "description": "Описание набора сценариев",
+  "scenarios": [
+    {
+      "mission": "coverage",
+      "profile": "ideal-no-failures",
+      "scenario": { "name": "...", "seed": 0, "agents": [...], "tasks": [...], ... },
+      "run_config": { "max_ticks": 50, ... }
+    }
+  ]
+}
+```
+
+**CLI-флаг:** `--scenario-suite <path>` загружает сценарии из JSON вместо Rust-билдеров:
+```bash
+cargo run -p swarm-examples --bin strategy_comparison \
+  --scenario-suite scenarios/coverage.ideal.json \
+  --json results.json
+```
+
+**Примеры JSON-сценариев** в `scenarios/` директории:
+- `coverage.ideal.json` — 5 агентов, 3 задачи, идеальная сеть
+- `emergency-mesh.ideal.json` — 4 scout + 1 relay, ground node, base station
+- `sar.ideal.json` — 3 scout + 1 thermal + 1 relay, 6×6 grid, 2 hidden targets
+
+**Экспорт в JSON:**
+```rust
+use swarm_sim::{ScenarioSuite, ScenarioSuiteEntry, export_suite, load_scenario_suite};
+
+// Загрузка
+let suite = load_scenario_suite("scenarios/coverage.ideal.json")?;
+
+// Экспорт
+let json = export_suite(&suite)?;
+std::fs::write("exported.json", json)?;
+```
 ```

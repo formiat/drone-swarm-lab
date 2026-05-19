@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use rand::SeedableRng;
+use serde::{Deserialize, Serialize};
 use swarm_alloc::Allocator;
 use swarm_comms::{
     ConnectivityModel, ConnectivitySnapshot, InMemAgentTransport, InMemNetwork, NetworkConfig,
@@ -13,46 +14,68 @@ use swarm_types::{AgentId, Health, Role, Task, TaskId};
 
 use crate::{Clock, Scenario};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FailureEvent {
     pub agent_id: AgentId,
     pub at_tick: u64,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DynamicTaskEvent {
     pub at_tick: u64,
     pub task: Task,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PartitionEvent {
     pub at_tick: u64,
     pub until_tick: Option<u64>,
     pub agents: (AgentId, AgentId),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RunConfig {
     pub max_ticks: u64,
+    #[serde(default)]
     pub timeout_ticks: u64,
+    #[serde(default = "default_max_unassigned")]
     pub max_unassigned_ticks: u64,
+    #[serde(default)]
     pub packet_loss_rate: f64,
+    #[serde(default)]
     pub latency_ticks: u64,
+    #[serde(default)]
     pub latency_per_hop: u64,
+    #[serde(default)]
     pub failures: Vec<FailureEvent>,
+    #[serde(default)]
     pub dynamic_tasks: Vec<DynamicTaskEvent>,
+    #[serde(default)]
     pub partition_events: Vec<PartitionEvent>,
+    #[serde(default = "default_gossip_interval")]
     pub gossip_interval_ticks: u64,
-    // v0.5: base station identifier for connectivity metrics
+    #[serde(default)]
     pub base_id: Option<AgentId>,
-    // v0.8: movement config
+    #[serde(default)]
     pub enable_movement: bool,
+    #[serde(default = "default_tick_duration")]
     pub tick_duration_ms: u64,
-    // v0.9: SAR grid state
+    #[serde(default)]
     pub grid_state: Option<GridState>,
-    // v0.10 Phase 1
+    #[serde(default)]
     pub enable_cbba: bool,
+}
+
+fn default_max_unassigned() -> u64 {
+    10
+}
+
+fn default_gossip_interval() -> u64 {
+    999
+}
+
+fn default_tick_duration() -> u64 {
+    100
 }
 
 pub struct ScenarioRunner;

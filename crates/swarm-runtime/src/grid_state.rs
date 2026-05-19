@@ -1,16 +1,20 @@
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 
 use swarm_types::{AgentId, CellState, HiddenTarget, Role, SearchGrid, SensorModel};
 
 /// Mutable grid scan progress, target placement, and scan results.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GridState {
     pub grid: SearchGrid,
     pub cells: Vec<CellState>,
     pub targets: Vec<HiddenTarget>,
     pub sensor: SensorModel,
+    #[serde(default)]
     pub targets_found: u32,
+    #[serde(default)]
     pub first_find_tick: Option<u64>,
+    #[serde(default)]
     pub scan_count: u32,
 }
 
