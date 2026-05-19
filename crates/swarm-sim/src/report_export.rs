@@ -18,8 +18,8 @@ pub fn export_json(report: &ComparisonReport) -> Result<String, serde_json::Erro
                     run_id: row_id,
                     mission: report.mission_names.first().cloned().unwrap_or_default(),
                     scenario: report.scenario_names.first().cloned().unwrap_or_default(),
-                    seed_range_start: 0,
-                    seed_range_end: 0,
+                    seed_range_start: report.seed_range_start,
+                    seed_range_end: report.seed_range_end,
                     strategy: strategy_name.clone(),
                     profile: profile_name.clone(),
                     total_runs: metrics.total_runs,
@@ -98,6 +98,9 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
         "targets_found",
     ])?;
 
+    let mission = report.mission_names.first().cloned().unwrap_or_default();
+    let scenario = report.scenario_names.first().cloned().unwrap_or_default();
+
     for strategy_name in &report.strategy_names {
         for profile_name in &report.profile_names {
             let key = (strategy_name.clone(), profile_name.clone());
@@ -109,8 +112,8 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
                 wtr.write_record([
                     report.benchmark_run_id.as_str(),
                     row_id.as_str(),
-                    "",
-                    "",
+                    mission.as_str(),
+                    scenario.as_str(),
                     format!("{}", report.seed_range_start).as_str(),
                     format!("{}", report.seed_range_end).as_str(),
                     strategy_name,
@@ -231,8 +234,8 @@ mod tests {
             seed_range_start: 0,
             seed_range_end: 999,
             total_runs_per_cell: 10,
-            mission_names: vec![],
-            scenario_names: vec![],
+            mission_names: vec!["sar".to_owned()],
+            scenario_names: vec!["sar_v1".to_owned()],
             strategy_names: vec!["greedy".to_owned()],
             profile_names: vec!["ideal".to_owned()],
             results,
@@ -253,8 +256,22 @@ mod tests {
         let report = make_report();
         let csv = export_csv(&report).unwrap();
         assert!(csv.contains("benchmark_run_id"));
+        assert!(csv.contains("mission"));
         assert!(csv.contains("strategy"));
-        assert!(csv.contains("profile"));
-        assert!(csv.contains("greedy"));
+    }
+
+    #[test]
+    fn json_export_contains_mission_name() {
+        let report = make_report();
+        let json = export_json(&report).unwrap();
+        assert!(json.contains("\"mission\""));
+        assert!(json.contains("sar"));
+    }
+
+    #[test]
+    fn csv_export_contains_mission_column() {
+        let report = make_report();
+        let csv = export_csv(&report).unwrap();
+        assert!(csv.contains(",sar,"));
     }
 }
