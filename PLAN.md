@@ -90,19 +90,37 @@ proptest! {
 
 ### Шаг 4 — Full benchmark + README update
 
-Запустить `cargo run --bin strategy_comparison -- --mission all --full --json /tmp/full.json` (1000 seeds). Обновить таблицу в README с новыми числами.
+Запустить `cargo run --bin strategy_comparison -- --mission all --full --json /tmp/full.json` (1000 seeds).
+
+Обновить **все 9 строк** таблицы в README (раздел `### Benchmark Results`). Заменить quick-mode числа (10 seeds) на full-mode (1000 seeds). Формат строки: `| strategy | profile | success | coverage | conflicts | battery_avg | ttf | pod | targets |`. Добавить пометку `(1000 seeds)` в заголовок таблицы.
+
+Если full benchmark занимает более 60 минут — разрешить прервать, сохранить доступные результаты, обновить README частично с пометкой `(partial, N seeds)`.
 
 ---
 
-## Verification Commands
+## Testing Strategy
 
-```bash
-cargo fmt --all
-cargo clippy --all-targets -- -D warnings
-cargo build --workspace
-cargo test --workspace
-cargo run --bin strategy_comparison -- --mission all --full --json /tmp/full.json
-```
+### Категория 1 — unit тесты (без рефакторинга)
+
+- `json_export_contains_mission_name` — экспортированный JSON содержит непустое `mission` поле
+- `csv_export_contains_mission_column` — CSV содержит непустую колонку mission
+- `benchmark_run_id_contains_mission_name` — run_id содержит mission имя (не хардкод "coverage")
+- `cbba_proptest_no_panic` — property: CBBA не паникует на случайных inputs
+- `cbba_proptest_success_bounded` — property: success_rate в [0.0, 1.0] для любых inputs
+
+### Категория 2 — integration (лёгкий рефакторинг)
+
+- `strategy_comparison_all_export_has_mission_per_row` — `--mission all --json` содержит разные mission имена в строках
+- `strategy_comparison_benchmark_run_id_differs_per_mission` — coverage и sar миссии имеют разные run_id
+- `cbba_distributed_path_succeeds` — существующий тест (уже есть)
+
+### Категория 3 — manual / тяжёлый
+
+- `cargo run --bin strategy_comparison -- --mission all --full --json /tmp/full.json` — 1000-seed прогон для обновления README (15-60 минут)
+
+### Покрытие gap
+
+- **Gap для proptest**: нет детерминированных ожиданий для random топологии. Свойства: no panic (уже покрыто), success rate в допустимых пределах (0-100%), convergence в пределах max_ticks. Этого достаточно для hardening.
 
 ---
 
@@ -136,3 +154,4 @@ CBBA с 6 агентами может требовать много тиков. 
 
 1. **Нужен ли separate proptest crate?** — Нет, `swarm-sim/tests/` подходит как location.
 2. **Full-mode benchmark — сколько времени?** — 1000 seeds × 5 strategies × 11 profiles × 3 missions ≈ 165,000 runs. ~30-60 минут. Запускать отдельно не в CI.
+3. **Как валидировать proptest для CBBA без детерминированных ожиданий?** — Property-based: no panic (crash safety), success_rate ∈ [0.0, 1.0] (bounded), convergence within max_ticks (termination). Этого достаточно для hardening; точные expected values — v1.0.
