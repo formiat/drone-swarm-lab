@@ -86,10 +86,20 @@ pub type ScenarioBuilder = Box<dyn Fn(u64, &str) -> (Scenario, RunConfig)>;
 pub type StrategyFactory = Box<dyn Fn(&Scenario, &RunConfig) -> Box<dyn Strategy>>;
 
 /// Options for running a benchmark.
-#[derive(Default)]
 pub struct BenchmarkOptions<'a> {
     pub prefix: Option<&'a str>,
     pub enable_replay_log: bool,
+    pub mission_name: &'a str,
+}
+
+impl Default for BenchmarkOptions<'_> {
+    fn default() -> Self {
+        Self {
+            prefix: None,
+            enable_replay_log: false,
+            mission_name: "coverage",
+        }
+    }
 }
 
 /// Result of a benchmark run, optionally including replay logs.
@@ -161,7 +171,7 @@ impl BenchmarkHarness {
     ) -> BenchmarkResult {
         let opts = options.unwrap_or_default();
         let benchmark_run_id =
-            generate_benchmark_run_id(seeds.start, seeds.end, "coverage", opts.prefix);
+            generate_benchmark_run_id(seeds.start, seeds.end, opts.mission_name, opts.prefix);
         let mut results: HashMap<(String, String), Vec<swarm_metrics::RunMetrics>> = HashMap::new();
         let mut replay_logs: Vec<swarm_replay::EventLog> = Vec::new();
 

@@ -16,8 +16,8 @@ pub fn export_json(report: &ComparisonReport) -> Result<String, serde_json::Erro
                 rows.push(ReportRow {
                     benchmark_run_id: report.benchmark_run_id.clone(),
                     run_id: row_id,
-                    mission: String::new(),
-                    scenario: String::new(),
+                    mission: report.mission_names.first().cloned().unwrap_or_default(),
+                    scenario: report.scenario_names.first().cloned().unwrap_or_default(),
                     seed_range_start: 0,
                     seed_range_end: 0,
                     strategy: strategy_name.clone(),

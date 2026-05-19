@@ -203,6 +203,7 @@ fn main() {
         let mission_options = BenchmarkOptions {
             prefix: cli.run_id_prefix.as_deref(),
             enable_replay_log: enable_replay,
+            mission_name: mname,
         };
         let result = if cli.full_mode {
             BenchmarkHarness::run_full_with_options(
