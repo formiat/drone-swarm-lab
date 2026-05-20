@@ -33,7 +33,11 @@ impl std::fmt::Display for ComparisonReport {
         let seeds = format!("{}-{}", self.seed_range_start, self.seed_range_end);
         writeln!(
             f,
-            "| Mission | Scenario | Strategy | Profile | Seeds | Success | Completion | Detection | Realloc | Coverage | Messages | Bytes | Conflicts | Stale | BatteryMin | BatteryAvg | Availability | TimeToFind | PoD | Targets |"
+            "| Mission | Scenario | Strategy | Profile | Seeds | Success | Completion | Detection | Realloc | Coverage | Messages | Bytes | Conflicts | Stale | BatteryMin | BatteryAvg | Availability | TimeToFind | PoD | Targets | BeliefEntropy | FalsePosRate | ConfirmationScans |"
+        )?;
+        writeln!(
+            f,
+            "|---------|----------|----------|---------|-------|---------|------------|-----------|---------|----------|----------|-------|-----------|-------|------------|------------|--------------|-----------|-----|---------|---------------|--------------|-------------------|"
         )?;
         writeln!(
             f,
@@ -50,7 +54,7 @@ impl std::fmt::Display for ComparisonReport {
                     };
                     writeln!(
                         f,
-                        "| {:7} | {:8} | {:8} | {:7} | {:5} | {:7.3} | {:10.3} | {:9.3} | {:7.3} | {:8.3} | {:8.3} | {:5.0} | {:9.3} | {:5.0} | {:10.3} | {:10.3} | {:12.3} | {:>10} | {:3.3} | {:7.1} |",
+                        "| {:7} | {:8} | {:8} | {:7} | {:5} | {:7.3} | {:10.3} | {:9.3} | {:7.3} | {:8.3} | {:8.3} | {:5.0} | {:9.3} | {:5.0} | {:10.3} | {:10.3} | {:12.3} | {:>10} | {:3.3} | {:7.1} | {:13.3} | {:12.3} | {:17.3} |",
                         mission,
                         scenario,
                         strategy_name,
@@ -71,6 +75,9 @@ impl std::fmt::Display for ComparisonReport {
                         ttf,
                         metrics.avg_probability_of_detection,
                         metrics.avg_targets_found,
+                        metrics.avg_belief_entropy_final,
+                        metrics.avg_false_positive_rate,
+                        metrics.avg_confirmation_scans,
                     )?;
                 }
             }

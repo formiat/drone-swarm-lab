@@ -49,6 +49,9 @@ pub fn export_json(report: &ComparisonReport) -> Result<String, serde_json::Erro
                     probability_of_detection: metrics.avg_probability_of_detection,
                     targets_found: metrics.avg_targets_found,
                     safety_violations: metrics.avg_safety_violations,
+                    belief_entropy_final: metrics.avg_belief_entropy_final,
+                    false_positive_rate: metrics.avg_false_positive_rate,
+                    confirmation_scans: metrics.avg_confirmation_scans,
                 });
             }
         }
@@ -98,6 +101,9 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
         "probability_of_detection",
         "targets_found",
         "safety_violations",
+        "belief_entropy_final",
+        "false_positive_rate",
+        "confirmation_scans",
     ])?;
 
     let mission = report.mission_names.first().cloned().unwrap_or_default();
@@ -143,6 +149,9 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
                     format!("{:.3}", m.avg_probability_of_detection).as_str(),
                     format!("{:.3}", m.avg_targets_found).as_str(),
                     format!("{:.3}", m.avg_safety_violations).as_str(),
+                    format!("{:.3}", m.avg_belief_entropy_final).as_str(),
+                    format!("{:.3}", m.avg_false_positive_rate).as_str(),
+                    format!("{:.3}", m.avg_confirmation_scans).as_str(),
                 ])?;
             }
         }
@@ -196,6 +205,9 @@ struct ReportRow {
     probability_of_detection: f64,
     targets_found: f64,
     safety_violations: f64,
+    belief_entropy_final: f64,
+    false_positive_rate: f64,
+    confirmation_scans: f64,
 }
 
 #[cfg(test)]
