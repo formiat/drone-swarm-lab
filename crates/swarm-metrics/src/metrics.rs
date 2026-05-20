@@ -73,6 +73,13 @@ pub struct RunMetrics {
     // v0.13 Safety metrics
     #[serde(default)]
     pub safety_violations: u64,
+    // v0.14 SAR v2 belief metrics
+    #[serde(default)]
+    pub belief_entropy_final: f64,
+    #[serde(default)]
+    pub false_positives: u32,
+    #[serde(default)]
+    pub confirmation_scans: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -105,6 +112,13 @@ pub struct AggregateMetrics {
     // v0.13 Safety aggregation
     #[serde(default)]
     pub avg_safety_violations: f64,
+    // v0.14 SAR v2 belief aggregation
+    #[serde(default)]
+    pub avg_belief_entropy_final: f64,
+    #[serde(default)]
+    pub avg_false_positive_rate: f64,
+    #[serde(default)]
+    pub avg_confirmation_scans: f64,
 }
 
 impl AggregateMetrics {
@@ -134,6 +148,9 @@ impl AggregateMetrics {
                 avg_probability_of_detection: 0.0,
                 avg_targets_found: 0.0,
                 avg_safety_violations: 0.0,
+                avg_belief_entropy_final: 0.0,
+                avg_false_positive_rate: 0.0,
+                avg_confirmation_scans: 0.0,
             };
         }
 
@@ -160,6 +177,11 @@ impl AggregateMetrics {
             runs.iter().map(|run| run.probability_of_detection).sum();
         let total_targets_found: u64 = runs.iter().map(|run| run.targets_found as u64).sum();
         let total_safety_violations: u64 = runs.iter().map(|run| run.safety_violations).sum();
+        let total_belief_entropy: f64 = runs.iter().map(|run| run.belief_entropy_final).sum();
+        let total_false_positives: u64 = runs.iter().map(|run| run.false_positives as u64).sum();
+        let total_confirmation_scans: u64 =
+            runs.iter().map(|run| run.confirmation_scans as u64).sum();
+        let total_scan_count: u64 = runs.iter().map(|run| run.scan_count as u64).sum();
         let n = runs.len() as f64;
 
         Self {
@@ -194,6 +216,13 @@ impl AggregateMetrics {
             avg_probability_of_detection: total_probability_of_detection / n,
             avg_targets_found: total_targets_found as f64 / n,
             avg_safety_violations: total_safety_violations as f64 / n,
+            avg_belief_entropy_final: total_belief_entropy / n,
+            avg_false_positive_rate: if total_scan_count > 0 {
+                total_false_positives as f64 / total_scan_count as f64
+            } else {
+                0.0
+            },
+            avg_confirmation_scans: total_confirmation_scans as f64 / n,
         }
     }
 }
@@ -269,7 +298,22 @@ impl fmt::Display for AggregateMetrics {
             "avg_probability_of_detection: {:.3}",
             self.avg_probability_of_detection
         )?;
-        write!(f, "avg_targets_found: {:.3}", self.avg_targets_found)
+        writeln!(f, "avg_targets_found: {:.3}", self.avg_targets_found)?;
+        writeln!(
+            f,
+            "avg_belief_entropy_final: {:.3}",
+            self.avg_belief_entropy_final
+        )?;
+        writeln!(
+            f,
+            "avg_false_positive_rate: {:.3}",
+            self.avg_false_positive_rate
+        )?;
+        write!(
+            f,
+            "avg_confirmation_scans: {:.3}",
+            self.avg_confirmation_scans
+        )
     }
 }
 
@@ -337,6 +381,9 @@ mod tests {
             cbba_converged: false,
             cbba_messages: 0,
             safety_violations: 0,
+            belief_entropy_final: 0.0,
+            false_positives: 0,
+            confirmation_scans: 0,
         }
     }
 

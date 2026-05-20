@@ -14,6 +14,7 @@ fn main() {
         tick_duration_ms: 1000,
         max_ticks: 300,
         seed: 42,
+        prior: 0.05,
     };
 
     let (scenario, run_config) = build_sar_scenario(&config);

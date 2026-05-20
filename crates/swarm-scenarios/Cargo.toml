@@ -12,3 +12,4 @@ swarm-types = { workspace = true }
 [dev-dependencies]
 proptest = { workspace = true }
 swarm-alloc = { workspace = true }
+serde_json = { workspace = true }

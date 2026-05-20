@@ -916,6 +916,19 @@ impl ScenarioRunner {
                     .sum(),
                 // v0.13 Safety
                 safety_violations,
+                // v0.14 SAR v2 belief metrics
+                belief_entropy_final: grid_state
+                    .as_ref()
+                    .and_then(|g| g.belief_map.as_ref().map(|bm| bm.mean_entropy()))
+                    .unwrap_or(0.0),
+                false_positives: grid_state
+                    .as_ref()
+                    .and_then(|g| g.belief_map.as_ref().map(|bm| bm.false_positives))
+                    .unwrap_or(0),
+                confirmation_scans: grid_state
+                    .as_ref()
+                    .and_then(|g| g.belief_map.as_ref().map(|bm| bm.confirmation_scans))
+                    .unwrap_or(0),
             },
             event_log,
         )

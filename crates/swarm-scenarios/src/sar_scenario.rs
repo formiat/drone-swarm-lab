@@ -19,6 +19,7 @@ pub struct SarScenarioConfig {
     pub tick_duration_ms: u64,
     pub max_ticks: u64,
     pub seed: u64,
+    pub prior: f64, // v0.14 SAR v2: prior probability for BeliefMap
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -27,6 +28,8 @@ pub enum SarProfile {
     Standard,
     Challenging,
     BatteryConstrained,
+    Uncertain, // v0.14 SAR v2
+    Noisy,     // v0.14 SAR v2
 }
 
 impl SarProfile {
@@ -37,6 +40,8 @@ impl SarProfile {
             "standard" => Some(Self::Standard),
             "challenging" => Some(Self::Challenging),
             "battery-constrained" | "batteryconstrained" => Some(Self::BatteryConstrained),
+            "uncertain" => Some(Self::Uncertain),
+            "noisy" => Some(Self::Noisy),
             _ => None,
         }
     }
@@ -49,11 +54,12 @@ impl SarProfile {
                 scout_count: 3,
                 thermal_count: 1,
                 relay_count: 1,
-                sensor: SensorModel::new(0.6, 0.95, 0.2),
+                sensor: SensorModel::new_v2(0.6, 0.95, 0.2, 0.6, 0.05),
                 enable_movement: true,
                 tick_duration_ms: 1000,
                 max_ticks: 300,
                 seed,
+                prior: 0.05,
             },
             Self::Standard => SarScenarioConfig {
                 grid: SearchGrid::new(8, 8, 10.0),
@@ -61,11 +67,12 @@ impl SarProfile {
                 scout_count: 3,
                 thermal_count: 2,
                 relay_count: 2,
-                sensor: SensorModel::new(0.4, 0.85, 0.15),
+                sensor: SensorModel::new_v2(0.4, 0.85, 0.15, 0.5, 0.1),
                 enable_movement: true,
                 tick_duration_ms: 1000,
                 max_ticks: 400,
                 seed,
+                prior: 0.05,
             },
             Self::Challenging => SarScenarioConfig {
                 grid: SearchGrid::new(10, 10, 10.0),
@@ -73,11 +80,12 @@ impl SarProfile {
                 scout_count: 4,
                 thermal_count: 2,
                 relay_count: 2,
-                sensor: SensorModel::new(0.3, 0.75, 0.1),
+                sensor: SensorModel::new_v2(0.3, 0.75, 0.1, 0.4, 0.15),
                 enable_movement: true,
                 tick_duration_ms: 1000,
                 max_ticks: 500,
                 seed,
+                prior: 0.05,
             },
             Self::BatteryConstrained => SarScenarioConfig {
                 grid: SearchGrid::new(6, 6, 10.0),
@@ -85,11 +93,38 @@ impl SarProfile {
                 scout_count: 3,
                 thermal_count: 1,
                 relay_count: 1,
-                sensor: SensorModel::new(0.5, 0.9, 0.15),
+                sensor: SensorModel::new_v2(0.5, 0.9, 0.15, 0.5, 0.1),
                 enable_movement: true,
                 tick_duration_ms: 1000,
                 max_ticks: 300,
                 seed,
+                prior: 0.05,
+            },
+            Self::Uncertain => SarScenarioConfig {
+                grid: SearchGrid::new(6, 6, 10.0),
+                target_count: 2,
+                scout_count: 3,
+                thermal_count: 1,
+                relay_count: 1,
+                sensor: SensorModel::new_v2(0.4, 0.7, 0.15, 0.5, 0.2),
+                enable_movement: true,
+                tick_duration_ms: 1000,
+                max_ticks: 400,
+                seed,
+                prior: 0.05,
+            },
+            Self::Noisy => SarScenarioConfig {
+                grid: SearchGrid::new(6, 6, 10.0),
+                target_count: 2,
+                scout_count: 3,
+                thermal_count: 1,
+                relay_count: 1,
+                sensor: SensorModel::new_v2(0.3, 0.6, 0.1, 0.4, 0.4),
+                enable_movement: true,
+                tick_duration_ms: 1000,
+                max_ticks: 500,
+                seed,
+                prior: 0.05,
             },
         }
     }
@@ -99,8 +134,27 @@ pub struct SarStandardProfiles;
 
 impl SarStandardProfiles {
     pub fn profile_names() -> Vec<&'static str> {
-        vec!["ideal", "standard", "challenging", "battery-constrained"]
+        vec![
+            "ideal",
+            "standard",
+            "challenging",
+            "battery-constrained",
+            "uncertain",
+            "noisy",
+        ]
     }
+}
+
+/// Calculate SAR task priority based on belief entropy.
+/// For v0.14: static priority using initial prior entropy.
+pub fn sar_task_priority(prior: f64) -> u8 {
+    let entropy = if prior <= 0.0 || prior >= 1.0 {
+        0.0
+    } else {
+        -prior * prior.log2() - (1.0 - prior) * (1.0 - prior).log2()
+    };
+    let raw = entropy * prior * 20.0;
+    raw.clamp(1.0, 10.0) as u8
 }
 
 pub fn build_sar_scenario(config: &SarScenarioConfig) -> (Scenario, RunConfig) {
@@ -129,7 +183,7 @@ pub fn build_sar_scenario(config: &SarScenarioConfig) -> (Scenario, RunConfig) {
                 id: TaskId::from(format!("cell-{cell_idx}")),
                 status: TaskStatus::Unassigned,
                 assigned_to: None,
-                priority: 1,
+                priority: sar_task_priority(config.prior),
                 required_capabilities: vec![],
                 required_role: None,
                 preferred_role: None,
@@ -180,10 +234,11 @@ pub fn build_sar_scenario(config: &SarScenarioConfig) -> (Scenario, RunConfig) {
     }
 
     let grid_state =
-        swarm_runtime::GridState::new(config.grid.clone(), targets.clone(), config.sensor.clone());
+        swarm_runtime::GridState::new(config.grid.clone(), targets.clone(), config.sensor.clone())
+            .with_belief(config.prior);
 
     let scenario = Scenario {
-        name: "sar_v1".to_owned(),
+        name: "sar_v2".to_owned(),
         seed: config.seed,
         agents,
         tasks,
@@ -230,6 +285,7 @@ mod tests {
             tick_duration_ms: 1000,
             max_ticks: 500,
             seed: 42,
+            prior: 0.05,
         };
         let (scenario, _) = build_sar_scenario(&config);
         assert_eq!(scenario.agents.len(), 5);
@@ -248,6 +304,7 @@ mod tests {
             tick_duration_ms: 1000,
             max_ticks: 500,
             seed: 42,
+            prior: 0.05,
         };
         let (_, run_config) = build_sar_scenario(&config);
         let grid_state = run_config.grid_state.unwrap();
@@ -299,13 +356,31 @@ mod tests {
     }
 
     #[test]
+    fn sar_task_priority_range() {
+        let p = sar_task_priority(0.05);
+        assert!((1..=10).contains(&p));
+    }
+
+    #[test]
+    fn sar_task_priority_high_entropy_wins() {
+        let p_half = sar_task_priority(0.5);
+        let p_extreme = sar_task_priority(0.99);
+        assert!(
+            p_half > p_extreme,
+            "entropy at 0.5 should give higher priority"
+        );
+    }
+
+    #[test]
     fn sar_standard_profiles_names() {
         let names = SarStandardProfiles::profile_names();
-        assert_eq!(names.len(), 4);
+        assert_eq!(names.len(), 6);
         assert!(names.contains(&"ideal"));
         assert!(names.contains(&"standard"));
         assert!(names.contains(&"challenging"));
         assert!(names.contains(&"battery-constrained"));
+        assert!(names.contains(&"uncertain"));
+        assert!(names.contains(&"noisy"));
     }
 
     #[test]
@@ -321,6 +396,7 @@ mod tests {
             tick_duration_ms: 1000,
             max_ticks: 500,
             seed: 42,
+            prior: 0.05,
         };
         let (scenario, _) = build_sar_scenario(&config);
         assert_eq!(scenario.tasks.len(), 12); // 4 * 3

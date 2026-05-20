@@ -1,7 +1,7 @@
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
-use swarm_types::{AgentId, CellState, HiddenTarget, Role, SearchGrid, SensorModel};
+use swarm_types::{AgentId, BeliefMap, CellState, HiddenTarget, Role, SearchGrid, SensorModel};
 
 /// Mutable grid scan progress, target placement, and scan results.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -16,6 +16,9 @@ pub struct GridState {
     pub first_find_tick: Option<u64>,
     #[serde(default)]
     pub scan_count: u32,
+    // v0.14 SAR v2 belief map
+    #[serde(default)]
+    pub belief_map: Option<BeliefMap>,
 }
 
 impl GridState {
@@ -29,7 +32,14 @@ impl GridState {
             targets_found: 0,
             first_find_tick: None,
             scan_count: 0,
+            belief_map: None,
         }
+    }
+
+    /// Enable SAR v2 belief tracking with the given prior probability.
+    pub fn with_belief(mut self, prior: f64) -> Self {
+        self.belief_map = Some(BeliefMap::new(&self.grid, prior));
+        self
     }
 
     /// Scan a cell when an agent arrives at its center.
@@ -61,10 +71,23 @@ impl GridState {
             .iter()
             .find(|t| t.cell_x == cell_x && t.cell_y == cell_y);
 
+        let pod = self.sensor.probability(role);
+        let roll: f64 = rng.gen();
+        let detected = roll < pod;
+
+        // SAR v2: update belief map with Bayes rule
+        if let Some(ref mut bm) = self.belief_map {
+            bm.update((cell_x, cell_y), detected, &self.sensor);
+            if detected && target_here.is_none() {
+                bm.false_positives += 1;
+            }
+            if bm.cells[cell_y as usize][cell_x as usize].scan_count > 1 {
+                bm.confirmation_scans += 1;
+            }
+        }
+
         if let Some(target) = target_here {
-            let pod = self.sensor.probability(role);
-            let roll: f64 = rng.gen();
-            if roll < pod {
+            if detected {
                 // Target found!
                 self.cells[cell_idx] = CellState::TargetFound {
                     target_id: target.id.clone(),

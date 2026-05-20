@@ -232,6 +232,9 @@ mod tests {
                 avg_probability_of_detection: 0.0,
                 avg_targets_found: 0.0,
                 avg_safety_violations: 0.0,
+                avg_belief_entropy_final: 0.0,
+                avg_false_positive_rate: 0.0,
+                avg_confirmation_scans: 0.0,
             },
         );
         ComparisonReport {

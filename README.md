@@ -380,3 +380,58 @@ cargo run -p swarm-examples --bin strategy_comparison \
 ```
 
 **Метрика:** `safety_violations` — количество нарушений за прогон (0 = идеально).
+
+### M14 — SAR v2 / Uncertainty Map
+
+Поисково-спасательная миссия с вероятностной картой уверенности (BeliefMap), Bayes-обновлением, повторными сканированиями и учётом ложных срабатываний.
+
+**BeliefMap:**
+- Каждая ячейка имеет `prior` и `posterior` вероятность наличия цели.
+- Bayes-обновление при каждом сканировании: `P(target|detection)` и `P(target|no_detection)`.
+- `entropy(cell)` — неопределённость Шеннона; максимум при `posterior = 0.5`.
+- `highest_uncertainty_cells(n)` — возвращает ячейки с наибольшей энтропией для приоритизации.
+
+**SensorModel v2:**
+```rust
+SensorModel {
+    scout_pod: 0.6,
+    thermal_pod: 0.95,
+    relay_pod: 0.2,
+    detection_probability: 0.6,  // P(detect | target present)
+    false_positive_rate: 0.05,   // P(detect | no target)
+}
+```
+- Role-based PoD остаётся для backward compatibility (SAR v1).
+- `detection_probability` и `false_positive_rate` используются в Bayes-обновлении.
+
+**Повторные сканирования:**
+- Если `posterior ∈ (0.05, 0.95)` — ячейка требует повторного сканирования (confirmation scan).
+- `confirmation_scans` — метрика количества повторных сканов.
+- `false_positives` — количество detection-событий без реальной цели.
+
+**Приоритизация на основе неопределённости:**
+- `sar_task_priority(prior)` — статический priority при создании сценария (v0.14).
+- Priority ∝ `entropy × prior`, масштабировано в диапазон [1, 10].
+
+**Новые метрики:**
+- `belief_entropy_final` — средняя энтропия BeliefMap после прогона.
+- `false_positives` — количество ложных срабатываний.
+- `confirmation_scans` — количество повторных сканирований.
+
+**Профили:**
+- `Uncertain` — moderate PoD (0.5), moderate FPR (0.2), требует repeated scans.
+- `Noisy` — high FPR (0.4), требует многократных подтверждений.
+
+**Запуск SAR v2:**
+```bash
+cargo run -p swarm-examples --bin strategy_comparison \
+  --scenario-suite scenarios/sar.uncertain.json --json sar_v2.json
+
+cargo run -p swarm-examples --bin strategy_comparison \
+  --scenario-suite scenarios/sar.noisy.json --json sar_noisy.json
+```
+
+**Сценарии:**
+- `scenarios/sar.ideal.json` — обновлён до SAR v2 (belief-aware)
+- `scenarios/sar.uncertain.json` — moderate PoD + FPR
+- `scenarios/sar.noisy.json` — high FPR, требует repeated scans

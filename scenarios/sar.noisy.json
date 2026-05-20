@@ -1,0 +1,1078 @@
+{
+  "name": "SAR Noisy Bench",
+  "description": "Search-and-rescue Noisy profile.",
+  "scenarios": [
+    {
+      "mission": "sar",
+      "profile": "noisy",
+      "scenario": {
+        "name": "sar_v2",
+        "seed": 0,
+        "agents": [
+          {
+            "id": "agent-0",
+            "role": "scout",
+            "health": "alive",
+            "pose": {
+              "x": 40.28866343236311,
+              "y": 52.23768378027005
+            },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 15.0,
+            "generation": 1,
+            "speed": 5.0,
+            "max_range": 500.0,
+            "battery_drain_rate": 0.0
+          },
+          {
+            "id": "agent-1",
+            "role": "scout",
+            "health": "alive",
+            "pose": {
+              "x": 7.369781019103292,
+              "y": 4.221929587963773
+            },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 15.0,
+            "generation": 1,
+            "speed": 5.0,
+            "max_range": 500.0,
+            "battery_drain_rate": 0.0
+          },
+          {
+            "id": "agent-2",
+            "role": "scout",
+            "health": "alive",
+            "pose": {
+              "x": 47.343184154741884,
+              "y": 37.043608456762215
+            },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 15.0,
+            "generation": 1,
+            "speed": 5.0,
+            "max_range": 500.0,
+            "battery_drain_rate": 0.0
+          },
+          {
+            "id": "agent-3",
+            "role": "thermal",
+            "health": "alive",
+            "pose": {
+              "x": 31.809283486791024,
+              "y": 50.99899111737875
+            },
+            "capabilities": [
+              "thermal"
+            ],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 12.0,
+            "generation": 1,
+            "speed": 4.0,
+            "max_range": 500.0,
+            "battery_drain_rate": 0.0
+          },
+          {
+            "id": "agent-4",
+            "role": "relay",
+            "health": "alive",
+            "pose": {
+              "x": 16.948328032106865,
+              "y": 2.7728738701815114
+            },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 20.0,
+            "generation": 1,
+            "speed": 3.0,
+            "max_range": 500.0,
+            "battery_drain_rate": 0.0
+          }
+        ],
+        "tasks": [
+          {
+            "id": "cell-0",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 5.0,
+              "y": 5.0
+            },
+            "grid_cell": [
+              0,
+              0
+            ]
+          },
+          {
+            "id": "cell-1",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 15.0,
+              "y": 5.0
+            },
+            "grid_cell": [
+              1,
+              0
+            ]
+          },
+          {
+            "id": "cell-2",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 25.0,
+              "y": 5.0
+            },
+            "grid_cell": [
+              2,
+              0
+            ]
+          },
+          {
+            "id": "cell-3",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 35.0,
+              "y": 5.0
+            },
+            "grid_cell": [
+              3,
+              0
+            ]
+          },
+          {
+            "id": "cell-4",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 45.0,
+              "y": 5.0
+            },
+            "grid_cell": [
+              4,
+              0
+            ]
+          },
+          {
+            "id": "cell-5",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 55.0,
+              "y": 5.0
+            },
+            "grid_cell": [
+              5,
+              0
+            ]
+          },
+          {
+            "id": "cell-6",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 5.0,
+              "y": 15.0
+            },
+            "grid_cell": [
+              0,
+              1
+            ]
+          },
+          {
+            "id": "cell-7",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 15.0,
+              "y": 15.0
+            },
+            "grid_cell": [
+              1,
+              1
+            ]
+          },
+          {
+            "id": "cell-8",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 25.0,
+              "y": 15.0
+            },
+            "grid_cell": [
+              2,
+              1
+            ]
+          },
+          {
+            "id": "cell-9",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 35.0,
+              "y": 15.0
+            },
+            "grid_cell": [
+              3,
+              1
+            ]
+          },
+          {
+            "id": "cell-10",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 45.0,
+              "y": 15.0
+            },
+            "grid_cell": [
+              4,
+              1
+            ]
+          },
+          {
+            "id": "cell-11",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 55.0,
+              "y": 15.0
+            },
+            "grid_cell": [
+              5,
+              1
+            ]
+          },
+          {
+            "id": "cell-12",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 5.0,
+              "y": 25.0
+            },
+            "grid_cell": [
+              0,
+              2
+            ]
+          },
+          {
+            "id": "cell-13",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 15.0,
+              "y": 25.0
+            },
+            "grid_cell": [
+              1,
+              2
+            ]
+          },
+          {
+            "id": "cell-14",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 25.0,
+              "y": 25.0
+            },
+            "grid_cell": [
+              2,
+              2
+            ]
+          },
+          {
+            "id": "cell-15",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 35.0,
+              "y": 25.0
+            },
+            "grid_cell": [
+              3,
+              2
+            ]
+          },
+          {
+            "id": "cell-16",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 45.0,
+              "y": 25.0
+            },
+            "grid_cell": [
+              4,
+              2
+            ]
+          },
+          {
+            "id": "cell-17",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 55.0,
+              "y": 25.0
+            },
+            "grid_cell": [
+              5,
+              2
+            ]
+          },
+          {
+            "id": "cell-18",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 5.0,
+              "y": 35.0
+            },
+            "grid_cell": [
+              0,
+              3
+            ]
+          },
+          {
+            "id": "cell-19",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 15.0,
+              "y": 35.0
+            },
+            "grid_cell": [
+              1,
+              3
+            ]
+          },
+          {
+            "id": "cell-20",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 25.0,
+              "y": 35.0
+            },
+            "grid_cell": [
+              2,
+              3
+            ]
+          },
+          {
+            "id": "cell-21",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 35.0,
+              "y": 35.0
+            },
+            "grid_cell": [
+              3,
+              3
+            ]
+          },
+          {
+            "id": "cell-22",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 45.0,
+              "y": 35.0
+            },
+            "grid_cell": [
+              4,
+              3
+            ]
+          },
+          {
+            "id": "cell-23",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 55.0,
+              "y": 35.0
+            },
+            "grid_cell": [
+              5,
+              3
+            ]
+          },
+          {
+            "id": "cell-24",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 5.0,
+              "y": 45.0
+            },
+            "grid_cell": [
+              0,
+              4
+            ]
+          },
+          {
+            "id": "cell-25",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 15.0,
+              "y": 45.0
+            },
+            "grid_cell": [
+              1,
+              4
+            ]
+          },
+          {
+            "id": "cell-26",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 25.0,
+              "y": 45.0
+            },
+            "grid_cell": [
+              2,
+              4
+            ]
+          },
+          {
+            "id": "cell-27",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 35.0,
+              "y": 45.0
+            },
+            "grid_cell": [
+              3,
+              4
+            ]
+          },
+          {
+            "id": "cell-28",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 45.0,
+              "y": 45.0
+            },
+            "grid_cell": [
+              4,
+              4
+            ]
+          },
+          {
+            "id": "cell-29",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 55.0,
+              "y": 45.0
+            },
+            "grid_cell": [
+              5,
+              4
+            ]
+          },
+          {
+            "id": "cell-30",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 5.0,
+              "y": 55.0
+            },
+            "grid_cell": [
+              0,
+              5
+            ]
+          },
+          {
+            "id": "cell-31",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 15.0,
+              "y": 55.0
+            },
+            "grid_cell": [
+              1,
+              5
+            ]
+          },
+          {
+            "id": "cell-32",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 25.0,
+              "y": 55.0
+            },
+            "grid_cell": [
+              2,
+              5
+            ]
+          },
+          {
+            "id": "cell-33",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 35.0,
+              "y": 55.0
+            },
+            "grid_cell": [
+              3,
+              5
+            ]
+          },
+          {
+            "id": "cell-34",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 45.0,
+              "y": 55.0
+            },
+            "grid_cell": [
+              4,
+              5
+            ]
+          },
+          {
+            "id": "cell-35",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 55.0,
+              "y": 55.0
+            },
+            "grid_cell": [
+              5,
+              5
+            ]
+          }
+        ],
+        "ground_nodes": [],
+        "base_station": null
+      },
+      "run_config": {
+        "max_ticks": 500,
+        "timeout_ticks": 3,
+        "max_unassigned_ticks": 10,
+        "packet_loss_rate": 0.0,
+        "latency_ticks": 0,
+        "latency_per_hop": 0,
+        "failures": [],
+        "dynamic_tasks": [],
+        "partition_events": [],
+        "gossip_interval_ticks": 3,
+        "base_id": null,
+        "enable_movement": true,
+        "tick_duration_ms": 1000,
+        "grid_state": {
+          "grid": {
+            "width": 6,
+            "height": 6,
+            "cell_size": 10.0
+          },
+          "cells": [
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited"
+          ],
+          "targets": [
+            {
+              "id": "target-0",
+              "cell_x": 2,
+              "cell_y": 4
+            },
+            {
+              "id": "target-1",
+              "cell_x": 5,
+              "cell_y": 4
+            }
+          ],
+          "sensor": {
+            "scout_pod": 0.3,
+            "thermal_pod": 0.6,
+            "relay_pod": 0.1,
+            "detection_probability": 0.4,
+            "false_positive_rate": 0.4
+          },
+          "targets_found": 0,
+          "first_find_tick": null,
+          "scan_count": 0,
+          "belief_map": {
+            "grid": {
+              "width": 6,
+              "height": 6,
+              "cell_size": 10.0
+            },
+            "cells": [
+              [
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                }
+              ],
+              [
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                }
+              ],
+              [
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                }
+              ],
+              [
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                }
+              ],
+              [
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                }
+              ],
+              [
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                }
+              ]
+            ],
+            "false_positives": 0,
+            "confirmation_scans": 0
+          }
+        },
+        "enable_cbba": false,
+        "safety_config": null
+      }
+    }
+  ]
+}
