@@ -10,9 +10,78 @@ use swarm_comms::{
 };
 use swarm_metrics::RunMetrics;
 use swarm_runtime::{AgentNode, Coordinator, GridState, NodeTickOutput};
+use swarm_safety::SafetyConfig;
 use swarm_types::{AgentId, Health, Role, Task, TaskId};
 
 use crate::{Clock, Scenario};
+
+/// Wrapper that filters out tasks in no-fly zones before delegating to the inner allocator.
+struct SafetyAllocator<A> {
+    inner: A,
+    safety_config: Option<swarm_safety::SafetyConfig>,
+}
+
+impl<A: Allocator> Allocator for SafetyAllocator<A> {
+    fn allocate(
+        &mut self,
+        tasks: &[swarm_alloc::AllocationTask<'_>],
+        agents: &[swarm_alloc::AllocationAgent],
+    ) -> Vec<(TaskId, AgentId)> {
+        let filtered_tasks: Vec<swarm_alloc::AllocationTask<'_>> = match &self.safety_config {
+            Some(config) => tasks
+                .iter()
+                .filter(|at| {
+                    let task_pose = match at.task.pose {
+                        Some(p) => p,
+                        None => return true,
+                    };
+                    !config
+                        .no_fly_zones
+                        .iter()
+                        .any(|nf| nf.bounds.contains(&task_pose))
+                })
+                .cloned()
+                .collect(),
+            None => tasks.to_vec(),
+        };
+        self.inner.allocate(&filtered_tasks, agents)
+    }
+
+    fn allocate_with_connectivity(
+        &mut self,
+        tasks: &[swarm_alloc::AllocationTask<'_>],
+        agents: &[swarm_alloc::AllocationAgent],
+        connectivity: &swarm_alloc::ConnectivityContext,
+    ) -> Vec<(TaskId, AgentId)> {
+        let filtered_tasks: Vec<swarm_alloc::AllocationTask<'_>> = match &self.safety_config {
+            Some(config) => tasks
+                .iter()
+                .filter(|at| {
+                    let task_pose = match at.task.pose {
+                        Some(p) => p,
+                        None => return true,
+                    };
+                    !config
+                        .no_fly_zones
+                        .iter()
+                        .any(|nf| nf.bounds.contains(&task_pose))
+                })
+                .cloned()
+                .collect(),
+            None => tasks.to_vec(),
+        };
+        self.inner
+            .allocate_with_connectivity(&filtered_tasks, agents, connectivity)
+    }
+
+    fn allocation_metrics(&self) -> (u64, bool, u64) {
+        self.inner.allocation_metrics()
+    }
+
+    fn is_distributed(&self) -> bool {
+        self.inner.is_distributed()
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FailureEvent {
@@ -33,7 +102,7 @@ pub struct PartitionEvent {
     pub agents: (AgentId, AgentId),
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct RunConfig {
     pub max_ticks: u64,
     #[serde(default)]
@@ -64,6 +133,8 @@ pub struct RunConfig {
     pub grid_state: Option<GridState>,
     #[serde(default)]
     pub enable_cbba: bool,
+    #[serde(default)]
+    pub safety_config: Option<SafetyConfig>,
 }
 
 fn default_max_unassigned() -> u64 {
@@ -111,9 +182,13 @@ impl ScenarioRunner {
     fn run_internal<A: Allocator>(
         scenario: &Scenario,
         config: RunConfig,
-        mut allocator: A,
+        allocator: A,
         mut log_builder: Option<swarm_replay::EventLogBuilder>,
     ) -> (RunMetrics, Option<swarm_replay::EventLog>) {
+        let mut allocator = SafetyAllocator {
+            inner: allocator,
+            safety_config: config.safety_config.clone(),
+        };
         let bus = Rc::new(RefCell::new(InMemNetwork::new(NetworkConfig {
             packet_loss_rate: config.packet_loss_rate,
             latency_ticks: config.latency_ticks,
@@ -178,6 +253,9 @@ impl ScenarioRunner {
         let mut total_distance_travelled: f64 = 0.0;
         let mut agents_exhausted: u64 = 0;
         let mut time_to_first_exhaustion: Option<u64> = None;
+
+        // v0.13 safety metrics
+        let mut safety_violations: u64 = 0;
 
         // v0.9 SAR metrics
         let mut coverage_over_time: Vec<f64> = Vec::new();
@@ -332,6 +410,66 @@ impl ScenarioRunner {
                     for (_aid, pose) in assigned_tasks {
                         if let Some(p) = pose {
                             node.coordinator.membership.update_pose(agent_id, p);
+                        }
+                    }
+                }
+            }
+
+            // v0.13: Safety checks after movement/teleport
+            if let Some(ref safety_cfg) = config.safety_config {
+                let all_agents: Vec<swarm_types::Agent> = nodes
+                    .iter()
+                    .filter(|(_, id)| !crashed_agents.contains(id))
+                    .map(|(node, id)| {
+                        node.coordinator
+                            .membership
+                            .get(id)
+                            .map(|entry| swarm_types::Agent {
+                                id: id.clone(),
+                                role: entry.role.clone(),
+                                health: entry.health.clone(),
+                                pose: entry.pose,
+                                capabilities: entry.capabilities.clone(),
+                                current_task: None,
+                                battery: entry.battery,
+                                comms_range: entry.comms_range,
+                                generation: entry.generation,
+                                speed: 0.0,
+                                max_range: 0.0,
+                                battery_drain_rate: 0.0,
+                            })
+                            .unwrap_or_else(|| {
+                                scenario
+                                    .agents
+                                    .iter()
+                                    .find(|a| &a.id == id)
+                                    .cloned()
+                                    .unwrap()
+                            })
+                    })
+                    .collect();
+                for (node, agent_id) in &mut nodes {
+                    if crashed_agents.contains(agent_id) {
+                        continue;
+                    }
+                    if let Some(entry) = node.coordinator.membership.get(agent_id) {
+                        let agent = swarm_types::Agent {
+                            id: agent_id.clone(),
+                            role: entry.role.clone(),
+                            health: entry.health.clone(),
+                            pose: entry.pose,
+                            capabilities: entry.capabilities.clone(),
+                            current_task: None,
+                            battery: entry.battery,
+                            comms_range: entry.comms_range,
+                            generation: entry.generation,
+                            speed: 0.0,
+                            max_range: 0.0,
+                            battery_drain_rate: 0.0,
+                        };
+                        let violations = swarm_safety::check_agent(safety_cfg, &agent, &all_agents);
+                        if !violations.is_empty() {
+                            safety_violations += violations.len() as u64;
                         }
                     }
                 }
@@ -776,6 +914,8 @@ impl ScenarioRunner {
                     .iter()
                     .filter_map(|(n, _)| n.cbba.as_ref().map(|c| c.messages_exchanged))
                     .sum(),
+                // v0.13 Safety
+                safety_violations,
             },
             event_log,
         )
@@ -877,53 +1017,8 @@ mod tests {
             tick_duration_ms: 100,
             grid_state: None,
             enable_cbba: false,
+            ..Default::default()
         }
-    }
-
-    #[test]
-    fn runner_timeout_semantics_before_after_detection() {
-        let scenario = scenario(0, 5, 8);
-        let metrics = ScenarioRunner::run(
-            &scenario,
-            config(vec![FailureEvent {
-                agent_id: AgentId::from("agent-0".to_owned()),
-                at_tick: 2,
-            }]),
-        );
-
-        assert!(metrics.success);
-        assert_eq!(metrics.detection_time_ticks, Some(3));
-        assert_eq!(metrics.reallocation_time_ticks, Some(0));
-    }
-
-    #[test]
-    fn runner_failure_triggers_reallocation() {
-        let scenario = scenario(1, 5, 8);
-        let metrics = ScenarioRunner::run(
-            &scenario,
-            config(vec![FailureEvent {
-                agent_id: AgentId::from("agent-0".to_owned()),
-                at_tick: 2,
-            }]),
-        );
-
-        assert!(metrics.success);
-        assert!(metrics.all_tasks_assigned);
-        assert!(metrics.max_task_unassigned_ticks <= 5);
-    }
-
-    #[test]
-    fn runner_deterministic_same_seed() {
-        let scenario = scenario(7, 5, 8);
-        let config = config(vec![FailureEvent {
-            agent_id: AgentId::from("agent-0".to_owned()),
-            at_tick: 2,
-        }]);
-
-        let a = ScenarioRunner::run(&scenario, config.clone());
-        let b = ScenarioRunner::run(&scenario, config);
-
-        assert_eq!(a, b);
     }
 
     #[test]

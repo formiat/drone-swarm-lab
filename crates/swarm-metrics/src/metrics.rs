@@ -70,6 +70,9 @@ pub struct RunMetrics {
     pub cbba_converged: bool,
     #[serde(default)]
     pub cbba_messages: u64,
+    // v0.13 Safety metrics
+    #[serde(default)]
+    pub safety_violations: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -99,6 +102,9 @@ pub struct AggregateMetrics {
     pub avg_time_to_find: f64,
     pub avg_probability_of_detection: f64,
     pub avg_targets_found: f64,
+    // v0.13 Safety aggregation
+    #[serde(default)]
+    pub avg_safety_violations: f64,
 }
 
 impl AggregateMetrics {
@@ -127,6 +133,7 @@ impl AggregateMetrics {
                 avg_time_to_find: 0.0,
                 avg_probability_of_detection: 0.0,
                 avg_targets_found: 0.0,
+                avg_safety_violations: 0.0,
             };
         }
 
@@ -152,6 +159,7 @@ impl AggregateMetrics {
         let total_probability_of_detection: f64 =
             runs.iter().map(|run| run.probability_of_detection).sum();
         let total_targets_found: u64 = runs.iter().map(|run| run.targets_found as u64).sum();
+        let total_safety_violations: u64 = runs.iter().map(|run| run.safety_violations).sum();
         let n = runs.len() as f64;
 
         Self {
@@ -185,6 +193,7 @@ impl AggregateMetrics {
             },
             avg_probability_of_detection: total_probability_of_detection / n,
             avg_targets_found: total_targets_found as f64 / n,
+            avg_safety_violations: total_safety_violations as f64 / n,
         }
     }
 }
@@ -327,6 +336,7 @@ mod tests {
             cbba_rounds_to_convergence: 0,
             cbba_converged: false,
             cbba_messages: 0,
+            safety_violations: 0,
         }
     }
 

@@ -48,6 +48,7 @@ pub fn export_json(report: &ComparisonReport) -> Result<String, serde_json::Erro
                     },
                     probability_of_detection: metrics.avg_probability_of_detection,
                     targets_found: metrics.avg_targets_found,
+                    safety_violations: metrics.avg_safety_violations,
                 });
             }
         }
@@ -96,6 +97,7 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
         "time_to_find",
         "probability_of_detection",
         "targets_found",
+        "safety_violations",
     ])?;
 
     let mission = report.mission_names.first().cloned().unwrap_or_default();
@@ -140,6 +142,7 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
                     format!("{:.3}", m.avg_time_to_find).as_str(),
                     format!("{:.3}", m.avg_probability_of_detection).as_str(),
                     format!("{:.3}", m.avg_targets_found).as_str(),
+                    format!("{:.3}", m.avg_safety_violations).as_str(),
                 ])?;
             }
         }
@@ -192,6 +195,7 @@ struct ReportRow {
     time_to_find: Option<f64>,
     probability_of_detection: f64,
     targets_found: f64,
+    safety_violations: f64,
 }
 
 #[cfg(test)]
@@ -227,6 +231,7 @@ mod tests {
                 avg_time_to_find: 0.0,
                 avg_probability_of_detection: 0.0,
                 avg_targets_found: 0.0,
+                avg_safety_violations: 0.0,
             },
         );
         ComparisonReport {

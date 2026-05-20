@@ -10,6 +10,7 @@ members = [
     "crates/swarm-replay",
     "crates/swarm-scenarios",
     "crates/swarm-examples",
+    "crates/swarm-safety",
 ]
 
 [workspace.dependencies]
@@ -21,6 +22,7 @@ swarm-alloc     = { path = "crates/swarm-alloc" }
 swarm-metrics   = { path = "crates/swarm-metrics" }
 swarm-replay    = { path = "crates/swarm-replay" }
 swarm-scenarios = { path = "crates/swarm-scenarios" }
+swarm-safety      = { path = "crates/swarm-safety" }
 chrono             = "0.4"
 csv                = "1"
 derive_more        = { version = "2", features = ["as_ref", "deref", "deref_mut", "display", "from", "into"] }

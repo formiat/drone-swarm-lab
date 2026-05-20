@@ -94,6 +94,7 @@ mod tests {
                 tick_duration_ms: 100,
                 grid_state: None,
                 enable_cbba: false,
+                ..Default::default()
             },
         }
     }

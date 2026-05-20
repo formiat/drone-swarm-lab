@@ -754,6 +754,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "swarm-safety"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "swarm-types",
+]
+
+[[package]]
 name = "swarm-scenarios"
 version = "0.1.0"
 dependencies = [
@@ -781,6 +790,7 @@ dependencies = [
  "swarm-metrics",
  "swarm-replay",
  "swarm-runtime",
+ "swarm-safety",
  "swarm-scenarios",
  "swarm-types",
 ]

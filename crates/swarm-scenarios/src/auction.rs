@@ -152,6 +152,7 @@ pub fn build_dynamic_auction_scenario(config: &DynamicAuctionConfig) -> (Scenari
         tick_duration_ms: 100,
         grid_state: None,
         enable_cbba: false,
+        ..Default::default()
     };
 
     (scenario, run_config)

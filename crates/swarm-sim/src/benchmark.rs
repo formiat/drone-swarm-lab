@@ -366,6 +366,7 @@ mod tests {
                 grid_state: None,
                 tick_duration_ms: 100,
                 enable_cbba: false,
+                ..Default::default()
             };
             (scenario, run_config)
         })

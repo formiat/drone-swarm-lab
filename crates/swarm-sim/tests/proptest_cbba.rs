@@ -83,6 +83,7 @@ proptest! {
             tick_duration_ms: 100,
             grid_state: None,
             enable_cbba: true,
+            ..Default::default()
         };
         config.enable_cbba = true;
         let metrics = ScenarioRunner::run_with(&scenario, config, CbbaAllocator::default());
@@ -130,6 +131,7 @@ proptest! {
             tick_duration_ms: 100,
             grid_state: None,
             enable_cbba: true,
+            ..Default::default()
         };
         config.enable_cbba = true;
         let metrics = ScenarioRunner::run_with(&scenario, config, CbbaAllocator::default());

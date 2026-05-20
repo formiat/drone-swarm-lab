@@ -350,4 +350,33 @@ let suite = load_scenario_suite("scenarios/coverage.ideal.json")?;
 let json = export_suite(&suite)?;
 std::fs::write("exported.json", json)?;
 ```
+
+### M13 — Safety Layer
+
+Физические и операционные ограничения: geofence, no-fly zones, separation constraints.
+
+**Типы:**
+- `Geofence` — допустимая область (AABB), агент должен оставаться внутри.
+- `NoFlyZone` — запрещённая область (AABB), задачи внутри не назначаются.
+- `SeparationConstraint` — минимальное расстояние между агентами.
+
+**JSON с safety_config:**
+```json
+{
+  "safety_config": {
+    "geofence": {"bounds": {"min_x": 0, "max_x": 100, "min_y": 0, "max_y": 100}},
+    "no_fly_zones": [
+      {"bounds": {"min_x": 40, "max_x": 60, "min_y": 40, "max_y": 60}}
+    ],
+    "separation": {"min_distance_m": 2.0}
+  }
+}
 ```
+
+**Запуск с safety:**
+```bash
+cargo run -p swarm-examples --bin strategy_comparison \
+  --scenario-suite scenarios/coverage.safety.json --json safety.json
+```
+
+**Метрика:** `safety_violations` — количество нарушений за прогон (0 = идеально).
