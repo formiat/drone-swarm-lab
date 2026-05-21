@@ -1,5 +1,4 @@
 use proptest::prelude::*;
-use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use swarm_alloc::CbbaAllocator;
 use swarm_sim::{RunConfig, Scenario, ScenarioRunner};
