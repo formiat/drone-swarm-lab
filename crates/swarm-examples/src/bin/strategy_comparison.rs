@@ -585,6 +585,7 @@ fn build_coverage_profile(seed: u64, profile_name: &str) -> (Scenario, RunConfig
                 run_config.partition_events.push(PartitionEvent {
                     at_tick: partition_start,
                     until_tick: Some(partition_end),
+                    heal_at_tick: None,
                     agents: (a.clone(), b.clone()),
                 });
             }

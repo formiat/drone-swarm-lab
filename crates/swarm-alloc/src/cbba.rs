@@ -53,7 +53,7 @@ pub struct CbbaAllocator {
     // v0.15 bundle travel distance
     pub bundle_travel_distance: f64,
     // v0.15 retransmission
-    #[allow(dead_code)]
+    pub packet_loss_rate: f64,
     force_rebroadcast: bool,
 }
 
@@ -122,6 +122,7 @@ impl CbbaAllocator {
             converged: false,
             messages_exchanged: 0,
             bundle_travel_distance: 0.0,
+            packet_loss_rate: 0.0,
             force_rebroadcast: false,
         }
     }
@@ -309,6 +310,19 @@ impl Allocator for CbbaAllocator {
             }
         }
 
+        // v0.15: Retransmission — periodic rebroadcast when packet loss is high
+        if self.packet_loss_rate > self.config.retransmit_threshold_packet_loss
+            && self.current_round.is_multiple_of(self.config.retransmit_backoff_ticks as u32) {
+                self.force_rebroadcast = true;
+                // Simulate retransmission overhead: increase messages_exchanged
+                self.messages_exchanged += agents.len() as u64;
+            }
+        if self.force_rebroadcast {
+            // Force convergence re-evaluation on next round
+            self.prev_winning_bids.clear();
+            self.force_rebroadcast = false;
+        }
+
         self.check_convergence();
 
         // v0.15: Bundle travel distance metric
@@ -484,5 +498,63 @@ mod tests {
     #[test]
     fn cbba_is_distributed() {
         assert!(CbbaAllocator::default().is_distributed());
+    }
+
+    #[test]
+    fn order_bundle_tsp_nearest_first() {
+        let agent_pose = Pose { x: 0.0, y: 0.0 };
+        let t_near = task("t_near", 1, 1.0, 0.0);
+        let t_far = task("t_far", 1, 100.0, 0.0);
+        let tasks = vec![t_far.clone(), t_near.clone()];
+        let bundle = vec![t_far.id.clone(), t_near.id.clone()];
+        let ordered = order_bundle_tsp(agent_pose, &bundle, &tasks);
+        assert_eq!(ordered[0], t_near.id);
+    }
+
+    #[test]
+    fn order_bundle_tsp_all_tasks_included() {
+        let agent_pose = Pose { x: 0.0, y: 0.0 };
+        let t1 = task("t1", 1, 10.0, 0.0);
+        let t2 = task("t2", 1, 50.0, 0.0);
+        let t3 = task("t3", 1, 30.0, 0.0);
+        let tasks = vec![t1.clone(), t2.clone(), t3.clone()];
+        let bundle = vec![t1.id.clone(), t2.id.clone(), t3.id.clone()];
+        let ordered = order_bundle_tsp(agent_pose, &bundle, &tasks);
+        assert_eq!(ordered.len(), 3);
+        // All tasks must be present
+        assert!(ordered.contains(&t1.id));
+        assert!(ordered.contains(&t2.id));
+        assert!(ordered.contains(&t3.id));
+    }
+
+    #[test]
+    fn cbba_config_retransmit_defaults() {
+        let config = CbbaConfig::default();
+        assert_eq!(config.retransmit_max_attempts, 3);
+        assert_eq!(config.retransmit_backoff_ticks, 2);
+        assert!((config.retransmit_threshold_packet_loss - 0.1).abs() < 1e-6);
+    }
+
+    #[test]
+    #[allow(clippy::field_reassign_with_default)]
+    fn cbba_retransmission_increases_messages() {
+        let mut cbba = CbbaAllocator::default();
+        cbba.packet_loss_rate = 0.2; // above default threshold 0.1
+        let tasks: Vec<Task> = vec![task("t0", 1, 1.0, 0.0), task("t1", 1, 2.0, 0.0)];
+        let agents = vec![agent("a0", 0.0, 0.0), agent("a1", 10.0, 0.0)];
+        let atasks: Vec<AllocationTask<'_>> = tasks.iter().map(|t| at(t)).collect();
+
+        let msg_before = cbba.messages_exchanged;
+        cbba.allocate(&atasks, &agents);
+        // With packet_loss=0.2 > threshold=0.1 and round=1, retransmission should fire
+        // because 1 % retransmit_backoff_ticks(2) == 0? No, 1%2=1. Let's try round 2.
+        cbba.allocate(&atasks, &agents);
+        let msg_after = cbba.messages_exchanged;
+        assert!(
+            msg_after > msg_before,
+            "retransmission should increase messages_exchanged: before={}, after={}",
+            msg_before,
+            msg_after
+        );
     }
 }

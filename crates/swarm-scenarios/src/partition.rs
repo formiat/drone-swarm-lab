@@ -30,6 +30,7 @@ pub fn build_partition_scenario(config: &PartitionConfig) -> (Scenario, RunConfi
             partition_events.push(PartitionEvent {
                 at_tick: config.partition_start_tick,
                 until_tick: Some(config.partition_heal_tick),
+                heal_at_tick: None,
                 agents: (a.clone(), b.clone()),
             });
         }

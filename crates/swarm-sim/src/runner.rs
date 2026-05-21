@@ -99,6 +99,8 @@ pub struct DynamicTaskEvent {
 pub struct PartitionEvent {
     pub at_tick: u64,
     pub until_tick: Option<u64>,
+    #[serde(default)]
+    pub heal_at_tick: Option<u64>,
     pub agents: (AgentId, AgentId),
 }
 
@@ -219,7 +221,12 @@ impl ScenarioRunner {
                 node.config.enable_movement = config.enable_movement;
                 node.config.tick_duration_ms = config.tick_duration_ms;
                 if config.enable_cbba {
-                    node.cbba = Some(swarm_alloc::CbbaAllocator::default());
+                    #[allow(clippy::field_reassign_with_default)]
+                    {
+                        let mut cbba = swarm_alloc::CbbaAllocator::default();
+                        cbba.packet_loss_rate = config.packet_loss_rate;
+                        node.cbba = Some(cbba);
+                    }
                 }
                 (node, agent.id.clone())
             })
@@ -329,6 +336,17 @@ impl ScenarioRunner {
                             agent_b: pe.agents.1.clone(),
                             tick: current_tick,
                         });
+                    }
+                }
+                // v0.15: heal_at_tick — explicit heal time with CBBA convergence reset
+                if pe.heal_at_tick == Some(current_tick) {
+                    bus.borrow_mut()
+                        .remove_partition(pe.agents.0.clone(), pe.agents.1.clone());
+                    heal_tick = Some(current_tick);
+                    for (node, _) in &mut nodes {
+                        if let Some(ref mut cbba) = node.cbba {
+                            cbba.converged = false;
+                        }
                     }
                 }
             }

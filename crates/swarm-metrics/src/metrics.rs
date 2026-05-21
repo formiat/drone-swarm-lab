@@ -536,4 +536,21 @@ mod tests {
         assert_eq!(metrics.avg_probability_of_detection, 0.0);
         assert_eq!(metrics.avg_targets_found, 0.0);
     }
+
+    #[test]
+    fn percentile_calculation_p50_p95() {
+        let sorted = vec![10u64, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+        let p50 = percentile_of_sorted(&sorted, 50.0);
+        let p95 = percentile_of_sorted(&sorted, 95.0);
+        // p50 of 10 elements ≈ sorted[4] = 50
+        assert!((p50 - 50.0).abs() < 10.0, "p50={}", p50);
+        // p95 of 10 elements ≈ sorted[8] = 90
+        assert!((p95 - 90.0).abs() < 10.0, "p95={}", p95);
+    }
+
+    #[test]
+    fn percentile_empty_returns_zero() {
+        let result = percentile_of_sorted(&[], 50.0);
+        assert_eq!(result, 0.0);
+    }
 }

@@ -447,11 +447,12 @@ convergence time distribution.
 
 **Retransmission policy:**
 - `CbbaConfig.retransmit_max_attempts` (default: 3), `retransmit_backoff_ticks` (default: 2).
-- `retransmit_threshold_packet_loss` (default: 0.1) — активация только при >10% потерь.
+- `retransmit_threshold_packet_loss` (default: 0.1) — активация при >10% потерь.
+- Periodic rebroadcast: при превышении порога agent переотправляет bids каждые N тиков.
 
 **Partition healing:**
 - `PartitionEvent.heal_at_tick: Option<u64>` — явное время завершения партиции.
-- CBBA повторно сходится после heal.
+- При heal_at_tick партиция снимается, CBBA сбрасывает convergence для повторной сходимости.
 
 **Convergence time distribution:**
 - `cbba_convergence_tick` — тик первого достижения consensus всеми агентами.
