@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use swarm_types::{AgentId, Pose, Task, TaskId};
 
@@ -11,6 +11,10 @@ pub struct CbbaConfig {
     pub max_rounds: u32,
     pub score_weight_distance: f64,
     pub score_weight_battery: f64,
+    // v0.15 retransmission
+    pub retransmit_max_attempts: u32,
+    pub retransmit_backoff_ticks: u64,
+    pub retransmit_threshold_packet_loss: f64,
 }
 
 impl Default for CbbaConfig {
@@ -20,6 +24,9 @@ impl Default for CbbaConfig {
             max_rounds: 20,
             score_weight_distance: 1.0,
             score_weight_battery: 0.5,
+            retransmit_max_attempts: 3,
+            retransmit_backoff_ticks: 2,
+            retransmit_threshold_packet_loss: 0.1,
         }
     }
 }
@@ -43,6 +50,62 @@ pub struct CbbaAllocator {
     pub converged: bool,
     /// Total CBBA messages exchanged.
     pub messages_exchanged: u64,
+    // v0.15 bundle travel distance
+    pub bundle_travel_distance: f64,
+    // v0.15 retransmission
+    #[allow(dead_code)]
+    force_rebroadcast: bool,
+}
+
+/// Greedy nearest-neighbour TSP ordering for task bundles.
+pub fn order_bundle_tsp(agent_pose: Pose, bundle: &[TaskId], tasks: &[Task]) -> Vec<TaskId> {
+    if bundle.len() <= 1 {
+        return bundle.to_vec();
+    }
+    let mut ordered = Vec::new();
+    let mut remaining: HashSet<TaskId> = bundle.iter().cloned().collect();
+    let mut current_pos = agent_pose;
+
+    while !remaining.is_empty() {
+        let next = remaining
+            .iter()
+            .min_by(|a, b| {
+                let ta = tasks.iter().find(|t| &t.id == *a);
+                let tb = tasks.iter().find(|t| &t.id == *b);
+                let da = ta
+                    .and_then(|t| t.pose)
+                    .map(|p| current_pos.distance_to(&p))
+                    .unwrap_or(0.0);
+                let db = tb
+                    .and_then(|t| t.pose)
+                    .map(|p| current_pos.distance_to(&p))
+                    .unwrap_or(0.0);
+                da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .cloned()
+            .unwrap();
+        remaining.remove(&next);
+        ordered.push(next.clone());
+        if let Some(task) = tasks.iter().find(|t| t.id == next) {
+            current_pos = task.pose.unwrap_or(current_pos);
+        }
+    }
+    ordered
+}
+
+/// Compute total travel distance for a bundle with TSP ordering.
+pub fn bundle_travel_distance(agent_pose: Pose, ordered_bundle: &[TaskId], tasks: &[Task]) -> f64 {
+    let mut total = 0.0;
+    let mut current = agent_pose;
+    for tid in ordered_bundle {
+        if let Some(task) = tasks.iter().find(|t| &t.id == tid) {
+            if let Some(pose) = task.pose {
+                total += current.distance_to(&pose);
+                current = pose;
+            }
+        }
+    }
+    total
 }
 
 /// A set of remote CBBA bids: sender_agent → (task_id → (winner, bid_value)).
@@ -58,6 +121,8 @@ impl CbbaAllocator {
             current_round: 0,
             converged: false,
             messages_exchanged: 0,
+            bundle_travel_distance: 0.0,
+            force_rebroadcast: false,
         }
     }
 
@@ -235,7 +300,26 @@ impl Allocator for CbbaAllocator {
         });
 
         self.build_bundles(agents, tasks);
+
+        // v0.15: TSP-ordering of bundles after building
+        let task_list: Vec<Task> = tasks.iter().map(|at| at.task.clone()).collect();
+        for (agent_id, bundle) in self.bundles.iter_mut() {
+            if let Some(agent) = agents.iter().find(|a| a.id == *agent_id) {
+                *bundle = order_bundle_tsp(agent.pose, bundle, &task_list);
+            }
+        }
+
         self.check_convergence();
+
+        // v0.15: Bundle travel distance metric
+        self.bundle_travel_distance = 0.0;
+        for (agent_id, bundle) in &self.bundles {
+            if let Some(agent) = agents.iter().find(|a| a.id == *agent_id) {
+                self.bundle_travel_distance +=
+                    bundle_travel_distance(agent.pose, bundle, &task_list);
+            }
+        }
+
         self.current_assignments()
     }
 

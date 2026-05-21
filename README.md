@@ -435,3 +435,34 @@ cargo run -p swarm-examples --bin strategy_comparison \
 - `scenarios/sar.ideal.json` — обновлён до SAR v2 (belief-aware)
 - `scenarios/sar.uncertain.json` — moderate PoD + FPR
 - `scenarios/sar.noisy.json` — high FPR, требует repeated scans
+
+### M15 — CBBA Robustness
+
+Исследование пределов CBBA: сходимость при packet loss, TSP-оптимизация bundles, retransmission,
+convergence time distribution.
+
+**TSP-ordering в bundles:**
+- `order_bundle_tsp()` — greedy nearest-neighbour оптимизация порядка задач в bundle.
+- `bundle_travel_distance` — суммарный путь агента по TSP-упорядоченному bundle.
+
+**Retransmission policy:**
+- `CbbaConfig.retransmit_max_attempts` (default: 3), `retransmit_backoff_ticks` (default: 2).
+- `retransmit_threshold_packet_loss` (default: 0.1) — активация только при >10% потерь.
+
+**Partition healing:**
+- `PartitionEvent.heal_at_tick: Option<u64>` — явное время завершения партиции.
+- CBBA повторно сходится после heal.
+
+**Convergence time distribution:**
+- `cbba_convergence_tick` — тик первого достижения consensus всеми агентами.
+- `convergence_ticks_p50/p95/max` — перцентили времени сходимости.
+- `avg_bundle_travel_distance` — средний путь агента по bundle.
+
+**Запуск CBBA stress:**
+```bash
+cargo run -p swarm-examples --bin strategy_comparison \
+  --scenario-suite scenarios/cbba_stress.json --json cbba_stress.json
+```
+
+**Сценарий:**
+- `scenarios/cbba_stress.json` — 4 агента, 3 задачи, packet loss 0.0/0.1/0.2

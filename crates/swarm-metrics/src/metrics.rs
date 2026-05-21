@@ -80,6 +80,11 @@ pub struct RunMetrics {
     pub false_positives: u32,
     #[serde(default)]
     pub confirmation_scans: u32,
+    // v0.15 CBBA robustness
+    #[serde(default)]
+    pub cbba_convergence_tick: Option<u64>,
+    #[serde(default)]
+    pub bundle_travel_distance: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -119,6 +124,23 @@ pub struct AggregateMetrics {
     pub avg_false_positive_rate: f64,
     #[serde(default)]
     pub avg_confirmation_scans: f64,
+    // v0.15 CBBA robustness
+    #[serde(default)]
+    pub convergence_ticks_p50: f64,
+    #[serde(default)]
+    pub convergence_ticks_p95: f64,
+    #[serde(default)]
+    pub convergence_ticks_max: f64,
+    #[serde(default)]
+    pub avg_bundle_travel_distance: f64,
+}
+
+fn percentile_of_sorted(sorted: &[u64], p: f64) -> f64 {
+    if sorted.is_empty() {
+        return 0.0;
+    }
+    let idx = ((p / 100.0) * (sorted.len() as f64 - 1.0)) as usize;
+    sorted[idx.min(sorted.len() - 1)] as f64
 }
 
 impl AggregateMetrics {
@@ -151,6 +173,10 @@ impl AggregateMetrics {
                 avg_belief_entropy_final: 0.0,
                 avg_false_positive_rate: 0.0,
                 avg_confirmation_scans: 0.0,
+                convergence_ticks_p50: 0.0,
+                convergence_ticks_p95: 0.0,
+                convergence_ticks_max: 0.0,
+                avg_bundle_travel_distance: 0.0,
             };
         }
 
@@ -182,6 +208,17 @@ impl AggregateMetrics {
         let total_confirmation_scans: u64 =
             runs.iter().map(|run| run.confirmation_scans as u64).sum();
         let total_scan_count: u64 = runs.iter().map(|run| run.scan_count as u64).sum();
+        // v0.15 CBBA robustness
+        let total_bundle_travel_distance: f64 =
+            runs.iter().map(|run| run.bundle_travel_distance).sum();
+        let mut convergence_ticks: Vec<u64> = runs
+            .iter()
+            .filter_map(|run| run.cbba_convergence_tick)
+            .collect();
+        convergence_ticks.sort_unstable();
+        let p50 = percentile_of_sorted(&convergence_ticks, 50.0);
+        let p95 = percentile_of_sorted(&convergence_ticks, 95.0);
+        let cmax = convergence_ticks.last().copied().unwrap_or(0) as f64;
         let n = runs.len() as f64;
 
         Self {
@@ -223,6 +260,10 @@ impl AggregateMetrics {
                 0.0
             },
             avg_confirmation_scans: total_confirmation_scans as f64 / n,
+            convergence_ticks_p50: p50,
+            convergence_ticks_p95: p95,
+            convergence_ticks_max: cmax,
+            avg_bundle_travel_distance: total_bundle_travel_distance / n,
         }
     }
 }
@@ -313,6 +354,27 @@ impl fmt::Display for AggregateMetrics {
             f,
             "avg_confirmation_scans: {:.3}",
             self.avg_confirmation_scans
+        )?;
+        writeln!(f)?;
+        writeln!(
+            f,
+            "convergence_ticks_p50: {:.3}",
+            self.convergence_ticks_p50
+        )?;
+        writeln!(
+            f,
+            "convergence_ticks_p95: {:.3}",
+            self.convergence_ticks_p95
+        )?;
+        writeln!(
+            f,
+            "convergence_ticks_max: {:.3}",
+            self.convergence_ticks_max
+        )?;
+        write!(
+            f,
+            "avg_bundle_travel_distance: {:.3}",
+            self.avg_bundle_travel_distance
         )
     }
 }
@@ -384,6 +446,8 @@ mod tests {
             belief_entropy_final: 0.0,
             false_positives: 0,
             confirmation_scans: 0,
+            cbba_convergence_tick: None,
+            bundle_travel_distance: 0.0,
         }
     }
 

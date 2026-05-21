@@ -52,6 +52,9 @@ pub fn export_json(report: &ComparisonReport) -> Result<String, serde_json::Erro
                     belief_entropy_final: metrics.avg_belief_entropy_final,
                     false_positive_rate: metrics.avg_false_positive_rate,
                     confirmation_scans: metrics.avg_confirmation_scans,
+                    convergence_ticks_p50: metrics.convergence_ticks_p50,
+                    convergence_ticks_p95: metrics.convergence_ticks_p95,
+                    avg_bundle_travel_distance: metrics.avg_bundle_travel_distance,
                 });
             }
         }
@@ -104,6 +107,9 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
         "belief_entropy_final",
         "false_positive_rate",
         "confirmation_scans",
+        "convergence_ticks_p50",
+        "convergence_ticks_p95",
+        "avg_bundle_travel_distance",
     ])?;
 
     let mission = report.mission_names.first().cloned().unwrap_or_default();
@@ -152,6 +158,9 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
                     format!("{:.3}", m.avg_belief_entropy_final).as_str(),
                     format!("{:.3}", m.avg_false_positive_rate).as_str(),
                     format!("{:.3}", m.avg_confirmation_scans).as_str(),
+                    format!("{:.3}", m.convergence_ticks_p50).as_str(),
+                    format!("{:.3}", m.convergence_ticks_p95).as_str(),
+                    format!("{:.3}", m.avg_bundle_travel_distance).as_str(),
                 ])?;
             }
         }
@@ -208,6 +217,9 @@ struct ReportRow {
     belief_entropy_final: f64,
     false_positive_rate: f64,
     confirmation_scans: f64,
+    convergence_ticks_p50: f64,
+    convergence_ticks_p95: f64,
+    avg_bundle_travel_distance: f64,
 }
 
 #[cfg(test)]
@@ -247,6 +259,10 @@ mod tests {
                 avg_belief_entropy_final: 0.0,
                 avg_false_positive_rate: 0.0,
                 avg_confirmation_scans: 0.0,
+                convergence_ticks_p50: 0.0,
+                convergence_ticks_p95: 0.0,
+                convergence_ticks_max: 0.0,
+                avg_bundle_travel_distance: 0.0,
             },
         );
         ComparisonReport {

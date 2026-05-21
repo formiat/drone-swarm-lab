@@ -257,6 +257,9 @@ impl ScenarioRunner {
         // v0.13 safety metrics
         let mut safety_violations: u64 = 0;
 
+        // v0.15 CBBA convergence tick tracking
+        let mut cbba_convergence_tick: Option<u64> = None;
+
         // v0.9 SAR metrics
         let mut coverage_over_time: Vec<f64> = Vec::new();
         let mut grid_state = config.grid_state;
@@ -473,6 +476,16 @@ impl ScenarioRunner {
                         }
                     }
                 }
+            }
+
+            // v0.15: Track CBBA convergence tick
+            if cbba_convergence_tick.is_none()
+                && nodes
+                    .iter()
+                    .filter(|(_, id)| !crashed_agents.contains(id))
+                    .all(|(n, _)| n.cbba.as_ref().is_none_or(|c| c.converged))
+            {
+                cbba_convergence_tick = Some(current_tick);
             }
 
             // v0.9: SAR scan logic
@@ -914,6 +927,13 @@ impl ScenarioRunner {
                     .iter()
                     .filter_map(|(n, _)| n.cbba.as_ref().map(|c| c.messages_exchanged))
                     .sum(),
+                // v0.15 CBBA bundle travel
+                bundle_travel_distance: nodes
+                    .iter()
+                    .filter_map(|(n, _)| n.cbba.as_ref().map(|c| c.bundle_travel_distance))
+                    .sum(),
+                // v0.15 CBBA convergence tick
+                cbba_convergence_tick,
                 // v0.13 Safety
                 safety_violations,
                 // v0.14 SAR v2 belief metrics
