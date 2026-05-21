@@ -312,11 +312,14 @@ impl Allocator for CbbaAllocator {
 
         // v0.15: Retransmission — periodic rebroadcast when packet loss is high
         if self.packet_loss_rate > self.config.retransmit_threshold_packet_loss
-            && self.current_round.is_multiple_of(self.config.retransmit_backoff_ticks as u32) {
-                self.force_rebroadcast = true;
-                // Simulate retransmission overhead: increase messages_exchanged
-                self.messages_exchanged += agents.len() as u64;
-            }
+            && self
+                .current_round
+                .is_multiple_of(self.config.retransmit_backoff_ticks as u32)
+        {
+            self.force_rebroadcast = true;
+            // Simulate retransmission overhead: increase messages_exchanged
+            self.messages_exchanged += agents.len() as u64;
+        }
         if self.force_rebroadcast {
             // Force convergence re-evaluation on next round
             self.prev_winning_bids.clear();
@@ -556,5 +559,30 @@ mod tests {
             msg_before,
             msg_after
         );
+    }
+
+    #[test]
+    fn cbba_tsp_reduces_travel_distance() {
+        let agent_pose = Pose { x: 0.0, y: 0.0 };
+        let tasks = vec![
+            task("t_far", 1, 100.0, 0.0),
+            task("t_near", 1, 1.0, 0.0),
+            task("t_mid", 1, 50.0, 0.0),
+        ];
+        let bundle = vec![
+            tasks[0].id.clone(),
+            tasks[1].id.clone(),
+            tasks[2].id.clone(),
+        ];
+        let original_dist = bundle_travel_distance(agent_pose, &bundle, &tasks);
+        let ordered = order_bundle_tsp(agent_pose, &bundle, &tasks);
+        let tsp_dist = bundle_travel_distance(agent_pose, &ordered, &tasks);
+        assert!(
+            tsp_dist <= original_dist,
+            "TSP ordering should reduce travel distance: original={}, tsp={}",
+            original_dist,
+            tsp_dist
+        );
+        assert_eq!(ordered[0], tasks[1].id, "nearest task should be first");
     }
 }
