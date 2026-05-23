@@ -70,6 +70,7 @@ struct CliArgs {
     run_id_prefix: Option<String>,
     scenario_suite_path: Option<String>,
     output_dir: Option<String>,
+    report_path: Option<String>,
 }
 
 fn parse_args() -> CliArgs {
@@ -83,6 +84,7 @@ fn parse_args() -> CliArgs {
         run_id_prefix: None,
         scenario_suite_path: None,
         output_dir: None,
+        report_path: None,
     };
 
     let mut i = 1;
@@ -131,6 +133,12 @@ fn parse_args() -> CliArgs {
                 i += 1;
                 if i < args.len() {
                     cli.output_dir = Some(args[i].clone());
+                }
+            }
+            "--report" => {
+                i += 1;
+                if i < args.len() {
+                    cli.report_path = Some(args[i].clone());
                 }
             }
             _ => {}
@@ -348,6 +356,23 @@ fn main() {
         }
     }
 
+    if let Some(path) = &cli.report_path {
+        let named_reports: Vec<(String, ComparisonReport)> = all_reports
+            .iter()
+            .map(|r| {
+                let name = r
+                    .mission_names
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| "mission".to_owned());
+                (name, r.clone())
+            })
+            .collect();
+        let report_md = swarm_sim::generate_focused_report(&named_reports);
+        std::fs::write(path, report_md).expect("Failed to write report file");
+        println!("Focused report written to {}", path);
+    }
+
     std::process::exit(0);
 }
 
@@ -517,6 +542,17 @@ fn run_from_suite(suite_path: &str, cli: &CliArgs) {
             eprintln!("Failed to write benchmark pack: {}", e);
             std::process::exit(1);
         }
+    }
+
+    if let Some(path) = &cli.report_path {
+        let mission_name = report
+            .mission_names
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "suite".to_owned());
+        let report_md = swarm_sim::generate_focused_report(&[(mission_name, report)]);
+        std::fs::write(path, report_md).expect("Failed to write report file");
+        println!("Focused report written to {}", path);
     }
 }
 

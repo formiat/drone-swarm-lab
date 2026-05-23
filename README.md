@@ -707,3 +707,41 @@ let manifest = BenchmarkManifest::new(
     vec!["ideal-no-failures".into()],
 );
 ```
+
+### M22 — Benchmark Report / Analysis
+
+Interpretation of benchmark metrics with real numbers. See full report: [`docs/BENCHMARK_RESULTS.md`](docs/BENCHMARK_RESULTS.md).
+
+**Quick results summary (10 seeds):**
+
+| Mission | Best Strategy | Key Metric | Value |
+|---|---|---|---|
+| SAR v2 | auction (standard) | Success | 0.900 |
+| Inspection (linear) | centralized | RouteEfficiency | 0.528 |
+| Inspection (random) | centralized | RouteEfficiency | 0.656 |
+| Safety coverage | all (tie) | Success | 1.000 |
+| CBBA stress | auction/centralized | ConvP50 | 4.0 |
+
+**Key findings:**
+- CBBA struggles with SAR grid tasks and inspection perimeter (0% success on perimeter).
+- Centralized shows highest route efficiency on inspection (0.528–0.656) but fails on SAR.
+- Safety layer successfully prevents violations (0 across all strategies).
+- Auction achieves best SAR success rate (0.900 on standard profile).
+
+**Generate focused report:**
+```bash
+cargo run -p swarm-examples --bin strategy_comparison -- \
+  --quick --mission sar --report docs/BENCHMARK_RESULTS.md
+```
+
+**Reproduce all results:**
+```bash
+# Quick run (~30s per mission)
+cargo run -p swarm-examples --bin strategy_comparison -- --quick --mission sar --output-dir results/sar_quick/
+cargo run -p swarm-examples --bin strategy_comparison -- --quick --mission inspection --output-dir results/inspection_quick/
+cargo run -p swarm-examples --bin strategy_comparison -- --scenario-suite scenarios/coverage.safety.json --output-dir results/safety_quick/
+cargo run -p swarm-examples --bin strategy_comparison -- --scenario-suite scenarios/cbba_stress.json --output-dir results/cbba_quick/
+
+# Full run (~5min per mission)
+cargo run -p swarm-examples --bin strategy_comparison -- --full --mission <mission> --output-dir results/<mission>_full/
+```

@@ -6,6 +6,7 @@ use swarm_metrics::AggregateMetrics;
 use crate::{RunConfig, Scenario, ScenarioRunner};
 
 /// Report produced by a benchmark run comparing strategies across profiles.
+#[derive(Clone)]
 pub struct ComparisonReport {
     pub benchmark_run_id: String,
     pub seed_range_start: u64,

@@ -86,3 +86,34 @@ fn strategy_comparison_quick_mode_is_default() {
     let output = run_strategy_comparison(&["--smoke", "--mission", "coverage"]);
     assert!(output.status.success());
 }
+
+#[test]
+fn strategy_comparison_report_flag_creates_file() {
+    let report_path = "/tmp/bench_report_test.md";
+    let _ = std::fs::remove_file(report_path);
+    let output =
+        run_strategy_comparison(&["--smoke", "--mission", "coverage", "--report", report_path]);
+    assert!(output.status.success());
+    assert!(
+        std::path::Path::new(report_path).exists(),
+        "report file not created"
+    );
+    let content = std::fs::read_to_string(report_path).unwrap();
+    assert!(content.contains("# Benchmark Report"));
+    assert!(content.contains("## coverage"));
+    let _ = std::fs::remove_file(report_path);
+}
+
+#[test]
+fn strategy_comparison_report_contains_key_questions() {
+    let report_path = "/tmp/bench_report_questions.md";
+    let _ = std::fs::remove_file(report_path);
+    let output =
+        run_strategy_comparison(&["--smoke", "--mission", "coverage", "--report", report_path]);
+    assert!(output.status.success());
+    let content = std::fs::read_to_string(report_path).unwrap();
+    assert!(content.contains("Where does CBBA win?"));
+    assert!(content.contains("Where does CBBA lose?"));
+    assert!(content.contains("SAR v2 vs SAR v1"));
+    let _ = std::fs::remove_file(report_path);
+}
