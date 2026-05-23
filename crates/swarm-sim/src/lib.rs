@@ -11,9 +11,7 @@ pub use dsl::{
     export_entry, export_suite, load_scenario_suite, validate_entry, validate_mission_specific,
     validate_scenario_suite, ScenarioSuite, ScenarioSuiteEntry, ValidationError,
 };
-pub use report_export::{
-    export_csv, export_json, export_markdown, BenchmarkManifest,
-};
+pub use report_export::{export_csv, export_json, export_markdown, BenchmarkManifest};
 pub use runner::{
     DynamicTaskEvent, FailureEvent, InspectionState, PartitionEvent, RunConfig, ScenarioRunner,
 };

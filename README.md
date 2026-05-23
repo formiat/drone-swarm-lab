@@ -646,3 +646,64 @@ cargo run -p swarm-examples --bin strategy_comparison \
 Validation failed for scenarios/sar.ideal.json:
   [run_config.grid_state] SAR mission requires grid_state
 ```
+
+### M21 — Reproducible Benchmark Pack
+
+Unified, self-contained benchmark output with manifest, scenario snapshot, and reproducible commands.
+
+**Run modes:**
+
+| Mode | Seeds | Purpose |
+|---|---|---|
+| `--smoke` | 1 | Fast CI check |
+| `--quick` | 10 | Local development (default) |
+| `--full` | 1000 | Publishable / regression test |
+
+**Smoke (1 seed, CI):**
+```bash
+cargo run -p swarm-examples --bin strategy_comparison -- \
+  --smoke --mission sar --output-dir results/sar_smoke/
+```
+
+**Quick (10 seeds, local check):**
+```bash
+cargo run -p swarm-examples --bin strategy_comparison -- \
+  --quick --mission all --output-dir results/all_quick/
+```
+
+**Full (1000 seeds, publishable):**
+```bash
+cargo run -p swarm-examples --bin strategy_comparison -- \
+  --full --mission all --output-dir results/all_full/
+```
+
+**Output directory structure:**
+```
+results/all_quick/
+  manifest.json           # timestamp, git commit, command line, seed range
+  scenario_snapshot.json  # full scenario suite for reproducibility
+  results.json            # JSON export of ComparisonReport
+  results.csv             # CSV export
+  table.md                # Markdown table fragment
+  replay_logs/            # optional replay logs
+```
+
+**Backward compatibility:**
+- `--json <path>` and `--csv <path>` continue to work as before.
+- `--full` without `--output-dir` prints to stdout and writes individual files.
+- Without any mode flag, `--quick` is used by default.
+
+**New API:**
+```rust
+use swarm_sim::{BenchmarkHarness, BenchmarkManifest, export_markdown};
+
+// Smoke run (1 seed)
+let result = BenchmarkHarness::run_smoke_with_options(&strategies, &profiles, &builder, options);
+
+// Manifest for reproducibility
+let manifest = BenchmarkManifest::new(
+    "coverage", 0, 9,
+    vec!["greedy".into(), "auction".into()],
+    vec!["ideal-no-failures".into()],
+);
+```

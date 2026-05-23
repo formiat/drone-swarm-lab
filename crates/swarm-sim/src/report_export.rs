@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::ComparisonReport;
 
@@ -385,5 +385,49 @@ mod tests {
         let report = make_report();
         let csv = export_csv(&report).unwrap();
         assert!(csv.contains(",sar,"));
+    }
+
+    #[test]
+    fn benchmark_manifest_serde_roundtrip() {
+        let manifest = BenchmarkManifest {
+            timestamp: "2024-01-01T00:00:00Z".to_owned(),
+            git_commit: "abc123".to_owned(),
+            command_line: "test".to_owned(),
+            suite_name: "coverage".to_owned(),
+            schema_version: "0.1".to_owned(),
+            seed_range_start: 0,
+            seed_range_end: 9,
+            strategy_names: vec!["greedy".to_owned()],
+            profile_names: vec!["ideal".to_owned()],
+            metric_schema_version: "0.1".to_owned(),
+        };
+        let json = serde_json::to_string(&manifest).unwrap();
+        let decoded: BenchmarkManifest = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.git_commit, "abc123");
+        assert_eq!(decoded.suite_name, "coverage");
+        assert_eq!(decoded.seed_range_end, 9);
+    }
+
+    #[test]
+    fn export_markdown_contains_header() {
+        let report = make_report();
+        let md = export_markdown(&report);
+        assert!(md.contains("| Strategy"));
+        assert!(md.contains("|"));
+    }
+
+    #[test]
+    fn benchmark_manifest_new_has_git_commit() {
+        let manifest = BenchmarkManifest::new(
+            "test_suite",
+            0,
+            1,
+            vec!["greedy".to_owned()],
+            vec!["ideal".to_owned()],
+        );
+        assert!(!manifest.git_commit.is_empty());
+        assert!(!manifest.timestamp.is_empty());
+        assert_eq!(manifest.schema_version, "0.1");
+        assert_eq!(manifest.metric_schema_version, "0.1");
     }
 }

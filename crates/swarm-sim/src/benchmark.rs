@@ -139,7 +139,13 @@ impl BenchmarkHarness {
         scenario_builder: &ScenarioBuilder,
         options: BenchmarkOptions,
     ) -> BenchmarkResult {
-        Self::run_with_seeds(strategies, profile_names, scenario_builder, 0..1, Some(options))
+        Self::run_with_seeds(
+            strategies,
+            profile_names,
+            scenario_builder,
+            0..1,
+            Some(options),
+        )
     }
 
     /// Run a small benchmark for CI/testing (10 seeds).

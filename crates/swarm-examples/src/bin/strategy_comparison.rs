@@ -21,9 +21,9 @@ type StrategyFactory = Box<dyn Fn(&Scenario, &RunConfig) -> Box<dyn swarm_alloc:
 
 #[derive(Clone, Copy)]
 enum RunMode {
-    Smoke,  // 1 seed
-    Quick,  // 10 seeds (default)
-    Full,   // 1000 seeds
+    Smoke, // 1 seed
+    Quick, // 10 seeds (default)
+    Full,  // 1000 seeds
 }
 
 #[derive(Clone)]
@@ -259,20 +259,25 @@ fn main() {
             enable_replay_log: enable_replay,
             mission_name: mname,
         };
-        let result = if cli.full_mode {
-            BenchmarkHarness::run_full_with_options(
+        let result = match cli.mode {
+            RunMode::Smoke => BenchmarkHarness::run_smoke_with_options(
                 &factories,
                 &profile_names,
                 &builder,
                 mission_options,
-            )
-        } else {
-            BenchmarkHarness::run_quick_with_options(
+            ),
+            RunMode::Quick => BenchmarkHarness::run_quick_with_options(
                 &factories,
                 &profile_names,
                 &builder,
                 mission_options,
-            )
+            ),
+            RunMode::Full => BenchmarkHarness::run_full_with_options(
+                &factories,
+                &profile_names,
+                &builder,
+                mission_options,
+            ),
         };
 
         let mut report = result.report;
@@ -334,6 +339,13 @@ fn main() {
             dir,
             all_replay_logs.len()
         );
+    }
+
+    if let Some(dir) = &cli.output_dir {
+        if let Err(e) = write_benchmark_pack(dir, &merged, None, &all_replay_logs) {
+            eprintln!("Failed to write benchmark pack: {}", e);
+            std::process::exit(1);
+        }
     }
 
     std::process::exit(0);
@@ -499,6 +511,61 @@ fn run_from_suite(suite_path: &str, cli: &CliArgs) {
         std::fs::write(path, csv).expect("Failed to write CSV file");
         println!("CSV report written to {}", path);
     }
+
+    if let Some(dir) = &cli.output_dir {
+        if let Err(e) = write_benchmark_pack(dir, &report, Some(&suite), &[]) {
+            eprintln!("Failed to write benchmark pack: {}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
+fn write_benchmark_pack(
+    output_dir: &str,
+    report: &ComparisonReport,
+    suite: Option<&swarm_sim::ScenarioSuite>,
+    replay_logs: &[swarm_replay::EventLog],
+) -> Result<(), Box<dyn std::error::Error>> {
+    std::fs::create_dir_all(output_dir)?;
+
+    let json = swarm_sim::export_json(report)?;
+    std::fs::write(format!("{}/results.json", output_dir), json)?;
+
+    let csv = swarm_sim::export_csv(report)?;
+    std::fs::write(format!("{}/results.csv", output_dir), csv)?;
+
+    let md = swarm_sim::export_markdown(report);
+    std::fs::write(format!("{}/table.md", output_dir), md)?;
+
+    let manifest = swarm_sim::BenchmarkManifest::new(
+        report.mission_names.join(","),
+        report.seed_range_start,
+        report.seed_range_end,
+        report.strategy_names.clone(),
+        report.profile_names.clone(),
+    );
+    std::fs::write(
+        format!("{}/manifest.json", output_dir),
+        serde_json::to_string_pretty(&manifest)?,
+    )?;
+
+    if let Some(suite) = suite {
+        let snapshot = swarm_sim::export_suite(suite)?;
+        std::fs::write(format!("{}/scenario_snapshot.json", output_dir), snapshot)?;
+    }
+
+    if !replay_logs.is_empty() {
+        let replay_dir = format!("{}/replay_logs", output_dir);
+        std::fs::create_dir_all(&replay_dir)?;
+        for (i, log) in replay_logs.iter().enumerate() {
+            let path = format!("{}/replay_{}.json", replay_dir, i);
+            let json = serde_json::to_string_pretty(log)?;
+            std::fs::write(path, json)?;
+        }
+    }
+
+    println!("Benchmark pack written to {}", output_dir);
+    Ok(())
 }
 
 fn merge_reports(reports: &[swarm_sim::ComparisonReport]) -> swarm_sim::ComparisonReport {
