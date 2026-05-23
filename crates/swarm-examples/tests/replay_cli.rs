@@ -12,7 +12,11 @@ fn replay_cli_summary_outputs_ticks() {
     let log_path = "/tmp/replay_test_dir/coverage_with_failure_0.replay.json";
     let output = run_replay(&["--log", log_path, "--summary"]);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(output.status.success(), "replay --summary failed: {}", stderr);
+    assert!(
+        output.status.success(),
+        "replay --summary failed: {}",
+        stderr
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Total ticks:"));
     assert!(stdout.contains("Events:"));

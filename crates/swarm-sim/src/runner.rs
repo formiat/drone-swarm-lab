@@ -518,9 +518,15 @@ impl ScenarioRunner {
                             if let Some(ref mut builder) = log_builder {
                                 for v in &violations {
                                     let vtype = match v.violation_type {
-                                        swarm_safety::ViolationType::NoFlyZoneEntered => swarm_replay::ViolationType::NoFly,
-                                        swarm_safety::ViolationType::GeofenceExited => swarm_replay::ViolationType::Geofence,
-                                        swarm_safety::ViolationType::SeparationBreached { .. } => swarm_replay::ViolationType::Separation,
+                                        swarm_safety::ViolationType::NoFlyZoneEntered => {
+                                            swarm_replay::ViolationType::NoFly
+                                        }
+                                        swarm_safety::ViolationType::GeofenceExited => {
+                                            swarm_replay::ViolationType::Geofence
+                                        }
+                                        swarm_safety::ViolationType::SeparationBreached {
+                                            ..
+                                        } => swarm_replay::ViolationType::Separation,
                                     };
                                     builder.push(swarm_replay::Event::SafetyViolation {
                                         agent_id: agent_id.clone(),
