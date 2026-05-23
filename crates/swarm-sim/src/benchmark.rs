@@ -123,6 +123,25 @@ pub struct BenchmarkResult {
 pub struct BenchmarkHarness;
 
 impl BenchmarkHarness {
+    /// Run a minimal smoke benchmark (1 seed).
+    pub fn run_smoke(
+        strategies: &[StrategyFactory],
+        profile_names: &[String],
+        scenario_builder: &ScenarioBuilder,
+    ) -> ComparisonReport {
+        Self::run_with_seeds(strategies, profile_names, scenario_builder, 0..1, None).report
+    }
+
+    /// Run a smoke benchmark with options.
+    pub fn run_smoke_with_options(
+        strategies: &[StrategyFactory],
+        profile_names: &[String],
+        scenario_builder: &ScenarioBuilder,
+        options: BenchmarkOptions,
+    ) -> BenchmarkResult {
+        Self::run_with_seeds(strategies, profile_names, scenario_builder, 0..1, Some(options))
+    }
+
     /// Run a small benchmark for CI/testing (10 seeds).
     pub fn run_quick(
         strategies: &[StrategyFactory],

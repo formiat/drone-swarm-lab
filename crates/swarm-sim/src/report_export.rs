@@ -240,6 +240,60 @@ struct ReportRow {
     avg_route_efficiency: f64,
 }
 
+/// Benchmark run manifest for reproducibility.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BenchmarkManifest {
+    pub timestamp: String,
+    pub git_commit: String,
+    pub command_line: String,
+    pub suite_name: String,
+    pub schema_version: String,
+    pub seed_range_start: u64,
+    pub seed_range_end: u64,
+    pub strategy_names: Vec<String>,
+    pub profile_names: Vec<String>,
+    pub metric_schema_version: String,
+}
+
+impl BenchmarkManifest {
+    pub fn new(
+        suite_name: impl Into<String>,
+        seed_range_start: u64,
+        seed_range_end: u64,
+        strategy_names: Vec<String>,
+        profile_names: Vec<String>,
+    ) -> Self {
+        let git_commit = std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .unwrap_or_else(|| "unknown".to_owned())
+            .trim()
+            .to_owned();
+
+        let command_line = std::env::args().collect::<Vec<_>>().join(" ");
+
+        Self {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            git_commit,
+            command_line,
+            suite_name: suite_name.into(),
+            schema_version: "0.1".to_owned(),
+            seed_range_start,
+            seed_range_end,
+            strategy_names,
+            profile_names,
+            metric_schema_version: "0.1".to_owned(),
+        }
+    }
+}
+
+/// Export a ComparisonReport as a markdown table fragment.
+pub fn export_markdown(report: &crate::ComparisonReport) -> String {
+    format!("{}", report)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

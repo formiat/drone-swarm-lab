@@ -19,6 +19,13 @@ use swarm_types::AgentId;
 type ScenarioBuilder = Box<dyn Fn(u64, &str) -> (Scenario, RunConfig)>;
 type StrategyFactory = Box<dyn Fn(&Scenario, &RunConfig) -> Box<dyn swarm_alloc::Strategy>>;
 
+#[derive(Clone, Copy)]
+enum RunMode {
+    Smoke,  // 1 seed
+    Quick,  // 10 seeds (default)
+    Full,   // 1000 seeds
+}
+
 #[derive(Clone)]
 enum Mission {
     Coverage,
@@ -55,31 +62,35 @@ fn mission_name(mission: &Mission) -> &'static str {
 }
 
 struct CliArgs {
-    full_mode: bool,
+    mode: RunMode,
     missions: Vec<Mission>,
     json_path: Option<String>,
     csv_path: Option<String>,
     replay_log_dir: Option<String>,
     run_id_prefix: Option<String>,
     scenario_suite_path: Option<String>,
+    output_dir: Option<String>,
 }
 
 fn parse_args() -> CliArgs {
     let args: Vec<String> = std::env::args().collect();
     let mut cli = CliArgs {
-        full_mode: false,
+        mode: RunMode::Quick,
         missions: vec![Mission::Coverage],
         json_path: None,
         csv_path: None,
         replay_log_dir: None,
         run_id_prefix: None,
         scenario_suite_path: None,
+        output_dir: None,
     };
 
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
-            "--full" => cli.full_mode = true,
+            "--smoke" => cli.mode = RunMode::Smoke,
+            "--quick" => cli.mode = RunMode::Quick,
+            "--full" => cli.mode = RunMode::Full,
             "--mission" => {
                 i += 1;
                 if i < args.len() {
@@ -114,6 +125,12 @@ fn parse_args() -> CliArgs {
                 i += 1;
                 if i < args.len() {
                     cli.scenario_suite_path = Some(args[i].clone());
+                }
+            }
+            "--output-dir" => {
+                i += 1;
+                if i < args.len() {
+                    cli.output_dir = Some(args[i].clone());
                 }
             }
             _ => {}
@@ -180,7 +197,7 @@ fn main() {
 
         let (profile_names, builder): (Vec<String>, ScenarioBuilder) = match mission {
             Mission::Coverage => {
-                let profiles = if cli.full_mode {
+                let profiles = if matches!(cli.mode, RunMode::Full) {
                     let nets = StandardProfiles::network_profiles();
                     let fails = StandardProfiles::failure_profiles();
                     let mut combos = Vec::new();
