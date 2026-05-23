@@ -1,8 +1,8 @@
 use std::path::Path;
 
-use swarm_comms::{task_to_waypoint, MockMavlinkTransport};
 #[cfg(feature = "mavlink-transport")]
 use swarm_comms::Transport;
+use swarm_comms::{task_to_waypoint, MockMavlinkTransport};
 use swarm_sim::load_scenario_suite;
 
 struct CliArgs {
@@ -155,9 +155,7 @@ fn main() {
         {
             let _ = connection_string;
             eprintln!("Error: --connection requires feature 'mavlink-transport'.");
-            eprintln!(
-                "  Build with: cargo build --bin sitl_agent --features mavlink-transport"
-            );
+            eprintln!("  Build with: cargo build --bin sitl_agent --features mavlink-transport");
             std::process::exit(1);
         }
     } else {
