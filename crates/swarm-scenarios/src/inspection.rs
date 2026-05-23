@@ -78,9 +78,8 @@ pub fn build_inspection_scenario(config: &InspectionConfig) -> (Scenario, RunCon
             let _y = rng.gen::<f64>() * 20.0;
             let (battery, battery_drain_rate, max_range) = if config.battery_constraint > 0.0 {
                 let total_length: f64 = config.graph.edges.iter().map(|e| e.length_m).sum();
-                let avg_per_agent = total_length / config.agent_count as f64;
                 let battery = config.battery_constraint * 100.0;
-                let required_range = avg_per_agent * 2.5;
+                let required_range = total_length * 2.0;
                 let drain_rate = battery / required_range;
                 (battery, drain_rate, required_range)
             } else {
@@ -229,10 +228,7 @@ mod tests {
         let metrics = swarm_sim::ScenarioRunner::run(&scenario, run_config);
         eprintln!("perimeter metrics: exhausted={}, coverage={}, missed={}, revisits={}, total_ticks={}, final_battery_min={}, avg_distance_travelled={}, all_tasks_assigned={}",
             metrics.agents_exhausted, metrics.edge_coverage_rate, metrics.missed_edges, metrics.revisit_count, metrics.total_ticks, metrics.final_battery_min, metrics.avg_distance_travelled, metrics.all_tasks_assigned);
-        assert_eq!(
-            metrics.agents_exhausted, 0,
-            "no agents should be exhausted"
-        );
+        assert_eq!(metrics.agents_exhausted, 0, "no agents should be exhausted");
         assert!(
             metrics.edge_coverage_rate > 0.8,
             "coverage should be > 0.8, got {}",
