@@ -1,6 +1,8 @@
 # SITL Setup Guide
 
-## Mock Mode (no PX4 required)
+This guide covers both the mock SITL path (no external dependencies) and the real PX4 SITL path (experimental).
+
+## Quick Start (Mock Mode)
 
 The mock mode sends waypoints to an in-memory `MockMavlinkTransport` and prints them to stderr. It requires no external dependencies and works out of the box.
 
@@ -18,7 +20,9 @@ WAYPOINT seq=1 x=30.0 y=40.0 z=0.0
 Mock mode: 3 waypoints sent.
 ```
 
-## Real PX4 Mode (experimental)
+This is the recommended path for testing and CI.
+
+## Real PX4 Mode (Experimental)
 
 Prerequisites:
 1. PX4 SITL running: `make px4_sitl gazebo_iris`
@@ -38,3 +42,12 @@ cargo run --bin sitl_agent --features mavlink-transport -- \
 - Real PX4 path is experimental and requires manual SITL setup.
 - Only waypoint tasks with `pose` are converted to MAVLink commands.
 - Multi-agent SITL not yet supported (single agent only).
+- `--connection` without `mavlink-transport` feature produces a build instruction error.
+
+## Troubleshooting
+
+| Problem | Cause | Fix |
+|---|---|---|
+| `0 pose-tasks` warning | Scenario has no tasks with `pose` | Use `scenarios/sitl.waypoints.json` |
+| `mavlink-transport feature required` | Built without feature | `cargo build --features mavlink-transport` |
+| No PX4 connection | PX4 SITL not running | Start PX4 SITL first |

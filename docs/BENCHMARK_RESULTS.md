@@ -10,6 +10,34 @@
 
 > **Note:** Numbers come from quick mode (10 seeds). For publishable results run `--full` (1000 seeds).
 
+## Reproducibility
+
+All results are reproducible with the commands below. Each command creates a self-contained benchmark pack in `results/`:
+
+```bash
+# SAR v2
+cargo run -p swarm-examples --bin strategy_comparison -- \
+  --quick --mission sar --output-dir results/sar_quick/
+
+# Infrastructure Inspection
+cargo run -p swarm-examples --bin strategy_comparison -- \
+  --quick --mission inspection --output-dir results/inspection_quick/
+
+# Safety Coverage
+cargo run -p swarm-examples --bin strategy_comparison -- \
+  --scenario-suite scenarios/coverage.safety.json --output-dir results/safety_quick/
+
+# CBBA Stress
+cargo run -p swarm-examples --bin strategy_comparison -- \
+  --scenario-suite scenarios/cbba_stress.json --output-dir results/cbba_quick/
+```
+
+Each output directory contains:
+- `manifest.json` — timestamp, git commit, command line
+- `scenario_snapshot.json` — full input scenario suite
+- `results.json` / `results.csv` — raw numbers
+- `table.md` — markdown table fragment
+
 ---
 
 ## SAR v2 (Belief-based Search)

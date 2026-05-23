@@ -2,50 +2,104 @@
 
 Swarm Coordination Runtime is a Rust workspace for mission-level coordination of autonomous drone fleets. The current code focuses on deterministic simulation, task ownership, heartbeat-based membership, failure detection, and measurable recovery behaviour rather than low-level flight control.
 
+This is a **research prototype**, not a production flight-control system.
+
+## Quick Start (Golden Path)
+
+### 1. Clone and test
+
+```bash
+git clone <repo-url>
+cd drone
+cargo test --workspace
+```
+
+Expected: 250+ tests pass in ~15 seconds.
+
+### 2. Run smoke benchmark
+
+```bash
+cargo run -p swarm-examples --bin strategy_comparison -- \
+  --smoke --mission coverage --output-dir results/coverage_smoke/
+```
+
+Expected: `results/coverage_smoke/` created with `results.json`, `results.csv`, `table.md`, `manifest.json`.
+
+### 3. Run scenario suite
+
+```bash
+cargo run -p swarm-examples --bin strategy_comparison -- \
+  --scenario-suite scenarios/coverage.safety.json --output-dir results/safety_smoke/
+```
+
+### 4. Create benchmark pack with report
+
+```bash
+cargo run -p swarm-examples --bin strategy_comparison -- \
+  --quick --mission sar --output-dir results/sar_quick/ --report results/sar_quick/report.md
+```
+
+### 5. Inspect replay
+
+```bash
+# Generate replay log
+cargo run -p swarm-examples --bin strategy_comparison -- \
+  --smoke --mission coverage --replay-log results/replay/
+
+# Inspect summary
+cargo run --bin replay -- --log results/replay/*.json --summary
+
+# ASCII snapshot at tick 50
+cargo run --bin replay -- --log results/replay/*.json --tick 50
+```
+
+### 6. Run mock SITL
+
+```bash
+cargo run --bin sitl_agent -- \
+  --mock --scenario scenarios/sitl.waypoints.json --agent-id agent-0
+```
+
+---
+
 ## Current Status
 
-**Milestone 1** — complete. Foundational coordination: heartbeat-based membership, timeout failure detection, task registry state machine, greedy reallocation, deterministic scenario runner, metrics.
+| Feature | Status | Since | Notes |
+|---|---|---|---|
+| Benchmark (smoke/quick/full) | ✅ Stable | M21 | `--output-dir`, `--report`, `BenchmarkManifest` |
+| Mission DSL | ✅ Stable | M19 | `schema_version: "0.1"`, validation API |
+| Safety Layer | ✅ Stable | M20 | `SafetyAllocator` wrapper, no-fly/geofence/separation |
+| SAR v2 | ✅ Stable | M14 | `BeliefMap`, sensor noise, confirmation scans |
+| CBBA Robustness | ✅ Stable | M15 | Convergence metrics, TSP ordering, retransmission |
+| Infrastructure Inspection | ✅ Stable | M16 | Edge coverage, route efficiency |
+| Mock SITL | ✅ Stable | M20 | `sitl_agent --mock`, no external deps |
+| Replay / Debuggability | ✅ Stable | M23 | `replay` CLI, ASCII visualization |
+| Real PX4 | 🧪 Experimental | M20 | Feature-gated, requires PX4 SITL setup |
 
-**Milestone 2** — complete. Realistic task allocation:
+**Test coverage:** 250+ tests, 10 crates, 12 JSON scenarios.
 
-- Dynamic task injection at configurable ticks during a mission.
-- Task expiration: Unassigned and Assigned tasks are removed when their deadline passes. InProgress tasks are never expired.
-- Agent capability matching as a hard constraint: an agent that lacks a required capability is excluded from allocation.
-- Auction-based allocation (`AuctionAllocator`) with a cost function over Euclidean distance, battery level, and role preference.
-- Pluggable `Allocator` trait: `GreedyAllocator` and `AuctionAllocator` are both usable as drop-in strategies.
-- Ownership conflict detection: duplicate allocation decisions in one round are counted in metrics.
-- Extended metrics: `tasks_injected`, `tasks_expired`, `conflicting_assignments`.
-- Side-by-side comparison of Greedy vs Auction over 1 000 deterministic seeds.
+---
 
-**Milestone 3** — complete. Pluggable transport, multiprocess runtime:
+## Known Limitations
 
-- `AgentNode<T: Transport>` — unified runtime contour usable in both in-process and multi-process modes.
-- Pluggable `Transport` trait with two implementations: `InMemAgentTransport` (shared bus for simulation) and `UdpTransport` (UDP loopback for OS-level multiprocess).
-- `ScenarioRunner` refactored to use `AgentNode<InMemAgentTransport>` — same runtime, same allocator, same coordinator.
-- Multiprocess scenario: 5 OS-processes communicating via UDP loopback; `kill -9` one agent, rest detect failure and reallocate tasks.
-- Basic observability via `tracing` spans in `swarm-runtime` and `swarm-alloc`. Configure with `RUST_LOG`.
+1. **Simulation only:** No real hardware integration beyond experimental PX4 SITL scaffold.
+2. **Single-agent SITL:** Multi-agent SITL not yet supported.
+3. **2D world:** All scenarios operate in 2D (x, y) with fixed altitude.
+4. **Deterministic RNG:** Scenarios use seeded RNG; real-world noise is not modeled.
+5. **Simplified kinematics:** Battery drain is proportional to distance, not accounting for hover/climb.
+6. **CBBA on SAR:** CBBA and centralized strategies show 0% success on SAR grid tasks due to grid_cell handling.
+7. **Inspection perimeter:** Perimeter profile is challenging; best success rate is 0.4 (greedy).
 
-**Milestone 4** — complete. Partial connectivity, gossip-based convergence:
+---
 
-- `RuntimeMessage` typed protocol: heartbeat (with sender_tick and generation) + gossip/anti-entropy (full task→agent + agent→generation maps).
-- Network partitions via `InMemNetwork::add_partition`/`remove_partition` — configurable agent-pair blocks.
-- Stale heartbeat protection: `generation` (epoch) per agent; `record_heartbeat` ignores lower generation and old sender tick.
-- Gossip/anti-entropy sync: agents periodically exchange assignment maps + generation maps; deterministic merge via `(generation, AgentId)` total order guarantees convergence after partition heals.
-- Duplicate/delayed/reordered message handling: heartbeat is idempotent, gossip is commutative (applies in any order).
-- New metrics: `partition_events`, `partitions_active`, `stale_messages_discarded`, `convergence_ticks`, `max_view_divergence`.
-- Partition scenario: 6 agents, tick 10 partition into two groups, tick 30 heal, gossip converges after heal.
+## Non-Goals
 
-**Milestone 5** — complete. Emergency Mesh Network:
+- **Not a production flight-control system.** This is a research prototype for coordination algorithms.
+- **Not a certified safety layer.** Safety constraints are checked but not formally verified.
+- **Not ready for real-world swarm flights.** Simulation-only with experimental SITL scaffold.
+- **Not a MAVLink ground control station.** PX4 integration is experimental and minimal.
 
-- `comms_range` on `Agent`: range-based connectivity using distance and BFS reachability.
-- `GroundNode` type: passive mesh participants that do not receive tasks.
-- `required_role` on `Task`: hard constraint for role-specific tasks (e.g., relay tasks).
-- `ConnectivityModel` in `swarm-comms`: manual BFS/DFS on adjacency list for mesh reachability, hop count, and network availability fraction.
-- `ConnectivityAwareAllocator` in `swarm-alloc`: optimizes relay placement by simulating each candidate's effect on network availability.
-- `Allocator` trait extended with `allocate_with_connectivity` (default impl delegates to `allocate` for backward compatibility).
-- Pose update in `ScenarioRunner`: agents move to their assigned task's pose, changing the connectivity graph dynamically.
-- Network availability metrics: `network_availability`, `avg_hop_count`, `disconnected_agents_max`, `relay_reallocation_ticks`.
-- Emergency Mesh scenario: base station, scouts, relays, ground nodes; relay failure and reallocation; 1000 seeds with availability threshold >= 0.8.
+---
 
 ## Workspace Layout
 
@@ -54,12 +108,57 @@ Swarm Coordination Runtime is a Rust workspace for mission-level coordination of
 | `swarm-types` | Shared IDs, agent/task/message types, pose and velocity. |
 | `swarm-comms` | Transport trait, in-memory network, UDP transport, MAVLink transport (optional). |
 | `swarm-runtime` | Membership, failure detection, task registry, coordinator, `AgentNode`. |
-| `swarm-alloc` | Greedy and auction allocation strategies. |
+| `swarm-alloc` | Greedy, auction, connectivity-aware, centralized, CBBA allocation strategies. |
 | `swarm-sim` | Deterministic clock, scenario model, generic scenario runner, DSL loader, JSON/CSV export. |
-| `swarm-scenarios` | Scenario builders: Coverage With Failure, Dynamic Auction, Emergency Mesh, SAR, and Infrastructure Inspection. |
+| `swarm-scenarios` | Scenario builders: Coverage, Emergency Mesh, SAR, Infrastructure Inspection. |
 | `swarm-metrics` | Per-run and aggregate metrics. |
-| `swarm-replay` | Placeholder for future replay support. |
-| `swarm-examples` | Runnable binaries. |
+| `swarm-replay` | Event log, replay engine, summary CLI, ASCII visualization. |
+| `swarm-safety` | Safety layer: geofence, no-fly zones, separation constraints. |
+| `swarm-examples` | Runnable binaries: `strategy_comparison`, `sitl_agent`, `replay`. |
+
+---
+
+## Milestones Overview
+
+| Milestone | Status | Key Deliverable |
+|---|---|---|
+| M1 | ✅ | Foundational coordination: heartbeat, failure detection, greedy reallocation |
+| M2 | ✅ | Auction allocation, capability matching, task expiration |
+| M3 | ✅ | Pluggable transport, multiprocess runtime |
+| M4 | ✅ | Partial connectivity, gossip-based convergence |
+| M5 | ✅ | Emergency Mesh Network, connectivity-aware allocation |
+| M6 | ✅ | Strategy Comparison Platform, centralized oracle |
+| M7 | ✅ | Replay infrastructure, JSON/CSV export |
+| M8 | ✅ | Kinematic model, battery drain, movement |
+| M9 | ✅ | SAR v1: grid search, hidden targets |
+| M10 | ✅ | CBBA: distributed consensus-based bundle algorithm |
+| M11 | ✅ | Hardening: mission-aware export, proptest |
+| M12 | ✅ | Mission DSL: JSON scenario suites |
+| M13 | ✅ | Safety Layer: geofence, no-fly, separation |
+| M14 | ✅ | SAR v2: BeliefMap, Bayes updating, sensor noise |
+| M15 | ✅ | CBBA Robustness: TSP ordering, retransmission, convergence metrics |
+| M16 | ✅ | Infrastructure Inspection: edge coverage, route efficiency |
+| M17 | ✅ | SITL / MAVLink scaffold |
+| M18 | ✅ | Scenario Catalog Hardening: validation, smoke tests |
+| M19 | ✅ | DSL Schema / Validation: `schema_version`, typed errors |
+| M20 | ✅ | SITL Path Consolidation: mock vs real PX4 |
+| M21 | ✅ | Reproducible Benchmark Pack: smoke/quick/full, manifest |
+| M22 | ✅ | Benchmark Report / Analysis: `docs/BENCHMARK_RESULTS.md` |
+| M23 | ✅ | Replay / Debuggability: `replay` CLI, ASCII viz |
+| M24 | ✅ | Release Candidate / Golden Path: README, docs, non-goals |
+
+---
+
+## Docs
+
+| Document | Description |
+|---|---|
+| [`docs/BENCHMARK_RESULTS.md`](docs/BENCHMARK_RESULTS.md) | Real benchmark numbers and analysis |
+| [`docs/SCENARIO_DSL.md`](docs/SCENARIO_DSL.md) | Scenario suite format and validation |
+| [`docs/REPLAY.md`](docs/REPLAY.md) | Replay event log schema and CLI usage |
+| [`docs/SITL_SETUP.md`](docs/SITL_SETUP.md) | Mock and real PX4 SITL setup |
+
+---
 
 ## Build
 
@@ -69,713 +168,6 @@ cargo test --workspace
 cargo clippy --all-targets -- -D warnings
 ```
 
-## Run Examples
+## License
 
-Run the baseline empty smoke example:
-
-```bash
-cargo run -p swarm-examples --bin empty_scenario
-```
-
-Run the Milestone 1 Coverage With Failure scenario (1 000 seeds):
-
-```bash
-cargo run -p swarm-examples --bin coverage_with_failure
-```
-
-Run the Milestone 2 Dynamic Auction comparison (1 000 seeds × 2 strategies):
-
-```bash
-cargo run -p swarm-examples --bin dynamic_auction
-```
-
-Run the Milestone 3 multiprocess scenario (5 agents over UDP loopback, crash test):
-
-```bash
-cargo run -p swarm-examples --bin multiprocess_scenario
-```
-
-Run the Milestone 4 partition + convergence scenario (6 agents, in-process):
-
-```bash
-cargo run -p swarm-examples --bin partition_scenario
-```
-
-Run the Milestone 5 Emergency Mesh scenario (1000 seeds, connectivity-aware allocation, relay reallocation):
-
-```bash
-cargo run -p swarm-examples --bin emergency_mesh_scenario
-```
-
-Enable tracing for observability:
-
-```bash
-RUST_LOG=info cargo run -p swarm-examples --bin multiprocess_scenario
-RUST_LOG=debug cargo run -p swarm-examples --bin agent_process -- --config /tmp/swarm-v03/config-0.json
-```
-
-## Observe Output
-
-`empty_scenario` advances a deterministic clock for 10 ticks and prints elapsed simulated time.
-
-`coverage_with_failure` runs 1 000 deterministic seeds with 10 agents and 15 tasks, crashes `agent-0`, detects the failure, reallocates tasks, and reports aggregate metrics. Exits with code `1` if `success_rate < 0.99`.
-
-`dynamic_auction` runs 1 000 seeds for both Greedy and Auction strategies using the Dynamic Auction scenario: 10 agents with heterogeneous capabilities and poses, 8 initial tasks with capability requirements, 10 tasks injected dynamically (each with a 15-tick expiry window), and 1 agent failure. Outputs side-by-side aggregate metrics:
-
-```
-=== greedy ===
-runs: 1000
-success_rate: 1.000
-avg_detection_ticks: ...
-avg_reallocation_ticks: ...
-avg_messages_attempted: ...
-avg_messages_dropped: ...
-avg_tasks_injected: 10.000
-avg_tasks_expired: ...
-avg_conflicting_assignments: 0.000
-=== auction ===
-...
-```
-
-Exits with code `1` if either strategy has `success_rate < 0.95`.
-
-`multiprocess_scenario` launches 5 OS-level `agent_process` instances on dynamic loopback UDP ports, kills `agent-0` after 2s, waits 3s for failure detection, then reads per-agent JSON metrics from `/tmp/swarm-v03/`. Verifies:
-- All survivors detected `agent-0` as failed.
-- `global_assignment_map` is identical across all survivors (convergence).
-- No task remains assigned to `agent-0`.
-- All 8 tasks are assigned.
-
-Prints `PASS` on success, exits code `0`; reports violations with `FAIL` and exits code `1`.
-
-`partition_scenario` runs a deterministic in-process partition scenario: 6 agents, 8 tasks, full connectivity until tick 10, then partition (agent-0,1,2 isolated from agent-3,4,5), heal at tick 30, gossip interval every 3 ticks. Verifies:
-- Partition was active (`partitions_active: true`).
-- Views diverge during partition (`max_view_divergence > 0`).
-- Maps converge after heal (`convergence_ticks` is set).
-- All tasks assigned (`success: true`).
-
-Prints metrics and exits code `0` on success; panics on invariant violation.
-
-`emergency_mesh_scenario` runs 1000 seeds with 4 scouts, 2 relays, 2 ground nodes, and a base station in a 20×0 area with `comms_range = 15.0`. One relay fails at tick 15. The `ConnectivityAwareAllocator` assigns relay tasks to optimize mesh reachability. After reallocation, the new relay agent moves to the relay task pose, restoring connectivity. Verifies:
-- `network_availability >= 0.8` across all seeds.
-- `relay_reallocation_ticks` is set (relay tasks reassigned after failure).
-- All scout tasks assigned to capable agents.
-
-Prints aggregate metrics and exits code `0` on success, `1` on invariant violation.
-
-**Milestone 6** — complete. Strategy Comparison Platform:
-
-- `Strategy` trait that wraps any `Allocator` and provides metadata (name, description).
-- `StrategyRegistry` that holds all registered strategies for benchmark harnesses.
-- `CentralizedPlanner` — oracle baseline with full global knowledge, greedy bipartite matching.
-- New metrics: `coverage_progress`, `bytes_sent`, `stale_state_age_ticks`, `battery_margin_min`, `battery_margin_avg`.
-- `NetworkProfile` and `FailureProfile` with `StandardProfiles` (Ideal, LightLoss, MediumLoss, HeavyLoss, HighLatency, PartitionProne × NoFailures, SingleFailure, MultipleFailures, CascadeFailure).
-- `BenchmarkHarness` that runs strategies across seeds and profiles, producing `ComparisonReport` with markdown-compatible table output.
-- `strategy_comparison` binary that runs all 4 strategies against StandardProfiles combinations and verifies invariants (e.g., centralized >= greedy on ideal network).
-
-Run the quick benchmark (10 seeds × 4 key profiles × 4 strategies):
-
-```bash
-cargo run -p swarm-examples --bin strategy_comparison
-```
-
-Run the full benchmark (1000 seeds × all 24 profile combinations × 4 strategies):
-
-```bash
-cargo run -p swarm-examples --bin strategy_comparison -- --full
-```
-
-Sample output (quick mode):
-
-```
-| Стратегия | Профиль | Успех | Завершение | Обнаружение | Перераспределение | Покрытие | Сообщения | Байты | Конфликты | Stale | Батарея мин | Батарея ср | Доступность |
-|-----------|---------|-------|------------|-------------|-------------------|----------|-----------|-------|-----------|-------|-------------|------------|-------------|
-| greedy    | ideal-no-failures | 1.000 |      1.000 |       0.000 |             0.000 |    1.000 |    90.000 |  3960 |     0.000 |     0 |     100.000 |    100.000 |       1.000 |
-| auction   | ideal-no-failures | 1.000 |      1.000 |       0.000 |             0.000 |    1.000 |    90.000 |  3960 |     0.000 |     0 |     100.000 |    100.000 |       1.000 |
-| connectivity-aware | ideal-no-failures | 1.000 |      1.000 |       0.000 |             0.000 |    1.000 |    90.000 |  3960 |     0.000 |     0 |     100.000 |    100.000 |       1.000 |
-| centralized | ideal-no-failures | 1.000 |      1.000 |       0.000 |             0.000 |    1.000 |    90.000 |  3960 |     0.000 |     0 |     100.000 |    100.000 |       1.000 |
-```
-
-**Milestone 7** — complete. Experiment Infrastructure:
-
-- `swarm-replay` crate: EventLog with TickStart, AgentFailed, TaskAssigned, MessageSent, MessageDropped, PartitionAdded/Removed, PoseUpdated events; deterministic replay engine; JSON serialization.
-- `ScenarioRunner::run_with_log`: new function that returns `(RunMetrics, Option<EventLog>)` alongside the existing `run_with`.
-- `ComparisonReport` with `benchmark_run_id` and per-row `run_id`.
-- JSON/CSV export via `swarm_sim::export_json` and `swarm_sim::export_csv`.
-- CLI flags for `strategy_comparison`: `--json <path>`, `--csv <path>`, `--replay-log <dir>`, `--run-id-prefix <prefix>`.
-- Property-based tests with `proptest`: randomized Agent/Task generation, runner no-panic invariant, success-rate boundedness.
-
-**Milestone 8** — complete. Kinematic + Battery Foundation:
-
-- Kinematic model: `Agent` gains `speed` (m/s), `max_range` (max travel distance), `battery_drain_rate` (%/m). Movement: `position += direction * speed * dt` per tick toward assigned task's pose.
-- Battery drain: proportional to distance travelled. Agent with `battery <= 0` becomes dead and is excluded from allocation (battery gate in both Greedy and Auction allocators).
-- `MembershipView::apply_movement()` moves agents and drains battery; `NodeConfig { enable_movement, tick_duration_ms }` controls movement per node.
-- Movement affects connectivity automatically: `comms_range` + new pose recalculates links each tick via `ConnectivityModel`.
-- New metrics: `final_battery_min`, `avg_distance_travelled`, `agents_exhausted`, `total_distance_travelled`, `mission_completion_ticks`, `time_to_first_exhaustion`.
-- Backward compatible: `speed=0` / `enable_movement=false` by default means existing scenarios unchanged.
-
-Run with JSON export:
-
-```bash
-cargo run -p swarm-examples --bin strategy_comparison -- --json results.json
-```
-
-Run with CSV export:
-
-```bash
-cargo run -p swarm-examples --bin strategy_comparison -- --csv results.csv
-```
-
-**Milestone 9** — complete. SAR v1 (Search and Rescue):
-
-- `SearchGrid` — discrete search area divided into cells; each cell is a Task with a pose.
-- `HiddenTarget` — targets randomly placed in cells; unknown to agents until scanned.
-- Role-based sensor model: `Scout` (standard PoD), `Thermal` (elevated PoD), `Relay` (maintains mesh, reduced search capability).
-- `SensorModel` — probability of detection (`scout_pod`, `thermal_pod`, `relay_pod`) applied when an agent scans a cell after arriving at its center.
-- `GridState` — tracks per-cell scan progress, coverage fraction, and target discovery.
-- New metrics: `time_to_find` (tick of first target discovery), `coverage_over_time` (fraction of cells scanned per tick), `probability_of_detection` (targets found / total), `targets_found`, `targets_total`, `scan_count`.
-- Deterministic: target placement and scan outcomes use seeded RNG; reproducible via replay.
-- Success criteria: all targets found before `max_ticks` or battery exhaustion.
-
-Run the SAR scenario:
-
-```bash
-cargo run -p swarm-examples --bin sar_scenario
-```
-
-Sample output:
-
-```
-Targets found: 2/3
-Time to first find: Some(145)
-Final coverage: 0.72
-PoD: 0.67
-```
-
-**Milestone 10** — complete. CBBA (Consensus-Based Bundle Algorithm):
-
-- `CbbaAllocator` in `swarm-alloc` — first truly distributed allocation algorithm. Phase 1: bundle building (marginal score with distance + battery + position penalty). Phase 2: consensus (exchange winning bids via gossip, remote bids override local if higher).
-- `Allocator` trait changed from `&self` to `&mut self` for stateful CBBA (28 call sites across 8 files).
-- `StrategyRegistry` includes 5 strategies: greedy, auction, connectivity-aware, centralized, cbba.
-- CBBA metrics: `cbba_rounds_to_convergence`, `cbba_converged`, `cbba_messages`.
-
-**Milestone 10 Phase 1** — complete. True Distributed CBBA:
-
-- Per-agent `CbbaAllocator` state (not shared facade) — each agent independently builds bundles.
-- `send_cbba_bids()` broadcasts winning bids via `RuntimeMessage::Cbba` through transport.
-- `apply_remote_bids()` called with real remote bids from other agents in simulation path.
-- Registry sync: remote assignments registered locally via `assign()` so `all_tasks_assigned` works correctly.
-- `Allocator::is_distributed()` distinguishes distributed strategies (CBBA returns `true`).
-- `RunConfig.enable_cbba: bool` (default `false`) controls distributed CBBA per scenario.
-
-```bash
-cargo run -p swarm-examples --bin strategy_comparison -- --json results.json
-```
-
-**Phase 2** — complete. Unified Experiment Runner:
-
-- `--mission coverage|emergency-mesh|sar|all` CLI flag for multi-mission benchmarks.
-- `SarProfile` (Ideal, Standard, Challenging, BatteryConstrained) and `EmergencyMeshProfile` (Ideal, LowLoss, MediumLoss).
-- `ComparisonReport` with mission, scenario, seed_range, and SAR metric columns (TimeToFind, PoD, TargetsFound).
-- `AggregateMetrics` includes SAR fields: `avg_time_to_find`, `avg_probability_of_detection`, `avg_targets_found`.
-- `ReportRow` with new columns in JSON/CSV export: mission, scenario, seed_range, time_to_find, probability_of_detection, targets_found.
-
-Run all 3 missions with CBBA included:
-
-```bash
-cargo run -p swarm-examples --bin strategy_comparison --mission all --json all.json --csv all.csv
-```
-
-### Benchmark Results (10 seeds per cell)
-
-| Strategy | Profile | Success | Coverage | Conflicts | BatteryAvg | TimeToFind | PoD | Targets |
-|----------|---------|---------|----------|-----------|------------|------------|-----|---------|
-| greedy   | coverage/ideal | 1.000 | 1.000 | 0 | 100.0 | - | - | - |
-| greedy   | sar/ideal | 0.600 | 0.992 | 2679 | 92.0 | 3.0 | 0.10 | 0.2 |
-| auction  | coverage/ideal | 1.000 | 1.000 | 0 | 100.0 | - | - | - |
-| centralized | coverage/ideal | 1.000 | 1.000 | 0 | 100.0 | - | - | - |
-| cbba     | coverage/ideal | 1.000 | 1.000 | 0 | 100.0 | - | - | - |
-| cbba     | coverage/ideal-single-failure | 1.000 | 1.000 | 36 | 100.0 | - | - | - |
-| cbba     | emergency-mesh/ideal | 0.200 | 0.800 | 104 | 100.0 | - | - | - |
-| cbba     | sar/ideal | 0.000 | 0.347 | 1020 | 95.2 | 2.0 | 0.15 | 0.3 |
-
-*(10 seeds per cell, quick mode)*
-
-### M11 Hardening
-
-- `mission` и `scenario` колонки в JSON/CSV заполняются реальными значениями (не пустые строки).
-- `benchmark_run_id` включает имя миссии вместо хардкоженного "coverage".
-- Property-based тесты для distributed CBBA: 2 proptest (100 случаев, ~3.4s).
-- `seed_range_start`/`seed_range_end` в export из отчёта.
-
-### Mission DSL v0.12
-
-Декларативное описание сценариев в JSON. Сценарии становятся воспроизводимыми артефактами, новые benchmark cases добавляются без перекомпиляции.
-
-Структура `ScenarioSuite`:
-```json
-{
-  "name": "My Suite",
-  "description": "Описание набора сценариев",
-  "scenarios": [
-    {
-      "mission": "coverage",
-      "profile": "ideal-no-failures",
-      "scenario": { "name": "...", "seed": 0, "agents": [...], "tasks": [...], ... },
-      "run_config": { "max_ticks": 50, ... }
-    }
-  ]
-}
-```
-
-**CLI-флаг:** `--scenario-suite <path>` загружает сценарии из JSON вместо Rust-билдеров:
-```bash
-cargo run -p swarm-examples --bin strategy_comparison \
-  --scenario-suite scenarios/coverage.ideal.json \
-  --json results.json
-```
-
-**Примеры JSON-сценариев** в `scenarios/` директории:
-- `coverage.ideal.json` — 5 агентов, 3 задачи, идеальная сеть
-- `emergency-mesh.ideal.json` — 4 scout + 1 relay, ground node, base station
-- `sar.ideal.json` — 3 scout + 1 thermal + 1 relay, 6×6 grid, 2 hidden targets
-
-**Экспорт в JSON:**
-```rust
-use swarm_sim::{ScenarioSuite, ScenarioSuiteEntry, export_suite, load_scenario_suite};
-
-// Загрузка
-let suite = load_scenario_suite("scenarios/coverage.ideal.json")?;
-
-// Экспорт
-let json = export_suite(&suite)?;
-std::fs::write("exported.json", json)?;
-```
-
-### M13 — Safety Layer
-
-Физические и операционные ограничения: geofence, no-fly zones, separation constraints.
-
-**Типы:**
-- `Geofence` — допустимая область (AABB), агент должен оставаться внутри.
-- `NoFlyZone` — запрещённая область (AABB), задачи внутри не назначаются.
-- `SeparationConstraint` — минимальное расстояние между агентами.
-
-**JSON с safety_config:**
-```json
-{
-  "safety_config": {
-    "geofence": {"bounds": {"min_x": 0, "max_x": 100, "min_y": 0, "max_y": 100}},
-    "no_fly_zones": [
-      {"bounds": {"min_x": 40, "max_x": 60, "min_y": 40, "max_y": 60}}
-    ],
-    "separation": {"min_distance_m": 2.0}
-  }
-}
-```
-
-**Запуск с safety:**
-```bash
-cargo run -p swarm-examples --bin strategy_comparison \
-  --scenario-suite scenarios/coverage.safety.json --json safety.json
-```
-
-**Метрика:** `safety_violations` — количество нарушений за прогон (0 = идеально).
-
-### M14 — SAR v2 / Uncertainty Map
-
-Поисково-спасательная миссия с вероятностной картой уверенности (BeliefMap), Bayes-обновлением, повторными сканированиями и учётом ложных срабатываний.
-
-**BeliefMap:**
-- Каждая ячейка имеет `prior` и `posterior` вероятность наличия цели.
-- Bayes-обновление при каждом сканировании: `P(target|detection)` и `P(target|no_detection)`.
-- `entropy(cell)` — неопределённость Шеннона; максимум при `posterior = 0.5`.
-- `highest_uncertainty_cells(n)` — возвращает ячейки с наибольшей энтропией для приоритизации.
-
-**SensorModel v2:**
-```rust
-SensorModel {
-    scout_pod: 0.6,
-    thermal_pod: 0.95,
-    relay_pod: 0.2,
-    detection_probability: 0.6,  // P(detect | target present)
-    false_positive_rate: 0.05,   // P(detect | no target)
-}
-```
-- Role-based PoD остаётся для backward compatibility (SAR v1).
-- `detection_probability` и `false_positive_rate` используются в Bayes-обновлении.
-
-**Повторные сканирования:**
-- Если `posterior ∈ (0.05, 0.95)` — ячейка требует повторного сканирования (confirmation scan).
-- `confirmation_scans` — метрика количества повторных сканов.
-- `false_positives` — количество detection-событий без реальной цели.
-
-**Приоритизация на основе неопределённости:**
-- `sar_task_priority(prior)` — статический priority при создании сценария (v0.14).
-- Priority ∝ `entropy × prior`, масштабировано в диапазон [1, 10].
-
-**Новые метрики:**
-- `belief_entropy_final` — средняя энтропия BeliefMap после прогона.
-- `false_positives` — количество ложных срабатываний.
-- `confirmation_scans` — количество повторных сканирований.
-
-**Профили:**
-- `Uncertain` — moderate PoD (0.5), moderate FPR (0.2), требует repeated scans.
-- `Noisy` — high FPR (0.4), требует многократных подтверждений.
-
-**Запуск SAR v2:**
-```bash
-cargo run -p swarm-examples --bin strategy_comparison \
-  --scenario-suite scenarios/sar.uncertain.json --json sar_v2.json
-
-cargo run -p swarm-examples --bin strategy_comparison \
-  --scenario-suite scenarios/sar.noisy.json --json sar_noisy.json
-```
-
-**Сценарии:**
-- `scenarios/sar.ideal.json` — обновлён до SAR v2 (belief-aware)
-- `scenarios/sar.uncertain.json` — moderate PoD + FPR
-- `scenarios/sar.noisy.json` — high FPR, требует repeated scans
-
-### M15 — CBBA Robustness
-
-Исследование пределов CBBA: сходимость при packet loss, TSP-оптимизация bundles, retransmission,
-convergence time distribution.
-
-**TSP-ordering в bundles:**
-- `order_bundle_tsp()` — greedy nearest-neighbour оптимизация порядка задач в bundle.
-- `bundle_travel_distance` — суммарный путь агента по TSP-упорядоченному bundle.
-
-**Retransmission policy:**
-- `CbbaConfig.retransmit_max_attempts` (default: 3), `retransmit_backoff_ticks` (default: 2).
-- `retransmit_threshold_packet_loss` (default: 0.1) — активация при >10% потерь.
-- Periodic rebroadcast: при превышении порога agent переотправляет bids каждые N тиков.
-
-**Partition healing:**
-- `PartitionEvent.heal_at_tick: Option<u64>` — явное время завершения партиции.
-- При heal_at_tick партиция снимается, CBBA сбрасывает convergence для повторной сходимости.
-
-**Convergence time distribution:**
-- `cbba_convergence_tick` — тик первого достижения consensus всеми агентами.
-- `convergence_ticks_p50/p95/max` — перцентили времени сходимости.
-- `avg_bundle_travel_distance` — средний путь агента по bundle.
-
-**Запуск CBBA stress:**
-```bash
-cargo run -p swarm-examples --bin strategy_comparison \
-  --scenario-suite scenarios/cbba_stress.json --json cbba_stress.json
-```
-
-**Сценарий:**
-- `scenarios/cbba_stress.json` — 4 агента, 3 задачи, packet loss 0.0/0.1/0.2
-
-### M16 — Infrastructure Inspection
-
-Reference mission для обследования линейной инфраструктуры (ЛЭП, трубопроводы, периметр). Агенты покрывают граф рёбер, а не ячейки сетки.
-
-**Типы:**
-- `InspectionEdge` — ребро графа с `from`, `to`, `length_m`, `priority`.
-- `InspectionGraph` — набор рёбер и базовая точка `depot`.
-- Генераторы: `linear_route`, `grid_perimeter`, `random_graph`.
-
-**Метрики:**
-- `edge_coverage_rate` — доля покрытых рёбер.
-- `missed_edges` — число пропущенных рёбер.
-- `revisit_count` — повторные визиты одного ребра.
-- `route_efficiency` — покрытое расстояние / общий путь агента.
-
-**Запуск inspection benchmark:**
-```bash
-cargo run -p swarm-examples --bin strategy_comparison --mission inspection
-cargo run -p swarm-examples --bin strategy_comparison \
-  --scenario-suite scenarios/inspection.linear.json --json inspection.json
-```
-
-**Сценарии:**
-- `scenarios/inspection.linear.json` — прямая ЛЭП, 3 агента.
-- `scenarios/inspection.perimeter.json` — периметр 10×10, 4 агента, battery constraint.
-- `scenarios/inspection.random.json` — случайный граф, 5 агентов.
-
-**Benchmark-таблица (quick mode, 10 seeds):**
-
-| Стратегия | Профиль | Успех | Завершение | EdgeCoverage | MissedEdges | Revisits | RouteEfficiency |
-|-----------|---------|-------|------------|--------------|-------------|----------|-----------------|
-| greedy    | inspection/linear | 1.000 | 1.000 | 1.000 | 0.0 | 0.0 | 0.850 |
-| auction   | inspection/linear | 1.000 | 1.000 | 1.000 | 0.0 | 0.0 | 0.820 |
-
-*(10 seeds per cell, quick mode)*
-
-### M17 — SITL / MAVLink
-
-Single-agent SITL runner для подключения к PX4 Software-In-The-Loop через MAVLink.
-
-**Новые компоненты:**
-- `MavlinkTransport` — реализация `Transport` trait через `rust-mavlink` crate (за feature-флагом `mavlink-transport`).
-- `MockMavlinkTransport` — фиктивная реализация для тестов и `--mock` режима, не требует PX4.
-- `task_to_waypoint(task)` — конвертация задачи в waypoint (без MAVLink зависимостей).
-- `task_to_mavlink_waypoint(task)` — конвертация задачи в `MAV_CMD_NAV_WAYPOINT` (требует feature `mavlink-transport`).
-- `sitl_agent` — новый binary, одновагентный SITL runner.
-
-**Запуск в mock-режиме (без PX4):**
-```bash
-cargo run --bin sitl_agent -- --mock --scenario scenarios/coverage.ideal.json --agent-id agent-0
-```
-
-**Запуск с PX4 SITL:**
-```bash
-cargo run --bin sitl_agent -- \
-  --connection udpout:127.0.0.1:14550 \
-  --scenario scenarios/coverage.ideal.json \
-  --agent-id agent-0
-```
-
-**Документация:** `docs/SITL_SETUP.md` — установка PX4, Gazebo, запуск SITL, troubleshooting.
-
-**Зависимость:** `mavlink = "0.18"` (опциональная, feature `mavlink-transport`).
-
-**Unit-тесты (без PX4):**
-```bash
-cargo test -p swarm-comms mock_mavlink
-cargo test -p swarm-comms task_to_waypoint
-cargo test --bin sitl_agent
-```
-
-Также обновлено описание `swarm-comms` в таблице Workspace Layout (MAVLinkTransport).
-
-### M18 — Integration & Scenario Catalog Hardening
-
-Валидация всех сценариев, smoke-тесты ключевых suite, safety integration tests, SITL waypoints сценарий.
-
-**Исправлено сценариев:**
-- `scenarios/inspection.linear.json` — Infinity → 1000.0 (3 поля max_range)
-- `scenarios/inspection.random.json` — Infinity → 1000.0 (5 полей max_range)
-
-**Новые тесты:**
-- `scenario_catalog` — загрузка всех `scenarios/*.json` через `load_scenario_suite`
-- `smoke_suites` — smoke-run 5 ключевых сценариев (coverage.safety, sar.uncertain/noisy, cbba_stress, inspection.linear)
-- `safety_integration` — 3 теста (no-fly tasks not assigned, violations counted, separation no panic)
-
-**Новый сценарий:**
-- `scenarios/sitl.waypoints.json` — 1 агент, 3 задачи с pose для `sitl_agent --mock`
-
-**Запуск catalog теста:**
-```bash
-cargo test -p swarm-sim --test scenario_catalog
-```
-
-**Запуск smoke тестов:**
-```bash
-cargo test -p swarm-sim --test smoke_suites
-```
-
-**Запуск safety integration:**
-```bash
-cargo test -p swarm-sim --test safety_integration
-```
-
-**SITL waypoints mock:**
-```bash
-cargo run --bin sitl_agent -- --mock --scenario scenarios/sitl.waypoints.json --agent-id agent-0
-```
-
-### M20 — SITL Path Consolidation
-
-Честное разделение mock и real SITL path. Mock работает без внешних зависимостей. Real PX4 path требует feature `mavlink-transport`.
-
-**Mock mode (works out of the box):**
-```bash
-cargo run --bin sitl_agent -- \
-  --mock --scenario scenarios/sitl.waypoints.json --agent-id agent-0
-```
-
-**Real PX4 mode (experimental, requires feature):**
-```bash
-cargo build --bin sitl_agent --features mavlink-transport
-cargo run --bin sitl_agent --features mavlink-transport -- \
-  --connection udp:127.0.0.1:14550 \
-  --scenario scenarios/sitl.waypoints.json \
-  --agent-id agent-0
-```
-
-**Behavior:**
-- `--mock` — отправляет waypoints в `MockMavlinkTransport`, печатает в stderr.
-- `--connection` без feature — выдаёт ошибку с инструкцией по сборке.
-- `--connection` с feature — использует `MavlinkTransport` для реальной отправки.
-- 0 pose-задач — warning и exit(1).
-
-**Документация:** `docs/SITL_SETUP.md`
-
-### M19 — DSL Schema / Validation
-
-Стабильный пользовательский контракт для сценариев: `schema_version`, семантическая валидация, человекочитаемые ошибки.
-
-**Schema version:**
-- Все JSON-сценарии имеют `"schema_version": "0.1"`.
-- Legacy JSON без `schema_version` получает `"0.1"` по умолчанию (`#[serde(default)]`).
-
-**Validation API:**
-```rust
-use swarm_sim::{validate_scenario_suite, validate_entry, ValidationError};
-
-let errors = validate_scenario_suite(&suite);
-for err in &errors {
-    eprintln!("[{}] {}", err.field, err.message);
-}
-```
-
-**Проверки:**
-- Suite: `name` не пуст, `scenarios` не пуст, `schema_version == "0.1"`.
-- Entry: `mission` и `profile` не пусты, `agents` и `tasks` не пусты, `max_ticks > 0`.
-- Mission-specific:
-  - SAR: требует `grid_state` и задачи с `grid_cell`.
-  - Inspection: требует `enable_movement = true` и задачи с `edge_id`.
-  - CBBA-stress: требует `enable_cbba = true` и `gossip_interval_ticks <= 5`.
-  - SITL: требует задачи с `pose`.
-  - Safety-профили: требуют `safety_config`.
-
-**CLI:**
-- `strategy_comparison` и `sitl_agent` выводят validation errors и завершаются с exit(1) при невалидном сценарии.
-
-**Запуск с валидацией:**
-```bash
-cargo run -p swarm-examples --bin strategy_comparison \
-  -- --scenario-suite scenarios/coverage.ideal.json
-```
-
-**Пример ошибки:**
-```
-Validation failed for scenarios/sar.ideal.json:
-  [run_config.grid_state] SAR mission requires grid_state
-```
-
-### M21 — Reproducible Benchmark Pack
-
-Unified, self-contained benchmark output with manifest, scenario snapshot, and reproducible commands.
-
-**Run modes:**
-
-| Mode | Seeds | Purpose |
-|---|---|---|
-| `--smoke` | 1 | Fast CI check |
-| `--quick` | 10 | Local development (default) |
-| `--full` | 1000 | Publishable / regression test |
-
-**Smoke (1 seed, CI):**
-```bash
-cargo run -p swarm-examples --bin strategy_comparison -- \
-  --smoke --mission sar --output-dir results/sar_smoke/
-```
-
-**Quick (10 seeds, local check):**
-```bash
-cargo run -p swarm-examples --bin strategy_comparison -- \
-  --quick --mission all --output-dir results/all_quick/
-```
-
-**Full (1000 seeds, publishable):**
-```bash
-cargo run -p swarm-examples --bin strategy_comparison -- \
-  --full --mission all --output-dir results/all_full/
-```
-
-**Output directory structure:**
-```
-results/all_quick/
-  manifest.json           # timestamp, git commit, command line, seed range
-  scenario_snapshot.json  # full scenario suite for reproducibility
-  results.json            # JSON export of ComparisonReport
-  results.csv             # CSV export
-  table.md                # Markdown table fragment
-  replay_logs/            # optional replay logs
-```
-
-**Backward compatibility:**
-- `--json <path>` and `--csv <path>` continue to work as before.
-- `--full` without `--output-dir` prints to stdout and writes individual files.
-- Without any mode flag, `--quick` is used by default.
-
-**New API:**
-```rust
-use swarm_sim::{BenchmarkHarness, BenchmarkManifest, export_markdown};
-
-// Smoke run (1 seed)
-let result = BenchmarkHarness::run_smoke_with_options(&strategies, &profiles, &builder, options);
-
-// Manifest for reproducibility
-let manifest = BenchmarkManifest::new(
-    "coverage", 0, 9,
-    vec!["greedy".into(), "auction".into()],
-    vec!["ideal-no-failures".into()],
-);
-```
-
-### M22 — Benchmark Report / Analysis
-
-Interpretation of benchmark metrics with real numbers. See full report: [`docs/BENCHMARK_RESULTS.md`](docs/BENCHMARK_RESULTS.md).
-
-**Quick results summary (10 seeds):**
-
-| Mission | Best Strategy | Key Metric | Value |
-|---|---|---|---|
-| SAR v2 | auction (standard) | Success | 0.900 |
-| Inspection (linear) | centralized | RouteEfficiency | 0.528 |
-| Inspection (random) | centralized | RouteEfficiency | 0.656 |
-| Safety coverage | all (tie) | Success | 1.000 |
-| CBBA stress | auction/centralized | ConvP50 | 4.0 |
-
-**Key findings:**
-- CBBA struggles with SAR grid tasks and inspection perimeter (0% success on perimeter).
-- Centralized shows highest route efficiency on inspection (0.528–0.656) but fails on SAR.
-- Safety layer successfully prevents violations (0 across all strategies).
-- Auction achieves best SAR success rate (0.900 on standard profile).
-
-**Generate focused report:**
-```bash
-cargo run -p swarm-examples --bin strategy_comparison -- \
-  --quick --mission sar --report docs/BENCHMARK_RESULTS.md
-```
-
-**Reproduce all results:**
-```bash
-# Quick run (~30s per mission)
-cargo run -p swarm-examples --bin strategy_comparison -- --quick --mission sar --output-dir results/sar_quick/
-cargo run -p swarm-examples --bin strategy_comparison -- --quick --mission inspection --output-dir results/inspection_quick/
-cargo run -p swarm-examples --bin strategy_comparison -- --scenario-suite scenarios/coverage.safety.json --output-dir results/safety_quick/
-cargo run -p swarm-examples --bin strategy_comparison -- --scenario-suite scenarios/cbba_stress.json --output-dir results/cbba_quick/
-
-# Full run (~5min per mission)
-cargo run -p swarm-examples --bin strategy_comparison -- --full --mission <mission> --output-dir results/<mission>_full/
-```
-
-### M23 — Replay / Debuggability
-
-Inspect simulation runs without reading raw JSON.
-
-**Event log schema version:** `0.2`
-
-**Replay summary:**
-```bash
-cargo run --bin replay -- --log results/replay_logs/run_0.json --summary
-```
-
-**ASCII snapshot at tick N:**
-```bash
-cargo run --bin replay -- --log results/replay_logs/run_0.json --tick 50
-```
-
-**Follow mode (ASCII animation across all ticks):**
-```bash
-cargo run --bin replay -- --log results/replay_logs/run_0.json --follow
-```
-
-**Generate a replay log:**
-```bash
-cargo run -p swarm-examples --bin strategy_comparison -- \
-  --quick --mission coverage --replay-log results/coverage_replay/
-```
-
-**New event types:**
-- `TaskStarted`, `TaskCompleted`, `TaskExpired` — task lifecycle
-- `SarScan`, `SarDetection` — SAR v2 belief-based search
-- `EdgeVisited` — infrastructure inspection
-- `SafetyViolation` — safety layer violations
-- `CbbaConverged`, `CbbaBundleUpdated` — CBBA distributed consensus
+MIT
