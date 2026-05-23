@@ -31,11 +31,15 @@ path = "src/bin/partition_scenario.rs"
 name = "strategy_comparison"
 path = "src/bin/strategy_comparison.rs"
 
+[[bin]]
+name = "sitl_agent"
+path = "src/bin/sitl_agent.rs"
+
 [dependencies]
 serde              = { workspace = true }
 serde_json         = { workspace = true }
 swarm-alloc        = { workspace = true }
-swarm-comms        = { workspace = true }
+swarm-comms        = { workspace = true, features = ["mavlink-transport"] }
 swarm-metrics      = { workspace = true }
 swarm-replay       = { workspace = true }
 swarm-runtime      = { workspace = true }

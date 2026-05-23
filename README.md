@@ -52,7 +52,7 @@ Swarm Coordination Runtime is a Rust workspace for mission-level coordination of
 | Crate | Purpose |
 | --- | --- |
 | `swarm-types` | Shared IDs, agent/task/message types, pose and velocity. |
-| `swarm-comms` | Transport trait, in-memory network, UDP transport. |
+| `swarm-comms` | Transport trait, in-memory network, UDP transport, MAVLink transport (optional). |
 | `swarm-runtime` | Membership, failure detection, task registry, coordinator, `AgentNode`. |
 | `swarm-alloc` | Greedy and auction allocation strategies. |
 | `swarm-sim` | Deterministic clock, scenario model, generic scenario runner, DSL loader, JSON/CSV export. |
@@ -503,3 +503,40 @@ cargo run -p swarm-examples --bin strategy_comparison \
 | auction   | inspection/linear | 1.000 | 1.000 | 1.000 | 0.0 | 0.0 | 0.820 |
 
 *(10 seeds per cell, quick mode)*
+
+### M17 — SITL / MAVLink
+
+Single-agent SITL runner для подключения к PX4 Software-In-The-Loop через MAVLink.
+
+**Новые компоненты:**
+- `MavlinkTransport` — реализация `Transport` trait через `rust-mavlink` crate (за feature-флагом `mavlink-transport`).
+- `MockMavlinkTransport` — фиктивная реализация для тестов и `--mock` режима, не требует PX4.
+- `task_to_waypoint(task)` — конвертация задачи в waypoint (без MAVLink зависимостей).
+- `task_to_mavlink_waypoint(task)` — конвертация задачи в `MAV_CMD_NAV_WAYPOINT` (требует feature `mavlink-transport`).
+- `sitl_agent` — новый binary, одновагентный SITL runner.
+
+**Запуск в mock-режиме (без PX4):**
+```bash
+cargo run --bin sitl_agent -- --mock --scenario scenarios/coverage.ideal.json --agent-id agent-0
+```
+
+**Запуск с PX4 SITL:**
+```bash
+cargo run --bin sitl_agent -- \
+  --connection udpout:127.0.0.1:14550 \
+  --scenario scenarios/coverage.ideal.json \
+  --agent-id agent-0
+```
+
+**Документация:** `docs/SITL_SETUP.md` — установка PX4, Gazebo, запуск SITL, troubleshooting.
+
+**Зависимость:** `mavlink = "0.18"` (опциональная, feature `mavlink-transport`).
+
+**Unit-тесты (без PX4):**
+```bash
+cargo test -p swarm-comms mock_mavlink
+cargo test -p swarm-comms task_to_waypoint
+cargo test --bin sitl_agent
+```
+
+Также обновлено описание `swarm-comms` в таблице Workspace Layout (MAVLinkTransport).
