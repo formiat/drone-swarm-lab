@@ -96,6 +96,7 @@ mod tests {
             expires_at: None,
             pose: None,
             grid_cell: None,
+            edge_id: None,
         }
     }
 

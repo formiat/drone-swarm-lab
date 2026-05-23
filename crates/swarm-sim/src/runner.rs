@@ -11,9 +11,27 @@ use swarm_comms::{
 use swarm_metrics::RunMetrics;
 use swarm_runtime::{AgentNode, Coordinator, GridState, NodeTickOutput};
 use swarm_safety::SafetyConfig;
-use swarm_types::{AgentId, Health, Role, Task, TaskId};
+use swarm_types::{AgentId, EdgeId, Health, InspectionGraph, Role, Task, TaskId};
 
 use crate::{Clock, Scenario};
+
+/// Tracks coverage of inspection edges during a run.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct InspectionState {
+    pub graph: InspectionGraph,
+    pub covered: HashSet<EdgeId>,
+    pub visit_counts: HashMap<EdgeId, u32>,
+}
+
+impl InspectionState {
+    pub fn new(graph: InspectionGraph) -> Self {
+        Self {
+            graph,
+            covered: HashSet::new(),
+            visit_counts: HashMap::new(),
+        }
+    }
+}
 
 /// Wrapper that filters out tasks in no-fly zones before delegating to the inner allocator.
 struct SafetyAllocator<A> {
@@ -137,6 +155,8 @@ pub struct RunConfig {
     pub enable_cbba: bool,
     #[serde(default)]
     pub safety_config: Option<SafetyConfig>,
+    #[serde(default)]
+    pub inspection_state: Option<InspectionState>,
 }
 
 fn default_max_unassigned() -> u64 {
@@ -187,6 +207,7 @@ impl ScenarioRunner {
         allocator: A,
         mut log_builder: Option<swarm_replay::EventLogBuilder>,
     ) -> (RunMetrics, Option<swarm_replay::EventLog>) {
+        let mut inspection_state = config.inspection_state;
         let mut allocator = SafetyAllocator {
             inner: allocator,
             safety_config: config.safety_config.clone(),
@@ -255,6 +276,9 @@ impl ScenarioRunner {
         let mut convergence_ticks: Option<u64> = None;
         let mut heal_tick: Option<u64> = None;
         let mut max_view_divergence: u64 = 0;
+
+        // v0.16 inspection metrics
+        let mut revisit_count: u64 = 0;
 
         // v0.8 movement metrics
         let mut total_distance_travelled: f64 = 0.0;
@@ -504,6 +528,50 @@ impl ScenarioRunner {
                     .all(|(n, _)| n.cbba.as_ref().is_none_or(|c| c.converged))
             {
                 cbba_convergence_tick = Some(current_tick);
+            }
+
+            // v0.16: Inspection edge coverage logic
+            if let Some(ref mut inspection_state) = inspection_state {
+                for (node, agent_id) in &mut nodes {
+                    if crashed_agents.contains(agent_id) {
+                        continue;
+                    }
+                    let assigned_tasks: Vec<_> = node
+                        .coordinator
+                        .registry
+                        .tasks()
+                        .filter(|t| t.assigned_to.as_ref() == Some(agent_id))
+                        .filter(|t| t.edge_id.is_some())
+                        .cloned()
+                        .collect();
+                    for task in assigned_tasks {
+                        if let Some(ref edge_id) = task.edge_id {
+                            if let Some(entry) = node.coordinator.membership.get(agent_id) {
+                                let task_pose = task.pose.unwrap_or(entry.pose);
+                                let edge = inspection_state
+                                    .graph
+                                    .edges
+                                    .iter()
+                                    .find(|e| &e.id == edge_id);
+                                if let Some(edge) = edge {
+                                    let threshold = (edge.length_m * 0.1).max(1.0);
+                                    let dist = entry.pose.distance_to(&task_pose);
+                                    if dist < threshold {
+                                        let count = inspection_state
+                                            .visit_counts
+                                            .entry(edge_id.clone())
+                                            .or_insert(0);
+                                        *count += 1;
+                                        if !inspection_state.covered.insert(edge_id.clone()) {
+                                            revisit_count += 1;
+                                        }
+                                        node.coordinator.registry.complete_assigned_task(&task.id);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             // v0.9: SAR scan logic
@@ -774,6 +842,10 @@ impl ScenarioRunner {
 
             let sar_complete = grid_state.as_ref().is_none_or(|g| g.all_targets_found());
 
+            let inspection_complete = inspection_state
+                .as_ref()
+                .is_none_or(|s| s.covered.len() == s.graph.edges.len());
+
             if all_tasks_assigned
                 && max_task_unassigned_ticks <= config.max_unassigned_ticks
                 && all_failure_ticks_passed
@@ -781,6 +853,7 @@ impl ScenarioRunner {
                 && all_dynamic_tasks_injected
                 && post_partition_converged
                 && sar_complete
+                && inspection_complete
             {
                 break;
             }
@@ -882,6 +955,34 @@ impl ScenarioRunner {
             }
         }
 
+        // v0.16: Compute inspection metrics
+        let (edge_coverage_rate, missed_edges, route_efficiency) =
+            if let Some(ref inspection_state) = inspection_state {
+                let total_edges = inspection_state.graph.edges.len() as u64;
+                let covered = inspection_state.covered.len() as u64;
+                let missed = total_edges.saturating_sub(covered);
+                let coverage_rate = if total_edges > 0 {
+                    covered as f64 / total_edges as f64
+                } else {
+                    0.0
+                };
+                let sum_covered_lengths: f64 = inspection_state
+                    .graph
+                    .edges
+                    .iter()
+                    .filter(|e| inspection_state.covered.contains(&e.id))
+                    .map(|e| e.length_m)
+                    .sum();
+                let efficiency = if total_distance_travelled > 0.0 {
+                    sum_covered_lengths / total_distance_travelled
+                } else {
+                    0.0
+                };
+                (coverage_rate, missed, efficiency)
+            } else {
+                (0.0, 0, 0.0)
+            };
+
         let event_log = log_builder.map(|b| b.build());
 
         (
@@ -967,6 +1068,11 @@ impl ScenarioRunner {
                     .as_ref()
                     .and_then(|g| g.belief_map.as_ref().map(|bm| bm.confirmation_scans))
                     .unwrap_or(0),
+                // v0.16 Inspection metrics
+                edge_coverage_rate,
+                missed_edges,
+                revisit_count,
+                route_efficiency,
             },
             event_log,
         )
@@ -1039,6 +1145,7 @@ mod tests {
                 expires_at: None,
                 pose: None,
                 grid_cell: None,
+                edge_id: None,
             })
             .collect();
         Scenario {
@@ -1095,6 +1202,7 @@ mod tests {
             expires_at: None,
             pose: None,
             grid_cell: None,
+            edge_id: None,
         };
         let cfg = RunConfig {
             dynamic_tasks: vec![DynamicTaskEvent {
@@ -1122,6 +1230,7 @@ mod tests {
             expires_at: Some(3),
             pose: None,
             grid_cell: None,
+            edge_id: None,
         };
         let cfg = RunConfig {
             dynamic_tasks: vec![DynamicTaskEvent {
@@ -1173,6 +1282,7 @@ mod tests {
             expires_at: None,
             pose: None,
             grid_cell: None,
+            edge_id: None,
         };
         let cfg = RunConfig {
             dynamic_tasks: vec![DynamicTaskEvent {

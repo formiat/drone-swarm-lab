@@ -1,0 +1,1280 @@
+{
+  "name": "Inspection Perimeter",
+  "description": "Perimeter inspection 10x10 with 4 agents and battery constraint.",
+  "scenarios": [
+    {
+      "mission": "inspection",
+      "profile": "perimeter",
+      "scenario": {
+        "name": "inspection_perimeter_0",
+        "seed": 0,
+        "agents": [
+          {
+            "id": "agent-0",
+            "role": "scout",
+            "health": "alive",
+            "pose": {
+              "x": 0.0,
+              "y": 0.0
+            },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 50.0,
+            "generation": 1,
+            "speed": 2.0,
+            "max_range": 30.0,
+            "battery_drain_rate": 3.3333333333333335
+          },
+          {
+            "id": "agent-1",
+            "role": "scout",
+            "health": "alive",
+            "pose": {
+              "x": 0.0,
+              "y": 0.0
+            },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 50.0,
+            "generation": 1,
+            "speed": 2.0,
+            "max_range": 30.0,
+            "battery_drain_rate": 3.3333333333333335
+          },
+          {
+            "id": "agent-2",
+            "role": "scout",
+            "health": "alive",
+            "pose": {
+              "x": 0.0,
+              "y": 0.0
+            },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 50.0,
+            "generation": 1,
+            "speed": 2.0,
+            "max_range": 30.0,
+            "battery_drain_rate": 3.3333333333333335
+          },
+          {
+            "id": "agent-3",
+            "role": "scout",
+            "health": "alive",
+            "pose": {
+              "x": 0.0,
+              "y": 0.0
+            },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 50.0,
+            "generation": 1,
+            "speed": 2.0,
+            "max_range": 30.0,
+            "battery_drain_rate": 3.3333333333333335
+          }
+        ],
+        "tasks": [
+          {
+            "id": "edge-edge-bottom-0",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 10.0,
+              "y": 0.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-bottom-0"
+          },
+          {
+            "id": "edge-edge-bottom-1",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 20.0,
+              "y": 0.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-bottom-1"
+          },
+          {
+            "id": "edge-edge-bottom-2",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 30.0,
+              "y": 0.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-bottom-2"
+          },
+          {
+            "id": "edge-edge-bottom-3",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 40.0,
+              "y": 0.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-bottom-3"
+          },
+          {
+            "id": "edge-edge-bottom-4",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 50.0,
+              "y": 0.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-bottom-4"
+          },
+          {
+            "id": "edge-edge-bottom-5",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 60.0,
+              "y": 0.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-bottom-5"
+          },
+          {
+            "id": "edge-edge-bottom-6",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 70.0,
+              "y": 0.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-bottom-6"
+          },
+          {
+            "id": "edge-edge-bottom-7",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 80.0,
+              "y": 0.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-bottom-7"
+          },
+          {
+            "id": "edge-edge-bottom-8",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 90.0,
+              "y": 0.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-bottom-8"
+          },
+          {
+            "id": "edge-edge-bottom-9",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 100.0,
+              "y": 0.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-bottom-9"
+          },
+          {
+            "id": "edge-edge-right-0",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 100.0,
+              "y": 10.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-right-0"
+          },
+          {
+            "id": "edge-edge-right-1",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 100.0,
+              "y": 20.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-right-1"
+          },
+          {
+            "id": "edge-edge-right-2",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 100.0,
+              "y": 30.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-right-2"
+          },
+          {
+            "id": "edge-edge-right-3",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 100.0,
+              "y": 40.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-right-3"
+          },
+          {
+            "id": "edge-edge-right-4",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 100.0,
+              "y": 50.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-right-4"
+          },
+          {
+            "id": "edge-edge-right-5",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 100.0,
+              "y": 60.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-right-5"
+          },
+          {
+            "id": "edge-edge-right-6",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 100.0,
+              "y": 70.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-right-6"
+          },
+          {
+            "id": "edge-edge-right-7",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 100.0,
+              "y": 80.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-right-7"
+          },
+          {
+            "id": "edge-edge-right-8",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 100.0,
+              "y": 90.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-right-8"
+          },
+          {
+            "id": "edge-edge-right-9",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 100.0,
+              "y": 100.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-right-9"
+          },
+          {
+            "id": "edge-edge-top-0",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 90.0,
+              "y": 100.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-top-0"
+          },
+          {
+            "id": "edge-edge-top-1",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 80.0,
+              "y": 100.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-top-1"
+          },
+          {
+            "id": "edge-edge-top-2",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 70.0,
+              "y": 100.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-top-2"
+          },
+          {
+            "id": "edge-edge-top-3",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 60.0,
+              "y": 100.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-top-3"
+          },
+          {
+            "id": "edge-edge-top-4",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 50.0,
+              "y": 100.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-top-4"
+          },
+          {
+            "id": "edge-edge-top-5",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 40.0,
+              "y": 100.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-top-5"
+          },
+          {
+            "id": "edge-edge-top-6",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 30.0,
+              "y": 100.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-top-6"
+          },
+          {
+            "id": "edge-edge-top-7",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 20.0,
+              "y": 100.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-top-7"
+          },
+          {
+            "id": "edge-edge-top-8",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 10.0,
+              "y": 100.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-top-8"
+          },
+          {
+            "id": "edge-edge-top-9",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 0.0,
+              "y": 100.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-top-9"
+          },
+          {
+            "id": "edge-edge-left-0",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 0.0,
+              "y": 90.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-left-0"
+          },
+          {
+            "id": "edge-edge-left-1",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 0.0,
+              "y": 80.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-left-1"
+          },
+          {
+            "id": "edge-edge-left-2",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 0.0,
+              "y": 70.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-left-2"
+          },
+          {
+            "id": "edge-edge-left-3",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 0.0,
+              "y": 60.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-left-3"
+          },
+          {
+            "id": "edge-edge-left-4",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 0.0,
+              "y": 50.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-left-4"
+          },
+          {
+            "id": "edge-edge-left-5",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 0.0,
+              "y": 40.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-left-5"
+          },
+          {
+            "id": "edge-edge-left-6",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 0.0,
+              "y": 30.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-left-6"
+          },
+          {
+            "id": "edge-edge-left-7",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 0.0,
+              "y": 20.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-left-7"
+          },
+          {
+            "id": "edge-edge-left-8",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 0.0,
+              "y": 10.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-left-8"
+          },
+          {
+            "id": "edge-edge-left-9",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 0.0,
+              "y": 0.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-left-9"
+          }
+        ],
+        "ground_nodes": [],
+        "base_station": {
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "run_config": {
+        "max_ticks": 500,
+        "timeout_ticks": 3,
+        "max_unassigned_ticks": 10,
+        "packet_loss_rate": 0.0,
+        "latency_ticks": 0,
+        "latency_per_hop": 0,
+        "failures": [],
+        "dynamic_tasks": [],
+        "partition_events": [],
+        "gossip_interval_ticks": 999,
+        "base_id": null,
+        "enable_movement": true,
+        "tick_duration_ms": 1000,
+        "grid_state": null,
+        "enable_cbba": false,
+        "inspection_state": {
+          "graph": {
+            "edges": [
+              {
+                "id": "edge-bottom-0",
+                "from": {
+                  "x": 0.0,
+                  "y": 0.0
+                },
+                "to": {
+                  "x": 10.0,
+                  "y": 0.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-bottom-1",
+                "from": {
+                  "x": 10.0,
+                  "y": 0.0
+                },
+                "to": {
+                  "x": 20.0,
+                  "y": 0.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-bottom-2",
+                "from": {
+                  "x": 20.0,
+                  "y": 0.0
+                },
+                "to": {
+                  "x": 30.0,
+                  "y": 0.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-bottom-3",
+                "from": {
+                  "x": 30.0,
+                  "y": 0.0
+                },
+                "to": {
+                  "x": 40.0,
+                  "y": 0.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-bottom-4",
+                "from": {
+                  "x": 40.0,
+                  "y": 0.0
+                },
+                "to": {
+                  "x": 50.0,
+                  "y": 0.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-bottom-5",
+                "from": {
+                  "x": 50.0,
+                  "y": 0.0
+                },
+                "to": {
+                  "x": 60.0,
+                  "y": 0.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-bottom-6",
+                "from": {
+                  "x": 60.0,
+                  "y": 0.0
+                },
+                "to": {
+                  "x": 70.0,
+                  "y": 0.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-bottom-7",
+                "from": {
+                  "x": 70.0,
+                  "y": 0.0
+                },
+                "to": {
+                  "x": 80.0,
+                  "y": 0.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-bottom-8",
+                "from": {
+                  "x": 80.0,
+                  "y": 0.0
+                },
+                "to": {
+                  "x": 90.0,
+                  "y": 0.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-bottom-9",
+                "from": {
+                  "x": 90.0,
+                  "y": 0.0
+                },
+                "to": {
+                  "x": 100.0,
+                  "y": 0.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-right-0",
+                "from": {
+                  "x": 100.0,
+                  "y": 0.0
+                },
+                "to": {
+                  "x": 100.0,
+                  "y": 10.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-right-1",
+                "from": {
+                  "x": 100.0,
+                  "y": 10.0
+                },
+                "to": {
+                  "x": 100.0,
+                  "y": 20.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-right-2",
+                "from": {
+                  "x": 100.0,
+                  "y": 20.0
+                },
+                "to": {
+                  "x": 100.0,
+                  "y": 30.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-right-3",
+                "from": {
+                  "x": 100.0,
+                  "y": 30.0
+                },
+                "to": {
+                  "x": 100.0,
+                  "y": 40.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-right-4",
+                "from": {
+                  "x": 100.0,
+                  "y": 40.0
+                },
+                "to": {
+                  "x": 100.0,
+                  "y": 50.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-right-5",
+                "from": {
+                  "x": 100.0,
+                  "y": 50.0
+                },
+                "to": {
+                  "x": 100.0,
+                  "y": 60.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-right-6",
+                "from": {
+                  "x": 100.0,
+                  "y": 60.0
+                },
+                "to": {
+                  "x": 100.0,
+                  "y": 70.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-right-7",
+                "from": {
+                  "x": 100.0,
+                  "y": 70.0
+                },
+                "to": {
+                  "x": 100.0,
+                  "y": 80.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-right-8",
+                "from": {
+                  "x": 100.0,
+                  "y": 80.0
+                },
+                "to": {
+                  "x": 100.0,
+                  "y": 90.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-right-9",
+                "from": {
+                  "x": 100.0,
+                  "y": 90.0
+                },
+                "to": {
+                  "x": 100.0,
+                  "y": 100.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-top-0",
+                "from": {
+                  "x": 100.0,
+                  "y": 100.0
+                },
+                "to": {
+                  "x": 90.0,
+                  "y": 100.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-top-1",
+                "from": {
+                  "x": 90.0,
+                  "y": 100.0
+                },
+                "to": {
+                  "x": 80.0,
+                  "y": 100.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-top-2",
+                "from": {
+                  "x": 80.0,
+                  "y": 100.0
+                },
+                "to": {
+                  "x": 70.0,
+                  "y": 100.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-top-3",
+                "from": {
+                  "x": 70.0,
+                  "y": 100.0
+                },
+                "to": {
+                  "x": 60.0,
+                  "y": 100.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-top-4",
+                "from": {
+                  "x": 60.0,
+                  "y": 100.0
+                },
+                "to": {
+                  "x": 50.0,
+                  "y": 100.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-top-5",
+                "from": {
+                  "x": 50.0,
+                  "y": 100.0
+                },
+                "to": {
+                  "x": 40.0,
+                  "y": 100.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-top-6",
+                "from": {
+                  "x": 40.0,
+                  "y": 100.0
+                },
+                "to": {
+                  "x": 30.0,
+                  "y": 100.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-top-7",
+                "from": {
+                  "x": 30.0,
+                  "y": 100.0
+                },
+                "to": {
+                  "x": 20.0,
+                  "y": 100.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-top-8",
+                "from": {
+                  "x": 20.0,
+                  "y": 100.0
+                },
+                "to": {
+                  "x": 10.0,
+                  "y": 100.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-top-9",
+                "from": {
+                  "x": 10.0,
+                  "y": 100.0
+                },
+                "to": {
+                  "x": 0.0,
+                  "y": 100.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-left-0",
+                "from": {
+                  "x": 0.0,
+                  "y": 100.0
+                },
+                "to": {
+                  "x": 0.0,
+                  "y": 90.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-left-1",
+                "from": {
+                  "x": 0.0,
+                  "y": 90.0
+                },
+                "to": {
+                  "x": 0.0,
+                  "y": 80.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-left-2",
+                "from": {
+                  "x": 0.0,
+                  "y": 80.0
+                },
+                "to": {
+                  "x": 0.0,
+                  "y": 70.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-left-3",
+                "from": {
+                  "x": 0.0,
+                  "y": 70.0
+                },
+                "to": {
+                  "x": 0.0,
+                  "y": 60.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-left-4",
+                "from": {
+                  "x": 0.0,
+                  "y": 60.0
+                },
+                "to": {
+                  "x": 0.0,
+                  "y": 50.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-left-5",
+                "from": {
+                  "x": 0.0,
+                  "y": 50.0
+                },
+                "to": {
+                  "x": 0.0,
+                  "y": 40.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-left-6",
+                "from": {
+                  "x": 0.0,
+                  "y": 40.0
+                },
+                "to": {
+                  "x": 0.0,
+                  "y": 30.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-left-7",
+                "from": {
+                  "x": 0.0,
+                  "y": 30.0
+                },
+                "to": {
+                  "x": 0.0,
+                  "y": 20.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-left-8",
+                "from": {
+                  "x": 0.0,
+                  "y": 20.0
+                },
+                "to": {
+                  "x": 0.0,
+                  "y": 10.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-left-9",
+                "from": {
+                  "x": 0.0,
+                  "y": 10.0
+                },
+                "to": {
+                  "x": 0.0,
+                  "y": 0.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              }
+            ],
+            "depot": {
+              "x": 0.0,
+              "y": 0.0
+            }
+          },
+          "covered": [],
+          "visit_counts": {}
+        }
+      }
+    }
+  ]
+}

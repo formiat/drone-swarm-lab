@@ -1,0 +1,746 @@
+{
+  "name": "Inspection Random",
+  "description": "Random graph inspection with 5 agents (15 nodes, seed 42).",
+  "scenarios": [
+    {
+      "mission": "inspection",
+      "profile": "random",
+      "scenario": {
+        "name": "inspection_random_0",
+        "seed": 42,
+        "agents": [
+          {
+            "id": "agent-0",
+            "role": "scout",
+            "health": "alive",
+            "pose": {
+              "x": 63.942679845788376,
+              "y": 2.5010755222666936
+            },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 50.0,
+            "generation": 1,
+            "speed": 2.0,
+            "max_range": Infinity,
+            "battery_drain_rate": 0.0
+          },
+          {
+            "id": "agent-1",
+            "role": "scout",
+            "health": "alive",
+            "pose": {
+              "x": 63.942679845788376,
+              "y": 2.5010755222666936
+            },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 50.0,
+            "generation": 1,
+            "speed": 2.0,
+            "max_range": Infinity,
+            "battery_drain_rate": 0.0
+          },
+          {
+            "id": "agent-2",
+            "role": "scout",
+            "health": "alive",
+            "pose": {
+              "x": 63.942679845788376,
+              "y": 2.5010755222666936
+            },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 50.0,
+            "generation": 1,
+            "speed": 2.0,
+            "max_range": Infinity,
+            "battery_drain_rate": 0.0
+          },
+          {
+            "id": "agent-3",
+            "role": "scout",
+            "health": "alive",
+            "pose": {
+              "x": 63.942679845788376,
+              "y": 2.5010755222666936
+            },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 50.0,
+            "generation": 1,
+            "speed": 2.0,
+            "max_range": Infinity,
+            "battery_drain_rate": 0.0
+          },
+          {
+            "id": "agent-4",
+            "role": "scout",
+            "health": "alive",
+            "pose": {
+              "x": 63.942679845788376,
+              "y": 2.5010755222666936
+            },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 50.0,
+            "generation": 1,
+            "speed": 2.0,
+            "max_range": Infinity,
+            "battery_drain_rate": 0.0
+          }
+        ],
+        "tasks": [
+          {
+            "id": "edge-edge-0",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 89.21795677048453,
+              "y": 8.693883262941615
+            },
+            "grid_cell": null,
+            "edge_id": "edge-0"
+          },
+          {
+            "id": "edge-edge-1",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 42.192181968527045,
+              "y": 2.9797219438070344
+            },
+            "grid_cell": null,
+            "edge_id": "edge-1"
+          },
+          {
+            "id": "edge-edge-2",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 80.94304566778267,
+              "y": 0.6498759678061017
+            },
+            "grid_cell": null,
+            "edge_id": "edge-2"
+          },
+          {
+            "id": "edge-edge-3",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 42.192181968527045,
+              "y": 2.9797219438070344
+            },
+            "grid_cell": null,
+            "edge_id": "edge-3"
+          },
+          {
+            "id": "edge-edge-4",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 21.863797480360336,
+              "y": 50.53552881033624
+            },
+            "grid_cell": null,
+            "edge_id": "edge-4"
+          },
+          {
+            "id": "edge-edge-5",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 2.6535969683863625,
+              "y": 19.88376506866485
+            },
+            "grid_cell": null,
+            "edge_id": "edge-5"
+          },
+          {
+            "id": "edge-edge-6",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 34.02505165179919,
+              "y": 15.547949981178155
+            },
+            "grid_cell": null,
+            "edge_id": "edge-6"
+          },
+          {
+            "id": "edge-edge-7",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 9.27458433801479,
+              "y": 9.6716376833464
+            },
+            "grid_cell": null,
+            "edge_id": "edge-7"
+          },
+          {
+            "id": "edge-edge-8",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 64.98844377795233,
+              "y": 54.49414806032167
+            },
+            "grid_cell": null,
+            "edge_id": "edge-8"
+          },
+          {
+            "id": "edge-edge-9",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 80.58192518328079,
+              "y": 69.81393949882269
+            },
+            "grid_cell": null,
+            "edge_id": "edge-9"
+          },
+          {
+            "id": "edge-edge-10",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 84.74943663474598,
+              "y": 60.37260313668911
+            },
+            "grid_cell": null,
+            "edge_id": "edge-10"
+          },
+          {
+            "id": "edge-edge-11",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 80.94304566778267,
+              "y": 0.6498759678061017
+            },
+            "grid_cell": null,
+            "edge_id": "edge-11"
+          },
+          {
+            "id": "edge-edge-12",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 95.72130722067811,
+              "y": 33.65945451126267
+            },
+            "grid_cell": null,
+            "edge_id": "edge-12"
+          },
+          {
+            "id": "edge-edge-13",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 34.02505165179919,
+              "y": 15.547949981178155
+            },
+            "grid_cell": null,
+            "edge_id": "edge-13"
+          },
+          {
+            "id": "edge-edge-14",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 22.044062204069668,
+              "y": 58.92656838759087
+            },
+            "grid_cell": null,
+            "edge_id": "edge-14"
+          },
+          {
+            "id": "edge-edge-15",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 9.27458433801479,
+              "y": 9.6716376833464
+            },
+            "grid_cell": null,
+            "edge_id": "edge-15"
+          },
+          {
+            "id": "edge-edge-16",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 80.58192518328079,
+              "y": 69.81393949882269
+            },
+            "grid_cell": null,
+            "edge_id": "edge-16"
+          },
+          {
+            "id": "edge-edge-17",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 84.74943663474598,
+              "y": 60.37260313668911
+            },
+            "grid_cell": null,
+            "edge_id": "edge-17"
+          },
+          {
+            "id": "edge-edge-18",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 84.74943663474598,
+              "y": 60.37260313668911
+            },
+            "grid_cell": null,
+            "edge_id": "edge-18"
+          },
+          {
+            "id": "edge-edge-19",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 9.27458433801479,
+              "y": 9.6716376833464
+            },
+            "grid_cell": null,
+            "edge_id": "edge-19"
+          },
+          {
+            "id": "edge-edge-20",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 84.74943663474598,
+              "y": 60.37260313668911
+            },
+            "grid_cell": null,
+            "edge_id": "edge-20"
+          }
+        ],
+        "ground_nodes": [],
+        "base_station": {
+          "x": 63.942679845788376,
+          "y": 2.5010755222666936
+        }
+      },
+      "run_config": {
+        "max_ticks": 500,
+        "timeout_ticks": 3,
+        "max_unassigned_ticks": 10,
+        "packet_loss_rate": 0.0,
+        "latency_ticks": 0,
+        "latency_per_hop": 0,
+        "failures": [],
+        "dynamic_tasks": [],
+        "partition_events": [],
+        "gossip_interval_ticks": 999,
+        "base_id": null,
+        "enable_movement": true,
+        "tick_duration_ms": 1000,
+        "grid_state": null,
+        "enable_cbba": false,
+        "inspection_state": {
+          "graph": {
+            "edges": [
+              {
+                "id": "edge-0",
+                "from": {
+                  "x": 63.942679845788376,
+                  "y": 2.5010755222666936
+                },
+                "to": {
+                  "x": 89.21795677048453,
+                  "y": 8.693883262941615
+                },
+                "length_m": 26.022883993382464,
+                "priority": 1
+              },
+              {
+                "id": "edge-1",
+                "from": {
+                  "x": 63.942679845788376,
+                  "y": 2.5010755222666936
+                },
+                "to": {
+                  "x": 42.192181968527045,
+                  "y": 2.9797219438070344
+                },
+                "length_m": 21.755763841005514,
+                "priority": 1
+              },
+              {
+                "id": "edge-2",
+                "from": {
+                  "x": 63.942679845788376,
+                  "y": 2.5010755222666936
+                },
+                "to": {
+                  "x": 80.94304566778267,
+                  "y": 0.6498759678061017
+                },
+                "length_m": 17.100858980532728,
+                "priority": 1
+              },
+              {
+                "id": "edge-3",
+                "from": {
+                  "x": 27.502931836911927,
+                  "y": 22.321073814882276
+                },
+                "to": {
+                  "x": 42.192181968527045,
+                  "y": 2.9797219438070344
+                },
+                "length_m": 24.28707396188146,
+                "priority": 1
+              },
+              {
+                "id": "edge-4",
+                "from": {
+                  "x": 27.502931836911927,
+                  "y": 22.321073814882276
+                },
+                "to": {
+                  "x": 21.863797480360336,
+                  "y": 50.53552881033624
+                },
+                "length_m": 28.772474815033508,
+                "priority": 1
+              },
+              {
+                "id": "edge-5",
+                "from": {
+                  "x": 27.502931836911927,
+                  "y": 22.321073814882276
+                },
+                "to": {
+                  "x": 2.6535969683863625,
+                  "y": 19.88376506866485
+                },
+                "length_m": 24.968578600563315,
+                "priority": 1
+              },
+              {
+                "id": "edge-6",
+                "from": {
+                  "x": 27.502931836911927,
+                  "y": 22.321073814882276
+                },
+                "to": {
+                  "x": 34.02505165179919,
+                  "y": 15.547949981178155
+                },
+                "length_m": 9.402832198143061,
+                "priority": 1
+              },
+              {
+                "id": "edge-7",
+                "from": {
+                  "x": 27.502931836911927,
+                  "y": 22.321073814882276
+                },
+                "to": {
+                  "x": 9.27458433801479,
+                  "y": 9.6716376833464
+                },
+                "length_m": 22.18740379103321,
+                "priority": 1
+              },
+              {
+                "id": "edge-8",
+                "from": {
+                  "x": 73.64712141640123,
+                  "y": 67.66994874229113
+                },
+                "to": {
+                  "x": 64.98844377795233,
+                  "y": 54.49414806032167
+                },
+                "length_m": 15.766243118053264,
+                "priority": 1
+              },
+              {
+                "id": "edge-9",
+                "from": {
+                  "x": 73.64712141640123,
+                  "y": 67.66994874229113
+                },
+                "to": {
+                  "x": 80.58192518328079,
+                  "y": 69.81393949882269
+                },
+                "length_m": 7.258663764717281,
+                "priority": 1
+              },
+              {
+                "id": "edge-10",
+                "from": {
+                  "x": 73.64712141640123,
+                  "y": 67.66994874229113
+                },
+                "to": {
+                  "x": 84.74943663474598,
+                  "y": 60.37260313668911
+                },
+                "length_m": 13.285806565470098,
+                "priority": 1
+              },
+              {
+                "id": "edge-11",
+                "from": {
+                  "x": 89.21795677048453,
+                  "y": 8.693883262941615
+                },
+                "to": {
+                  "x": 80.94304566778267,
+                  "y": 0.6498759678061017
+                },
+                "length_m": 11.540372919529592,
+                "priority": 1
+              },
+              {
+                "id": "edge-12",
+                "from": {
+                  "x": 89.21795677048453,
+                  "y": 8.693883262941615
+                },
+                "to": {
+                  "x": 95.72130722067811,
+                  "y": 33.65945451126267
+                },
+                "length_m": 25.79870761943373,
+                "priority": 1
+              },
+              {
+                "id": "edge-13",
+                "from": {
+                  "x": 42.192181968527045,
+                  "y": 2.9797219438070344
+                },
+                "to": {
+                  "x": 34.02505165179919,
+                  "y": 15.547949981178155
+                },
+                "length_m": 14.98874156191162,
+                "priority": 1
+              },
+              {
+                "id": "edge-14",
+                "from": {
+                  "x": 21.863797480360336,
+                  "y": 50.53552881033624
+                },
+                "to": {
+                  "x": 22.044062204069668,
+                  "y": 58.92656838759087
+                },
+                "length_m": 8.392975667644198,
+                "priority": 1
+              },
+              {
+                "id": "edge-15",
+                "from": {
+                  "x": 2.6535969683863625,
+                  "y": 19.88376506866485
+                },
+                "to": {
+                  "x": 9.27458433801479,
+                  "y": 9.6716376833464
+                },
+                "length_m": 12.170662245036224,
+                "priority": 1
+              },
+              {
+                "id": "edge-16",
+                "from": {
+                  "x": 64.98844377795233,
+                  "y": 54.49414806032167
+                },
+                "to": {
+                  "x": 80.58192518328079,
+                  "y": 69.81393949882269
+                },
+                "length_m": 21.85984153779468,
+                "priority": 1
+              },
+              {
+                "id": "edge-17",
+                "from": {
+                  "x": 64.98844377795233,
+                  "y": 54.49414806032167
+                },
+                "to": {
+                  "x": 84.74943663474598,
+                  "y": 60.37260313668911
+                },
+                "length_m": 20.616815291676833,
+                "priority": 1
+              },
+              {
+                "id": "edge-18",
+                "from": {
+                  "x": 80.58192518328079,
+                  "y": 69.81393949882269
+                },
+                "to": {
+                  "x": 84.74943663474598,
+                  "y": 60.37260313668911
+                },
+                "length_m": 10.320222090683867,
+                "priority": 1
+              },
+              {
+                "id": "edge-19",
+                "from": {
+                  "x": 34.02505165179919,
+                  "y": 15.547949981178155
+                },
+                "to": {
+                  "x": 9.27458433801479,
+                  "y": 9.6716376833464
+                },
+                "length_m": 25.438488132598575,
+                "priority": 1
+              },
+              {
+                "id": "edge-20",
+                "from": {
+                  "x": 95.72130722067811,
+                  "y": 33.65945451126267
+                },
+                "to": {
+                  "x": 84.74943663474598,
+                  "y": 60.37260313668911
+                },
+                "length_m": 28.878612391154896,
+                "priority": 1
+              }
+            ],
+            "depot": {
+              "x": 63.942679845788376,
+              "y": 2.5010755222666936
+            }
+          },
+          "covered": [],
+          "visit_counts": {}
+        }
+      }
+    }
+  ]
+}

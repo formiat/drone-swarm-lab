@@ -186,9 +186,21 @@ impl<T: Transport> AgentNode<T> {
             conflicting_assignments += merged;
         }
 
+        let has_idle_agents = self
+            .coordinator
+            .membership
+            .alive_agents()
+            .any(|(id, _)| {
+                self.coordinator
+                    .registry
+                    .tasks()
+                    .find(|t| t.assigned_to.as_ref() == Some(id))
+                    .is_none()
+            });
         if !output.released_tasks.is_empty()
             || !output.expired_task_ids.is_empty()
             || !self.coordinator.registry.unassigned().is_empty()
+            || has_idle_agents
         {
             // Skip centralized allocation when CBBA is active (distributed path)
             if self.cbba.is_none() {
@@ -513,6 +525,7 @@ mod tests {
             expires_at: None,
             pose: None,
             grid_cell: None,
+            edge_id: None,
         }
     }
 

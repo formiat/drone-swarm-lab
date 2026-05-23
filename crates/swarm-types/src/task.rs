@@ -54,6 +54,9 @@ pub struct Task {
     /// If set, this task represents scanning a specific grid cell.
     #[serde(default)]
     pub grid_cell: Option<(u32, u32)>,
+    /// If set, this task represents inspecting a specific edge.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edge_id: Option<crate::edge::EdgeId>,
 }
 
 #[cfg(test)]
@@ -72,6 +75,7 @@ mod tests {
             expires_at: None,
             pose: None,
             grid_cell: None,
+            edge_id: None,
         }
     }
 

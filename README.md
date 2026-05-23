@@ -56,7 +56,7 @@ Swarm Coordination Runtime is a Rust workspace for mission-level coordination of
 | `swarm-runtime` | Membership, failure detection, task registry, coordinator, `AgentNode`. |
 | `swarm-alloc` | Greedy and auction allocation strategies. |
 | `swarm-sim` | Deterministic clock, scenario model, generic scenario runner, DSL loader, JSON/CSV export. |
-| `swarm-scenarios` | Scenario builders: Coverage With Failure, Dynamic Auction, and Emergency Mesh. |
+| `swarm-scenarios` | Scenario builders: Coverage With Failure, Dynamic Auction, Emergency Mesh, SAR, and Infrastructure Inspection. |
 | `swarm-metrics` | Per-run and aggregate metrics. |
 | `swarm-replay` | Placeholder for future replay support. |
 | `swarm-examples` | Runnable binaries. |
@@ -467,3 +467,39 @@ cargo run -p swarm-examples --bin strategy_comparison \
 
 **Сценарий:**
 - `scenarios/cbba_stress.json` — 4 агента, 3 задачи, packet loss 0.0/0.1/0.2
+
+### M16 — Infrastructure Inspection
+
+Reference mission для обследования линейной инфраструктуры (ЛЭП, трубопроводы, периметр). Агенты покрывают граф рёбер, а не ячейки сетки.
+
+**Типы:**
+- `InspectionEdge` — ребро графа с `from`, `to`, `length_m`, `priority`.
+- `InspectionGraph` — набор рёбер и базовая точка `depot`.
+- Генераторы: `linear_route`, `grid_perimeter`, `random_graph`.
+
+**Метрики:**
+- `edge_coverage_rate` — доля покрытых рёбер.
+- `missed_edges` — число пропущенных рёбер.
+- `revisit_count` — повторные визиты одного ребра.
+- `route_efficiency` — покрытое расстояние / общий путь агента.
+
+**Запуск inspection benchmark:**
+```bash
+cargo run -p swarm-examples --bin strategy_comparison --mission inspection
+cargo run -p swarm-examples --bin strategy_comparison \
+  --scenario-suite scenarios/inspection.linear.json --json inspection.json
+```
+
+**Сценарии:**
+- `scenarios/inspection.linear.json` — прямая ЛЭП, 3 агента.
+- `scenarios/inspection.perimeter.json` — периметр 10×10, 4 агента, battery constraint.
+- `scenarios/inspection.random.json` — случайный граф, 5 агентов.
+
+**Benchmark-таблица (quick mode, 10 seeds):**
+
+| Стратегия | Профиль | Успех | Завершение | EdgeCoverage | MissedEdges | Revisits | RouteEfficiency |
+|-----------|---------|-------|------------|--------------|-------------|----------|-----------------|
+| greedy    | inspection/linear | 1.000 | 1.000 | 1.000 | 0.0 | 0.0 | 0.850 |
+| auction   | inspection/linear | 1.000 | 1.000 | 1.000 | 0.0 | 0.0 | 0.820 |
+
+*(10 seeds per cell, quick mode)*

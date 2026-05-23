@@ -55,6 +55,11 @@ pub fn export_json(report: &ComparisonReport) -> Result<String, serde_json::Erro
                     convergence_ticks_p50: metrics.convergence_ticks_p50,
                     convergence_ticks_p95: metrics.convergence_ticks_p95,
                     avg_bundle_travel_distance: metrics.avg_bundle_travel_distance,
+                    // v0.16 Inspection metrics
+                    avg_edge_coverage_rate: metrics.avg_edge_coverage_rate,
+                    avg_missed_edges: metrics.avg_missed_edges,
+                    avg_revisit_count: metrics.avg_revisit_count,
+                    avg_route_efficiency: metrics.avg_route_efficiency,
                 });
             }
         }
@@ -110,6 +115,10 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
         "convergence_ticks_p50",
         "convergence_ticks_p95",
         "avg_bundle_travel_distance",
+        "avg_edge_coverage_rate",
+        "avg_missed_edges",
+        "avg_revisit_count",
+        "avg_route_efficiency",
     ])?;
 
     let mission = report.mission_names.first().cloned().unwrap_or_default();
@@ -161,6 +170,10 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
                     format!("{:.3}", m.convergence_ticks_p50).as_str(),
                     format!("{:.3}", m.convergence_ticks_p95).as_str(),
                     format!("{:.3}", m.avg_bundle_travel_distance).as_str(),
+                    format!("{:.3}", m.avg_edge_coverage_rate).as_str(),
+                    format!("{:.3}", m.avg_missed_edges).as_str(),
+                    format!("{:.3}", m.avg_revisit_count).as_str(),
+                    format!("{:.3}", m.avg_route_efficiency).as_str(),
                 ])?;
             }
         }
@@ -220,6 +233,11 @@ struct ReportRow {
     convergence_ticks_p50: f64,
     convergence_ticks_p95: f64,
     avg_bundle_travel_distance: f64,
+    // v0.16 Inspection metrics
+    avg_edge_coverage_rate: f64,
+    avg_missed_edges: f64,
+    avg_revisit_count: f64,
+    avg_route_efficiency: f64,
 }
 
 #[cfg(test)]
@@ -263,6 +281,10 @@ mod tests {
                 convergence_ticks_p95: 0.0,
                 convergence_ticks_max: 0.0,
                 avg_bundle_travel_distance: 0.0,
+                avg_edge_coverage_rate: 0.0,
+                avg_missed_edges: 0.0,
+                avg_revisit_count: 0.0,
+                avg_route_efficiency: 0.0,
             },
         );
         ComparisonReport {

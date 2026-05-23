@@ -190,6 +190,7 @@ pub fn build_sar_scenario(config: &SarScenarioConfig) -> (Scenario, RunConfig) {
                 expires_at: None,
                 pose: Some(config.grid.cell_center(x, y)),
                 grid_cell: Some((x, y)),
+                edge_id: None,
             });
         }
     }

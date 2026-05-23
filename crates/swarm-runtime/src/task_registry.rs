@@ -83,6 +83,17 @@ impl TaskRegistry {
         prev
     }
 
+    /// Mark an Assigned or InProgress task as Completed. Returns the previous owner.
+    pub fn complete_assigned_task(&mut self, task_id: &TaskId) -> Option<AgentId> {
+        let task = self.tasks.get_mut(task_id)?;
+        if !matches!(task.status, TaskStatus::Assigned | TaskStatus::InProgress) {
+            return None;
+        }
+        let prev = task.assigned_to.take();
+        task.status = TaskStatus::Completed;
+        prev
+    }
+
     /// Remove tasks whose expires_at <= current_tick. Returns expired TaskIds.
     ///
     /// Expiration rule (Milestone 2): only Unassigned and Assigned tasks expire.
@@ -162,6 +173,7 @@ mod tests {
             expires_at: None,
             pose: None,
             grid_cell: None,
+            edge_id: None,
         }
     }
 

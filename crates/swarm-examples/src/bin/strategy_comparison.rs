@@ -6,8 +6,9 @@ use swarm_alloc::{
     ConnectivityAwareAllocator, GreedyAllocator, Strategy,
 };
 use swarm_scenarios::{
-    build_coverage_scenario, build_emergency_mesh_scenario, build_sar_scenario, CoverageConfig,
-    EmergencyMeshProfile, EmergencyMeshStandardProfiles, SarProfile, StandardProfiles,
+    build_coverage_scenario, build_emergency_mesh_scenario, build_inspection_scenario,
+    build_sar_scenario, CoverageConfig, EmergencyMeshProfile, EmergencyMeshStandardProfiles,
+    InspectionProfile, InspectionStandardProfiles, SarProfile, StandardProfiles,
 };
 use swarm_sim::{
     export_csv, export_json, BenchmarkHarness, BenchmarkOptions, ComparisonReport, FailureEvent,
@@ -23,6 +24,7 @@ enum Mission {
     Coverage,
     EmergencyMesh,
     Sar,
+    Inspection,
 }
 
 fn parse_mission(arg: &str) -> Vec<Mission> {
@@ -30,8 +32,16 @@ fn parse_mission(arg: &str) -> Vec<Mission> {
         "coverage" => vec![Mission::Coverage],
         "emergency-mesh" => vec![Mission::EmergencyMesh],
         "sar" => vec![Mission::Sar],
-        "all" => vec![Mission::Coverage, Mission::EmergencyMesh, Mission::Sar],
-        _ => panic!("unknown mission: {arg}. Valid: coverage, emergency-mesh, sar, all"),
+        "inspection" => vec![Mission::Inspection],
+        "all" => vec![
+            Mission::Coverage,
+            Mission::EmergencyMesh,
+            Mission::Sar,
+            Mission::Inspection,
+        ],
+        _ => {
+            panic!("unknown mission: {arg}. Valid: coverage, emergency-mesh, sar, inspection, all")
+        }
     }
 }
 
@@ -40,6 +50,7 @@ fn mission_name(mission: &Mission) -> &'static str {
         Mission::Coverage => "coverage",
         Mission::EmergencyMesh => "emergency-mesh",
         Mission::Sar => "sar",
+        Mission::Inspection => "inspection",
     }
 }
 
@@ -209,6 +220,18 @@ fn main() {
                 let builder: ScenarioBuilder = Box::new(|seed: u64, profile_name: &str| {
                     let profile = SarProfile::from_str(profile_name).unwrap_or(SarProfile::Ideal);
                     build_sar_scenario(&profile.config(seed))
+                });
+                (profiles, builder)
+            }
+            Mission::Inspection => {
+                let profiles: Vec<String> = InspectionStandardProfiles::profile_names()
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect();
+                let builder: ScenarioBuilder = Box::new(|seed: u64, profile_name: &str| {
+                    let profile = InspectionProfile::from_str(profile_name)
+                        .unwrap_or(InspectionProfile::Linear);
+                    build_inspection_scenario(&profile.config(seed))
                 });
                 (profiles, builder)
             }

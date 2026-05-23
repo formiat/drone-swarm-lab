@@ -1,0 +1,393 @@
+{
+  "name": "Inspection Linear",
+  "description": "Linear infrastructure inspection with 3 agents (10 edges x 10m).",
+  "scenarios": [
+    {
+      "mission": "inspection",
+      "profile": "linear",
+      "scenario": {
+        "name": "inspection_linear_0",
+        "seed": 0,
+        "agents": [
+          {
+            "id": "agent-0",
+            "role": "scout",
+            "health": "alive",
+            "pose": {
+              "x": 0.0,
+              "y": 0.0
+            },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 50.0,
+            "generation": 1,
+            "speed": 2.0,
+            "max_range": Infinity,
+            "battery_drain_rate": 0.0
+          },
+          {
+            "id": "agent-1",
+            "role": "scout",
+            "health": "alive",
+            "pose": {
+              "x": 0.0,
+              "y": 0.0
+            },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 50.0,
+            "generation": 1,
+            "speed": 2.0,
+            "max_range": Infinity,
+            "battery_drain_rate": 0.0
+          },
+          {
+            "id": "agent-2",
+            "role": "scout",
+            "health": "alive",
+            "pose": {
+              "x": 0.0,
+              "y": 0.0
+            },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 50.0,
+            "generation": 1,
+            "speed": 2.0,
+            "max_range": Infinity,
+            "battery_drain_rate": 0.0
+          }
+        ],
+        "tasks": [
+          {
+            "id": "edge-edge-0",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 10.0,
+              "y": 0.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-0"
+          },
+          {
+            "id": "edge-edge-1",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 20.0,
+              "y": 0.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-1"
+          },
+          {
+            "id": "edge-edge-2",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 30.0,
+              "y": 0.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-2"
+          },
+          {
+            "id": "edge-edge-3",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 40.0,
+              "y": 0.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-3"
+          },
+          {
+            "id": "edge-edge-4",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 50.0,
+              "y": 0.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-4"
+          },
+          {
+            "id": "edge-edge-5",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 60.0,
+              "y": 0.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-5"
+          },
+          {
+            "id": "edge-edge-6",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 70.0,
+              "y": 0.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-6"
+          },
+          {
+            "id": "edge-edge-7",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 80.0,
+              "y": 0.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-7"
+          },
+          {
+            "id": "edge-edge-8",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 90.0,
+              "y": 0.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-8"
+          },
+          {
+            "id": "edge-edge-9",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 100.0,
+              "y": 0.0
+            },
+            "grid_cell": null,
+            "edge_id": "edge-9"
+          }
+        ],
+        "ground_nodes": [],
+        "base_station": {
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "run_config": {
+        "max_ticks": 500,
+        "timeout_ticks": 3,
+        "max_unassigned_ticks": 10,
+        "packet_loss_rate": 0.0,
+        "latency_ticks": 0,
+        "latency_per_hop": 0,
+        "failures": [],
+        "dynamic_tasks": [],
+        "partition_events": [],
+        "gossip_interval_ticks": 999,
+        "base_id": null,
+        "enable_movement": true,
+        "tick_duration_ms": 1000,
+        "grid_state": null,
+        "enable_cbba": false,
+        "inspection_state": {
+          "graph": {
+            "edges": [
+              {
+                "id": "edge-0",
+                "from": {
+                  "x": 0.0,
+                  "y": 0.0
+                },
+                "to": {
+                  "x": 10.0,
+                  "y": 0.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-1",
+                "from": {
+                  "x": 10.0,
+                  "y": 0.0
+                },
+                "to": {
+                  "x": 20.0,
+                  "y": 0.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-2",
+                "from": {
+                  "x": 20.0,
+                  "y": 0.0
+                },
+                "to": {
+                  "x": 30.0,
+                  "y": 0.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-3",
+                "from": {
+                  "x": 30.0,
+                  "y": 0.0
+                },
+                "to": {
+                  "x": 40.0,
+                  "y": 0.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-4",
+                "from": {
+                  "x": 40.0,
+                  "y": 0.0
+                },
+                "to": {
+                  "x": 50.0,
+                  "y": 0.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-5",
+                "from": {
+                  "x": 50.0,
+                  "y": 0.0
+                },
+                "to": {
+                  "x": 60.0,
+                  "y": 0.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-6",
+                "from": {
+                  "x": 60.0,
+                  "y": 0.0
+                },
+                "to": {
+                  "x": 70.0,
+                  "y": 0.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-7",
+                "from": {
+                  "x": 70.0,
+                  "y": 0.0
+                },
+                "to": {
+                  "x": 80.0,
+                  "y": 0.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-8",
+                "from": {
+                  "x": 80.0,
+                  "y": 0.0
+                },
+                "to": {
+                  "x": 90.0,
+                  "y": 0.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              },
+              {
+                "id": "edge-9",
+                "from": {
+                  "x": 90.0,
+                  "y": 0.0
+                },
+                "to": {
+                  "x": 100.0,
+                  "y": 0.0
+                },
+                "length_m": 10.0,
+                "priority": 1
+              }
+            ],
+            "depot": {
+              "x": 0.0,
+              "y": 0.0
+            }
+          },
+          "covered": [],
+          "visit_counts": {}
+        }
+      }
+    }
+  ]
+}

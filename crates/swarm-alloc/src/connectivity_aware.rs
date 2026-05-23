@@ -159,6 +159,7 @@ mod tests {
             expires_at: None,
             pose: Some(Pose { x, y }),
             grid_cell: None,
+            edge_id: None,
         }
     }
 

@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 derive_more = { workspace = true }
+rand        = { workspace = true }
 serde       = { workspace = true }
 
 [dev-dependencies]

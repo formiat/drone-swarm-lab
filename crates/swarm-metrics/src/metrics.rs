@@ -85,6 +85,15 @@ pub struct RunMetrics {
     pub cbba_convergence_tick: Option<u64>,
     #[serde(default)]
     pub bundle_travel_distance: f64,
+    // v0.16 Inspection metrics
+    #[serde(default)]
+    pub edge_coverage_rate: f64,
+    #[serde(default)]
+    pub missed_edges: u64,
+    #[serde(default)]
+    pub revisit_count: u64,
+    #[serde(default)]
+    pub route_efficiency: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -133,6 +142,15 @@ pub struct AggregateMetrics {
     pub convergence_ticks_max: f64,
     #[serde(default)]
     pub avg_bundle_travel_distance: f64,
+    // v0.16 Inspection metrics
+    #[serde(default)]
+    pub avg_edge_coverage_rate: f64,
+    #[serde(default)]
+    pub avg_missed_edges: f64,
+    #[serde(default)]
+    pub avg_revisit_count: f64,
+    #[serde(default)]
+    pub avg_route_efficiency: f64,
 }
 
 fn percentile_of_sorted(sorted: &[u64], p: f64) -> f64 {
@@ -177,6 +195,11 @@ impl AggregateMetrics {
                 convergence_ticks_p95: 0.0,
                 convergence_ticks_max: 0.0,
                 avg_bundle_travel_distance: 0.0,
+                // v0.16 Inspection metrics
+                avg_edge_coverage_rate: 0.0,
+                avg_missed_edges: 0.0,
+                avg_revisit_count: 0.0,
+                avg_route_efficiency: 0.0,
             };
         }
 
@@ -211,6 +234,11 @@ impl AggregateMetrics {
         // v0.15 CBBA robustness
         let total_bundle_travel_distance: f64 =
             runs.iter().map(|run| run.bundle_travel_distance).sum();
+        // v0.16 Inspection metrics
+        let total_edge_coverage_rate: f64 = runs.iter().map(|run| run.edge_coverage_rate).sum();
+        let total_missed_edges: u64 = runs.iter().map(|run| run.missed_edges).sum();
+        let total_revisit_count: u64 = runs.iter().map(|run| run.revisit_count).sum();
+        let total_route_efficiency: f64 = runs.iter().map(|run| run.route_efficiency).sum();
         let mut convergence_ticks: Vec<u64> = runs
             .iter()
             .filter_map(|run| run.cbba_convergence_tick)
@@ -264,6 +292,11 @@ impl AggregateMetrics {
             convergence_ticks_p95: p95,
             convergence_ticks_max: cmax,
             avg_bundle_travel_distance: total_bundle_travel_distance / n,
+            // v0.16 Inspection metrics
+            avg_edge_coverage_rate: total_edge_coverage_rate / n,
+            avg_missed_edges: total_missed_edges as f64 / n,
+            avg_revisit_count: total_revisit_count as f64 / n,
+            avg_route_efficiency: total_route_efficiency / n,
         }
     }
 }
@@ -371,11 +404,19 @@ impl fmt::Display for AggregateMetrics {
             "convergence_ticks_max: {:.3}",
             self.convergence_ticks_max
         )?;
-        write!(
+        writeln!(
             f,
             "avg_bundle_travel_distance: {:.3}",
             self.avg_bundle_travel_distance
-        )
+        )?;
+        writeln!(
+            f,
+            "avg_edge_coverage_rate: {:.3}",
+            self.avg_edge_coverage_rate
+        )?;
+        writeln!(f, "avg_missed_edges: {:.3}", self.avg_missed_edges)?;
+        writeln!(f, "avg_revisit_count: {:.3}", self.avg_revisit_count)?;
+        write!(f, "avg_route_efficiency: {:.3}", self.avg_route_efficiency)
     }
 }
 
@@ -448,6 +489,11 @@ mod tests {
             confirmation_scans: 0,
             cbba_convergence_tick: None,
             bundle_travel_distance: 0.0,
+            // v0.16 Inspection metrics
+            edge_coverage_rate: 0.0,
+            missed_edges: 0,
+            revisit_count: 0,
+            route_efficiency: 0.0,
         }
     }
 

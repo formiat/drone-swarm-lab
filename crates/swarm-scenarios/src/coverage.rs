@@ -62,6 +62,7 @@ pub fn build_coverage_scenario(config: &CoverageConfig) -> (Scenario, RunConfig)
                 expires_at: None,
                 pose: None,
                 grid_cell: None,
+                edge_id: None,
             }
         })
         .collect();

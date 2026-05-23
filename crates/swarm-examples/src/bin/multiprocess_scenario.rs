@@ -64,6 +64,7 @@ fn make_task(id: &str) -> Task {
         expires_at: None,
         pose: None,
         grid_cell: None,
+        edge_id: None,
     }
 }
 

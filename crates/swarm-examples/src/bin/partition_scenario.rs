@@ -38,6 +38,7 @@ fn main() {
             expires_at: None,
             pose: None,
             grid_cell: None,
+            edge_id: None,
         })
         .collect();
 
@@ -122,6 +123,7 @@ mod tests {
                 preferred_role: None,
                 expires_at: None,
                 grid_cell: None,
+                edge_id: None,
                 pose: None,
             })
             .collect();

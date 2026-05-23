@@ -59,6 +59,7 @@ pub fn task_strategy() -> impl Strategy<Value = Task> {
         preferred_role: None,
         expires_at: None,
         grid_cell: None,
+        edge_id: None,
         pose: Some(Pose {
             x: (idx as f64) * 8.0,
             y: (idx as f64) * 4.0,
