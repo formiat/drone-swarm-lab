@@ -2,9 +2,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::{RunConfig, Scenario};
 
+fn default_schema_version() -> String {
+    "0.1".to_owned()
+}
+
 /// A suite of scenarios with metadata for batch benchmarking.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ScenarioSuite {
+    #[serde(default = "default_schema_version")]
+    pub schema_version: String,
     pub name: String,
     pub description: String,
     pub scenarios: Vec<ScenarioSuiteEntry>,
@@ -34,6 +40,177 @@ pub fn export_entry(entry: &ScenarioSuiteEntry) -> Result<String, serde_json::Er
 /// Serialize a full suite to pretty-printed JSON.
 pub fn export_suite(suite: &ScenarioSuite) -> Result<String, serde_json::Error> {
     serde_json::to_string_pretty(suite)
+}
+
+/// Typed validation error for scenario suite entries.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ValidationError {
+    pub field: String,
+    pub message: String,
+}
+
+/// Validate a full scenario suite.
+pub fn validate_scenario_suite(suite: &ScenarioSuite) -> Vec<ValidationError> {
+    let mut errors = Vec::new();
+
+    if suite.name.trim().is_empty() {
+        errors.push(ValidationError {
+            field: "name".to_owned(),
+            message: "Suite name must not be empty".to_owned(),
+        });
+    }
+
+    if suite.scenarios.is_empty() {
+        errors.push(ValidationError {
+            field: "scenarios".to_owned(),
+            message: "Scenario suite must contain at least one scenario".to_owned(),
+        });
+    }
+
+    if suite.schema_version != "0.1" {
+        errors.push(ValidationError {
+            field: "schema_version".to_owned(),
+            message: format!(
+                "Unsupported schema version: {} (expected 0.1)",
+                suite.schema_version
+            ),
+        });
+    }
+
+    for (i, entry) in suite.scenarios.iter().enumerate() {
+        let mut entry_errors = validate_entry(entry);
+        for e in &mut entry_errors {
+            e.field = format!("scenarios[{}].{}", i, e.field);
+        }
+        errors.append(&mut entry_errors);
+    }
+
+    errors
+}
+
+/// Validate a single scenario suite entry.
+pub fn validate_entry(entry: &ScenarioSuiteEntry) -> Vec<ValidationError> {
+    let mut errors = Vec::new();
+
+    if entry.mission.trim().is_empty() {
+        errors.push(ValidationError {
+            field: "mission".to_owned(),
+            message: "Mission must not be empty".to_owned(),
+        });
+    }
+
+    if entry.profile.trim().is_empty() {
+        errors.push(ValidationError {
+            field: "profile".to_owned(),
+            message: "Profile must not be empty".to_owned(),
+        });
+    }
+
+    if entry.scenario.name.trim().is_empty() {
+        errors.push(ValidationError {
+            field: "scenario.name".to_owned(),
+            message: "Scenario name must not be empty".to_owned(),
+        });
+    }
+
+    if entry.scenario.agents.is_empty() {
+        errors.push(ValidationError {
+            field: "scenario.agents".to_owned(),
+            message: "Scenario must contain at least one agent".to_owned(),
+        });
+    }
+
+    if entry.scenario.tasks.is_empty() {
+        errors.push(ValidationError {
+            field: "scenario.tasks".to_owned(),
+            message: "Scenario must contain at least one task".to_owned(),
+        });
+    }
+
+    if entry.run_config.max_ticks == 0 {
+        errors.push(ValidationError {
+            field: "run_config.max_ticks".to_owned(),
+            message: "max_ticks must be greater than 0".to_owned(),
+        });
+    }
+
+    // Mission-specific constraints
+    errors.append(&mut validate_mission_specific(entry));
+
+    errors
+}
+
+/// Validate mission-specific constraints.
+pub fn validate_mission_specific(entry: &ScenarioSuiteEntry) -> Vec<ValidationError> {
+    let mut errors = Vec::new();
+
+    match entry.mission.as_str() {
+        "sar" => {
+            if entry.run_config.grid_state.is_none() {
+                errors.push(ValidationError {
+                    field: "run_config.grid_state".to_owned(),
+                    message: "SAR mission requires grid_state".to_owned(),
+                });
+            }
+            let has_grid_cell = entry.scenario.tasks.iter().any(|t| t.grid_cell.is_some());
+            if !has_grid_cell {
+                errors.push(ValidationError {
+                    field: "scenario.tasks".to_owned(),
+                    message: "SAR mission requires at least one task with grid_cell".to_owned(),
+                });
+            }
+        }
+        "inspection" => {
+            let has_edge = entry.scenario.tasks.iter().any(|t| t.edge_id.is_some());
+            if !has_edge {
+                errors.push(ValidationError {
+                    field: "scenario.tasks".to_owned(),
+                    message: "Inspection mission requires at least one task with edge_id"
+                        .to_owned(),
+                });
+            }
+            if !entry.run_config.enable_movement {
+                errors.push(ValidationError {
+                    field: "run_config.enable_movement".to_owned(),
+                    message: "Inspection mission requires enable_movement = true".to_owned(),
+                });
+            }
+        }
+        "cbba-stress" => {
+            if !entry.run_config.enable_cbba {
+                errors.push(ValidationError {
+                    field: "run_config.enable_cbba".to_owned(),
+                    message: "CBBA-stress mission requires enable_cbba = true".to_owned(),
+                });
+            }
+            if entry.run_config.gossip_interval_ticks > 5 {
+                errors.push(ValidationError {
+                    field: "run_config.gossip_interval_ticks".to_owned(),
+                    message: "CBBA-stress mission requires gossip_interval_ticks <= 5".to_owned(),
+                });
+            }
+        }
+        "sitl" => {
+            let has_pose = entry.scenario.tasks.iter().any(|t| t.pose.is_some());
+            if !has_pose {
+                errors.push(ValidationError {
+                    field: "scenario.tasks".to_owned(),
+                    message: "SITL mission requires at least one task with pose".to_owned(),
+                });
+            }
+        }
+        _ => {}
+    }
+
+    // Safety scenarios require safety_config
+    if entry.profile.contains("safety") && entry.run_config.safety_config.is_none() {
+        errors.push(ValidationError {
+            field: "run_config.safety_config".to_owned(),
+            message: "Safety profile requires safety_config".to_owned(),
+        });
+    }
+
+    errors
 }
 
 #[cfg(test)]
@@ -124,6 +301,7 @@ mod tests {
     #[test]
     fn scenario_suite_load_from_file() {
         let suite = ScenarioSuite {
+            schema_version: "0.1".to_owned(),
             name: "Test Suite".to_owned(),
             description: "A test suite".to_owned(),
             scenarios: vec![make_minimal_entry()],
@@ -178,6 +356,7 @@ mod tests {
         let json = export_entry(&entry).unwrap();
         assert!(!json.is_empty());
         let suite = ScenarioSuite {
+            schema_version: "0.1".to_owned(),
             name: "Export Suite".to_owned(),
             description: "Suite for export test".to_owned(),
             scenarios: vec![entry],
@@ -236,5 +415,96 @@ mod tests {
         assert_eq!(gs.targets.len(), 2);
         assert_eq!(gs.grid.width, 6);
         assert_eq!(gs.grid.height, 6);
+    }
+
+    #[test]
+    fn schema_version_defaults_to_0_1() {
+        let json = r#"{"name":"Test","description":"D","scenarios":[]}"#;
+        let suite: ScenarioSuite = serde_json::from_str(json).unwrap();
+        assert_eq!(suite.schema_version, "0.1");
+    }
+
+    #[test]
+    fn validate_rejects_empty_mission() {
+        let mut entry = make_minimal_entry();
+        entry.mission = "".to_owned();
+        let errors = validate_entry(&entry);
+        assert!(errors.iter().any(|e| e.field == "mission"));
+    }
+
+    #[test]
+    fn validate_rejects_empty_profile() {
+        let mut entry = make_minimal_entry();
+        entry.profile = "".to_owned();
+        let errors = validate_entry(&entry);
+        assert!(errors.iter().any(|e| e.field == "profile"));
+    }
+
+    #[test]
+    fn validate_rejects_no_agents() {
+        let mut entry = make_minimal_entry();
+        entry.scenario.agents.clear();
+        let errors = validate_entry(&entry);
+        assert!(errors.iter().any(|e| e.field == "scenario.agents"));
+    }
+
+    #[test]
+    fn validate_rejects_zero_max_ticks() {
+        let mut entry = make_minimal_entry();
+        entry.run_config.max_ticks = 0;
+        let errors = validate_entry(&entry);
+        assert!(errors.iter().any(|e| e.field == "run_config.max_ticks"));
+    }
+
+    #[test]
+    fn validate_sar_rejects_no_grid_state() {
+        let mut entry = make_minimal_entry();
+        entry.mission = "sar".to_owned();
+        entry.run_config.grid_state = None;
+        let errors = validate_entry(&entry);
+        assert!(errors.iter().any(|e| e.field == "run_config.grid_state"));
+    }
+
+    #[test]
+    fn validate_accepts_valid_entry() {
+        let entry = make_minimal_entry();
+        let errors = validate_entry(&entry);
+        assert!(errors.is_empty(), "Expected no errors, got: {:?}", errors);
+    }
+
+    #[test]
+    fn validate_suite_rejects_empty_name() {
+        let suite = ScenarioSuite {
+            schema_version: "0.1".to_owned(),
+            name: "".to_owned(),
+            description: "test".to_owned(),
+            scenarios: vec![make_minimal_entry()],
+        };
+        let errors = validate_scenario_suite(&suite);
+        assert!(errors.iter().any(|e| e.field == "name"));
+    }
+
+    #[test]
+    fn validate_suite_rejects_unsupported_version() {
+        let suite = ScenarioSuite {
+            schema_version: "0.9".to_owned(),
+            name: "Test".to_owned(),
+            description: "test".to_owned(),
+            scenarios: vec![make_minimal_entry()],
+        };
+        let errors = validate_scenario_suite(&suite);
+        assert!(errors.iter().any(|e| e.field == "schema_version"));
+    }
+
+    #[test]
+    fn validate_suite_accepts_valid() {
+        let suite = ScenarioSuite {
+            schema_version: "0.1".to_owned(),
+            name: "Test".to_owned(),
+            description: "test".to_owned(),
+            scenarios: vec![make_minimal_entry()],
+        };
+        let errors = validate_scenario_suite(&suite);
+        assert!(errors.is_empty(), "Expected no errors, got: {:?}", errors);
     }
 }

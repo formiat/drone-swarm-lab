@@ -346,8 +346,22 @@ fn run_from_suite(suite_path: &str, cli: &CliArgs) {
         }
     }
 
-    let suite = swarm_sim::load_scenario_suite(suite_path)
-        .unwrap_or_else(|e| panic!("Failed to load scenario suite from {}: {}", suite_path, e));
+    let suite = match swarm_sim::load_scenario_suite(suite_path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error loading {}: {}", suite_path, e);
+            std::process::exit(1);
+        }
+    };
+
+    let errors = swarm_sim::validate_scenario_suite(&suite);
+    if !errors.is_empty() {
+        eprintln!("Validation failed for {}:", suite_path);
+        for err in &errors {
+            eprintln!("  [{}] {}", err.field, err.message);
+        }
+        std::process::exit(1);
+    }
 
     println!(
         "Loaded suite: {} ({} entries)",

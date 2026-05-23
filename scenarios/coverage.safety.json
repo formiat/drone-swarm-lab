@@ -9,16 +9,138 @@
         "name": "coverage_safety_0",
         "seed": 0,
         "agents": [
-          {"id":"agent-0","role":"scout","health":"alive","pose":{"x":0.0,"y":0.0},"capabilities":[],"current_task":null,"battery":100.0,"comms_range":1000.0,"generation":1,"speed":0.0,"max_range":0.0,"battery_drain_rate":0.0},
-          {"id":"agent-1","role":"scout","health":"alive","pose":{"x":20.0,"y":0.0},"capabilities":[],"current_task":null,"battery":100.0,"comms_range":1000.0,"generation":1,"speed":0.0,"max_range":0.0,"battery_drain_rate":0.0},
-          {"id":"agent-2","role":"scout","health":"alive","pose":{"x":0.0,"y":20.0},"capabilities":[],"current_task":null,"battery":100.0,"comms_range":1000.0,"generation":1,"speed":0.0,"max_range":0.0,"battery_drain_rate":0.0},
-          {"id":"agent-3","role":"scout","health":"alive","pose":{"x":20.0,"y":20.0},"capabilities":[],"current_task":null,"battery":100.0,"comms_range":1000.0,"generation":1,"speed":0.0,"max_range":0.0,"battery_drain_rate":0.0},
-          {"id":"agent-4","role":"scout","health":"alive","pose":{"x":10.0,"y":0.0},"capabilities":[],"current_task":null,"battery":100.0,"comms_range":1000.0,"generation":1,"speed":0.0,"max_range":0.0,"battery_drain_rate":0.0}
+          {
+            "id": "agent-0",
+            "role": "scout",
+            "health": "alive",
+            "pose": {
+              "x": 0.0,
+              "y": 0.0
+            },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 1000.0,
+            "generation": 1,
+            "speed": 0.0,
+            "max_range": 0.0,
+            "battery_drain_rate": 0.0
+          },
+          {
+            "id": "agent-1",
+            "role": "scout",
+            "health": "alive",
+            "pose": {
+              "x": 20.0,
+              "y": 0.0
+            },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 1000.0,
+            "generation": 1,
+            "speed": 0.0,
+            "max_range": 0.0,
+            "battery_drain_rate": 0.0
+          },
+          {
+            "id": "agent-2",
+            "role": "scout",
+            "health": "alive",
+            "pose": {
+              "x": 0.0,
+              "y": 20.0
+            },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 1000.0,
+            "generation": 1,
+            "speed": 0.0,
+            "max_range": 0.0,
+            "battery_drain_rate": 0.0
+          },
+          {
+            "id": "agent-3",
+            "role": "scout",
+            "health": "alive",
+            "pose": {
+              "x": 20.0,
+              "y": 20.0
+            },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 1000.0,
+            "generation": 1,
+            "speed": 0.0,
+            "max_range": 0.0,
+            "battery_drain_rate": 0.0
+          },
+          {
+            "id": "agent-4",
+            "role": "scout",
+            "health": "alive",
+            "pose": {
+              "x": 10.0,
+              "y": 0.0
+            },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 1000.0,
+            "generation": 1,
+            "speed": 0.0,
+            "max_range": 0.0,
+            "battery_drain_rate": 0.0
+          }
         ],
         "tasks": [
-          {"id":"task-0","status":"unassigned","assigned_to":null,"priority":1,"required_capabilities":[],"required_role":null,"preferred_role":null,"expires_at":null,"pose":{"x":2.0,"y":2.0},"grid_cell":null},
-          {"id":"task-1","status":"unassigned","assigned_to":null,"priority":1,"required_capabilities":[],"required_role":null,"preferred_role":null,"expires_at":null,"pose":{"x":18.0,"y":2.0},"grid_cell":null},
-          {"id":"task-2","status":"unassigned","assigned_to":null,"priority":1,"required_capabilities":[],"required_role":null,"preferred_role":null,"expires_at":null,"pose":{"x":2.0,"y":18.0},"grid_cell":null}
+          {
+            "id": "task-0",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 2.0,
+              "y": 2.0
+            },
+            "grid_cell": null
+          },
+          {
+            "id": "task-1",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 18.0,
+              "y": 2.0
+            },
+            "grid_cell": null
+          },
+          {
+            "id": "task-2",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": {
+              "x": 2.0,
+              "y": 18.0
+            },
+            "grid_cell": null
+          }
         ],
         "ground_nodes": [],
         "base_station": null
@@ -42,11 +164,19 @@
         "safety_config": {
           "geofence": null,
           "no_fly_zones": [
-            {"bounds": {"min_x": 8.0, "max_x": 12.0, "min_y": 8.0, "max_y": 12.0}}
+            {
+              "bounds": {
+                "min_x": 8.0,
+                "max_x": 12.0,
+                "min_y": 8.0,
+                "max_y": 12.0
+              }
+            }
           ],
           "separation": null
         }
       }
     }
-  ]
+  ],
+  "schema_version": "0.1"
 }

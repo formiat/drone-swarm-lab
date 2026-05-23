@@ -576,3 +576,46 @@ cargo test -p swarm-sim --test safety_integration
 ```bash
 cargo run --bin sitl_agent -- --mock --scenario scenarios/sitl.waypoints.json --agent-id agent-0
 ```
+
+### M19 — DSL Schema / Validation
+
+Стабильный пользовательский контракт для сценариев: `schema_version`, семантическая валидация, человекочитаемые ошибки.
+
+**Schema version:**
+- Все JSON-сценарии имеют `"schema_version": "0.1"`.
+- Legacy JSON без `schema_version` получает `"0.1"` по умолчанию (`#[serde(default)]`).
+
+**Validation API:**
+```rust
+use swarm_sim::{validate_scenario_suite, validate_entry, ValidationError};
+
+let errors = validate_scenario_suite(&suite);
+for err in &errors {
+    eprintln!("[{}] {}", err.field, err.message);
+}
+```
+
+**Проверки:**
+- Suite: `name` не пуст, `scenarios` не пуст, `schema_version == "0.1"`.
+- Entry: `mission` и `profile` не пусты, `agents` и `tasks` не пусты, `max_ticks > 0`.
+- Mission-specific:
+  - SAR: требует `grid_state` и задачи с `grid_cell`.
+  - Inspection: требует `enable_movement = true` и задачи с `edge_id`.
+  - CBBA-stress: требует `enable_cbba = true` и `gossip_interval_ticks <= 5`.
+  - SITL: требует задачи с `pose`.
+  - Safety-профили: требуют `safety_config`.
+
+**CLI:**
+- `strategy_comparison` и `sitl_agent` выводят validation errors и завершаются с exit(1) при невалидном сценарии.
+
+**Запуск с валидацией:**
+```bash
+cargo run -p swarm-examples --bin strategy_comparison \
+  -- --scenario-suite scenarios/coverage.ideal.json
+```
+
+**Пример ошибки:**
+```
+Validation failed for scenarios/sar.ideal.json:
+  [run_config.grid_state] SAR mission requires grid_state
+```

@@ -63,8 +63,22 @@ fn main() {
         std::process::exit(1);
     }
 
-    let suite = load_scenario_suite(&cli.scenario)
-        .unwrap_or_else(|e| panic!("Failed to load scenario suite: {e}"));
+    let suite = match load_scenario_suite(&cli.scenario) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error loading {}: {}", cli.scenario, e);
+            std::process::exit(1);
+        }
+    };
+
+    let errors = swarm_sim::validate_scenario_suite(&suite);
+    if !errors.is_empty() {
+        eprintln!("Validation failed for {}:", cli.scenario);
+        for err in &errors {
+            eprintln!("  [{}] {}", err.field, err.message);
+        }
+        std::process::exit(1);
+    }
 
     if suite.scenarios.is_empty() {
         eprintln!("Scenario suite is empty");

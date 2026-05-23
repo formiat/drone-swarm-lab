@@ -9,19 +9,185 @@
         "name": "sar_ideal_0",
         "seed": 0,
         "agents": [
-          {"id":"agent-0","role":"scout","health":"alive","pose":{"x":25.0,"y":25.0},"capabilities":[],"current_task":null,"battery":100.0,"comms_range":1000.0,"generation":1,"speed":2.0,"max_range":100.0,"battery_drain_rate":0.5},
-          {"id":"agent-1","role":"scout","health":"alive","pose":{"x":15.0,"y":5.0},"capabilities":[],"current_task":null,"battery":100.0,"comms_range":1000.0,"generation":1,"speed":2.0,"max_range":100.0,"battery_drain_rate":0.5},
-          {"id":"agent-2","role":"scout","health":"alive","pose":{"x":5.0,"y":25.0},"capabilities":[],"current_task":null,"battery":100.0,"comms_range":1000.0,"generation":1,"speed":2.0,"max_range":100.0,"battery_drain_rate":0.5},
-          {"id":"agent-3","role":"thermal","health":"alive","pose":{"x":5.0,"y":5.0},"capabilities":["thermal"],"current_task":null,"battery":100.0,"comms_range":1000.0,"generation":1,"speed":1.5,"max_range":100.0,"battery_drain_rate":0.7},
-          {"id":"agent-4","role":"relay","health":"alive","pose":{"x":25.0,"y":5.0},"capabilities":[],"current_task":null,"battery":100.0,"comms_range":1000.0,"generation":1,"speed":1.0,"max_range":100.0,"battery_drain_rate":0.3}
+          {
+            "id": "agent-0",
+            "role": "scout",
+            "health": "alive",
+            "pose": {
+              "x": 25.0,
+              "y": 25.0
+            },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 1000.0,
+            "generation": 1,
+            "speed": 2.0,
+            "max_range": 100.0,
+            "battery_drain_rate": 0.5
+          },
+          {
+            "id": "agent-1",
+            "role": "scout",
+            "health": "alive",
+            "pose": {
+              "x": 15.0,
+              "y": 5.0
+            },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 1000.0,
+            "generation": 1,
+            "speed": 2.0,
+            "max_range": 100.0,
+            "battery_drain_rate": 0.5
+          },
+          {
+            "id": "agent-2",
+            "role": "scout",
+            "health": "alive",
+            "pose": {
+              "x": 5.0,
+              "y": 25.0
+            },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 1000.0,
+            "generation": 1,
+            "speed": 2.0,
+            "max_range": 100.0,
+            "battery_drain_rate": 0.5
+          },
+          {
+            "id": "agent-3",
+            "role": "thermal",
+            "health": "alive",
+            "pose": {
+              "x": 5.0,
+              "y": 5.0
+            },
+            "capabilities": [
+              "thermal"
+            ],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 1000.0,
+            "generation": 1,
+            "speed": 1.5,
+            "max_range": 100.0,
+            "battery_drain_rate": 0.7
+          },
+          {
+            "id": "agent-4",
+            "role": "relay",
+            "health": "alive",
+            "pose": {
+              "x": 25.0,
+              "y": 5.0
+            },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 1000.0,
+            "generation": 1,
+            "speed": 1.0,
+            "max_range": 100.0,
+            "battery_drain_rate": 0.3
+          }
         ],
         "tasks": [
-          {"id":"task-0","status":"unassigned","assigned_to":null,"priority":1,"required_capabilities":[],"required_role":null,"preferred_role":null,"expires_at":null,"pose":null,"grid_cell":[0,0]},
-          {"id":"task-1","status":"unassigned","assigned_to":null,"priority":1,"required_capabilities":[],"required_role":null,"preferred_role":null,"expires_at":null,"pose":null,"grid_cell":[1,1]},
-          {"id":"task-2","status":"unassigned","assigned_to":null,"priority":1,"required_capabilities":[],"required_role":null,"preferred_role":null,"expires_at":null,"pose":null,"grid_cell":[2,2]},
-          {"id":"task-3","status":"unassigned","assigned_to":null,"priority":1,"required_capabilities":[],"required_role":null,"preferred_role":null,"expires_at":null,"pose":null,"grid_cell":[3,3]},
-          {"id":"task-4","status":"unassigned","assigned_to":null,"priority":1,"required_capabilities":[],"required_role":null,"preferred_role":null,"expires_at":null,"pose":null,"grid_cell":[4,4]},
-          {"id":"task-5","status":"unassigned","assigned_to":null,"priority":1,"required_capabilities":[],"required_role":null,"preferred_role":null,"expires_at":null,"pose":null,"grid_cell":[5,5]}
+          {
+            "id": "task-0",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": null,
+            "grid_cell": [
+              0,
+              0
+            ]
+          },
+          {
+            "id": "task-1",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": null,
+            "grid_cell": [
+              1,
+              1
+            ]
+          },
+          {
+            "id": "task-2",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": null,
+            "grid_cell": [
+              2,
+              2
+            ]
+          },
+          {
+            "id": "task-3",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": null,
+            "grid_cell": [
+              3,
+              3
+            ]
+          },
+          {
+            "id": "task-4",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": null,
+            "grid_cell": [
+              4,
+              4
+            ]
+          },
+          {
+            "id": "task-5",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": null,
+            "grid_cell": [
+              5,
+              5
+            ]
+          }
         ],
         "ground_nodes": [],
         "base_station": null
@@ -41,39 +207,314 @@
         "enable_movement": true,
         "tick_duration_ms": 100,
         "grid_state": {
-          "grid": {"width":6,"height":6,"cell_size":10.0},
+          "grid": {
+            "width": 6,
+            "height": 6,
+            "cell_size": 10.0
+          },
           "cells": [
-            "Unvisited","Unvisited","Unvisited","Unvisited","Unvisited","Unvisited",
-            "Unvisited","Unvisited","Unvisited","Unvisited","Unvisited","Unvisited",
-            "Unvisited","Unvisited","Unvisited","Unvisited","Unvisited","Unvisited",
-            "Unvisited","Unvisited","Unvisited","Unvisited","Unvisited","Unvisited",
-            "Unvisited","Unvisited","Unvisited","Unvisited","Unvisited","Unvisited",
-            "Unvisited","Unvisited","Unvisited","Unvisited","Unvisited","Unvisited"
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited",
+            "Unvisited"
           ],
           "targets": [
-            {"id":"t0","cell_x":1,"cell_y":2},
-            {"id":"t1","cell_x":4,"cell_y":4}
+            {
+              "id": "t0",
+              "cell_x": 1,
+              "cell_y": 2
+            },
+            {
+              "id": "t1",
+              "cell_x": 4,
+              "cell_y": 4
+            }
           ],
-          "sensor":{"scout_pod":0.6,"thermal_pod":0.95,"relay_pod":0.2,"detection_probability":0.6,"false_positive_rate":0.05},
-          "targets_found":0,
-          "first_find_tick":null,
-          "scan_count":0,
-          "belief_map":{
-            "grid":{"width":6,"height":6,"cell_size":10.0},
-            "cells":[
-              [{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null},{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null},{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null},{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null},{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null},{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null}],
-              [{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null},{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null},{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null},{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null},{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null},{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null}],
-              [{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null},{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null},{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null},{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null},{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null},{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null}],
-              [{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null},{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null},{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null},{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null},{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null},{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null}],
-              [{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null},{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null},{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null},{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null},{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null},{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null}],
-              [{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null},{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null},{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null},{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null},{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null},{"prior":0.05,"posterior":0.05,"scan_count":0,"last_scan_tick":null}]
+          "sensor": {
+            "scout_pod": 0.6,
+            "thermal_pod": 0.95,
+            "relay_pod": 0.2,
+            "detection_probability": 0.6,
+            "false_positive_rate": 0.05
+          },
+          "targets_found": 0,
+          "first_find_tick": null,
+          "scan_count": 0,
+          "belief_map": {
+            "grid": {
+              "width": 6,
+              "height": 6,
+              "cell_size": 10.0
+            },
+            "cells": [
+              [
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                }
+              ],
+              [
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                }
+              ],
+              [
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                }
+              ],
+              [
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                }
+              ],
+              [
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                }
+              ],
+              [
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                },
+                {
+                  "prior": 0.05,
+                  "posterior": 0.05,
+                  "scan_count": 0,
+                  "last_scan_tick": null
+                }
+              ]
             ],
-            "false_positives":0,
-            "confirmation_scans":0
+            "false_positives": 0,
+            "confirmation_scans": 0
           }
         },
         "enable_cbba": false
       }
     }
-  ]
+  ],
+  "schema_version": "0.1"
 }

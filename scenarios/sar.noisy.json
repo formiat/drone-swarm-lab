@@ -1074,5 +1074,6 @@
         "safety_config": null
       }
     }
-  ]
+  ],
+  "schema_version": "0.1"
 }
