@@ -540,3 +540,39 @@ cargo test --bin sitl_agent
 ```
 
 Также обновлено описание `swarm-comms` в таблице Workspace Layout (MAVLinkTransport).
+
+### M18 — Integration & Scenario Catalog Hardening
+
+Валидация всех сценариев, smoke-тесты ключевых suite, safety integration tests, SITL waypoints сценарий.
+
+**Исправлено сценариев:**
+- `scenarios/inspection.linear.json` — Infinity → 1000.0 (3 поля max_range)
+- `scenarios/inspection.random.json` — Infinity → 1000.0 (5 полей max_range)
+
+**Новые тесты:**
+- `scenario_catalog` — загрузка всех `scenarios/*.json` через `load_scenario_suite`
+- `smoke_suites` — smoke-run 5 ключевых сценариев (coverage.safety, sar.uncertain/noisy, cbba_stress, inspection.linear)
+- `safety_integration` — 3 теста (no-fly tasks not assigned, violations counted, separation no panic)
+
+**Новый сценарий:**
+- `scenarios/sitl.waypoints.json` — 1 агент, 3 задачи с pose для `sitl_agent --mock`
+
+**Запуск catalog теста:**
+```bash
+cargo test -p swarm-sim --test scenario_catalog
+```
+
+**Запуск smoke тестов:**
+```bash
+cargo test -p swarm-sim --test smoke_suites
+```
+
+**Запуск safety integration:**
+```bash
+cargo test -p swarm-sim --test safety_integration
+```
+
+**SITL waypoints mock:**
+```bash
+cargo run --bin sitl_agent -- --mock --scenario scenarios/sitl.waypoints.json --agent-id agent-0
+```
