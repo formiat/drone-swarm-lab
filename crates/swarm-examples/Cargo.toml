@@ -35,6 +35,10 @@ path = "src/bin/strategy_comparison.rs"
 name = "sitl_agent"
 path = "src/bin/sitl_agent.rs"
 
+[[bin]]
+name = "replay"
+path = "src/bin/replay.rs"
+
 [dependencies]
 serde              = { workspace = true }
 serde_json         = { workspace = true }

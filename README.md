@@ -745,3 +745,37 @@ cargo run -p swarm-examples --bin strategy_comparison -- --scenario-suite scenar
 # Full run (~5min per mission)
 cargo run -p swarm-examples --bin strategy_comparison -- --full --mission <mission> --output-dir results/<mission>_full/
 ```
+
+### M23 — Replay / Debuggability
+
+Inspect simulation runs without reading raw JSON.
+
+**Event log schema version:** `0.2`
+
+**Replay summary:**
+```bash
+cargo run --bin replay -- --log results/replay_logs/run_0.json --summary
+```
+
+**ASCII snapshot at tick N:**
+```bash
+cargo run --bin replay -- --log results/replay_logs/run_0.json --tick 50
+```
+
+**Follow mode (ASCII animation across all ticks):**
+```bash
+cargo run --bin replay -- --log results/replay_logs/run_0.json --follow
+```
+
+**Generate a replay log:**
+```bash
+cargo run -p swarm-examples --bin strategy_comparison -- \
+  --quick --mission coverage --replay-log results/coverage_replay/
+```
+
+**New event types:**
+- `TaskStarted`, `TaskCompleted`, `TaskExpired` — task lifecycle
+- `SarScan`, `SarDetection` — SAR v2 belief-based search
+- `EdgeVisited` — infrastructure inspection
+- `SafetyViolation` — safety layer violations
+- `CbbaConverged`, `CbbaBundleUpdated` — CBBA distributed consensus

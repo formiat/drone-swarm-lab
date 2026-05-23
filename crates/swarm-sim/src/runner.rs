@@ -515,6 +515,20 @@ impl ScenarioRunner {
                         let violations = swarm_safety::check_agent(safety_cfg, &agent, &all_agents);
                         if !violations.is_empty() {
                             safety_violations += violations.len() as u64;
+                            if let Some(ref mut builder) = log_builder {
+                                for v in &violations {
+                                    let vtype = match v.violation_type {
+                                        swarm_safety::ViolationType::NoFlyZoneEntered => swarm_replay::ViolationType::NoFly,
+                                        swarm_safety::ViolationType::GeofenceExited => swarm_replay::ViolationType::Geofence,
+                                        swarm_safety::ViolationType::SeparationBreached { .. } => swarm_replay::ViolationType::Separation,
+                                    };
+                                    builder.push(swarm_replay::Event::SafetyViolation {
+                                        agent_id: agent_id.clone(),
+                                        violation_type: vtype,
+                                        tick: current_tick,
+                                    });
+                                }
+                            }
                         }
                     }
                 }
@@ -528,6 +542,9 @@ impl ScenarioRunner {
                     .all(|(n, _)| n.cbba.as_ref().is_none_or(|c| c.converged))
             {
                 cbba_convergence_tick = Some(current_tick);
+                if let Some(ref mut builder) = log_builder {
+                    builder.push(swarm_replay::Event::CbbaConverged { tick: current_tick });
+                }
             }
 
             // v0.16: Inspection edge coverage logic
@@ -565,6 +582,18 @@ impl ScenarioRunner {
                                         if !inspection_state.covered.insert(edge_id.clone()) {
                                             revisit_count += 1;
                                         }
+                                        if let Some(ref mut builder) = log_builder {
+                                            builder.push(swarm_replay::Event::EdgeVisited {
+                                                edge_id: edge_id.to_string(),
+                                                agent_id: agent_id.clone(),
+                                                tick: current_tick,
+                                            });
+                                            builder.push(swarm_replay::Event::TaskCompleted {
+                                                task_id: task.id.clone(),
+                                                agent_id: agent_id.clone(),
+                                                tick: current_tick,
+                                            });
+                                        }
                                         node.coordinator.registry.complete_assigned_task(&task.id);
                                     }
                                 }
@@ -598,7 +627,7 @@ impl ScenarioRunner {
                                     let mut rng = rand::rngs::StdRng::seed_from_u64(
                                         scenario.seed.wrapping_add(current_tick),
                                     );
-                                    grid_state.scan_cell(
+                                    let detected = grid_state.scan_cell(
                                         agent_id.clone(),
                                         cell_x,
                                         cell_y,
@@ -606,6 +635,21 @@ impl ScenarioRunner {
                                         current_tick,
                                         &mut rng,
                                     );
+                                    if let Some(ref mut builder) = log_builder {
+                                        builder.push(swarm_replay::Event::SarScan {
+                                            agent_id: agent_id.clone(),
+                                            cell: (cell_x, cell_y),
+                                            tick: current_tick,
+                                            detected,
+                                        });
+                                        if detected {
+                                            builder.push(swarm_replay::Event::SarDetection {
+                                                agent_id: agent_id.clone(),
+                                                target_pose: cell_pose,
+                                                tick: current_tick,
+                                            });
+                                        }
+                                    }
                                     scanned_task_ids.push(task_id);
                                 }
                             }
@@ -749,6 +793,14 @@ impl ScenarioRunner {
             if let Some(ref target_id) = first_id {
                 if let Some((_, output)) = tick_outputs.iter().find(|(id, _)| id == target_id) {
                     tasks_expired += output.expired_task_ids.len() as u64;
+                    if let Some(ref mut builder) = log_builder {
+                        for task_id in &output.expired_task_ids {
+                            builder.push(swarm_replay::Event::TaskExpired {
+                                task_id: task_id.clone(),
+                                tick: current_tick,
+                            });
+                        }
+                    }
                 }
             }
 
