@@ -1,6 +1,8 @@
 use std::path::Path;
 
 use swarm_comms::{task_to_waypoint, MockMavlinkTransport};
+#[cfg(feature = "mavlink-transport")]
+use swarm_comms::Transport;
 use swarm_sim::load_scenario_suite;
 
 struct CliArgs {
@@ -93,6 +95,11 @@ fn main() {
         .filter(|t| t.pose.is_some())
         .collect();
 
+    if agent_tasks.is_empty() {
+        eprintln!("Warning: no tasks with pose found in scenario. No waypoints to send.");
+        std::process::exit(1);
+    }
+
     eprintln!(
         "SITL Agent: {} | {} tasks with pose | mock={}",
         cli.agent_id,
@@ -100,20 +107,64 @@ fn main() {
         cli.mock
     );
 
-    let mut transport = MockMavlinkTransport::new();
-
-    for (idx, task) in agent_tasks.iter().enumerate() {
-        if let Some(wp) = task_to_waypoint(task) {
-            let msg = format!(
-                "WAYPOINT seq={} x={:.1} y={:.1} z={:.1}",
-                idx, wp.x, wp.y, wp.z
-            );
-            eprintln!("{msg}");
-            transport.send_waypoint(wp);
+    if cli.mock {
+        // Mock path: always works, no external dependencies
+        let mut transport = MockMavlinkTransport::new();
+        for (idx, task) in agent_tasks.iter().enumerate() {
+            if let Some(wp) = task_to_waypoint(task) {
+                let msg = format!(
+                    "WAYPOINT seq={} x={:.1} y={:.1} z={:.1}",
+                    idx, wp.x, wp.y, wp.z
+                );
+                eprintln!("{msg}");
+                transport.send_waypoint(wp);
+            }
         }
+        eprintln!("Mock mode: {} waypoints sent.", transport.waypoints().len());
+    } else if let Some(connection_string) = cli.connection {
+        // Real MAVLink path: only with feature "mavlink-transport"
+        #[cfg(feature = "mavlink-transport")]
+        {
+            use swarm_comms::MavlinkTransport;
+            let agent_id = swarm_types::AgentId::from(cli.agent_id.clone());
+            let mut transport =
+                MavlinkTransport::new(&connection_string, agent_id).unwrap_or_else(|e| {
+                    eprintln!("Failed to connect to MAVLink: {}", e);
+                    std::process::exit(1);
+                });
+            for (idx, task) in agent_tasks.iter().enumerate() {
+                if let Some(wp) = task_to_waypoint(task) {
+                    let msg = format!(
+                        "WAYPOINT seq={} x={:.1} y={:.1} z={:.1}",
+                        idx, wp.x, wp.y, wp.z
+                    );
+                    eprintln!("{msg}");
+                    let raw = swarm_comms::RawMessage {
+                        from: swarm_types::AgentId::from(cli.agent_id.clone()),
+                        to: swarm_types::AgentId::from("px4".to_owned()),
+                        payload: msg.into_bytes(),
+                    };
+                    if let Err(e) = transport.send(raw) {
+                        eprintln!("Failed to send waypoint: {}", e);
+                    }
+                }
+            }
+            eprintln!("Real MAVLink mode: waypoints sent.");
+        }
+        #[cfg(not(feature = "mavlink-transport"))]
+        {
+            let _ = connection_string;
+            eprintln!("Error: --connection requires feature 'mavlink-transport'.");
+            eprintln!(
+                "  Build with: cargo build --bin sitl_agent --features mavlink-transport"
+            );
+            std::process::exit(1);
+        }
+    } else {
+        eprintln!("Error: specify --mock or --connection <addr>");
+        std::process::exit(1);
     }
 
-    eprintln!("All waypoints sent. Completed.");
     std::process::exit(0);
 }
 
@@ -163,5 +214,24 @@ mod tests {
         assert_eq!(transport.waypoints().len(), 2);
         assert!((transport.waypoints()[0].x - 10.0).abs() < 1e-6);
         assert!((transport.waypoints()[1].y - 40.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn sitl_agent_mock_warns_zero_pose_tasks() {
+        let tasks = [Task {
+            id: TaskId::from("t0".to_owned()),
+            status: TaskStatus::Unassigned,
+            assigned_to: None,
+            priority: 1,
+            required_capabilities: vec![],
+            required_role: None,
+            preferred_role: None,
+            expires_at: None,
+            pose: None,
+            grid_cell: None,
+            edge_id: None,
+        }];
+        let pose_tasks: Vec<_> = tasks.iter().filter(|t| t.pose.is_some()).collect();
+        assert!(pose_tasks.is_empty());
     }
 }

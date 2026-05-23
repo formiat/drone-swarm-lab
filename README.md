@@ -577,6 +577,33 @@ cargo test -p swarm-sim --test safety_integration
 cargo run --bin sitl_agent -- --mock --scenario scenarios/sitl.waypoints.json --agent-id agent-0
 ```
 
+### M20 — SITL Path Consolidation
+
+Честное разделение mock и real SITL path. Mock работает без внешних зависимостей. Real PX4 path требует feature `mavlink-transport`.
+
+**Mock mode (works out of the box):**
+```bash
+cargo run --bin sitl_agent -- \
+  --mock --scenario scenarios/sitl.waypoints.json --agent-id agent-0
+```
+
+**Real PX4 mode (experimental, requires feature):**
+```bash
+cargo build --bin sitl_agent --features mavlink-transport
+cargo run --bin sitl_agent --features mavlink-transport -- \
+  --connection udp:127.0.0.1:14550 \
+  --scenario scenarios/sitl.waypoints.json \
+  --agent-id agent-0
+```
+
+**Behavior:**
+- `--mock` — отправляет waypoints в `MockMavlinkTransport`, печатает в stderr.
+- `--connection` без feature — выдаёт ошибку с инструкцией по сборке.
+- `--connection` с feature — использует `MavlinkTransport` для реальной отправки.
+- 0 pose-задач — warning и exit(1).
+
+**Документация:** `docs/SITL_SETUP.md`
+
 ### M19 — DSL Schema / Validation
 
 Стабильный пользовательский контракт для сценариев: `schema_version`, семантическая валидация, человекочитаемые ошибки.
