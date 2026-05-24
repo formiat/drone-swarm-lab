@@ -13,6 +13,9 @@ members = [
     "crates/swarm-safety",
 ]
 
+[workspace.package]
+license = "MIT"
+
 [workspace.dependencies]
 swarm-types = { path = "crates/swarm-types" }
 swarm-comms = { path = "crates/swarm-comms" }
