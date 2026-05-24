@@ -19,8 +19,9 @@ M26 Mission / Strategy Correctness
 M27 Mission Semantics Layer
 M28 Planner Quality Upgrade
 M29 Stress & Regression Harness
-M30 Simulation Realism Foundation
-M31 Decision Point
+M30 New Mission Prototype
+M31 Simulation Realism Foundation
+M32 Decision Point
 ```
 
 ---
@@ -364,7 +365,102 @@ max_safety_violations = 0
 
 ---
 
-## M30 — Simulation Realism Foundation
+## M30 — New Mission Prototype
+
+### Цель
+
+Проверить, что система реально расширяется на новую миссию, а не только поддерживает
+уже реализованные сценарии.
+
+### Рекомендованная миссия
+
+> Wildfire / flood mapping.
+
+Почему не pursuit/logistics первым:
+
+- wildfire/flood ближе к текущим SAR/coverage primitives;
+- можно переиспользовать BeliefMap-like model;
+- естественно появляются risk zones и changing priorities;
+- хорошо проверяются DSL, semantics, allocation, safety и replay;
+- не нужно сразу вводить сложную динамику moving targets или pickup/dropoff dependencies.
+
+### Что сделать
+
+**1. Domain model:**
+
+- hazard map (grid или polygon zones);
+- changing threat level (per-zone, per-tick);
+- priority zones — влияют на scoring в аллокаторе;
+- detection/update events — агент обнаруживает изменение и обновляет hazard map.
+
+**2. DSL:**
+
+```rust
+pub struct WildfireScenario {
+    pub hazard_map: Vec<HazardZone>,
+    pub update_interval_ticks: u64,
+    pub task_generation: WildfireTaskParams,
+}
+
+pub struct HazardZone {
+    pub bounds: Aabb,
+    pub threat_level: f64,
+    pub priority: u8,
+}
+```
+
+Backward compat: новые поля за пределами `MissionKind` — не ломают старые сценарии.
+
+**3. Allocation:**
+
+- mapping tasks генерируются из hazard map;
+- re-prioritization при получении detection/update event;
+- совместимость с `greedy` и `auction` стратегиями;
+- явный `unsupported` маркер для стратегий, которые не поддерживают динамические приоритеты.
+
+**4. Replay:**
+
+- события обновления hazard map;
+- agent observation events;
+- updated task priorities в replay stream.
+
+**5. Benchmark:**
+
+- small scenario (4×4, 2 агента, статичный hazard map);
+- medium scenario (8×8, 4 агента, 2 update события);
+- baseline comparison между `greedy`, `auction`, `cbba` на small scenario.
+
+### Done criteria
+
+- Новая миссия описывается через DSL без изменений ядра.
+- Минимум два сценария.
+- Benchmark запускается хотя бы для stable стратегий.
+- Replay содержит достаточно событий для анализа.
+- Docs объясняют semantics и ограничения.
+
+### Тестовая стратегия
+
+Категория 1 (без рефакторинга):
+- DSL parse/validation тесты для wildfire/flood сценария.
+- Task generation тесты: из hazard_map → TaskList.
+- Completion semantics: все mapping tasks completed → mission success.
+- Replay event serialization тесты.
+- Benchmark smoke test для small scenario.
+
+Категория 2 (лёгкий рефакторинг):
+- Hazard map builders для test fixtures.
+- Fake observation/update event helpers.
+- Reusable mission benchmark fixtures.
+- Assertions для priority updates.
+
+Категория 3 (тяжёлый рефакторинг):
+- Dynamic re-prioritization property tests.
+- Multi-seed mission stability tests.
+- Comparative тесты по всем стратегиям.
+
+---
+
+## M31 — Simulation Realism Foundation
 
 ### Цель
 
@@ -451,7 +547,7 @@ Safety checker проверяет текущий тик.
 
 ---
 
-## M31 — Decision Point
+## M32 — Decision Point
 
 ### Суть
 
@@ -459,7 +555,7 @@ Safety checker проверяет текущий тик.
 
 ### Что оценить
 
-После M25-M29 ответить на вопросы:
+После M25-M31 ответить на вопросы:
 
 1. **Качество алгоритмов:** стали ли стратегии методологически корректными на всех
    основных mission-strategy парах?
@@ -478,21 +574,21 @@ Safety checker проверяет текущий тик.
 | Хочется реального железа | Ветка 6: Real-World / SITL Bridge |
 | Хочется более глубокой симуляции | Ветка 4: Simulation Realism (продолжение) |
 
-M30 — это момент выбора, который сейчас можно не делать.
+M32 — это момент выбора, который сейчас можно не делать.
 
 ---
 
 ## Почему этот план не требует выбора направления
 
-Каждый milestone из M25-M29 полезен для всех будущих веток:
+Каждый milestone из M25-M31 полезен для всех будущих веток:
 
-- **Research (Ветка 8):** нужны correctness (M25), semantics (M26), regression (M28).
-- **New Mission (Ветка 5):** нужны semantics (M26) как инфраструктура.
-- **SITL (Ветка 6):** нужны correctness (M25), semantics (M26), realism (M29).
-- **Visualization (Ветка 7):** нужны стабильные schemas из M26.
-- **Platform (Ветка 9):** нужны стабильные APIs из M26.
+- **Research (Ветка 8):** нужны correctness (M26), semantics (M27), regression (M29).
+- **New Mission (Ветка 5):** нужны semantics (M27) как инфраструктура; M30 — прямая реализация.
+- **SITL (Ветка 6):** нужны correctness (M26), semantics (M27), realism (M31).
+- **Visualization (Ветка 7):** нужны стабильные schemas из M27.
+- **Platform (Ветка 9):** нужны стабильные APIs из M27.
 
-Можно спокойно двигаться линейно до M30, не выбирая стратегическое направление.
+Можно спокойно двигаться линейно до M32, не выбирая стратегическое направление.
 
 ---
 
