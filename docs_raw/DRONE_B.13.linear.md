@@ -14,17 +14,60 @@
 ## Последовательность
 
 ```
-M25 Mission / Strategy Correctness
-M26 Mission Semantics Layer
-M27 Planner Quality Upgrade
-M28 Stress & Regression Harness
-M29 Simulation Realism Foundation
-M30 Decision Point
+M25 Benchmark Parallelization (rayon)
+M26 Mission / Strategy Correctness
+M27 Mission Semantics Layer
+M28 Planner Quality Upgrade
+M29 Stress & Regression Harness
+M30 Simulation Realism Foundation
+M31 Decision Point
 ```
 
 ---
 
-## M25 — Mission / Strategy Correctness
+## M25 — Benchmark Parallelization (rayon)
+
+### Цель
+
+Параллелизовать seed loop в benchmark runner через rayon. Без этого full run
+(1000 seeds) занимает ~90 минут на одну миссию — M29 (Regression Harness)
+практически нежизнеспособен как CI-friendly инструмент.
+
+### Контекст
+
+Текущие замеры на Ryzen 9 5900HX:
+- quick run (10 seeds, SAR): ~54 секунды (single-threaded)
+- один прогон: ~0.5 секунды
+- full run (1000 seeds, SAR, single-threaded): ~90 минут
+- full run с rayon (16 ядер): ~6 минут
+
+### Что сделать
+
+1. Добавить `rayon` в `swarm-sim/Cargo.toml`.
+2. Заменить seed loop с `for seed in seeds` на `seeds.par_iter()` в benchmark runner.
+3. Убедиться что `ScenarioRunner` и все вызываемые структуры `Send + Sync`
+   (или клонируются per-thread).
+4. Добавить `--jobs N` флаг в `strategy_comparison` для ограничения параллелизма
+   (полезно при запуске на слабом железе или в CI).
+5. Проверить что результаты детерминированы: одинаковые seeds дают одинаковые числа
+   при любом числе потоков.
+
+### Done criteria
+
+- `--full --mission sar` завершается за < 10 минут.
+- Результаты совпадают с single-threaded прогоном (детерминизм по seed).
+- `--jobs 1` восстанавливает однопоточный режим.
+
+### Тестовая стратегия
+
+Категория 1:
+- Детерминизм: запустить quick с `--jobs 1` и `--jobs 4` на одних seeds —
+  результаты совпадают.
+
+---
+
+## M26 — Mission / Strategy Correctness
+
 
 ### Цель
 
@@ -94,7 +137,7 @@ M30 Decision Point
 
 ---
 
-## M26 — Mission Semantics Layer
+## M27 — Mission Semantics Layer
 
 ### Цель
 
@@ -174,7 +217,7 @@ pub trait MissionAdapter {
 
 ---
 
-## M27 — Planner Quality Upgrade
+## M28 — Planner Quality Upgrade
 
 ### Цель
 
@@ -248,7 +291,7 @@ pub fn route_cost(start: Pose, tasks: &[Task], agent: &Agent) -> f64;
 
 ---
 
-## M28 — Stress & Regression Harness
+## M29 — Stress & Regression Harness
 
 ### Цель
 
@@ -321,7 +364,7 @@ max_safety_violations = 0
 
 ---
 
-## M29 — Simulation Realism Foundation
+## M30 — Simulation Realism Foundation
 
 ### Цель
 
@@ -408,7 +451,7 @@ Safety checker проверяет текущий тик.
 
 ---
 
-## M30 — Decision Point
+## M31 — Decision Point
 
 ### Суть
 
