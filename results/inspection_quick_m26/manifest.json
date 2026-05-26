@@ -1,0 +1,22 @@
+{
+  "timestamp": "2026-05-26T02:04:33.318778320+00:00",
+  "git_commit": "070f66594e86f6c747fd230a79ff1acd728c61db",
+  "command_line": "target/debug/strategy_comparison --quick --mission inspection --output-dir results/inspection_quick_m26/",
+  "suite_name": "inspection",
+  "schema_version": "0.1",
+  "seed_range_start": 0,
+  "seed_range_end": 10,
+  "strategy_names": [
+    "centralized",
+    "auction",
+    "cbba",
+    "connectivity-aware",
+    "greedy"
+  ],
+  "profile_names": [
+    "inspection/random",
+    "inspection/perimeter",
+    "inspection/linear"
+  ],
+  "metric_schema_version": "0.1"
+}

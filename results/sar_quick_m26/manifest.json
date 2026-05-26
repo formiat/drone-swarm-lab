@@ -1,0 +1,21 @@
+{
+  "timestamp": "2026-05-26T02:07:03.340810885+00:00",
+  "git_commit": "070f66594e86f6c747fd230a79ff1acd728c61db",
+  "command_line": "target/debug/strategy_comparison --quick --mission sar --output-dir results/sar_quick_m26/",
+  "suite_name": "sar",
+  "schema_version": "0.1",
+  "seed_range_start": 0,
+  "seed_range_end": 10,
+  "strategy_names": [
+    "centralized",
+    "connectivity-aware",
+    "auction",
+    "greedy",
+    "cbba"
+  ],
+  "profile_names": [
+    "sar/ideal",
+    "sar/standard"
+  ],
+  "metric_schema_version": "0.1"
+}
