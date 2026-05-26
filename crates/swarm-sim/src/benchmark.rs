@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use rayon::prelude::*;
 use swarm_alloc::Strategy;
 use swarm_metrics::AggregateMetrics;
 
@@ -92,16 +93,18 @@ impl std::fmt::Display for ComparisonReport {
 }
 
 /// A function that builds a (Scenario, RunConfig) pair from a seed and profile name.
-pub type ScenarioBuilder = Box<dyn Fn(u64, &str) -> (Scenario, RunConfig)>;
+pub type ScenarioBuilder = Box<dyn Fn(u64, &str) -> (Scenario, RunConfig) + Send + Sync>;
 
 /// A function that creates a strategy for a given scenario.
-pub type StrategyFactory = Box<dyn Fn(&Scenario, &RunConfig) -> Box<dyn Strategy>>;
+pub type StrategyFactory = Box<dyn Fn(&Scenario, &RunConfig) -> Box<dyn Strategy> + Send + Sync>;
 
 /// Options for running a benchmark.
 pub struct BenchmarkOptions<'a> {
     pub prefix: Option<&'a str>,
     pub enable_replay_log: bool,
     pub mission_name: &'a str,
+    /// Number of rayon threads; `None` or `Some(0)` uses all available CPUs.
+    pub jobs: Option<usize>,
 }
 
 impl Default for BenchmarkOptions<'_> {
@@ -110,6 +113,7 @@ impl Default for BenchmarkOptions<'_> {
             prefix: None,
             enable_replay_log: false,
             mission_name: "coverage",
+            jobs: None,
         }
     }
 }
@@ -209,29 +213,62 @@ impl BenchmarkHarness {
         let opts = options.unwrap_or_default();
         let benchmark_run_id =
             generate_benchmark_run_id(seeds.start, seeds.end, opts.mission_name, opts.prefix);
+        let enable_replay_log = opts.enable_replay_log;
+        let num_threads = opts.jobs.unwrap_or(0);
+
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(num_threads)
+            .build()
+            .expect("failed to build rayon thread pool");
+
+        /// value: `(seed, per-run (strategy+profile key, metrics) pairs, replay logs)`
+        type SeedRow = (
+            u64,
+            Vec<((String, String), swarm_metrics::RunMetrics)>,
+            Vec<swarm_replay::EventLog>,
+        );
+
+        // Run seeds in parallel; each element is (seed, per-run metrics, replay logs).
+        let mut seed_results: Vec<SeedRow> = pool.install(|| {
+            seeds
+                .clone()
+                .into_par_iter()
+                .map(|seed| {
+                    let mut local_metrics = Vec::new();
+                    let mut local_logs = Vec::new();
+                    for factory in strategies {
+                        for profile_name in profile_names {
+                            let (scenario, run_config) = scenario_builder(seed, profile_name);
+                            let mut strategy = factory(&scenario, &run_config);
+                            let strategy_name = strategy.name().to_owned();
+                            let (metrics, log) = run_with_strategy(
+                                &scenario,
+                                run_config,
+                                &mut *strategy,
+                                enable_replay_log,
+                            );
+                            local_metrics.push(((strategy_name, profile_name.clone()), metrics));
+                            if let Some(event_log) = log {
+                                local_logs.push(event_log);
+                            }
+                        }
+                    }
+                    (seed, local_metrics, local_logs)
+                })
+                .collect()
+        });
+
+        // Sort by seed so aggregation order is identical regardless of thread count.
+        seed_results.sort_unstable_by_key(|(seed, _, _)| *seed);
+
         let mut results: HashMap<(String, String), Vec<swarm_metrics::RunMetrics>> = HashMap::new();
         let mut replay_logs: Vec<swarm_replay::EventLog> = Vec::new();
 
-        for seed in seeds.clone() {
-            for factory in strategies {
-                for profile_name in profile_names {
-                    let (scenario, run_config) = scenario_builder(seed, profile_name);
-                    let mut strategy = factory(&scenario, &run_config);
-                    let (metrics, log) = run_with_strategy(
-                        &scenario,
-                        run_config,
-                        &mut *strategy,
-                        opts.enable_replay_log,
-                    );
-                    results
-                        .entry((strategy.name().to_owned(), profile_name.clone()))
-                        .or_default()
-                        .push(metrics);
-                    if let Some(event_log) = log {
-                        replay_logs.push(event_log);
-                    }
-                }
+        for (_seed, local_metrics, local_logs) in seed_results {
+            for (key, metrics) in local_metrics {
+                results.entry(key).or_default().push(metrics);
             }
+            replay_logs.extend(local_logs);
         }
 
         let mut report_results = HashMap::new();
@@ -505,6 +542,45 @@ mod tests {
             "centralized ({}) should match or beat greedy ({}) on ideal network",
             centralized.success_rate,
             greedy.success_rate
+        );
+    }
+
+    #[test]
+    fn determinism_jobs_1_vs_4() {
+        let factories: Vec<StrategyFactory> =
+            vec![Box::new(|_scenario: &Scenario, _run_config: &RunConfig| {
+                Box::new(GreedyAllocator) as Box<dyn Strategy>
+            })];
+        let profiles = vec!["ideal".to_owned()];
+        let builder = make_scenario_builder();
+
+        let run = |jobs: usize| {
+            BenchmarkHarness::run_with_seeds(
+                &factories,
+                &profiles,
+                &builder,
+                0..10,
+                Some(BenchmarkOptions {
+                    jobs: Some(jobs),
+                    ..Default::default()
+                }),
+            )
+            .report
+        };
+
+        let r1 = run(1);
+        let r4 = run(4);
+
+        let key = ("greedy".to_owned(), "ideal".to_owned());
+        let m1 = r1.results.get(&key).unwrap();
+        let m4 = r4.results.get(&key).unwrap();
+        assert_eq!(
+            m1.success_rate, m4.success_rate,
+            "success_rate must be identical for jobs=1 and jobs=4"
+        );
+        assert_eq!(
+            m1.avg_task_completion_rate, m4.avg_task_completion_rate,
+            "avg_task_completion_rate must be identical for jobs=1 and jobs=4"
         );
     }
 

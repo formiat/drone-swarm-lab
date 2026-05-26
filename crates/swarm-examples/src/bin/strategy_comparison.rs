@@ -16,8 +16,9 @@ use swarm_sim::{
 };
 use swarm_types::AgentId;
 
-type ScenarioBuilder = Box<dyn Fn(u64, &str) -> (Scenario, RunConfig)>;
-type StrategyFactory = Box<dyn Fn(&Scenario, &RunConfig) -> Box<dyn swarm_alloc::Strategy>>;
+type ScenarioBuilder = Box<dyn Fn(u64, &str) -> (Scenario, RunConfig) + Send + Sync>;
+type StrategyFactory =
+    Box<dyn Fn(&Scenario, &RunConfig) -> Box<dyn swarm_alloc::Strategy> + Send + Sync>;
 
 #[derive(Clone, Copy)]
 enum RunMode {
@@ -71,6 +72,8 @@ struct CliArgs {
     scenario_suite_path: Option<String>,
     output_dir: Option<String>,
     report_path: Option<String>,
+    /// Limit rayon parallelism; `None` uses all available CPUs.
+    jobs: Option<usize>,
 }
 
 fn parse_args() -> CliArgs {
@@ -85,6 +88,7 @@ fn parse_args() -> CliArgs {
         scenario_suite_path: None,
         output_dir: None,
         report_path: None,
+        jobs: None,
     };
 
     let mut i = 1;
@@ -139,6 +143,12 @@ fn parse_args() -> CliArgs {
                 i += 1;
                 if i < args.len() {
                     cli.report_path = Some(args[i].clone());
+                }
+            }
+            "--jobs" => {
+                i += 1;
+                if i < args.len() {
+                    cli.jobs = args[i].parse::<usize>().ok();
                 }
             }
             _ => {}
@@ -266,6 +276,7 @@ fn main() {
             prefix: cli.run_id_prefix.as_deref(),
             enable_replay_log: enable_replay,
             mission_name: mname,
+            jobs: cli.jobs,
         };
         let result = match cli.mode {
             RunMode::Smoke => BenchmarkHarness::run_smoke_with_options(
