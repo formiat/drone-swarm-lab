@@ -86,7 +86,10 @@ pub fn replay(log: &EventLog) -> ReplayState {
             | Event::EdgeVisited { .. }
             | Event::SafetyViolation { .. }
             | Event::CbbaConverged { .. }
-            | Event::CbbaBundleUpdated { .. } => {}
+            | Event::CbbaBundleUpdated { .. }
+            | Event::AgentObservation { .. }
+            | Event::HazardMapUpdated { .. }
+            | Event::TaskPriorityUpdated { .. } => {}
         }
     }
 

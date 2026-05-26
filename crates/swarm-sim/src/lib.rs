@@ -21,5 +21,6 @@ pub use report_export::{
 };
 pub use runner::{
     DynamicTaskEvent, FailureEvent, InspectionState, PartitionEvent, RunConfig, ScenarioRunner,
+    WildfireState, WildfireZone,
 };
 pub use scenario::Scenario;

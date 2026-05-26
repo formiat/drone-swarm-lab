@@ -103,6 +103,13 @@ pub struct RunMetrics {
     pub avg_return_reserve: f64,
     #[serde(default)]
     pub infeasible_routes: u64,
+    // v0.30 Wildfire / Flood Mapping metrics
+    #[serde(default)]
+    pub hazard_zones_mapped: u64,
+    #[serde(default)]
+    pub priority_updates: u64,
+    #[serde(default)]
+    pub final_avg_threat_level: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -169,6 +176,13 @@ pub struct AggregateMetrics {
     pub avg_return_reserve: f64,
     #[serde(default)]
     pub avg_infeasible_routes: f64,
+    // v0.30 Wildfire / Flood Mapping metrics
+    #[serde(default)]
+    pub avg_hazard_zones_mapped: f64,
+    #[serde(default)]
+    pub avg_priority_updates: f64,
+    #[serde(default)]
+    pub avg_final_threat_level: f64,
 }
 
 fn percentile_of_sorted(sorted: &[u64], p: f64) -> f64 {
@@ -223,6 +237,10 @@ impl AggregateMetrics {
                 avg_wasted_travel: 0.0,
                 avg_return_reserve: 0.0,
                 avg_infeasible_routes: 0.0,
+                // v0.30 Wildfire / Flood Mapping metrics
+                avg_hazard_zones_mapped: 0.0,
+                avg_priority_updates: 0.0,
+                avg_final_threat_level: 0.0,
             };
         }
 
@@ -267,6 +285,10 @@ impl AggregateMetrics {
         let total_wasted_travel: f64 = runs.iter().map(|run| run.avg_wasted_travel).sum();
         let total_return_reserve: f64 = runs.iter().map(|run| run.avg_return_reserve).sum();
         let total_infeasible_routes: u64 = runs.iter().map(|run| run.infeasible_routes).sum();
+        // v0.30 Wildfire / Flood Mapping metrics
+        let total_hazard_zones_mapped: u64 = runs.iter().map(|run| run.hazard_zones_mapped).sum();
+        let total_priority_updates: u64 = runs.iter().map(|run| run.priority_updates).sum();
+        let total_final_threat_level: f64 = runs.iter().map(|run| run.final_avg_threat_level).sum();
         let mut convergence_ticks: Vec<u64> = runs
             .iter()
             .filter_map(|run| run.cbba_convergence_tick)
@@ -330,6 +352,10 @@ impl AggregateMetrics {
             avg_wasted_travel: total_wasted_travel / n,
             avg_return_reserve: total_return_reserve / n,
             avg_infeasible_routes: total_infeasible_routes as f64 / n,
+            // v0.30 Wildfire / Flood Mapping metrics
+            avg_hazard_zones_mapped: total_hazard_zones_mapped as f64 / n,
+            avg_priority_updates: total_priority_updates as f64 / n,
+            avg_final_threat_level: total_final_threat_level / n,
         }
     }
 }
@@ -454,10 +480,22 @@ impl fmt::Display for AggregateMetrics {
         writeln!(f, "avg_route_length: {:.3}", self.avg_route_length)?;
         writeln!(f, "avg_wasted_travel: {:.3}", self.avg_wasted_travel)?;
         writeln!(f, "avg_return_reserve: {:.3}", self.avg_return_reserve)?;
-        write!(
+        writeln!(
             f,
             "avg_infeasible_routes: {:.3}",
             self.avg_infeasible_routes
+        )?;
+        // v0.30 Wildfire / Flood Mapping metrics
+        writeln!(
+            f,
+            "avg_hazard_zones_mapped: {:.3}",
+            self.avg_hazard_zones_mapped
+        )?;
+        writeln!(f, "avg_priority_updates: {:.3}", self.avg_priority_updates)?;
+        write!(
+            f,
+            "avg_final_threat_level: {:.3}",
+            self.avg_final_threat_level
         )
     }
 }
@@ -541,6 +579,10 @@ mod tests {
             avg_wasted_travel: 0.0,
             avg_return_reserve: 0.0,
             infeasible_routes: 0,
+            // v0.30 Wildfire / Flood Mapping metrics
+            hazard_zones_mapped: 0,
+            priority_updates: 0,
+            final_avg_threat_level: 0.0,
         }
     }
 

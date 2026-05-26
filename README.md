@@ -53,7 +53,14 @@ cargo run --bin replay -- --log results/replay/*.json --summary
 cargo run --bin replay -- --log results/replay/*.json --tick 50
 ```
 
-### 6. Run mock SITL
+### 6. Run wildfire / flood mapping benchmark
+
+```bash
+cargo run -p swarm-examples --bin strategy_comparison -- \
+  --smoke --mission wildfire --output-dir results/wildfire_smoke/
+```
+
+### 7. Run mock SITL
 
 ```bash
 cargo run --bin sitl_agent -- \
@@ -77,6 +84,7 @@ cargo run --bin sitl_agent -- \
 | Mission Semantics | ✅ Stable | M27 | `TaskKind`, `MissionAdapter`, `allocate_with_adapter` |
 | Planner Quality | ✅ Stable | M28 | `RoutePlanner` trait, 2-opt, battery-aware feasibility |
 | Regression & Baseline | ✅ Stable | M29 | `RegressionSuite`, `ThresholdChecker`, baseline artifacts |
+| Wildfire / Flood Mapping | ✅ Stable | M30 | `TaskKind::MappingZone`, `WildfireState`, hazard zones, dynamic threat |
 | Real PX4 | 🧪 Experimental | M20 | Feature-gated, requires PX4 SITL setup |
 
 **Test coverage:** 250+ tests, 10 crates, 12 JSON scenarios.
@@ -183,7 +191,7 @@ See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known l
 | `swarm-runtime` | Membership, failure detection, task registry, coordinator, `AgentNode`. |
 | `swarm-alloc` | Greedy, auction, connectivity-aware, centralized, CBBA allocation strategies. |
 | `swarm-sim` | Deterministic clock, scenario model, generic scenario runner, DSL loader, JSON/CSV export. |
-| `swarm-scenarios` | Scenario builders: Coverage, Emergency Mesh, SAR, Infrastructure Inspection. |
+| `swarm-scenarios` | Scenario builders: Coverage, Emergency Mesh, SAR, Infrastructure Inspection, Wildfire / Flood Mapping. |
 | `swarm-metrics` | Per-run and aggregate metrics. |
 | `swarm-replay` | Event log, replay engine, summary CLI, ASCII visualization. |
 | `swarm-safety` | Safety layer: geofence, no-fly zones, separation constraints. |
@@ -222,6 +230,7 @@ See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known l
 | M27 | ✅ | Mission Semantics Layer: `TaskKind`, `MissionAdapter`, `RunState` |
 | M28 | ✅ | Planner Quality Upgrade: `RoutePlanner`, 2-opt, battery-aware feasibility |
 | M29 | ✅ | Stress & Regression Harness: `RegressionSuite`, baseline artifacts, threshold checking |
+| M30 | ✅ | New Mission Prototype: Wildfire / Flood Mapping with `TaskKind::MappingZone`, hazard zones, dynamic threat |
 
 ---
 

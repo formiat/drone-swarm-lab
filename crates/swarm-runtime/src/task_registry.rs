@@ -133,6 +133,10 @@ impl TaskRegistry {
         self.tasks.values()
     }
 
+    pub fn tasks_mut(&mut self) -> impl Iterator<Item = &mut Task> {
+        self.tasks.values_mut()
+    }
+
     fn task_mut(&mut self, task_id: &TaskId) -> Result<&mut Task, RuntimeError> {
         self.tasks
             .get_mut(task_id)

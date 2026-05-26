@@ -43,6 +43,7 @@ pub enum TaskKind {
     InspectionEdge,
     RelayPlacement,
     Waypoint,
+    MappingZone,
 }
 
 /// A unit of work to be executed by an agent.

@@ -18,6 +18,8 @@ pub struct RunState {
     pub covered_edges: HashSet<EdgeId>,
     /// Tasks marked as completed (Coverage, Waypoint).
     pub completed_tasks: HashSet<TaskId>,
+    /// Zones that have been mapped (Wildfire / Flood).
+    pub mapped_zones: HashSet<String>,
 }
 
 /// Mission-specific adapter that provides scoring, routing and completion

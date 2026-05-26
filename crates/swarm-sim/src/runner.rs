@@ -122,6 +122,22 @@ pub struct PartitionEvent {
     pub agents: (AgentId, AgentId),
 }
 
+/// Runtime state for wildfire / flood mapping missions.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct WildfireState {
+    pub zones: Vec<WildfireZone>,
+    pub mapped_zone_ids: std::collections::HashSet<String>,
+    pub update_interval_ticks: u64,
+    pub enable_dynamic_threat: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct WildfireZone {
+    pub id: String,
+    pub threat_level: f64,
+    pub priority: u8,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct RunConfig {
     pub max_ticks: u64,
@@ -157,6 +173,8 @@ pub struct RunConfig {
     pub safety_config: Option<SafetyConfig>,
     #[serde(default)]
     pub inspection_state: Option<InspectionState>,
+    #[serde(default)]
+    pub wildfire_state: Option<WildfireState>,
 }
 
 fn default_max_unassigned() -> u64 {
@@ -290,6 +308,10 @@ impl ScenarioRunner {
 
         // v0.15 CBBA convergence tick tracking
         let mut cbba_convergence_tick: Option<u64> = None;
+
+        // v0.30 Wildfire / Flood Mapping metrics
+        let mut wildfire_state = config.wildfire_state;
+        let mut priority_updates: u64 = 0;
 
         // v0.9 SAR metrics
         let mut coverage_over_time: Vec<f64> = Vec::new();
@@ -667,6 +689,97 @@ impl ScenarioRunner {
                     }
                 }
                 coverage_over_time.push(grid_state.coverage_fraction());
+            }
+
+            // v0.30: Wildfire / Flood Mapping zone observation logic
+            if let Some(ref mut wildfire_state) = wildfire_state {
+                for (node, agent_id) in &mut nodes {
+                    if crashed_agents.contains(agent_id) {
+                        continue;
+                    }
+                    let assigned_tasks: Vec<_> = node
+                        .coordinator
+                        .registry
+                        .tasks()
+                        .filter(|t| t.assigned_to.as_ref() == Some(agent_id))
+                        .filter(|t| t.kind == Some(swarm_types::TaskKind::MappingZone))
+                        .cloned()
+                        .collect();
+                    for task in assigned_tasks {
+                        if let Some(entry) = node.coordinator.membership.get(agent_id) {
+                            let task_pose = task.pose.unwrap_or(entry.pose);
+                            let dist = entry.pose.distance_to(&task_pose);
+                            let threshold = 1.0; // 1 metre proximity
+                            if dist < threshold {
+                                let zone_id = task.id.to_string();
+                                if wildfire_state.mapped_zone_ids.insert(zone_id.clone()) {
+                                    if let Some(ref mut builder) = log_builder {
+                                        builder.push(swarm_replay::Event::AgentObservation {
+                                            agent_id: agent_id.clone(),
+                                            zone_id: zone_id.clone(),
+                                            tick: current_tick,
+                                        });
+                                        builder.push(swarm_replay::Event::TaskCompleted {
+                                            task_id: task.id.clone(),
+                                            agent_id: agent_id.clone(),
+                                            tick: current_tick,
+                                        });
+                                    }
+                                    node.coordinator.registry.complete_assigned_task(&task.id);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Dynamic threat update
+                if wildfire_state.enable_dynamic_threat
+                    && current_tick > 0
+                    && current_tick % wildfire_state.update_interval_ticks == 0
+                {
+                    for zone in &mut wildfire_state.zones {
+                        zone.threat_level = (zone.threat_level + 0.1).min(1.0);
+                        zone.priority = (zone.priority + 1).min(10);
+                        if let Some(ref mut builder) = log_builder {
+                            builder.push(swarm_replay::Event::HazardMapUpdated {
+                                zone_id: zone.id.clone(),
+                                new_threat_level: zone.threat_level,
+                                new_priority: zone.priority,
+                                tick: current_tick,
+                            });
+                        }
+                    }
+                    // Update task priorities in the registry
+                    for (node, _) in &mut nodes {
+                        for task in node.coordinator.registry.tasks_mut() {
+                            if let Some(ref kind) = task.kind {
+                                if *kind == swarm_types::TaskKind::MappingZone {
+                                    if let Some(zone) = wildfire_state
+                                        .zones
+                                        .iter()
+                                        .find(|z| z.id == task.id.to_string())
+                                    {
+                                        let old_priority = task.priority;
+                                        task.priority = zone.priority;
+                                        if old_priority != task.priority {
+                                            priority_updates += 1;
+                                            if let Some(ref mut builder) = log_builder {
+                                                builder.push(
+                                                    swarm_replay::Event::TaskPriorityUpdated {
+                                                        task_id: task.id.clone(),
+                                                        old_priority,
+                                                        new_priority: task.priority,
+                                                        tick: current_tick,
+                                                    },
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             // v0.5: Compute connectivity metrics for this tick
@@ -1138,6 +1251,18 @@ impl ScenarioRunner {
                 avg_wasted_travel: 0.0,
                 avg_return_reserve: final_battery_min,
                 infeasible_routes: 0,
+                // v0.30 Wildfire / Flood Mapping metrics
+                hazard_zones_mapped: wildfire_state
+                    .as_ref()
+                    .map_or(0, |w| w.mapped_zone_ids.len() as u64),
+                priority_updates,
+                final_avg_threat_level: wildfire_state.as_ref().map_or(0.0, |w| {
+                    if w.zones.is_empty() {
+                        0.0
+                    } else {
+                        w.zones.iter().map(|z| z.threat_level).sum::<f64>() / w.zones.len() as f64
+                    }
+                }),
             },
             event_log,
         )

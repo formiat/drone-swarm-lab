@@ -469,6 +469,9 @@ mod tests {
                 avg_wasted_travel: 0.0,
                 avg_return_reserve: 0.0,
                 avg_infeasible_routes: 0.0,
+                avg_hazard_zones_mapped: 0.0,
+                avg_priority_updates: 0.0,
+                avg_final_threat_level: 0.0,
             },
         );
         ComparisonReport {

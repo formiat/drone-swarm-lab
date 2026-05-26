@@ -7,8 +7,9 @@ use swarm_alloc::{
 };
 use swarm_scenarios::{
     build_coverage_scenario, build_emergency_mesh_scenario, build_inspection_scenario,
-    build_sar_scenario, CoverageConfig, EmergencyMeshProfile, EmergencyMeshStandardProfiles,
-    InspectionProfile, InspectionStandardProfiles, SarProfile, StandardProfiles,
+    build_sar_scenario, build_wildfire_scenario, CoverageConfig, EmergencyMeshProfile,
+    EmergencyMeshStandardProfiles, InspectionProfile, InspectionStandardProfiles, SarProfile,
+    StandardProfiles, WildfireProfile,
 };
 use swarm_sim::{
     default_suites, export_csv, export_json, Baseline, BenchmarkHarness, BenchmarkOptions,
@@ -34,6 +35,7 @@ enum Mission {
     EmergencyMesh,
     Sar,
     Inspection,
+    Wildfire,
 }
 
 fn parse_mission(arg: &str) -> Vec<Mission> {
@@ -42,14 +44,16 @@ fn parse_mission(arg: &str) -> Vec<Mission> {
         "emergency-mesh" => vec![Mission::EmergencyMesh],
         "sar" => vec![Mission::Sar],
         "inspection" => vec![Mission::Inspection],
+        "wildfire" => vec![Mission::Wildfire],
         "all" => vec![
             Mission::Coverage,
             Mission::EmergencyMesh,
             Mission::Sar,
             Mission::Inspection,
+            Mission::Wildfire,
         ],
         _ => {
-            panic!("unknown mission: {arg}. Valid: coverage, emergency-mesh, sar, inspection, all")
+            panic!("unknown mission: {arg}. Valid: coverage, emergency-mesh, sar, inspection, wildfire, all")
         }
     }
 }
@@ -60,6 +64,7 @@ fn mission_name(mission: &Mission) -> &'static str {
         Mission::EmergencyMesh => "emergency-mesh",
         Mission::Sar => "sar",
         Mission::Inspection => "inspection",
+        Mission::Wildfire => "wildfire",
     }
 }
 
@@ -343,6 +348,16 @@ fn main() {
                     let profile = InspectionProfile::from_str(profile_name)
                         .unwrap_or(InspectionProfile::Linear);
                     build_inspection_scenario(&profile.config(seed))
+                });
+                (profiles, builder)
+            }
+            Mission::Wildfire => {
+                let profiles: Vec<String> =
+                    vec!["small-static".to_owned(), "medium-dynamic".to_owned()];
+                let builder: ScenarioBuilder = Box::new(|seed: u64, profile_name: &str| {
+                    let profile = WildfireProfile::from_str(profile_name)
+                        .unwrap_or(WildfireProfile::SmallStatic);
+                    build_wildfire_scenario(&profile.config(seed))
                 });
                 (profiles, builder)
             }

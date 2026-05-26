@@ -109,6 +109,24 @@ pub enum Event {
         bundle_size: usize,
         tick: u64,
     },
+    // M30: Wildfire / Flood Mapping
+    AgentObservation {
+        agent_id: AgentId,
+        zone_id: String,
+        tick: u64,
+    },
+    HazardMapUpdated {
+        zone_id: String,
+        new_threat_level: f64,
+        new_priority: u8,
+        tick: u64,
+    },
+    TaskPriorityUpdated {
+        task_id: TaskId,
+        old_priority: u8,
+        new_priority: u8,
+        tick: u64,
+    },
 }
 
 /// Reason why a message was dropped.
@@ -270,6 +288,23 @@ mod tests {
                 agent_id: AgentId::from("a0".to_owned()),
                 bundle_size: 3,
                 tick: 9,
+            },
+            Event::AgentObservation {
+                agent_id: AgentId::from("a0".to_owned()),
+                zone_id: "zone-a".to_owned(),
+                tick: 10,
+            },
+            Event::HazardMapUpdated {
+                zone_id: "zone-a".to_owned(),
+                new_threat_level: 0.8,
+                new_priority: 6,
+                tick: 11,
+            },
+            Event::TaskPriorityUpdated {
+                task_id: TaskId::from("t2".to_owned()),
+                old_priority: 3,
+                new_priority: 6,
+                tick: 12,
             },
         ];
         let log = EventLog {

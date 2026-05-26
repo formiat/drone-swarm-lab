@@ -16,6 +16,32 @@ impl Pose {
     }
 }
 
+/// Axis-aligned bounding box in 2D.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Aabb {
+    pub min_x: f64,
+    pub min_y: f64,
+    pub max_x: f64,
+    pub max_y: f64,
+}
+
+impl Aabb {
+    pub fn contains(&self, pose: &Pose) -> bool {
+        pose.x >= self.min_x && pose.x <= self.max_x && pose.y >= self.min_y && pose.y <= self.max_y
+    }
+
+    pub fn center(&self) -> Pose {
+        Pose {
+            x: (self.min_x + self.max_x) / 2.0,
+            y: (self.min_y + self.max_y) / 2.0,
+        }
+    }
+
+    pub fn area(&self) -> f64 {
+        (self.max_x - self.min_x) * (self.max_y - self.min_y)
+    }
+}
+
 /// 2D velocity vector.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Velocity {

@@ -13,5 +13,5 @@ pub use edge::{EdgeId, InspectionEdge, InspectionGraph};
 pub use grid::{BeliefCell, BeliefMap, CellState, HiddenTarget, SearchGrid, SensorModel};
 pub use message::{Message, MessageId};
 pub use mission::{MissionAdapter, RunState};
-pub use pose::{Pose, Velocity};
+pub use pose::{Aabb, Pose, Velocity};
 pub use task::{Task, TaskId, TaskKind, TaskStatus};

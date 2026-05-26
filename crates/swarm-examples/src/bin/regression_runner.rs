@@ -6,8 +6,8 @@ use swarm_alloc::{
 };
 use swarm_scenarios::{
     build_coverage_scenario, build_emergency_mesh_scenario, build_inspection_scenario,
-    build_sar_scenario, CoverageConfig, EmergencyMeshProfile, InspectionProfile, SarProfile,
-    StandardProfiles,
+    build_sar_scenario, build_wildfire_scenario, CoverageConfig, EmergencyMeshProfile,
+    InspectionProfile, SarProfile, StandardProfiles, WildfireProfile,
 };
 use swarm_sim::{
     default_suites, Baseline, BenchmarkHarness, BenchmarkOptions, RegressionRunner, RunConfig,
@@ -223,6 +223,11 @@ fn main() {
                 let profile =
                     InspectionProfile::from_str(profile_name).unwrap_or(InspectionProfile::Linear);
                 build_inspection_scenario(&profile.config(seed))
+            }),
+            "wildfire" => Box::new(|seed: u64, profile_name: &str| {
+                let profile =
+                    WildfireProfile::from_str(profile_name).unwrap_or(WildfireProfile::SmallStatic);
+                build_wildfire_scenario(&profile.config(seed))
             }),
             _ => Box::new(|_seed: u64, _profile: &str| {
                 let scenario = Scenario {
