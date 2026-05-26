@@ -87,8 +87,28 @@ cargo run --bin sitl_agent -- \
 3. **2D world:** All scenarios operate in 2D (x, y) with fixed altitude.
 4. **Deterministic RNG:** Scenarios use seeded RNG; real-world noise is not modeled.
 5. **Simplified kinematics:** Battery drain is proportional to distance, not accounting for hover/climb.
-6. **CBBA on SAR:** CBBA and centralized strategies show 0% success on SAR grid tasks due to grid_cell handling.
-7. **Inspection perimeter:** Perimeter profile is challenging; best success rate is 0.4 (greedy).
+
+See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known limitations.
+
+---
+
+## Strategy Support Matrix
+
+| Mission | Strategy | Status | Notes |
+|---------|----------|--------|-------|
+| coverage | all | stable | All strategies produce success_rate > 0.9 on ideal/standard profiles |
+| sar | greedy, auction, connectivity-aware | stable | — |
+| sar | cbba | unsupported | CBBA re-convergence delay after `release_task()` exceeds `max_unassigned_ticks`; fix scoped to M27 |
+| sar | centralized | unsupported | Static pre-planning incompatible with SAR dynamic task release; agents revisit stale cell assignments |
+| inspection (linear/random) | all | stable | — |
+| inspection (perimeter) | greedy, auction, connectivity-aware | experimental | Battery/time constraint limits coverage; success rate ~0–0.4 |
+| inspection (perimeter) | centralized | experimental | Static plan; moderate coverage |
+| inspection (perimeter) | cbba | experimental | Allocation gap (`max_bundle_size`); bundle-slot fix (M26) improves coverage |
+
+**Status meanings:**
+- **stable** — success_rate > 0 across standard seeds; suitable for benchmarking.
+- **experimental** — works but constrained by battery/time or algorithmic limits; use with awareness.
+- **unsupported** — consistently 0% success due to a known root cause; tracked for future milestones.
 
 ---
 

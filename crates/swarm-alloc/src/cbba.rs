@@ -300,6 +300,11 @@ impl Allocator for CbbaAllocator {
             alive_ids.contains(agent_id) && tasks.iter().any(|t| &t.task.id == task_id)
         });
 
+        // Free bundle slots occupied by completed tasks (no longer in winning_bids).
+        for bundle in self.bundles.values_mut() {
+            bundle.retain(|task_id| self.winning_bids.contains_key(task_id));
+        }
+
         self.build_bundles(agents, tasks);
 
         // v0.15: TSP-ordering of bundles after building
@@ -502,6 +507,47 @@ mod tests {
     #[test]
     fn cbba_is_distributed() {
         assert!(CbbaAllocator::default().is_distributed());
+    }
+
+    /// Verifies that completed tasks (removed from `tasks` slice) have their
+    /// bundle slots freed so new tasks can fill them.
+    #[test]
+    fn cbba_bundle_slots_freed_after_task_completion() {
+        let config = CbbaConfig {
+            max_bundle_size: 2,
+            ..Default::default()
+        };
+        let mut cbba = CbbaAllocator::new(config);
+        let tasks: Vec<Task> = vec![
+            task("t0", 1, 1.0, 0.0),
+            task("t1", 1, 2.0, 0.0),
+            task("t2", 1, 3.0, 0.0),
+        ];
+        let agents = vec![agent("a0", 0.0, 0.0)];
+        let atasks: Vec<AllocationTask<'_>> = tasks.iter().map(|t| at(t)).collect();
+
+        // Fill the bundle to capacity: two allocate calls add one task each.
+        cbba.allocate(&atasks, &agents);
+        cbba.allocate(&atasks, &agents);
+        let bundle = &cbba.bundles[&AgentId::from("a0".to_owned())];
+        assert_eq!(
+            bundle.len(),
+            2,
+            "bundle should be full at max_bundle_size=2"
+        );
+
+        // Simulate t0 completing: remove it from the active task list.
+        let remaining: Vec<Task> = tasks[1..].to_vec();
+        let atasks2: Vec<AllocationTask<'_>> = remaining.iter().map(|t| at(t)).collect();
+
+        // After the fix, the freed slot should allow t2 to be added.
+        cbba.allocate(&atasks2, &agents);
+        let bundle = &cbba.bundles[&AgentId::from("a0".to_owned())];
+        assert!(
+            bundle.contains(&TaskId::from("t2".to_owned())),
+            "t2 should enter the bundle after the slot freed by completed t0; bundle: {:?}",
+            bundle
+        );
     }
 
     #[test]
