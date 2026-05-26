@@ -97,6 +97,7 @@ mod tests {
             pose: None,
             grid_cell: None,
             edge_id: None,
+            kind: None,
         }
     }
 

@@ -118,6 +118,7 @@ pub fn build_inspection_scenario(config: &InspectionConfig) -> (Scenario, RunCon
             pose: Some(edge.to),
             grid_cell: None,
             edge_id: Some(edge.id.clone()),
+            kind: None,
         })
         .collect();
 

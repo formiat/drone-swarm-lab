@@ -186,6 +186,7 @@ mod tests {
                 pose: Some(Pose { x: 10.0, y: 20.0 }),
                 grid_cell: None,
                 edge_id: None,
+                kind: None,
             },
             Task {
                 id: TaskId::from("wp-1".to_owned()),
@@ -199,6 +200,7 @@ mod tests {
                 pose: Some(Pose { x: 30.0, y: 40.0 }),
                 grid_cell: None,
                 edge_id: None,
+                kind: None,
             },
         ];
 
@@ -227,6 +229,7 @@ mod tests {
             expires_at: None,
             pose: None,
             grid_cell: None,
+            kind: None,
             edge_id: None,
         }];
         let pose_tasks: Vec<_> = tasks.iter().filter(|t| t.pose.is_some()).collect();

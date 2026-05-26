@@ -252,6 +252,7 @@ mod tests {
                     pose: None,
                     grid_cell: None,
                     edge_id: None,
+                    kind: None,
                 }],
                 ground_nodes: vec![],
                 base_station: None,

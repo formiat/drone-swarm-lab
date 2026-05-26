@@ -86,6 +86,7 @@ pub fn build_dynamic_auction_scenario(config: &DynamicAuctionConfig) -> (Scenari
                 pose: Some(Pose { x: tx, y: ty }),
                 grid_cell: None,
                 edge_id: None,
+                kind: None,
             }
         })
         .collect();
@@ -121,6 +122,7 @@ pub fn build_dynamic_auction_scenario(config: &DynamicAuctionConfig) -> (Scenari
                     pose: Some(Pose { x: tx, y: ty }),
                     grid_cell: None,
                     edge_id: None,
+                    kind: None,
                 },
             }
         })

@@ -260,6 +260,7 @@ mod tests {
             pose: Some(swarm_types::Pose { x: 10.0, y: 20.0 }),
             grid_cell: None,
             edge_id: None,
+            kind: None,
         };
         let wp = task_to_waypoint(&task).unwrap();
         assert!((wp.x - 10.0).abs() < 1e-6);
@@ -280,6 +281,7 @@ mod tests {
             pose: None,
             grid_cell: None,
             edge_id: None,
+            kind: None,
         };
         assert!(task_to_waypoint(&task).is_none());
     }

@@ -39,6 +39,7 @@ fn main() {
             pose: None,
             grid_cell: None,
             edge_id: None,
+            kind: None,
         })
         .collect();
 
@@ -125,6 +126,7 @@ mod tests {
                 grid_cell: None,
                 edge_id: None,
                 pose: None,
+                kind: None,
             })
             .collect();
 

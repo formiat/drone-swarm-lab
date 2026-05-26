@@ -41,6 +41,7 @@ fn make_task(id: u8) -> Task {
         pose: None,
         grid_cell: None,
         edge_id: None,
+        kind: None,
     }
 }
 

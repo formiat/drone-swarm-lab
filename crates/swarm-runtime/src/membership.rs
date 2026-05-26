@@ -327,6 +327,7 @@ mod tests {
             grid_cell: None,
             edge_id: None,
             pose: Some(Pose { x: 10.0, y: 0.0 }),
+            kind: None,
         };
         let registry = TaskRegistry::new(vec![task]);
         let mut view = MembershipView::new(vec![agent("agent-0")]);
@@ -351,6 +352,7 @@ mod tests {
             grid_cell: None,
             edge_id: None,
             pose: Some(Pose { x: 10.0, y: 0.0 }),
+            kind: None,
         };
         let registry = TaskRegistry::new(vec![task]);
 
@@ -386,6 +388,7 @@ mod tests {
             grid_cell: None,
             edge_id: None,
             pose: Some(Pose { x: 3.0, y: 0.0 }),
+            kind: None,
         };
         let registry = TaskRegistry::new(vec![task]);
 
@@ -415,6 +418,7 @@ mod tests {
             grid_cell: None,
             edge_id: None,
             pose: Some(Pose { x: 100.0, y: 0.0 }),
+            kind: None,
         };
         let registry = TaskRegistry::new(vec![task]);
 
@@ -445,6 +449,7 @@ mod tests {
             grid_cell: None,
             edge_id: None,
             pose: Some(Pose { x: 100.0, y: 0.0 }),
+            kind: None,
         };
         let registry = TaskRegistry::new(vec![task]);
 

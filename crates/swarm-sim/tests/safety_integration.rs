@@ -33,6 +33,7 @@ fn make_task(id: &str, x: f64, y: f64) -> Task {
         pose: Some(Pose { x, y }),
         grid_cell: None,
         edge_id: None,
+        kind: None,
     }
 }
 

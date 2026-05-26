@@ -214,6 +214,7 @@ pub fn build_emergency_mesh_scenario(config: &EmergencyMeshConfig) -> (Scenario,
             pose: Some(scout.pose),
             grid_cell: None,
             edge_id: None,
+            kind: None,
         })
         .collect();
 
@@ -233,6 +234,7 @@ pub fn build_emergency_mesh_scenario(config: &EmergencyMeshConfig) -> (Scenario,
             pose: Some(relay.pose),
             grid_cell: None,
             edge_id: None,
+            kind: None,
         })
         .collect();
 

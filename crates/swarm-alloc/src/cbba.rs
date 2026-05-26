@@ -377,6 +377,7 @@ mod tests {
             pose: Some(Pose { x, y }),
             grid_cell: None,
             edge_id: None,
+            kind: None,
         }
     }
 

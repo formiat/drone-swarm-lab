@@ -1204,6 +1204,7 @@ mod tests {
                 pose: None,
                 grid_cell: None,
                 edge_id: None,
+                kind: None,
             })
             .collect();
         Scenario {
@@ -1261,6 +1262,7 @@ mod tests {
             pose: None,
             grid_cell: None,
             edge_id: None,
+            kind: None,
         };
         let cfg = RunConfig {
             dynamic_tasks: vec![DynamicTaskEvent {
@@ -1289,6 +1291,7 @@ mod tests {
             pose: None,
             grid_cell: None,
             edge_id: None,
+            kind: None,
         };
         let cfg = RunConfig {
             dynamic_tasks: vec![DynamicTaskEvent {
@@ -1341,6 +1344,7 @@ mod tests {
             pose: None,
             grid_cell: None,
             edge_id: None,
+            kind: None,
         };
         let cfg = RunConfig {
             dynamic_tasks: vec![DynamicTaskEvent {

@@ -74,6 +74,7 @@ cargo run --bin sitl_agent -- \
 | Infrastructure Inspection | ✅ Stable | M16 | Edge coverage, route efficiency |
 | Mock SITL | ✅ Stable | M20 | `sitl_agent --mock`, no external deps |
 | Replay / Debuggability | ✅ Stable | M23 | `replay` CLI, ASCII visualization |
+| Mission Semantics | ✅ Stable | M27 | `TaskKind`, `MissionAdapter`, `allocate_with_adapter` |
 | Real PX4 | 🧪 Experimental | M20 | Feature-gated, requires PX4 SITL setup |
 
 **Test coverage:** 250+ tests, 10 crates, 12 JSON scenarios.
@@ -125,7 +126,7 @@ See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known l
 
 | Crate | Purpose |
 | --- | --- |
-| `swarm-types` | Shared IDs, agent/task/message types, pose and velocity. |
+| `swarm-types` | Shared IDs, agent/task/message types, pose, velocity, mission semantics (`TaskKind`, `MissionAdapter`). |
 | `swarm-comms` | Transport trait, in-memory network, UDP transport, MAVLink transport (optional). |
 | `swarm-runtime` | Membership, failure detection, task registry, coordinator, `AgentNode`. |
 | `swarm-alloc` | Greedy, auction, connectivity-aware, centralized, CBBA allocation strategies. |
@@ -166,6 +167,7 @@ See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known l
 | M22 | ✅ | Benchmark Report / Analysis: `docs/BENCHMARK_RESULTS.md` |
 | M23 | ✅ | Replay / Debuggability: `replay` CLI, ASCII viz |
 | M24 | ✅ | Release Candidate / Golden Path: README, docs, non-goals |
+| M27 | ✅ | Mission Semantics Layer: `TaskKind`, `MissionAdapter`, `RunState` |
 
 ---
 

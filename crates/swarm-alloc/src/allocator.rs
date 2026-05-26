@@ -1,23 +1,12 @@
 use swarm_comms::ConnectivitySnapshot;
-use swarm_types::{AgentId, Capability, Pose, Role, Task, TaskId};
+use swarm_types::{AgentId, Capability, MissionAdapter, Pose, Role, Task, TaskId};
+
+pub use swarm_types::AllocationAgent;
 
 /// Enriched task context passed to allocators.
 #[derive(Clone)]
 pub struct AllocationTask<'a> {
     pub task: &'a Task,
-}
-
-/// Enriched agent context passed to allocators.
-///
-/// Uses owned copies to avoid lifetime conflicts when building from MembershipView.
-#[derive(Clone)]
-pub struct AllocationAgent {
-    pub id: AgentId,
-    pub pose: Pose,
-    pub battery: f64,
-    pub capabilities: Vec<Capability>,
-    pub role: Role,
-    pub comms_range: f64,
 }
 
 /// Connectivity context passed to allocators that need network awareness.
@@ -54,6 +43,17 @@ pub trait Allocator {
     /// Whether this allocator uses distributed message exchange.
     fn is_distributed(&self) -> bool {
         false
+    }
+
+    /// v0.27 extension for mission-semantic allocation.
+    /// Default implementation delegates to `allocate`, preserving backward compatibility.
+    fn allocate_with_adapter(
+        &mut self,
+        tasks: &[AllocationTask<'_>],
+        agents: &[AllocationAgent],
+        _adapter: &dyn MissionAdapter,
+    ) -> Vec<(TaskId, AgentId)> {
+        self.allocate(tasks, agents)
     }
 }
 
@@ -221,6 +221,7 @@ mod tests {
             pose: None,
             grid_cell: None,
             edge_id: None,
+            kind: None,
         }
     }
 
@@ -237,6 +238,7 @@ mod tests {
             pose: None,
             grid_cell: None,
             edge_id: None,
+            kind: None,
         }
     }
 
@@ -253,6 +255,7 @@ mod tests {
             pose: Some(Pose { x, y }),
             grid_cell: None,
             edge_id: None,
+            kind: None,
         }
     }
 

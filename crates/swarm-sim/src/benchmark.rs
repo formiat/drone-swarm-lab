@@ -415,6 +415,7 @@ mod tests {
                     grid_cell: None,
                     edge_id: None,
                     pose: None,
+                    kind: None,
                 })
                 .collect();
             let scenario = Scenario {

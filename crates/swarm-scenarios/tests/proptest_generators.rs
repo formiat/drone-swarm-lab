@@ -64,6 +64,7 @@ pub fn task_strategy() -> impl Strategy<Value = Task> {
             x: (idx as f64) * 8.0,
             y: (idx as f64) * 4.0,
         }),
+        kind: None,
     })
 }
 

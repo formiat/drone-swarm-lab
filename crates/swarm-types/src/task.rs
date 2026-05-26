@@ -33,6 +33,18 @@ pub enum TaskStatus {
     Failed,
 }
 
+/// Semantic kind of a mission task.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskKind {
+    CoverageCell,
+    SarScan,
+    SarConfirmationScan,
+    InspectionEdge,
+    RelayPlacement,
+    Waypoint,
+}
+
 /// A unit of work to be executed by an agent.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Task {
@@ -57,6 +69,9 @@ pub struct Task {
     /// If set, this task represents inspecting a specific edge.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub edge_id: Option<crate::edge::EdgeId>,
+    /// Semantic kind of the task (e.g. SAR scan, inspection edge, waypoint).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<TaskKind>,
 }
 
 #[cfg(test)]
@@ -76,6 +91,7 @@ mod tests {
             pose: None,
             grid_cell: None,
             edge_id: None,
+            kind: None,
         }
     }
 

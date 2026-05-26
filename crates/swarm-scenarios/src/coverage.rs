@@ -63,6 +63,7 @@ pub fn build_coverage_scenario(config: &CoverageConfig) -> (Scenario, RunConfig)
                 pose: None,
                 grid_cell: None,
                 edge_id: None,
+                kind: None,
             }
         })
         .collect();
