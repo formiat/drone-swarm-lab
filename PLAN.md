@@ -47,23 +47,26 @@ Task { id, status, assigned_to, priority, required_capabilities, required_role,
 агрегирующий только ту информацию, которая нужна для check completion.
 
 **Тип `AllocationAgent`** (`swarm-alloc/src/allocator.rs`): подмножество `Agent`
-(id, pose, battery, capabilities, role, comms_range). Сигнатура `MissionAdapter::score`
-должна принимать `&AllocationAgent`, а не `&Agent`, — только этот тип доступен аллокаторам.
+(id, pose, battery, capabilities, role, comms_range). Сейчас определён в `swarm-alloc` — это
+создаёт проблему: если `MissionAdapter` в `swarm-types` ссылается на `AllocationAgent` из
+`swarm-alloc`, возникает циклическая зависимость (`swarm-types → swarm-alloc → swarm-types`).
+**Решение (Шаг 2):** перенести `AllocationAgent` в `swarm-types/src/allocation.rs`.
 
 ## Affected Components
 
 | Компонент | Файл | Тип изменения |
 |---|---|---|
 | `swarm-types` | `src/task.rs` | добавить `TaskKind` enum, поле `kind` в `Task` |
+| `swarm-types` | `src/allocation.rs` (новый) | перенести `AllocationAgent` из `swarm-alloc` |
 | `swarm-types` | `src/mission.rs` (новый) | трейт `MissionAdapter`, тип `RunState` |
-| `swarm-types` | `src/lib.rs` | re-export нового модуля |
+| `swarm-types` | `src/lib.rs` | re-export новых модулей |
+| `swarm-alloc` | `src/allocator.rs` | удалить `pub struct AllocationAgent`, добавить `pub use swarm_types::AllocationAgent` |
 | `swarm-scenarios` | `src/adapter.rs` (новый) | 4 реализации `MissionAdapter` |
 | `swarm-scenarios` | `src/lib.rs` | re-export адаптеров |
 | `swarm-scenarios` | `src/sar_scenario.rs` | `kind: Some(TaskKind::SarScan)` в задачах |
 | `swarm-scenarios` | `src/inspection.rs` | `kind: Some(TaskKind::InspectionEdge)` |
 | `swarm-scenarios` | `src/coverage.rs` | `kind: Some(TaskKind::CoverageCell)` |
-| `swarm-alloc` | `src/cbba.rs` | опциональное делегирование scoring через адаптер |
-| `swarm-alloc` | `src/allocator.rs` | опциональное делегирование cost через адаптер |
+| `swarm-alloc` | `src/cbba.rs` | опциональное делегирование scoring через адаптер (CBBA, Auction) |
 | `swarm-sim` | `src/dsl.rs` | валидация `TaskKind` vs полей задачи |
 | `README.md` | — | актуализация архитектурного описания |
 
@@ -98,7 +101,38 @@ pub kind: Option<TaskKind>,
 Backward compat обеспечивается через `#[serde(default)]`: старые JSON без поля `kind`
 десериализуются с `kind = None`.
 
-### Шаг 2: `RunState` и `MissionAdapter` в `swarm-types`
+### Шаг 2: `AllocationAgent` → `swarm-types`, `RunState` и `MissionAdapter`
+
+**Проблема:** `AllocationAgent` сейчас определён в `swarm-alloc/src/allocator.rs`. Если
+`MissionAdapter` в `swarm-types` ссылается на `AllocationAgent` из `swarm-alloc`, возникает
+циклическая зависимость (`swarm-types → swarm-alloc → swarm-types`). Решение — перенести
+`AllocationAgent` в `swarm-types`.
+
+**Файл:** `crates/swarm-types/src/allocation.rs` (новый)
+
+Перенести определение из `swarm-alloc/src/allocator.rs`:
+
+```rust
+pub struct AllocationAgent {
+    pub id: AgentId,
+    pub pose: Pose,
+    pub battery: f64,
+    pub capabilities: Vec<Capability>,
+    pub role: Role,
+    pub comms_range: f64,
+}
+```
+
+**Файл:** `crates/swarm-alloc/src/allocator.rs`
+
+Удалить `pub struct AllocationAgent { ... }`, добавить:
+
+```rust
+pub use swarm_types::AllocationAgent;
+```
+
+Все остальные места в `swarm-alloc`, использующие `AllocationAgent`, остаются без изменений
+(тип переэкспортирован под тем же именем).
 
 **Файл:** `crates/swarm-types/src/mission.rs` (новый)
 
@@ -115,8 +149,8 @@ pub struct RunState {
 }
 ```
 
-Трейт `MissionAdapter` (подпись `score` принимает `&AllocationAgent`, не `&Agent`
-— это тип, доступный аллокаторам):
+Трейт `MissionAdapter` — `score` принимает `&AllocationAgent` из того же крейта,
+циклической зависимости нет:
 
 ```rust
 pub trait MissionAdapter: Send + Sync {
@@ -128,9 +162,11 @@ pub trait MissionAdapter: Send + Sync {
 ```
 
 **Файл:** `crates/swarm-types/src/lib.rs`  
-Добавить `pub mod mission;` и re-exports `MissionAdapter`, `RunState`.
+Добавить `pub mod allocation;` и `pub mod mission;`, re-exports: `AllocationAgent`,
+`MissionAdapter`, `RunState`.
 
-`swarm-alloc` уже зависит от `swarm-types` → трейт доступен аллокаторам без новых зависимостей.
+Граф зависимостей после изменения:
+`swarm-alloc → swarm-types` (как прежде, без цикла).
 
 ### Шаг 3: Реализации адаптеров в `swarm-scenarios`
 
@@ -171,9 +207,13 @@ pub trait MissionAdapter: Send + Sync {
 
 ### Шаг 4: Делегирование scoring в аллокаторах
 
-**Файл:** `crates/swarm-alloc/src/allocator.rs`
+User prompt требует, чтобы все аллокаторы получали `&dyn MissionAdapter`. В M27 реализуется
+двухуровневый подход:
 
-Добавить в трейт `Allocator` метод с дефолтной реализацией (не ломает существующие impl):
+**Уровень 1 — дефолтный stub (все аллокаторы через трейт):**
+
+В `crates/swarm-alloc/src/allocator.rs` добавить в трейт `Allocator` метод с дефолтной
+реализацией (не ломает ни один существующий impl):
 
 ```rust
 fn allocate_with_adapter(
@@ -186,26 +226,38 @@ fn allocate_with_adapter(
 }
 ```
 
-Добавить поле в `AuctionAllocator`:
+`GreedyAllocator`, `ConnectivityAwareAllocator`, `CentralizedPlanner` **не переопределяют**
+этот метод и не добавляют поле `mission_adapter`. Они получают контракт через трейт, но
+фактически игнорируют адаптер в своём scoring. Это допустимо в M27 по следующим причинам:
+- `GreedyAllocator` — минималистичный allocator без собственного scoring (greedy по приоритету);
+  adapter не даёт прироста качества, overhead не оправдан.
+- `ConnectivityAwareAllocator` — оборачивает другой allocator, делегирует ему;
+  поддержка adapter'а добавляется автоматически через wrapped allocator.
+- `CentralizedPlanner` — используется в SITL/safety сценариях, не в SAR/inspection;
+  adapter нерелевантен для его задач.
+
+Полная реализация в M27 — только для scoring-heavy аллокаторов CBBA и Auction.
+
+**Уровень 2 — полная реализация (CBBA и Auction):**
+
+`crates/swarm-alloc/src/allocator.rs` — `AuctionAllocator`:
 
 ```rust
 pub mission_adapter: Option<Box<dyn MissionAdapter + Send + Sync>>,
 ```
 
 Обновить `AuctionAllocator::cost`: если `self.mission_adapter` задан →
-использовать `adapter.route_cost(agent.pose, task)` и `adapter.score(agent, task)`;
+`adapter.route_cost(agent.pose, task)` + `adapter.score(agent, task)`;
 иначе — старая логика (backward compat).
 
-**Файл:** `crates/swarm-alloc/src/cbba.rs`
-
-Добавить поле в `CbbaAllocator`:
+`crates/swarm-alloc/src/cbba.rs` — `CbbaAllocator`:
 
 ```rust
 pub mission_adapter: Option<Box<dyn MissionAdapter + Send + Sync>>,
 ```
 
 Обновить `CbbaAllocator::marginal_score`: если `self.mission_adapter` задан →
-использовать `adapter.route_cost` и `adapter.score` как базу;
+`adapter.route_cost` и `adapter.score` как база;
 иначе — старая логика.
 
 ### Шаг 5: Валидация `TaskKind` в DSL loader
@@ -330,20 +382,24 @@ kind: Some(TaskKind::CoverageCell),
 
 ## Risks and Tradeoffs
 
-1. **`&AllocationAgent` vs `&Agent` в `MissionAdapter::score`**: prompt указывает `&Agent`,
-   но allocators работают с `AllocationAgent`. Предлагается `&AllocationAgent` в трейте.
-   Trade-off: реализации адаптеров не видят `battery_drain_rate`, `max_range` из `Agent`.
-   Если нужен более точный scoring — потребуется расширить `AllocationAgent` или
-   добавить конвертацию.
+1. **Перенос `AllocationAgent` в `swarm-types`**: DTO без логики — семантически верное
+   место. Trade-off: любые будущие изменения `AllocationAgent` требуют изменений в
+   `swarm-types` (не только в `swarm-alloc`). Позволяет `MissionAdapter` использовать
+   `&AllocationAgent` без циклической зависимости.
 
-2. **Два пути scoring одновременно**: до полной миграции в аллокаторах будет
+2. **`&AllocationAgent` в `MissionAdapter::score`**: реализации адаптеров не видят
+   `battery_drain_rate`, `max_range`, `health` из полного `Agent`. Если в будущем scoring
+   потребует этих полей — нужно будет расширить `AllocationAgent`. Для M27 достаточно
+   имеющихся полей (pose, battery, role, capabilities).
+
+3. **Два пути scoring одновременно**: до полной миграции в аллокаторах будет
    две ветки (adapter/no-adapter). Риск расхождения поведения. Ограничено флагом
    `Option<Box<dyn MissionAdapter>>`.
 
-3. **`MissionAdapter: Send + Sync`**: адаптеры должны быть thread-safe для хранения
+4. **`MissionAdapter: Send + Sync`**: адаптеры должны быть thread-safe для хранения
    в структурах аллокаторов. Это ограничивает реализации (нельзя хранить `Rc`, `RefCell`).
 
-4. **`RunState` → заполнение из runtime**: `RunState` в `swarm-types` не знает о `GridState`
+5. **`RunState` → заполнение из runtime**: `RunState` в `swarm-types` не знает о `GridState`
    и `InspectionState`. Runtime должен конвертировать их в `RunState` перед вызовом
    `is_completed`. Конвертеры (`From<&GridState> for RunState` и т.п.) нужно разместить
    в `swarm-runtime`/`swarm-sim` — это дополнительные точки интеграции.
@@ -353,21 +409,23 @@ kind: Some(TaskKind::CoverageCell),
 | Риск | Компонент | Как проверить |
 |---|---|---|
 | Десериализация Task из старых JSON | `swarm-types` | тест: roundtrip без поля `kind` → `kind = None` |
-| Компиляция аллокаторов после добавления поля в `CbbaAllocator` | `swarm-alloc` | `cargo check -p swarm-alloc` |
+| Перенос `AllocationAgent` ломает impl в `swarm-alloc` (если не добавлен `pub use`) | `swarm-alloc` | `cargo check -p swarm-alloc` |
+| Внешние крейты (`swarm-sim`, `swarm-scenarios`), импортирующие `AllocationAgent` из `swarm-alloc`, должны продолжать компилироваться через re-export | все | `cargo check --workspace` |
+| Компиляция аллокаторов после добавления поля `mission_adapter` в `CbbaAllocator` | `swarm-alloc` | `cargo check -p swarm-alloc` |
 | Существующие тесты, создающие `Task` литералом, не компилируются (новое поле без default) | `swarm-*` | `cargo check --workspace` |
 | DSL validation ломает легаси-сценарии без `kind` | `swarm-sim` | тест: legacy task с `kind = None` → нет ValidationError |
 | Интеграционные тесты runner (sar/inspection) | `swarm-sim`, `swarm-scenarios` | `cargo test -p swarm-sim -p swarm-scenarios` |
 | `MissionAdapter` не реализует `Send + Sync` → compile error при хранении в allocator | `swarm-alloc` | `cargo check -p swarm-alloc` |
 | Существующие тесты CBBA сломаны из-за изменения `marginal_score` | `swarm-alloc` | `cargo test -p swarm-alloc` |
 
-Все точки проверяются командой `cargo check --workspace` сразу после Шага 1,
+Все точки проверяются командой `cargo check --workspace` сразу после Шагов 1–2,
 до реализации остальных шагов.
 
 ## Open Questions
 
-1. **`AllocationAgent` vs `Agent` в adapter**: принять `&AllocationAgent` в трейте
-   или расширить `AllocationAgent` полями из `Agent` (battery_drain_rate, max_range)?
-   Текущий plan: `&AllocationAgent` — минимальные изменения.
+1. ~~**`AllocationAgent` vs `Agent` в adapter**~~ — **Закрыт.** Выбрано Решение A:
+   `AllocationAgent` переносится в `swarm-types/src/allocation.rs`, `MissionAdapter::score`
+   использует `&AllocationAgent` без циклической зависимости.
 
 2. **Как заполнять `RunState` из runtime?** Нужен ли `impl From<&GridState> for RunState`
    в `swarm-runtime`? Или достаточно ручного маппинга в `Coordinator`?
