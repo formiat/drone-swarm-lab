@@ -12,4 +12,10 @@ pub struct AllocationAgent {
     pub capabilities: Vec<Capability>,
     pub role: Role,
     pub comms_range: f64,
+    /// Cruising speed in m/s.
+    pub speed: f64,
+    /// Maximum travel distance on full battery (m).
+    pub max_range: f64,
+    /// Battery % drained per meter travelled.
+    pub battery_drain_rate: f64,
 }

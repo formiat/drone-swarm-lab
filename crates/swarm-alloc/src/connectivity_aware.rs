@@ -133,6 +133,9 @@ mod tests {
             capabilities: vec![],
             role: Role::Relay,
             comms_range: 10.0,
+            speed: 0.0,
+            max_range: 0.0,
+            battery_drain_rate: 0.0,
         }
     }
 
@@ -144,6 +147,9 @@ mod tests {
             capabilities: vec![],
             role: Role::Scout,
             comms_range: 10.0,
+            speed: 0.0,
+            max_range: 0.0,
+            battery_drain_rate: 0.0,
         }
     }
 

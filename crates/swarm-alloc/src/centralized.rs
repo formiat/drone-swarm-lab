@@ -135,6 +135,9 @@ mod tests {
             capabilities: vec![],
             role: Role::Scout,
             comms_range: f64::INFINITY,
+            speed: 0.0,
+            max_range: 0.0,
+            battery_drain_rate: 0.0,
         }
     }
 

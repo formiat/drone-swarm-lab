@@ -136,6 +136,9 @@ fn sar_centralized_has_documented_status() {
                 capabilities: a.capabilities.clone(),
                 role: a.role.clone(),
                 comms_range: a.comms_range,
+                speed: 0.0,
+                max_range: 0.0,
+                battery_drain_rate: 0.0,
             })
             .collect();
         CentralizedPlanner::new(&allocation_tasks, &allocation_agents)

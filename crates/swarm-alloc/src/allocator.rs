@@ -267,6 +267,9 @@ mod tests {
             capabilities: vec![],
             role: Role::Scout,
             comms_range: f64::INFINITY,
+            speed: 0.0,
+            max_range: 0.0,
+            battery_drain_rate: 0.0,
         }
     }
 
@@ -278,6 +281,9 @@ mod tests {
             capabilities: vec![Capability::from(cap.to_owned())],
             role: Role::Scout,
             comms_range: f64::INFINITY,
+            speed: 0.0,
+            max_range: 0.0,
+            battery_drain_rate: 0.0,
         }
     }
 
@@ -289,6 +295,9 @@ mod tests {
             capabilities: vec![],
             role: Role::Scout,
             comms_range: f64::INFINITY,
+            speed: 0.0,
+            max_range: 0.0,
+            battery_drain_rate: 0.0,
         }
     }
 
@@ -391,6 +400,9 @@ mod tests {
             capabilities: vec![],
             role: Role::Scout,
             comms_range: f64::INFINITY,
+            speed: 0.0,
+            max_range: 0.0,
+            battery_drain_rate: 0.0,
         };
         let a_mapper = AllocationAgent {
             id: AgentId::from("mapper".to_owned()),
@@ -399,6 +411,9 @@ mod tests {
             capabilities: vec![],
             role: Role::Mapper,
             comms_range: f64::INFINITY,
+            speed: 0.0,
+            max_range: 0.0,
+            battery_drain_rate: 0.0,
         };
         let result = AuctionAllocator::default().allocate(&[at(&t)], &[a_scout, a_mapper]);
         assert_eq!(result.len(), 1);
@@ -415,6 +430,9 @@ mod tests {
             capabilities: vec![],
             role: Role::Scout,
             comms_range: f64::INFINITY,
+            speed: 0.0,
+            max_range: 0.0,
+            battery_drain_rate: 0.0,
         };
         let low = AllocationAgent {
             id: AgentId::from("low".to_owned()),
@@ -423,6 +441,9 @@ mod tests {
             capabilities: vec![],
             role: Role::Scout,
             comms_range: f64::INFINITY,
+            speed: 0.0,
+            max_range: 0.0,
+            battery_drain_rate: 0.0,
         };
         let result = AuctionAllocator::default().allocate(&[at(&t)], &[full, low]);
         assert_eq!(result.len(), 1);
@@ -460,6 +481,9 @@ mod tests {
             capabilities: vec![],
             role: Role::Relay,
             comms_range: f64::INFINITY,
+            speed: 0.0,
+            max_range: 0.0,
+            battery_drain_rate: 0.0,
         };
         let result = GreedyAllocator.allocate(&[at(&t)], &[a_relay]);
         assert_eq!(result.len(), 1);

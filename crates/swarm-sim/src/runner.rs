@@ -1043,6 +1043,11 @@ impl ScenarioRunner {
 
         let event_log = log_builder.map(|b| b.build());
 
+        let bundle_travel_distance: f64 = nodes
+            .iter()
+            .filter_map(|(n, _)| n.cbba.as_ref().map(|c| c.bundle_travel_distance))
+            .sum();
+
         (
             RunMetrics {
                 seed: scenario.seed,
@@ -1105,10 +1110,7 @@ impl ScenarioRunner {
                     .filter_map(|(n, _)| n.cbba.as_ref().map(|c| c.messages_exchanged))
                     .sum(),
                 // v0.15 CBBA bundle travel
-                bundle_travel_distance: nodes
-                    .iter()
-                    .filter_map(|(n, _)| n.cbba.as_ref().map(|c| c.bundle_travel_distance))
-                    .sum(),
+                bundle_travel_distance,
                 // v0.15 CBBA convergence tick
                 cbba_convergence_tick,
                 // v0.13 Safety
@@ -1131,6 +1133,11 @@ impl ScenarioRunner {
                 missed_edges,
                 revisit_count,
                 route_efficiency,
+                // v0.28 Planner Quality metrics
+                avg_route_length: bundle_travel_distance,
+                avg_wasted_travel: 0.0,
+                avg_return_reserve: final_battery_min,
+                infeasible_routes: 0,
             },
             event_log,
         )

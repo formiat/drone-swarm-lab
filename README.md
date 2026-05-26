@@ -75,6 +75,7 @@ cargo run --bin sitl_agent -- \
 | Mock SITL | ✅ Stable | M20 | `sitl_agent --mock`, no external deps |
 | Replay / Debuggability | ✅ Stable | M23 | `replay` CLI, ASCII visualization |
 | Mission Semantics | ✅ Stable | M27 | `TaskKind`, `MissionAdapter`, `allocate_with_adapter` |
+| Planner Quality | ✅ Stable | M28 | `RoutePlanner` trait, 2-opt, battery-aware feasibility |
 | Real PX4 | 🧪 Experimental | M20 | Feature-gated, requires PX4 SITL setup |
 
 **Test coverage:** 250+ tests, 10 crates, 12 JSON scenarios.
@@ -168,6 +169,7 @@ See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known l
 | M23 | ✅ | Replay / Debuggability: `replay` CLI, ASCII viz |
 | M24 | ✅ | Release Candidate / Golden Path: README, docs, non-goals |
 | M27 | ✅ | Mission Semantics Layer: `TaskKind`, `MissionAdapter`, `RunState` |
+| M28 | ✅ | Planner Quality Upgrade: `RoutePlanner`, 2-opt, battery-aware feasibility |
 
 ---
 

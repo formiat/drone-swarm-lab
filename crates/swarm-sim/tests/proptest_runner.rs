@@ -170,6 +170,9 @@ proptest! {
                 capabilities: a.capabilities.clone(),
                 role: a.role.clone(),
                 comms_range: a.comms_range,
+            speed: 0.0,
+            max_range: 0.0,
+            battery_drain_rate: 0.0,
             }).collect::<Vec<_>>(),
         ));
         let centralized_rate = if centralized_metrics.success { 1.0 } else { 0.0 };

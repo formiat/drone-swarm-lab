@@ -1,8 +1,9 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use swarm_types::{AgentId, Pose, Task, TaskId};
 
 use crate::allocator::{has_all_capabilities, has_required_role, AllocationAgent, AllocationTask};
+use crate::route_planner::{route_cost, NearestNeighbourPlanner, RoutePlanner};
 use crate::Allocator;
 
 /// Configuration for the Consensus-Based Bundle Algorithm.
@@ -55,57 +56,8 @@ pub struct CbbaAllocator {
     // v0.15 retransmission
     pub packet_loss_rate: f64,
     force_rebroadcast: bool,
-}
-
-/// Greedy nearest-neighbour TSP ordering for task bundles.
-pub fn order_bundle_tsp(agent_pose: Pose, bundle: &[TaskId], tasks: &[Task]) -> Vec<TaskId> {
-    if bundle.len() <= 1 {
-        return bundle.to_vec();
-    }
-    let mut ordered = Vec::new();
-    let mut remaining: HashSet<TaskId> = bundle.iter().cloned().collect();
-    let mut current_pos = agent_pose;
-
-    while !remaining.is_empty() {
-        let next = remaining
-            .iter()
-            .min_by(|a, b| {
-                let ta = tasks.iter().find(|t| &t.id == *a);
-                let tb = tasks.iter().find(|t| &t.id == *b);
-                let da = ta
-                    .and_then(|t| t.pose)
-                    .map(|p| current_pos.distance_to(&p))
-                    .unwrap_or(0.0);
-                let db = tb
-                    .and_then(|t| t.pose)
-                    .map(|p| current_pos.distance_to(&p))
-                    .unwrap_or(0.0);
-                da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
-            })
-            .cloned()
-            .unwrap();
-        remaining.remove(&next);
-        ordered.push(next.clone());
-        if let Some(task) = tasks.iter().find(|t| t.id == next) {
-            current_pos = task.pose.unwrap_or(current_pos);
-        }
-    }
-    ordered
-}
-
-/// Compute total travel distance for a bundle with TSP ordering.
-pub fn bundle_travel_distance(agent_pose: Pose, ordered_bundle: &[TaskId], tasks: &[Task]) -> f64 {
-    let mut total = 0.0;
-    let mut current = agent_pose;
-    for tid in ordered_bundle {
-        if let Some(task) = tasks.iter().find(|t| &t.id == tid) {
-            if let Some(pose) = task.pose {
-                total += current.distance_to(&pose);
-                current = pose;
-            }
-        }
-    }
-    total
+    // v0.28 route planner for bundle ordering
+    pub route_planner: Box<dyn RoutePlanner>,
 }
 
 /// A set of remote CBBA bids: sender_agent → (task_id → (winner, bid_value)).
@@ -124,6 +76,7 @@ impl CbbaAllocator {
             bundle_travel_distance: 0.0,
             packet_loss_rate: 0.0,
             force_rebroadcast: false,
+            route_planner: Box::new(NearestNeighbourPlanner),
         }
     }
 
@@ -307,11 +260,32 @@ impl Allocator for CbbaAllocator {
 
         self.build_bundles(agents, tasks);
 
-        // v0.15: TSP-ordering of bundles after building
+        // v0.28: RoutePlanner ordering of bundles after building
         let task_list: Vec<Task> = tasks.iter().map(|at| at.task.clone()).collect();
         for (agent_id, bundle) in self.bundles.iter_mut() {
             if let Some(agent) = agents.iter().find(|a| a.id == *agent_id) {
-                *bundle = order_bundle_tsp(agent.pose, bundle, &task_list);
+                let agent_full = swarm_types::Agent {
+                    id: agent.id.clone(),
+                    role: agent.role.clone(),
+                    health: swarm_types::Health::Alive,
+                    pose: agent.pose,
+                    capabilities: agent.capabilities.clone(),
+                    current_task: None,
+                    battery: agent.battery,
+                    comms_range: agent.comms_range,
+                    generation: 1,
+                    speed: agent.speed,
+                    max_range: agent.max_range,
+                    battery_drain_rate: agent.battery_drain_rate,
+                };
+                let bundle_tasks: Vec<Task> = bundle
+                    .iter()
+                    .filter_map(|tid| task_list.iter().find(|t| t.id == *tid))
+                    .cloned()
+                    .collect();
+                *bundle = self
+                    .route_planner
+                    .order(agent.pose, &bundle_tasks, &agent_full);
             }
         }
 
@@ -333,12 +307,15 @@ impl Allocator for CbbaAllocator {
 
         self.check_convergence();
 
-        // v0.15: Bundle travel distance metric
+        // v0.28: Bundle travel distance metric via route_cost
         self.bundle_travel_distance = 0.0;
         for (agent_id, bundle) in &self.bundles {
             if let Some(agent) = agents.iter().find(|a| a.id == *agent_id) {
-                self.bundle_travel_distance +=
-                    bundle_travel_distance(agent.pose, bundle, &task_list);
+                let bundle_tasks: Vec<&Task> = bundle
+                    .iter()
+                    .filter_map(|tid| task_list.iter().find(|t| t.id == *tid))
+                    .collect();
+                self.bundle_travel_distance += route_cost(agent.pose, &bundle_tasks);
             }
         }
 
@@ -389,6 +366,9 @@ mod tests {
             capabilities: vec![],
             role: Role::Scout,
             comms_range: f64::INFINITY,
+            speed: 0.0,
+            max_range: 0.0,
+            battery_drain_rate: 0.0,
         }
     }
 
@@ -552,25 +532,25 @@ mod tests {
     }
 
     #[test]
-    fn order_bundle_tsp_nearest_first() {
+    fn route_planner_nearest_first() {
         let agent_pose = Pose { x: 0.0, y: 0.0 };
         let t_near = task("t_near", 1, 1.0, 0.0);
         let t_far = task("t_far", 1, 100.0, 0.0);
         let tasks = vec![t_far.clone(), t_near.clone()];
-        let bundle = vec![t_far.id.clone(), t_near.id.clone()];
-        let ordered = order_bundle_tsp(agent_pose, &bundle, &tasks);
+        let agent = make_agent(100.0, 0.0);
+        let ordered = NearestNeighbourPlanner.order(agent_pose, &tasks, &agent);
         assert_eq!(ordered[0], t_near.id);
     }
 
     #[test]
-    fn order_bundle_tsp_all_tasks_included() {
+    fn route_planner_all_tasks_included() {
         let agent_pose = Pose { x: 0.0, y: 0.0 };
         let t1 = task("t1", 1, 10.0, 0.0);
         let t2 = task("t2", 1, 50.0, 0.0);
         let t3 = task("t3", 1, 30.0, 0.0);
         let tasks = vec![t1.clone(), t2.clone(), t3.clone()];
-        let bundle = vec![t1.id.clone(), t2.id.clone(), t3.id.clone()];
-        let ordered = order_bundle_tsp(agent_pose, &bundle, &tasks);
+        let agent = make_agent(100.0, 0.0);
+        let ordered = NearestNeighbourPlanner.order(agent_pose, &tasks, &agent);
         assert_eq!(ordered.len(), 3);
         // All tasks must be present
         assert!(ordered.contains(&t1.id));
@@ -610,27 +590,53 @@ mod tests {
     }
 
     #[test]
-    fn cbba_tsp_reduces_travel_distance() {
+    fn cbba_route_planner_reduces_travel_distance() {
         let agent_pose = Pose { x: 0.0, y: 0.0 };
         let tasks = vec![
             task("t_far", 1, 100.0, 0.0),
             task("t_near", 1, 1.0, 0.0),
             task("t_mid", 1, 50.0, 0.0),
         ];
-        let bundle = vec![
+        let bundle = [
             tasks[0].id.clone(),
             tasks[1].id.clone(),
             tasks[2].id.clone(),
         ];
-        let original_dist = bundle_travel_distance(agent_pose, &bundle, &tasks);
-        let ordered = order_bundle_tsp(agent_pose, &bundle, &tasks);
-        let tsp_dist = bundle_travel_distance(agent_pose, &ordered, &tasks);
+        let agent = make_agent(100.0, 0.0);
+        let bundle_refs: Vec<&Task> = bundle
+            .iter()
+            .map(|id| tasks.iter().find(|t| t.id == *id).unwrap())
+            .collect();
+        let original_dist = route_cost(agent_pose, &bundle_refs);
+        let ordered = NearestNeighbourPlanner.order(agent_pose, &tasks, &agent);
+        let ordered_refs: Vec<&Task> = ordered
+            .iter()
+            .map(|id| tasks.iter().find(|t| t.id == *id).unwrap())
+            .collect();
+        let planner_dist = route_cost(agent_pose, &ordered_refs);
         assert!(
-            tsp_dist <= original_dist,
-            "TSP ordering should reduce travel distance: original={}, tsp={}",
+            planner_dist <= original_dist,
+            "RoutePlanner ordering should reduce travel distance: original={}, planner={}",
             original_dist,
-            tsp_dist
+            planner_dist
         );
         assert_eq!(ordered[0], tasks[1].id, "nearest task should be first");
+    }
+
+    fn make_agent(battery: f64, drain_rate: f64) -> swarm_types::Agent {
+        swarm_types::Agent {
+            id: AgentId::from("a0".to_owned()),
+            role: Role::Scout,
+            health: swarm_types::Health::Alive,
+            pose: Pose { x: 0.0, y: 0.0 },
+            capabilities: vec![],
+            current_task: None,
+            battery,
+            comms_range: f64::INFINITY,
+            generation: 1,
+            speed: 0.0,
+            max_range: 0.0,
+            battery_drain_rate: drain_rate,
+        }
     }
 }

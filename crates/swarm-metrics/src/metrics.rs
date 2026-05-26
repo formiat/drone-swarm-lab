@@ -94,6 +94,15 @@ pub struct RunMetrics {
     pub revisit_count: u64,
     #[serde(default)]
     pub route_efficiency: f64,
+    // v0.28 Planner Quality metrics
+    #[serde(default)]
+    pub avg_route_length: f64,
+    #[serde(default)]
+    pub avg_wasted_travel: f64,
+    #[serde(default)]
+    pub avg_return_reserve: f64,
+    #[serde(default)]
+    pub infeasible_routes: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -151,6 +160,15 @@ pub struct AggregateMetrics {
     pub avg_revisit_count: f64,
     #[serde(default)]
     pub avg_route_efficiency: f64,
+    // v0.28 Planner Quality metrics
+    #[serde(default)]
+    pub avg_route_length: f64,
+    #[serde(default)]
+    pub avg_wasted_travel: f64,
+    #[serde(default)]
+    pub avg_return_reserve: f64,
+    #[serde(default)]
+    pub avg_infeasible_routes: f64,
 }
 
 fn percentile_of_sorted(sorted: &[u64], p: f64) -> f64 {
@@ -200,6 +218,11 @@ impl AggregateMetrics {
                 avg_missed_edges: 0.0,
                 avg_revisit_count: 0.0,
                 avg_route_efficiency: 0.0,
+                // v0.28 Planner Quality metrics
+                avg_route_length: 0.0,
+                avg_wasted_travel: 0.0,
+                avg_return_reserve: 0.0,
+                avg_infeasible_routes: 0.0,
             };
         }
 
@@ -239,6 +262,11 @@ impl AggregateMetrics {
         let total_missed_edges: u64 = runs.iter().map(|run| run.missed_edges).sum();
         let total_revisit_count: u64 = runs.iter().map(|run| run.revisit_count).sum();
         let total_route_efficiency: f64 = runs.iter().map(|run| run.route_efficiency).sum();
+        // v0.28 Planner Quality metrics
+        let total_route_length: f64 = runs.iter().map(|run| run.avg_route_length).sum();
+        let total_wasted_travel: f64 = runs.iter().map(|run| run.avg_wasted_travel).sum();
+        let total_return_reserve: f64 = runs.iter().map(|run| run.avg_return_reserve).sum();
+        let total_infeasible_routes: u64 = runs.iter().map(|run| run.infeasible_routes).sum();
         let mut convergence_ticks: Vec<u64> = runs
             .iter()
             .filter_map(|run| run.cbba_convergence_tick)
@@ -297,6 +325,11 @@ impl AggregateMetrics {
             avg_missed_edges: total_missed_edges as f64 / n,
             avg_revisit_count: total_revisit_count as f64 / n,
             avg_route_efficiency: total_route_efficiency / n,
+            // v0.28 Planner Quality metrics
+            avg_route_length: total_route_length / n,
+            avg_wasted_travel: total_wasted_travel / n,
+            avg_return_reserve: total_return_reserve / n,
+            avg_infeasible_routes: total_infeasible_routes as f64 / n,
         }
     }
 }
@@ -416,7 +449,16 @@ impl fmt::Display for AggregateMetrics {
         )?;
         writeln!(f, "avg_missed_edges: {:.3}", self.avg_missed_edges)?;
         writeln!(f, "avg_revisit_count: {:.3}", self.avg_revisit_count)?;
-        write!(f, "avg_route_efficiency: {:.3}", self.avg_route_efficiency)
+        writeln!(f, "avg_route_efficiency: {:.3}", self.avg_route_efficiency)?;
+        // v0.28 Planner Quality metrics
+        writeln!(f, "avg_route_length: {:.3}", self.avg_route_length)?;
+        writeln!(f, "avg_wasted_travel: {:.3}", self.avg_wasted_travel)?;
+        writeln!(f, "avg_return_reserve: {:.3}", self.avg_return_reserve)?;
+        write!(
+            f,
+            "avg_infeasible_routes: {:.3}",
+            self.avg_infeasible_routes
+        )
     }
 }
 
@@ -494,6 +536,11 @@ mod tests {
             missed_edges: 0,
             revisit_count: 0,
             route_efficiency: 0.0,
+            // v0.28 Planner Quality metrics
+            avg_route_length: 0.0,
+            avg_wasted_travel: 0.0,
+            avg_return_reserve: 0.0,
+            infeasible_routes: 0,
         }
     }
 

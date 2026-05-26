@@ -62,6 +62,13 @@ fn mission_name(mission: &Mission) -> &'static str {
     }
 }
 
+#[derive(Clone)]
+enum PlannerChoice {
+    NearestNeighbour,
+    TwoOpt,
+    BatteryAware,
+}
+
 struct CliArgs {
     mode: RunMode,
     missions: Vec<Mission>,
@@ -74,6 +81,8 @@ struct CliArgs {
     report_path: Option<String>,
     /// Limit rayon parallelism; `None` uses all available CPUs.
     jobs: Option<usize>,
+    /// Route planner for bundle ordering (CBBA only).
+    planner: PlannerChoice,
 }
 
 fn parse_args() -> CliArgs {
@@ -89,6 +98,7 @@ fn parse_args() -> CliArgs {
         output_dir: None,
         report_path: None,
         jobs: None,
+        planner: PlannerChoice::NearestNeighbour,
     };
 
     let mut i = 1;
@@ -151,12 +161,40 @@ fn parse_args() -> CliArgs {
                     cli.jobs = args[i].parse::<usize>().ok();
                 }
             }
+            "--planner" => {
+                i += 1;
+                if i < args.len() {
+                    cli.planner = match args[i].as_str() {
+                        "nn" | "nearest-neighbour" => PlannerChoice::NearestNeighbour,
+                        "two-opt" | "2opt" => PlannerChoice::TwoOpt,
+                        "battery-aware" | "battery" => PlannerChoice::BatteryAware,
+                        _ => {
+                            eprintln!(
+                                "Unknown planner '{}'. Valid: nn, two-opt, battery-aware",
+                                args[i]
+                            );
+                            std::process::exit(1);
+                        }
+                    };
+                }
+            }
             _ => {}
         }
         i += 1;
     }
 
     cli
+}
+
+fn make_cbba_allocator(planner: &PlannerChoice) -> CbbaAllocator {
+    use swarm_alloc::route_planner::{BatteryAwarePlanner, NearestNeighbourPlanner, TwoOptPlanner};
+    let mut cbba = CbbaAllocator::default();
+    cbba.route_planner = match planner {
+        PlannerChoice::NearestNeighbour => Box::new(NearestNeighbourPlanner),
+        PlannerChoice::TwoOpt => Box::new(TwoOptPlanner::default()),
+        PlannerChoice::BatteryAware => Box::new(BatteryAwarePlanner::default()),
+    };
+    cbba
 }
 
 fn main() {
@@ -167,6 +205,7 @@ fn main() {
         return;
     }
 
+    let planner = cli.planner.clone();
     let factories: Vec<StrategyFactory> = vec![
         Box::new(|_scenario: &Scenario, _run_config: &RunConfig| Box::new(GreedyAllocator)),
         Box::new(|_scenario: &Scenario, _run_config: &RunConfig| {
@@ -193,6 +232,9 @@ fn main() {
                     capabilities: a.capabilities.clone(),
                     role: a.role.clone(),
                     comms_range: a.comms_range,
+                    speed: 0.0,
+                    max_range: 0.0,
+                    battery_drain_rate: 0.0,
                 })
                 .collect();
             Box::new(CentralizedPlanner::new(
@@ -200,9 +242,9 @@ fn main() {
                 &allocation_agents,
             ))
         }),
-        Box::new(
-            |_scenario: &Scenario, _run_config: &RunConfig| Box::new(CbbaAllocator::default()),
-        ),
+        Box::new(move |_scenario: &Scenario, _run_config: &RunConfig| {
+            Box::new(make_cbba_allocator(&planner))
+        }),
     ];
 
     let enable_replay = cli.replay_log_dir.is_some();
@@ -434,6 +476,7 @@ fn run_from_suite(suite_path: &str, cli: &CliArgs) {
         suite.scenarios.len()
     );
 
+    let planner = cli.planner.clone();
     let factories: Vec<StrategyFactory> = vec![
         Box::new(|_scenario: &Scenario, _run_config: &RunConfig| Box::new(GreedyAllocator)),
         Box::new(|_scenario: &Scenario, _run_config: &RunConfig| {
@@ -460,6 +503,9 @@ fn run_from_suite(suite_path: &str, cli: &CliArgs) {
                     capabilities: a.capabilities.clone(),
                     role: a.role.clone(),
                     comms_range: a.comms_range,
+                    speed: 0.0,
+                    max_range: 0.0,
+                    battery_drain_rate: 0.0,
                 })
                 .collect();
             Box::new(CentralizedPlanner::new(
@@ -467,9 +513,9 @@ fn run_from_suite(suite_path: &str, cli: &CliArgs) {
                 &allocation_agents,
             ))
         }),
-        Box::new(
-            |_scenario: &Scenario, _run_config: &RunConfig| Box::new(CbbaAllocator::default()),
-        ),
+        Box::new(move |_scenario: &Scenario, _run_config: &RunConfig| {
+            Box::new(make_cbba_allocator(&planner))
+        }),
     ];
 
     let mut results: HashMap<(String, String), Vec<swarm_metrics::RunMetrics>> = HashMap::new();

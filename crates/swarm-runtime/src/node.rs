@@ -219,6 +219,9 @@ impl<T: Transport> AgentNode<T> {
                     capabilities: entry.capabilities.clone(),
                     role: entry.role.clone(),
                     comms_range: entry.comms_range,
+                    speed: 0.0,
+                    max_range: 0.0,
+                    battery_drain_rate: 0.0,
                 })
                 .collect();
             let all_tasks: Vec<AllocationTask<'_>> = self
@@ -438,6 +441,9 @@ fn allocate_unassigned<A: Allocator>(coordinator: &mut Coordinator, allocator: &
             capabilities: entry.capabilities.clone(),
             role: entry.role.clone(),
             comms_range: entry.comms_range,
+            speed: 0.0,
+            max_range: 0.0,
+            battery_drain_rate: 0.0,
         })
         .collect();
     agents.sort_by(|a, b| a.id.as_ref().cmp(b.id.as_ref()));

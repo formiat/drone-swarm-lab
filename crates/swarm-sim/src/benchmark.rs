@@ -484,6 +484,9 @@ mod tests {
                         capabilities: a.capabilities.clone(),
                         role: a.role.clone(),
                         comms_range: a.comms_range,
+                        speed: 0.0,
+                        max_range: 0.0,
+                        battery_drain_rate: 0.0,
                     })
                     .collect();
                 Box::new(CentralizedPlanner::new(
@@ -522,6 +525,9 @@ mod tests {
                         capabilities: a.capabilities.clone(),
                         role: a.role.clone(),
                         comms_range: a.comms_range,
+                        speed: 0.0,
+                        max_range: 0.0,
+                        battery_drain_rate: 0.0,
                     })
                     .collect();
                 Box::new(CentralizedPlanner::new(

@@ -465,6 +465,10 @@ mod tests {
                 avg_missed_edges: 0.0,
                 avg_revisit_count: 0.0,
                 avg_route_efficiency: 0.0,
+                avg_route_length: 0.0,
+                avg_wasted_travel: 0.0,
+                avg_return_reserve: 0.0,
+                avg_infeasible_routes: 0.0,
             },
         );
         ComparisonReport {
