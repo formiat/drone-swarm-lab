@@ -11,8 +11,9 @@ use swarm_scenarios::{
     InspectionProfile, InspectionStandardProfiles, SarProfile, StandardProfiles,
 };
 use swarm_sim::{
-    export_csv, export_json, BenchmarkHarness, BenchmarkOptions, ComparisonReport, FailureEvent,
-    PartitionEvent, RunConfig, Scenario,
+    default_suites, export_csv, export_json, Baseline, BenchmarkHarness, BenchmarkOptions,
+    ComparisonReport, FailureEvent, PartitionEvent, RegressionRunner, RunConfig, Scenario,
+    SuiteMode,
 };
 use swarm_types::AgentId;
 
@@ -83,6 +84,12 @@ struct CliArgs {
     jobs: Option<usize>,
     /// Route planner for bundle ordering (CBBA only).
     planner: PlannerChoice,
+    /// Run regression suites instead of normal benchmark.
+    regression: bool,
+    /// Compare current run against a baseline file.
+    compare_baseline: Option<String>,
+    /// Write current run as new baseline.
+    update_baseline: Option<String>,
 }
 
 fn parse_args() -> CliArgs {
@@ -99,6 +106,9 @@ fn parse_args() -> CliArgs {
         report_path: None,
         jobs: None,
         planner: PlannerChoice::NearestNeighbour,
+        regression: false,
+        compare_baseline: None,
+        update_baseline: None,
     };
 
     let mut i = 1;
@@ -178,6 +188,19 @@ fn parse_args() -> CliArgs {
                     };
                 }
             }
+            "--regression" => cli.regression = true,
+            "--compare-baseline" => {
+                i += 1;
+                if i < args.len() {
+                    cli.compare_baseline = Some(args[i].clone());
+                }
+            }
+            "--update-baseline" => {
+                i += 1;
+                if i < args.len() {
+                    cli.update_baseline = Some(args[i].clone());
+                }
+            }
             _ => {}
         }
         i += 1;
@@ -197,16 +220,8 @@ fn make_cbba_allocator(planner: &PlannerChoice) -> CbbaAllocator {
     cbba
 }
 
-fn main() {
-    let cli = parse_args();
-
-    if let Some(suite_path) = &cli.scenario_suite_path {
-        run_from_suite(suite_path, &cli);
-        return;
-    }
-
-    let planner = cli.planner.clone();
-    let factories: Vec<StrategyFactory> = vec![
+fn make_factories(planner: &PlannerChoice) -> Vec<StrategyFactory> {
+    vec![
         Box::new(|_scenario: &Scenario, _run_config: &RunConfig| Box::new(GreedyAllocator)),
         Box::new(|_scenario: &Scenario, _run_config: &RunConfig| {
             Box::new(AuctionAllocator::default())
@@ -242,10 +257,29 @@ fn main() {
                 &allocation_agents,
             ))
         }),
-        Box::new(move |_scenario: &Scenario, _run_config: &RunConfig| {
-            Box::new(make_cbba_allocator(&planner))
+        Box::new({
+            let planner = planner.clone();
+            move |_scenario: &Scenario, _run_config: &RunConfig| {
+                Box::new(make_cbba_allocator(&planner))
+            }
         }),
-    ];
+    ]
+}
+
+fn main() {
+    let cli = parse_args();
+
+    if cli.regression {
+        run_regression(&cli);
+        return;
+    }
+
+    if let Some(suite_path) = &cli.scenario_suite_path {
+        run_from_suite(suite_path, &cli);
+        return;
+    }
+
+    let factories = make_factories(&cli.planner);
 
     let enable_replay = cli.replay_log_dir.is_some();
 
@@ -476,47 +510,7 @@ fn run_from_suite(suite_path: &str, cli: &CliArgs) {
         suite.scenarios.len()
     );
 
-    let planner = cli.planner.clone();
-    let factories: Vec<StrategyFactory> = vec![
-        Box::new(|_scenario: &Scenario, _run_config: &RunConfig| Box::new(GreedyAllocator)),
-        Box::new(|_scenario: &Scenario, _run_config: &RunConfig| {
-            Box::new(AuctionAllocator::default())
-        }),
-        Box::new(|_scenario: &Scenario, _run_config: &RunConfig| {
-            Box::new(ConnectivityAwareAllocator {
-                base_allocator: AuctionAllocator::default(),
-            })
-        }),
-        Box::new(|scenario: &Scenario, _run_config: &RunConfig| {
-            let allocation_tasks: Vec<AllocationTask<'_>> = scenario
-                .tasks
-                .iter()
-                .map(|t| AllocationTask { task: t })
-                .collect();
-            let allocation_agents: Vec<AllocationAgent> = scenario
-                .agents
-                .iter()
-                .map(|a| AllocationAgent {
-                    id: a.id.clone(),
-                    pose: a.pose,
-                    battery: a.battery,
-                    capabilities: a.capabilities.clone(),
-                    role: a.role.clone(),
-                    comms_range: a.comms_range,
-                    speed: 0.0,
-                    max_range: 0.0,
-                    battery_drain_rate: 0.0,
-                })
-                .collect();
-            Box::new(CentralizedPlanner::new(
-                &allocation_tasks,
-                &allocation_agents,
-            ))
-        }),
-        Box::new(move |_scenario: &Scenario, _run_config: &RunConfig| {
-            Box::new(make_cbba_allocator(&planner))
-        }),
-    ];
+    let factories = make_factories(&cli.planner);
 
     let mut results: HashMap<(String, String), Vec<swarm_metrics::RunMetrics>> = HashMap::new();
     let mut all_mission_names: Vec<String> = Vec::new();
@@ -807,4 +801,118 @@ fn build_coverage_profile(seed: u64, profile_name: &str) -> (Scenario, RunConfig
     }
 
     (scenario, run_config)
+}
+
+fn run_regression(cli: &CliArgs) {
+    let baseline = cli
+        .compare_baseline
+        .as_ref()
+        .and_then(|path| Baseline::load(path).ok());
+
+    let suites = default_suites();
+    let factories = make_factories(&cli.planner);
+
+    let report = RegressionRunner::run(&suites, baseline.as_ref(), |suite| {
+        let profile_names = vec![suite.profile.clone()];
+        let builder = match suite.mission.as_str() {
+            "coverage" => {
+                Box::new(|seed: u64, profile_name: &str| build_coverage_profile(seed, profile_name))
+                    as ScenarioBuilder
+            }
+            "emergency-mesh" => Box::new(|seed: u64, profile_name: &str| {
+                let profile = EmergencyMeshProfile::from_str(profile_name)
+                    .unwrap_or(EmergencyMeshProfile::Ideal);
+                build_emergency_mesh_scenario(&profile.config(seed))
+            }),
+            "sar" => Box::new(|seed: u64, profile_name: &str| {
+                let profile = SarProfile::from_str(profile_name).unwrap_or(SarProfile::Ideal);
+                build_sar_scenario(&profile.config(seed))
+            }),
+            "inspection" => Box::new(|seed: u64, profile_name: &str| {
+                let profile =
+                    InspectionProfile::from_str(profile_name).unwrap_or(InspectionProfile::Linear);
+                build_inspection_scenario(&profile.config(seed))
+            }),
+            _ => Box::new(|_seed: u64, _profile: &str| {
+                let scenario = Scenario {
+                    name: "empty".to_owned(),
+                    seed: 0,
+                    agents: vec![],
+                    tasks: vec![],
+                    ground_nodes: vec![],
+                    base_station: None,
+                };
+                let run_config = RunConfig {
+                    max_ticks: 10,
+                    ..Default::default()
+                };
+                (scenario, run_config)
+            }),
+        };
+
+        let result = match suite.mode {
+            SuiteMode::Smoke => BenchmarkHarness::run_smoke_with_options(
+                &factories,
+                &profile_names,
+                &builder,
+                BenchmarkOptions {
+                    prefix: Some(&suite.name),
+                    enable_replay_log: false,
+                    mission_name: &suite.mission,
+                    jobs: cli.jobs,
+                },
+            ),
+            SuiteMode::Quick => BenchmarkHarness::run_quick_with_options(
+                &factories,
+                &profile_names,
+                &builder,
+                BenchmarkOptions {
+                    prefix: Some(&suite.name),
+                    enable_replay_log: false,
+                    mission_name: &suite.mission,
+                    jobs: cli.jobs,
+                },
+            ),
+        };
+
+        let mut metrics_map = HashMap::new();
+        for (strategy_name, profile_name) in result.report.results.keys() {
+            let key = (strategy_name.clone(), profile_name.clone());
+            if let Some(metrics) = result.report.results.get(&key) {
+                metrics_map.insert(strategy_name.clone(), metrics.clone());
+            }
+        }
+        metrics_map
+    });
+
+    println!("{}", report);
+
+    if let Some(path) = &cli.update_baseline {
+        let results: Vec<(String, swarm_metrics::AggregateMetrics)> = report
+            .suite_results
+            .iter()
+            .map(|sr| {
+                let key = if sr.suite.strategy == "all" {
+                    format!("{}/{}", sr.suite.name, sr.actual_strategy)
+                } else {
+                    sr.suite.name.clone()
+                };
+                (key, sr.metrics.clone())
+            })
+            .collect();
+        let mut baseline = Baseline::from_suites(&results);
+        if let Ok(output) = std::process::Command::new("git")
+            .args(["rev-parse", "--short", "HEAD"])
+            .output()
+        {
+            baseline.commit = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        }
+        if let Err(e) = baseline.save(path) {
+            eprintln!("Failed to save baseline: {}", e);
+            std::process::exit(1);
+        }
+        println!("Baseline saved to {}", path);
+    }
+
+    std::process::exit(if report.overall_pass { 0 } else { 1 });
 }

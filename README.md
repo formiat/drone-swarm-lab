@@ -76,9 +76,60 @@ cargo run --bin sitl_agent -- \
 | Replay / Debuggability | ✅ Stable | M23 | `replay` CLI, ASCII visualization |
 | Mission Semantics | ✅ Stable | M27 | `TaskKind`, `MissionAdapter`, `allocate_with_adapter` |
 | Planner Quality | ✅ Stable | M28 | `RoutePlanner` trait, 2-opt, battery-aware feasibility |
+| Regression & Baseline | ✅ Stable | M29 | `RegressionSuite`, `ThresholdChecker`, baseline artifacts |
 | Real PX4 | 🧪 Experimental | M20 | Feature-gated, requires PX4 SITL setup |
 
 **Test coverage:** 250+ tests, 10 crates, 12 JSON scenarios.
+
+---
+
+## Regression Testing
+
+The benchmark platform includes a regression harness (`RegressionSuite`, `ThresholdChecker`, `RegressionRunner`) that runs critical scenarios and checks their health against configurable thresholds.
+
+```bash
+# Run all default regression suites
+cargo run -p swarm-examples --bin regression_runner
+
+# Run regression via strategy_comparison CLI
+cargo run -p swarm-examples --bin strategy_comparison -- --regression
+
+# Update baseline after intentional improvement
+cargo run -p swarm-examples --bin regression_runner -- --update-baseline results/baseline.json
+```
+
+Suites cover SAR, Inspection, Coverage (CBBA stress), Safety, and Emergency Mesh missions. Each suite specifies a mission, profile, strategy, and metric thresholds (min/max). Exit code is `0` if all suites pass, `1` if any threshold is violated.
+
+## Baseline Management
+
+Baselines are committed JSON artifacts (`results/baseline.json`) that store reference metric values per suite. They enable delta comparison across runs.
+
+```bash
+# Compare current run against baseline
+cargo run -p swarm-examples --bin regression_runner -- --compare-baseline results/baseline.json
+
+# Generate a fresh baseline
+cargo run -p swarm-examples --bin regression_runner -- --update-baseline results/baseline.json
+```
+
+Baseline format:
+
+```json
+{
+  "version": "1.0",
+  "created_at": "2025-05-26T12:00:00Z",
+  "commit": "abc123",
+  "results": {
+    "suite_name": { "success_rate": 0.85, "avg_edge_coverage_rate": 0.98, ... }
+  }
+}
+```
+
+**Note:** Initial thresholds are calibrated guesswork. Smoke runs (1 seed) have high variance; consider switching critical suites to `Quick` (10 seeds) for more stable thresholds.
+
+## Stress Testing
+
+Parametric sweeps over variables such as packet loss, agent count, or grid size are supported via the stress harness (M29 foundation). Stress profiles will be expanded in M30+.
 
 ---
 
@@ -136,7 +187,7 @@ See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known l
 | `swarm-metrics` | Per-run and aggregate metrics. |
 | `swarm-replay` | Event log, replay engine, summary CLI, ASCII visualization. |
 | `swarm-safety` | Safety layer: geofence, no-fly zones, separation constraints. |
-| `swarm-examples` | Runnable binaries: `strategy_comparison`, `sitl_agent`, `replay`. |
+| `swarm-examples` | Runnable binaries: `strategy_comparison`, `regression_runner`, `sitl_agent`, `replay`. |
 
 ---
 
@@ -170,6 +221,7 @@ See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known l
 | M24 | ✅ | Release Candidate / Golden Path: README, docs, non-goals |
 | M27 | ✅ | Mission Semantics Layer: `TaskKind`, `MissionAdapter`, `RunState` |
 | M28 | ✅ | Planner Quality Upgrade: `RoutePlanner`, 2-opt, battery-aware feasibility |
+| M29 | ✅ | Stress & Regression Harness: `RegressionSuite`, baseline artifacts, threshold checking |
 
 ---
 

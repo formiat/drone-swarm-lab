@@ -40,6 +40,10 @@ path = "src/bin/sitl_agent.rs"
 name = "replay"
 path = "src/bin/replay.rs"
 
+[[bin]]
+name = "regression_runner"
+path = "src/bin/regression_runner.rs"
+
 [dependencies]
 serde              = { workspace = true }
 serde_json         = { workspace = true }
