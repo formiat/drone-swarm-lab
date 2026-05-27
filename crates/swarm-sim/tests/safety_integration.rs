@@ -8,7 +8,11 @@ fn make_agent(id: &str, x: f64, y: f64) -> Agent {
         id: AgentId::from(id.to_owned()),
         role: Role::Scout,
         health: Health::Alive,
-        pose: Pose { x, y , ..Default::default()},
+        pose: Pose {
+            x,
+            y,
+            ..Default::default()
+        },
         capabilities: vec![],
         current_task: None,
         battery: 100.0,
@@ -17,6 +21,7 @@ fn make_agent(id: &str, x: f64, y: f64) -> Agent {
         speed: 0.0,
         max_range: 1000.0,
         battery_drain_rate: 0.0,
+        battery_model: None,
     }
 }
 
@@ -30,7 +35,11 @@ fn make_task(id: &str, x: f64, y: f64) -> Task {
         required_role: None,
         preferred_role: None,
         expires_at: None,
-        pose: Some(Pose { x, y , ..Default::default()}),
+        pose: Some(Pose {
+            x,
+            y,
+            ..Default::default()
+        }),
         grid_cell: None,
         edge_id: None,
         kind: None,
@@ -73,6 +82,8 @@ fn safety_nofly_tasks_not_assigned() {
                     min_y: 0.0,
                     max_y: 10.0,
                 },
+                active_from_tick: None,
+                active_until_tick: None,
             }],
             separation: None,
         }),

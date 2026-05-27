@@ -9,7 +9,11 @@ fn make_agent(id: u8) -> Agent {
         id: AgentId::from(format!("agent-{id}")),
         role: Role::Scout,
         health: Health::Alive,
-        pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
+        pose: Pose {
+            x: 0.0,
+            y: 0.0,
+            ..Default::default()
+        },
         capabilities: vec![Capability::from("basic".to_owned())],
         current_task: None,
         battery: 100.0,
@@ -18,12 +22,17 @@ fn make_agent(id: u8) -> Agent {
         speed: 0.0,
         max_range: 0.0,
         battery_drain_rate: 0.0,
+        battery_model: None,
     }
 }
 
 fn make_agent_random(id: u8, x: f64, y: f64) -> Agent {
     let mut agent = make_agent(id);
-    agent.pose = Pose { x, y , ..Default::default()};
+    agent.pose = Pose {
+        x,
+        y,
+        ..Default::default()
+    };
     agent.comms_range = 50.0;
     agent
 }

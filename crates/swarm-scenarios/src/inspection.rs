@@ -98,6 +98,7 @@ pub fn build_inspection_scenario(config: &InspectionConfig) -> (Scenario, RunCon
                 speed: 2.0,
                 max_range,
                 battery_drain_rate,
+                battery_model: None,
             }
         })
         .collect();

@@ -85,9 +85,10 @@ cargo run --bin sitl_agent -- \
 | Planner Quality | ✅ Stable | M28 | `RoutePlanner` trait, 2-opt, battery-aware feasibility |
 | Regression & Baseline | ✅ Stable | M29 | `RegressionSuite`, `ThresholdChecker`, baseline artifacts |
 | Wildfire / Flood Mapping | ✅ Stable | M30 | `TaskKind::MappingZone`, `WildfireState`, hazard zones, dynamic threat |
+| Simulation Realism | ✅ Stable | M31 | Battery model v2, altitude sensor penalty, wind drift, pose noise, comms jitter, time-gated no-fly zones, `--realism` preset |
 | Real PX4 | 🧪 Experimental | M20 | Feature-gated, requires PX4 SITL setup |
 
-**Test coverage:** 250+ tests, 10 crates, 12 JSON scenarios.
+**Test coverage:** 270+ tests, 10 crates, 12 JSON scenarios.
 
 ---
 
@@ -231,6 +232,7 @@ See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known l
 | M28 | ✅ | Planner Quality Upgrade: `RoutePlanner`, 2-opt, battery-aware feasibility |
 | M29 | ✅ | Stress & Regression Harness: `RegressionSuite`, baseline artifacts, threshold checking |
 | M30 | ✅ | New Mission Prototype: Wildfire / Flood Mapping with `TaskKind::MappingZone`, hazard zones, dynamic threat |
+| M31 | ✅ | Simulation Realism Foundation: battery model v2, altitude sensor penalty, wind drift, pose noise, comms jitter, time-gated no-fly zones |
 
 ---
 
@@ -252,6 +254,21 @@ cargo build --workspace
 cargo test --workspace
 cargo clippy --all-targets -- -D warnings
 ```
+
+## Realism Preset (M31)
+
+Pass `--realism` to `strategy_comparison` to enable the M31 simulation realism preset:
+
+```bash
+cargo run -p swarm-examples --bin strategy_comparison -- --realism --smoke
+```
+
+The preset activates for every produced scenario:
+
+- `pose_noise_m = 0.5` — Gaussian position noise per tick
+- `wind = (0.1, 0.1, 0.0)` — constant wind drift
+- `comms_jitter_ticks = 1` — random ±1-tick delivery jitter
+- Battery model v2 (`hover_drain = 0.01`, `climb_drain = 0.05`, `cruise_drain = 0.02`, `reserve = 10%`)
 
 ## License
 

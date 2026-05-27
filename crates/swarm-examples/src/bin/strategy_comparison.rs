@@ -16,7 +16,7 @@ use swarm_sim::{
     ComparisonReport, FailureEvent, PartitionEvent, RegressionRunner, RunConfig, Scenario,
     SuiteMode,
 };
-use swarm_types::AgentId;
+use swarm_types::{AgentId, BatteryModel};
 
 type ScenarioBuilder = Box<dyn Fn(u64, &str) -> (Scenario, RunConfig) + Send + Sync>;
 type StrategyFactory =
@@ -95,6 +95,8 @@ struct CliArgs {
     compare_baseline: Option<String>,
     /// Write current run as new baseline.
     update_baseline: Option<String>,
+    /// Enable M31 realism preset (wind, pose noise, comms jitter, battery model v2).
+    realism: bool,
 }
 
 fn parse_args() -> CliArgs {
@@ -114,6 +116,7 @@ fn parse_args() -> CliArgs {
         regression: false,
         compare_baseline: None,
         update_baseline: None,
+        realism: false,
     };
 
     let mut i = 1;
@@ -194,6 +197,7 @@ fn parse_args() -> CliArgs {
                 }
             }
             "--regression" => cli.regression = true,
+            "--realism" => cli.realism = true,
             "--compare-baseline" => {
                 i += 1;
                 if i < args.len() {
@@ -269,6 +273,36 @@ fn make_factories(planner: &PlannerChoice) -> Vec<StrategyFactory> {
             }
         }),
     ]
+}
+
+/// Applies M31 realism preset to a (Scenario, RunConfig) pair.
+fn apply_realism_preset(
+    mut scenario: Scenario,
+    mut run_config: RunConfig,
+) -> (Scenario, RunConfig) {
+    run_config.pose_noise_m = 0.5;
+    run_config.wind = Some((0.1, 0.1, 0.0));
+    run_config.comms_jitter_ticks = 1;
+    let battery = BatteryModel {
+        hover_drain_per_tick: 0.01,
+        climb_drain_per_meter: 0.05,
+        cruise_drain_per_meter: 0.02,
+        reserve_fraction: 0.1,
+    };
+    for agent in &mut scenario.agents {
+        if agent.battery_model.is_none() {
+            agent.battery_model = Some(battery.clone());
+        }
+    }
+    (scenario, run_config)
+}
+
+/// Wraps a ScenarioBuilder so that every produced pair passes through the realism preset.
+fn with_realism(builder: ScenarioBuilder) -> ScenarioBuilder {
+    Box::new(move |seed, profile| {
+        let (scenario, run_config) = builder(seed, profile);
+        apply_realism_preset(scenario, run_config)
+    })
 }
 
 fn main() {
@@ -361,6 +395,12 @@ fn main() {
                 });
                 (profiles, builder)
             }
+        };
+
+        let builder = if cli.realism {
+            with_realism(builder)
+        } else {
+            builder
         };
 
         let mission_options = BenchmarkOptions {
@@ -547,16 +587,22 @@ fn run_from_suite(suite_path: &str, cli: &CliArgs) {
             all_profile_names.push(profile_key.clone());
         }
 
+        let (scenario, run_config) = if cli.realism {
+            apply_realism_preset(entry.scenario.clone(), entry.run_config.clone())
+        } else {
+            (entry.scenario.clone(), entry.run_config.clone())
+        };
+
         for factory in &factories {
-            let mut strategy = factory(&entry.scenario, &entry.run_config);
+            let mut strategy = factory(&scenario, &run_config);
             let strategy_name = strategy.name().to_owned();
             if !all_strategy_names.contains(&strategy_name) {
                 all_strategy_names.push(strategy_name.clone());
             }
             let key = (strategy_name, profile_key.clone());
             let (metrics, _log) = swarm_sim::ScenarioRunner::run_with_log(
-                &entry.scenario,
-                entry.run_config.clone(),
+                &scenario,
+                run_config.clone(),
                 SuiteStrategyWrapper(&mut *strategy),
             );
             results.entry(key).or_default().push(metrics);

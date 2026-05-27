@@ -391,7 +391,11 @@ mod tests {
                     id: AgentId::from(format!("agent-{i}")),
                     role: Role::Scout,
                     health: Health::Alive,
-                    pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
+                    pose: Pose {
+                        x: 0.0,
+                        y: 0.0,
+                        ..Default::default()
+                    },
                     capabilities: vec![],
                     current_task: None,
                     battery: 100.0,
@@ -400,6 +404,7 @@ mod tests {
                     speed: 0.0,
                     max_range: 0.0,
                     battery_drain_rate: 0.0,
+                    battery_model: None,
                 })
                 .collect();
             let tasks: Vec<Task> = (0..5)

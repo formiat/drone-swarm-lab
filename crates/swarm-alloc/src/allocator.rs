@@ -178,7 +178,11 @@ impl AuctionAllocator {
             return f64::INFINITY;
         }
 
-        let task_pose = task.pose.unwrap_or(Pose { x: 0.0, y: 0.0 , ..Default::default()});
+        let task_pose = task.pose.unwrap_or(Pose {
+            x: 0.0,
+            y: 0.0,
+            ..Default::default()
+        });
         let dx = agent.pose.x - task_pose.x;
         let dy = agent.pose.y - task_pose.y;
         let distance_cost = self.weight_distance * (dx * dx + dy * dy).sqrt();
@@ -252,7 +256,11 @@ mod tests {
             required_role: None,
             preferred_role: None,
             expires_at: None,
-            pose: Some(Pose { x, y , ..Default::default()}),
+            pose: Some(Pose {
+                x,
+                y,
+                ..Default::default()
+            }),
             grid_cell: None,
             edge_id: None,
             kind: None,
@@ -262,7 +270,11 @@ mod tests {
     fn agent(id: &str) -> AllocationAgent {
         AllocationAgent {
             id: AgentId::from(id.to_owned()),
-            pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
+            pose: Pose {
+                x: 0.0,
+                y: 0.0,
+                ..Default::default()
+            },
             battery: 100.0,
             capabilities: vec![],
             role: Role::Scout,
@@ -276,7 +288,11 @@ mod tests {
     fn agent_with_cap(id: &str, cap: &str) -> AllocationAgent {
         AllocationAgent {
             id: AgentId::from(id.to_owned()),
-            pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
+            pose: Pose {
+                x: 0.0,
+                y: 0.0,
+                ..Default::default()
+            },
             battery: 100.0,
             capabilities: vec![Capability::from(cap.to_owned())],
             role: Role::Scout,
@@ -290,7 +306,11 @@ mod tests {
     fn agent_at(id: &str, x: f64, y: f64) -> AllocationAgent {
         AllocationAgent {
             id: AgentId::from(id.to_owned()),
-            pose: Pose { x, y , ..Default::default()},
+            pose: Pose {
+                x,
+                y,
+                ..Default::default()
+            },
             battery: 100.0,
             capabilities: vec![],
             role: Role::Scout,
@@ -395,7 +415,11 @@ mod tests {
         t.preferred_role = Some(Role::Mapper);
         let a_scout = AllocationAgent {
             id: AgentId::from("scout".to_owned()),
-            pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
+            pose: Pose {
+                x: 0.0,
+                y: 0.0,
+                ..Default::default()
+            },
             battery: 100.0,
             capabilities: vec![],
             role: Role::Scout,
@@ -406,7 +430,11 @@ mod tests {
         };
         let a_mapper = AllocationAgent {
             id: AgentId::from("mapper".to_owned()),
-            pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
+            pose: Pose {
+                x: 0.0,
+                y: 0.0,
+                ..Default::default()
+            },
             battery: 100.0,
             capabilities: vec![],
             role: Role::Mapper,
@@ -425,7 +453,11 @@ mod tests {
         let t = task("t0", 1);
         let full = AllocationAgent {
             id: AgentId::from("full".to_owned()),
-            pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
+            pose: Pose {
+                x: 0.0,
+                y: 0.0,
+                ..Default::default()
+            },
             battery: 100.0,
             capabilities: vec![],
             role: Role::Scout,
@@ -436,7 +468,11 @@ mod tests {
         };
         let low = AllocationAgent {
             id: AgentId::from("low".to_owned()),
-            pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
+            pose: Pose {
+                x: 0.0,
+                y: 0.0,
+                ..Default::default()
+            },
             battery: 10.0,
             capabilities: vec![],
             role: Role::Scout,
@@ -476,7 +512,11 @@ mod tests {
         t.required_role = Some(Role::Relay);
         let a_relay = AllocationAgent {
             id: AgentId::from("relay".to_owned()),
-            pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
+            pose: Pose {
+                x: 0.0,
+                y: 0.0,
+                ..Default::default()
+            },
             battery: 100.0,
             capabilities: vec![],
             role: Role::Relay,

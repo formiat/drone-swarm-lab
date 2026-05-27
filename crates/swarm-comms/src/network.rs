@@ -16,6 +16,8 @@ pub struct NetworkConfig {
     pub latency_per_hop: u64,
     pub seed: u64,
     pub partitions: HashSet<(AgentId, AgentId)>,
+    /// Random jitter added to latency: uniform in [0, 2 * comms_jitter_ticks]. 0 = no jitter.
+    pub comms_jitter_ticks: u64,
 }
 
 pub struct InMemNetwork {
@@ -144,9 +146,15 @@ impl Transport for InMemNetwork {
             return Ok(());
         }
 
+        let jitter = if self.config.comms_jitter_ticks > 0 {
+            self.rng.gen::<u64>() % (self.config.comms_jitter_ticks * 2 + 1)
+        } else {
+            0
+        };
         let delivery_tick = self.current_tick
             + self.config.latency_ticks
-            + (hop_count as u64) * self.config.latency_per_hop;
+            + (hop_count as u64) * self.config.latency_per_hop
+            + jitter;
         self.in_flight
             .entry(msg.to.clone())
             .or_default()
@@ -218,6 +226,7 @@ mod tests {
             latency_per_hop: 0,
             seed,
             partitions: HashSet::new(),
+            comms_jitter_ticks: 0,
         }
     }
 
@@ -398,13 +407,28 @@ mod tests {
         use swarm_types::{Health, Pose};
         let agent_entries = agents
             .into_iter()
-            .map(|(id, (x, y), range)| (id, Pose { x, y , ..Default::default()}, range, Health::Alive))
+            .map(|(id, (x, y), range)| {
+                (
+                    id,
+                    Pose {
+                        x,
+                        y,
+                        ..Default::default()
+                    },
+                    range,
+                    Health::Alive,
+                )
+            })
             .collect();
         ConnectivitySnapshot {
             agent_entries,
             ground_nodes: vec![],
             base_id: "base".to_owned(),
-            base_pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
+            base_pose: Pose {
+                x: 0.0,
+                y: 0.0,
+                ..Default::default()
+            },
         }
     }
 

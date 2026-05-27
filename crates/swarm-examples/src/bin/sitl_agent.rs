@@ -183,7 +183,11 @@ mod tests {
                 required_role: None,
                 preferred_role: None,
                 expires_at: None,
-                pose: Some(Pose { x: 10.0, y: 20.0 , ..Default::default()}),
+                pose: Some(Pose {
+                    x: 10.0,
+                    y: 20.0,
+                    ..Default::default()
+                }),
                 grid_cell: None,
                 edge_id: None,
                 kind: None,
@@ -197,7 +201,11 @@ mod tests {
                 required_role: None,
                 preferred_role: None,
                 expires_at: None,
-                pose: Some(Pose { x: 30.0, y: 40.0 , ..Default::default()}),
+                pose: Some(Pose {
+                    x: 30.0,
+                    y: 40.0,
+                    ..Default::default()
+                }),
                 grid_cell: None,
                 edge_id: None,
                 kind: None,

@@ -152,6 +152,8 @@ pub struct RunConfig {
     #[serde(default)]
     pub latency_per_hop: u64,
     #[serde(default)]
+    pub comms_jitter_ticks: u64,
+    #[serde(default)]
     pub failures: Vec<FailureEvent>,
     #[serde(default)]
     pub dynamic_tasks: Vec<DynamicTaskEvent>,
@@ -175,6 +177,12 @@ pub struct RunConfig {
     pub inspection_state: Option<InspectionState>,
     #[serde(default)]
     pub wildfire_state: Option<WildfireState>,
+    /// Wind drift per tick as (vx, vy, vz) in m/tick. Applied after movement.
+    #[serde(default)]
+    pub wind: Option<(f64, f64, f64)>,
+    /// Gaussian pose noise radius in metres. Applied after movement.
+    #[serde(default)]
+    pub pose_noise_m: f64,
 }
 
 fn default_max_unassigned() -> u64 {
@@ -236,6 +244,7 @@ impl ScenarioRunner {
             latency_per_hop: config.latency_per_hop,
             seed: scenario.seed,
             partitions: HashSet::new(),
+            comms_jitter_ticks: config.comms_jitter_ticks,
         })));
 
         let agent_ids: Vec<AgentId> = scenario.agents.iter().map(|a| a.id.clone()).collect();
@@ -328,9 +337,11 @@ impl ScenarioRunner {
             .base_id
             .clone()
             .unwrap_or_else(|| AgentId::from("base".to_owned()));
-        let base_pose = scenario
-            .base_station
-            .unwrap_or(swarm_types::Pose { x: 0.0, y: 0.0 , ..Default::default()});
+        let base_pose = scenario.base_station.unwrap_or(swarm_types::Pose {
+            x: 0.0,
+            y: 0.0,
+            ..Default::default()
+        });
 
         for _ in 0..config.max_ticks {
             clock.advance();
@@ -482,6 +493,28 @@ impl ScenarioRunner {
                 }
             }
 
+            // v0.31: Wind drift and pose noise (applied after movement to own agent's view)
+            if config.wind.is_some() || config.pose_noise_m > 0.0 {
+                let dt = config.tick_duration_ms as f64 / 1000.0;
+                let mut rng = rand::rngs::StdRng::seed_from_u64(
+                    scenario
+                        .seed
+                        .wrapping_add(current_tick)
+                        .wrapping_add(0xCAFE),
+                );
+                for (node, agent_id) in &mut nodes {
+                    if crashed_agents.contains(agent_id) {
+                        continue;
+                    }
+                    node.coordinator.membership.apply_environment_effects(
+                        config.wind,
+                        config.pose_noise_m,
+                        &mut rng,
+                        dt,
+                    );
+                }
+            }
+
             // v0.13: Safety checks after movement/teleport
             if let Some(ref safety_cfg) = config.safety_config {
                 let all_agents: Vec<swarm_types::Agent> = nodes
@@ -504,6 +537,7 @@ impl ScenarioRunner {
                                 speed: 0.0,
                                 max_range: 0.0,
                                 battery_drain_rate: 0.0,
+                                battery_model: None,
                             })
                             .unwrap_or_else(|| {
                                 scenario
@@ -533,6 +567,7 @@ impl ScenarioRunner {
                             speed: 0.0,
                             max_range: 0.0,
                             battery_drain_rate: 0.0,
+                            battery_model: None,
                         };
                         let violations = swarm_safety::check_agent(safety_cfg, &agent, &all_agents);
                         if !violations.is_empty() {
@@ -661,6 +696,7 @@ impl ScenarioRunner {
                                         cell_y,
                                         &entry.role,
                                         current_tick,
+                                        entry.pose.z,
                                         &mut rng,
                                     );
                                     if let Some(ref mut builder) = log_builder {
@@ -1312,7 +1348,11 @@ mod tests {
                 id: AgentId::from(format!("agent-{index}")),
                 role: Role::Scout,
                 health: Health::Alive,
-                pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
+                pose: Pose {
+                    x: 0.0,
+                    y: 0.0,
+                    ..Default::default()
+                },
                 capabilities: Vec::new(),
                 current_task: None,
                 battery: 100.0,
@@ -1321,6 +1361,7 @@ mod tests {
                 speed: 0.0,
                 max_range: 0.0,
                 battery_drain_rate: 0.0,
+                battery_model: None,
             })
             .collect();
         let tasks = (0..task_count)

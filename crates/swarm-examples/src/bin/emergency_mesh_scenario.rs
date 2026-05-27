@@ -14,7 +14,11 @@ fn main() {
             scout_count: 4,
             relay_count: 2,
             ground_node_count: 2,
-            base_pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
+            base_pose: Pose {
+                x: 0.0,
+                y: 0.0,
+                ..Default::default()
+            },
             area_size: 20.0,
             comms_range: 15.0,
             failure_tick: 15,

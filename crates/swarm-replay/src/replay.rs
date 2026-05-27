@@ -342,7 +342,11 @@ mod tests {
         });
         builder.push(Event::SarDetection {
             agent_id: AgentId::from("a0".to_owned()),
-            target_pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
+            target_pose: Pose {
+                x: 0.0,
+                y: 0.0,
+                ..Default::default()
+            },
             tick: 1,
         });
         builder.push(Event::EdgeVisited {
@@ -390,30 +394,59 @@ mod tests {
         builder.push(Event::TickStart { tick: 0 });
         builder.push(Event::PoseUpdated {
             agent_id: AgentId::from("a0".to_owned()),
-            pose: Pose { x: 1.0, y: 2.0 , ..Default::default()},
+            pose: Pose {
+                x: 1.0,
+                y: 2.0,
+                ..Default::default()
+            },
             tick: 0,
         });
         builder.push(Event::TickStart { tick: 1 });
         builder.push(Event::PoseUpdated {
             agent_id: AgentId::from("a0".to_owned()),
-            pose: Pose { x: 3.0, y: 4.0 , ..Default::default()},
+            pose: Pose {
+                x: 3.0,
+                y: 4.0,
+                ..Default::default()
+            },
             tick: 1,
         });
 
         let log = builder.build();
         let snap0 = snapshot_at_tick(&log, 0);
         assert_eq!(snap0.agent_poses.len(), 1);
-        assert_eq!(snap0.agent_poses[0].1, Pose { x: 1.0, y: 2.0 , ..Default::default()});
+        assert_eq!(
+            snap0.agent_poses[0].1,
+            Pose {
+                x: 1.0,
+                y: 2.0,
+                ..Default::default()
+            }
+        );
 
         let snap1 = snapshot_at_tick(&log, 1);
-        assert_eq!(snap1.agent_poses[0].1, Pose { x: 3.0, y: 4.0 , ..Default::default()});
+        assert_eq!(
+            snap1.agent_poses[0].1,
+            Pose {
+                x: 3.0,
+                y: 4.0,
+                ..Default::default()
+            }
+        );
     }
 
     #[test]
     fn render_ascii_grid_basic() {
         let snapshot = ReplaySnapshot {
             tick: 0,
-            agent_poses: vec![(AgentId::from("a0".to_owned()), Pose { x: 5.0, y: 5.0 , ..Default::default()})],
+            agent_poses: vec![(
+                AgentId::from("a0".to_owned()),
+                Pose {
+                    x: 5.0,
+                    y: 5.0,
+                    ..Default::default()
+                },
+            )],
             assigned_tasks: vec![],
             active_agents: vec![AgentId::from("a0".to_owned())],
             failed_agents: vec![],

@@ -458,10 +458,11 @@ fn allocate_unassigned<A: Allocator>(coordinator: &mut Coordinator, allocator: &
         .first()
         .map(|a| a.id.clone())
         .unwrap_or_else(|| AgentId::from("base".to_owned()));
-    let base_pose = agents
-        .first()
-        .map(|a| a.pose)
-        .unwrap_or(swarm_types::Pose { x: 0.0, y: 0.0 , ..Default::default()});
+    let base_pose = agents.first().map(|a| a.pose).unwrap_or(swarm_types::Pose {
+        x: 0.0,
+        y: 0.0,
+        ..Default::default()
+    });
     let connectivity = ConnectivityContext {
         snapshot: ConnectivitySnapshot {
             agent_entries,
@@ -503,7 +504,11 @@ mod tests {
             id: AgentId::from(id.to_owned()),
             role: Role::Scout,
             health: Health::Alive,
-            pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
+            pose: Pose {
+                x: 0.0,
+                y: 0.0,
+                ..Default::default()
+            },
             capabilities: vec![],
             current_task: None,
             battery: 100.0,
@@ -512,6 +517,7 @@ mod tests {
             speed: 0.0,
             max_range: 0.0,
             battery_drain_rate: 0.0,
+            battery_model: None,
         }
     }
 
@@ -539,6 +545,7 @@ mod tests {
             latency_per_hop: 0,
             seed: 42,
             partitions: HashSet::new(),
+            comms_jitter_ticks: 0,
         }
     }
 

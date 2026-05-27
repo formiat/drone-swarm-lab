@@ -143,7 +143,11 @@ mod tests {
     use super::*;
 
     fn pose(x: f64, y: f64) -> Pose {
-        Pose { x, y , ..Default::default()}
+        Pose {
+            x,
+            y,
+            ..Default::default()
+        }
     }
 
     fn snapshot_with_agents(agents: Vec<(AgentId, Pose, f64, Health)>) -> ConnectivitySnapshot {

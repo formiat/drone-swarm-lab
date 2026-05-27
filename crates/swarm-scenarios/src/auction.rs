@@ -46,7 +46,11 @@ pub fn build_dynamic_auction_scenario(config: &DynamicAuctionConfig) -> (Scenari
                 id: AgentId::from(format!("agent-{i}")),
                 role,
                 health: Health::Alive,
-                pose: Pose { x, y , ..Default::default()},
+                pose: Pose {
+                    x,
+                    y,
+                    ..Default::default()
+                },
                 capabilities: vec![cap],
                 current_task: None,
                 battery: 100.0,
@@ -55,6 +59,7 @@ pub fn build_dynamic_auction_scenario(config: &DynamicAuctionConfig) -> (Scenari
                 speed: 0.0,
                 max_range: 0.0,
                 battery_drain_rate: 0.0,
+                battery_model: None,
             }
         })
         .collect();
@@ -83,7 +88,11 @@ pub fn build_dynamic_auction_scenario(config: &DynamicAuctionConfig) -> (Scenari
                 required_role: None,
                 preferred_role: None,
                 expires_at: None,
-                pose: Some(Pose { x: tx, y: ty , ..Default::default()}),
+                pose: Some(Pose {
+                    x: tx,
+                    y: ty,
+                    ..Default::default()
+                }),
                 grid_cell: None,
                 edge_id: None,
                 kind: None,
@@ -119,7 +128,11 @@ pub fn build_dynamic_auction_scenario(config: &DynamicAuctionConfig) -> (Scenari
                     required_role: None,
                     preferred_role: None,
                     expires_at: Some(injection_tick + config.task_expiry_ticks),
-                    pose: Some(Pose { x: tx, y: ty , ..Default::default()}),
+                    pose: Some(Pose {
+                        x: tx,
+                        y: ty,
+                        ..Default::default()
+                    }),
                     grid_cell: None,
                     edge_id: None,
                     kind: None,

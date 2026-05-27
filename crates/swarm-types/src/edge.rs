@@ -63,7 +63,11 @@ impl InspectionGraph {
         }
         Self {
             edges,
-            depot: Pose { x: 0.0, y: 0.0 , ..Default::default()},
+            depot: Pose {
+                x: 0.0,
+                y: 0.0,
+                ..Default::default()
+            },
         }
     }
 
@@ -79,8 +83,16 @@ impl InspectionGraph {
             let x1 = (i + 1) as f64 * cell_size_m;
             edges.push(InspectionEdge {
                 id: EdgeId::from(format!("edge-bottom-{i}")),
-                from: Pose { x: x0, y: 0.0 , ..Default::default()},
-                to: Pose { x: x1, y: 0.0 , ..Default::default()},
+                from: Pose {
+                    x: x0,
+                    y: 0.0,
+                    ..Default::default()
+                },
+                to: Pose {
+                    x: x1,
+                    y: 0.0,
+                    ..Default::default()
+                },
                 length_m: cell_size_m,
                 priority: 1,
             });
@@ -92,8 +104,16 @@ impl InspectionGraph {
             let y1 = (i + 1) as f64 * cell_size_m;
             edges.push(InspectionEdge {
                 id: EdgeId::from(format!("edge-right-{i}")),
-                from: Pose { x: w, y: y0 , ..Default::default()},
-                to: Pose { x: w, y: y1 , ..Default::default()},
+                from: Pose {
+                    x: w,
+                    y: y0,
+                    ..Default::default()
+                },
+                to: Pose {
+                    x: w,
+                    y: y1,
+                    ..Default::default()
+                },
                 length_m: cell_size_m,
                 priority: 1,
             });
@@ -105,8 +125,16 @@ impl InspectionGraph {
             let x1 = w - (i + 1) as f64 * cell_size_m;
             edges.push(InspectionEdge {
                 id: EdgeId::from(format!("edge-top-{i}")),
-                from: Pose { x: x0, y: h , ..Default::default()},
-                to: Pose { x: x1, y: h , ..Default::default()},
+                from: Pose {
+                    x: x0,
+                    y: h,
+                    ..Default::default()
+                },
+                to: Pose {
+                    x: x1,
+                    y: h,
+                    ..Default::default()
+                },
                 length_m: cell_size_m,
                 priority: 1,
             });
@@ -118,8 +146,16 @@ impl InspectionGraph {
             let y1 = h - (i + 1) as f64 * cell_size_m;
             edges.push(InspectionEdge {
                 id: EdgeId::from(format!("edge-left-{i}")),
-                from: Pose { x: 0.0, y: y0 , ..Default::default()},
-                to: Pose { x: 0.0, y: y1 , ..Default::default()},
+                from: Pose {
+                    x: 0.0,
+                    y: y0,
+                    ..Default::default()
+                },
+                to: Pose {
+                    x: 0.0,
+                    y: y1,
+                    ..Default::default()
+                },
                 length_m: cell_size_m,
                 priority: 1,
             });
@@ -127,7 +163,11 @@ impl InspectionGraph {
 
         Self {
             edges,
-            depot: Pose { x: 0.0, y: 0.0 , ..Default::default()},
+            depot: Pose {
+                x: 0.0,
+                y: 0.0,
+                ..Default::default()
+            },
         }
     }
 
@@ -182,7 +222,11 @@ impl InspectionGraph {
 
         Self {
             edges,
-            depot: nodes.first().copied().unwrap_or(Pose { x: 0.0, y: 0.0 , ..Default::default()}),
+            depot: nodes.first().copied().unwrap_or(Pose {
+                x: 0.0,
+                y: 0.0,
+                ..Default::default()
+            }),
         }
     }
 }

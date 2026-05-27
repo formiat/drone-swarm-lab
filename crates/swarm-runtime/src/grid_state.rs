@@ -44,6 +44,7 @@ impl GridState {
 
     /// Scan a cell when an agent arrives at its center.
     /// Returns true if a target was found in this scan.
+    #[allow(clippy::too_many_arguments)]
     pub fn scan_cell<R: Rng>(
         &mut self,
         agent_id: AgentId,
@@ -51,6 +52,7 @@ impl GridState {
         cell_y: u32,
         role: &Role,
         current_tick: u64,
+        agent_z: f64,
         rng: &mut R,
     ) -> bool {
         let cell_idx = self.grid.cell_index(cell_x, cell_y);
@@ -71,7 +73,14 @@ impl GridState {
             .iter()
             .find(|t| t.cell_x == cell_x && t.cell_y == cell_y);
 
-        let pod = self.sensor.probability(role);
+        let base_pod = self.sensor.probability(role);
+        // v0.31: altitude penalty reduces PoD proportionally
+        let altitude_penalty = if self.sensor.altitude_factor > 0.0 && agent_z > 0.0 {
+            (1.0 - self.sensor.altitude_factor * agent_z).max(0.0)
+        } else {
+            1.0
+        };
+        let pod = base_pod * altitude_penalty;
         let roll: f64 = rng.gen();
         let detected = roll < pod;
 
@@ -148,6 +157,7 @@ mod tests {
             2,
             &Role::Scout,
             10,
+            0.0,
             &mut rng,
         );
         assert!(found);
@@ -173,6 +183,7 @@ mod tests {
             2,
             &Role::Scout,
             10,
+            0.0,
             &mut rng,
         );
         assert!(!found);
@@ -197,6 +208,7 @@ mod tests {
             0,
             &Role::Scout,
             1,
+            0.0,
             &mut rng,
         );
         state.scan_cell(
@@ -205,6 +217,7 @@ mod tests {
             0,
             &Role::Scout,
             2,
+            0.0,
             &mut rng,
         );
 
@@ -229,6 +242,7 @@ mod tests {
             2,
             &Role::Scout,
             10,
+            0.0,
             &mut rng,
         );
         assert!(found1);
@@ -240,11 +254,68 @@ mod tests {
             2,
             &Role::Scout,
             11,
+            0.0,
             &mut rng,
         );
         // Second scan should not change state (idempotent)
         assert!(found2); // returns true because cell is TargetFound
         assert_eq!(state.targets_found, 1); // but count doesn't increase
         assert_eq!(state.first_find_tick, Some(10));
+    }
+
+    #[test]
+    fn scan_altitude_factor_reduces_pod() {
+        let grid = SearchGrid::new(5, 5, 10.0);
+        let targets = vec![HiddenTarget {
+            id: "t1".to_string(),
+            cell_x: 2,
+            cell_y: 2,
+        }];
+        // altitude_factor = 0.1: at z=5, penalty = 1 - 0.1*5 = 0.5
+        let mut sensor = SensorModel::new(1.0, 1.0, 1.0);
+        sensor.altitude_factor = 0.1;
+        let state = GridState::new(grid, targets, sensor);
+        // With pod=1.0 and altitude penalty=0.5, effective_pod=0.5 — use many runs to verify
+        let hits: u32 = (0..100)
+            .map(|i| {
+                let mut s = state.clone();
+                let mut rng = rand::rngs::StdRng::seed_from_u64(i);
+                s.scan_cell(
+                    AgentId::from("a1".to_owned()),
+                    2,
+                    2,
+                    &Role::Scout,
+                    1,
+                    5.0,
+                    &mut rng,
+                ) as u32
+            })
+            .sum();
+        // With 50% effective PoD, expect roughly 50 hits out of 100 (within generous bounds)
+        assert!(hits > 20 && hits < 80, "Expected ~50 hits, got {hits}");
+    }
+
+    #[test]
+    fn scan_altitude_factor_zero_no_penalty() {
+        let grid = SearchGrid::new(5, 5, 10.0);
+        let targets = vec![HiddenTarget {
+            id: "t1".to_string(),
+            cell_x: 2,
+            cell_y: 2,
+        }];
+        let sensor = SensorModel::new(1.0, 1.0, 1.0); // altitude_factor = 0.0
+        let mut state = GridState::new(grid, targets, sensor);
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        // pod=1.0, no altitude penalty → always finds target
+        let found = state.scan_cell(
+            AgentId::from("a1".to_owned()),
+            2,
+            2,
+            &Role::Scout,
+            1,
+            100.0,
+            &mut rng,
+        );
+        assert!(found);
     }
 }

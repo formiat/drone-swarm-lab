@@ -14,7 +14,11 @@ fn main() {
             id: id.clone(),
             role: Role::Scout,
             health: Health::Alive,
-            pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
+            pose: Pose {
+                x: 0.0,
+                y: 0.0,
+                ..Default::default()
+            },
             capabilities: vec![Capability::from("basic".to_owned())],
             current_task: None,
             battery: 100.0,
@@ -23,6 +27,7 @@ fn main() {
             speed: 5.0,
             max_range: 500.0,
             battery_drain_rate: 0.2,
+            battery_model: None,
         })
         .collect();
 
@@ -101,7 +106,11 @@ mod tests {
                 id: id.clone(),
                 role: Role::Scout,
                 health: Health::Alive,
-                pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
+                pose: Pose {
+                    x: 0.0,
+                    y: 0.0,
+                    ..Default::default()
+                },
                 capabilities: vec![Capability::from("basic".to_owned())],
                 current_task: None,
                 battery: 100.0,
@@ -110,6 +119,7 @@ mod tests {
                 speed: 5.0,
                 max_range: 500.0,
                 battery_drain_rate: 0.2,
+                battery_model: None,
             })
             .collect();
 

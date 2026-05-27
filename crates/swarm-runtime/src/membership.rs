@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use swarm_types::{Agent, AgentId, Capability, Health, Pose, Role};
+use swarm_types::{Agent, AgentId, BatteryModel, Capability, Health, Pose, Role};
 
 use crate::task_registry::TaskRegistry;
 
@@ -17,6 +17,7 @@ pub struct AgentEntry {
     pub speed: f64,
     pub max_range: f64,
     pub battery_drain_rate: f64,
+    pub battery_model: Option<BatteryModel>,
 }
 
 pub struct MembershipView {
@@ -49,6 +50,7 @@ impl MembershipView {
                         } else {
                             0.0
                         },
+                        battery_model: agent.battery_model.clone(),
                     },
                 )
             })
@@ -140,6 +142,32 @@ impl MembershipView {
         self.agents.iter().map(|(id, e)| (id, e.generation))
     }
 
+    /// Apply wind drift and Gaussian pose noise to all alive agents.
+    pub fn apply_environment_effects(
+        &mut self,
+        wind: Option<(f64, f64, f64)>,
+        pose_noise_m: f64,
+        rng: &mut impl rand::Rng,
+        dt: f64,
+    ) {
+        for entry in self.agents.values_mut() {
+            if entry.health != Health::Alive {
+                continue;
+            }
+            if let Some((wx, wy, wz)) = wind {
+                entry.pose.x += wx * dt;
+                entry.pose.y += wy * dt;
+                entry.pose.z += wz * dt;
+            }
+            if pose_noise_m > 0.0 {
+                let half = pose_noise_m / 2.0;
+                entry.pose.x += rng.gen::<f64>() * pose_noise_m - half;
+                entry.pose.y += rng.gen::<f64>() * pose_noise_m - half;
+                entry.pose.z += rng.gen::<f64>() * pose_noise_m - half;
+            }
+        }
+    }
+
     /// Move agents toward their assigned tasks. Updates pose and drains battery.
     /// Returns (exhausted agents, (agent_id, distance_moved) for all moving agents).
     pub fn apply_movement(
@@ -222,7 +250,11 @@ mod tests {
             id: AgentId::from(id.to_owned()),
             role: Role::Scout,
             health: Health::Alive,
-            pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
+            pose: Pose {
+                x: 0.0,
+                y: 0.0,
+                ..Default::default()
+            },
             capabilities: Vec::new(),
             current_task: None,
             battery: 100.0,
@@ -231,6 +263,7 @@ mod tests {
             speed: 0.0,
             max_range: 0.0,
             battery_drain_rate: 0.0,
+            battery_model: None,
         }
     }
 
@@ -313,7 +346,11 @@ mod tests {
     fn membership_entry_has_battery_and_pose() {
         let mut a = agent("a0");
         a.battery = 50.0;
-        a.pose = Pose { x: 1.0, y: 2.0 , ..Default::default()};
+        a.pose = Pose {
+            x: 1.0,
+            y: 2.0,
+            ..Default::default()
+        };
         let view = MembershipView::new(vec![a]);
         let id = AgentId::from("a0".to_owned());
         let entry = view.get(&id).unwrap();
@@ -337,7 +374,11 @@ mod tests {
             expires_at: None,
             grid_cell: None,
             edge_id: None,
-            pose: Some(Pose { x: 10.0, y: 0.0 , ..Default::default()}),
+            pose: Some(Pose {
+                x: 10.0,
+                y: 0.0,
+                ..Default::default()
+            }),
             kind: None,
         };
         let registry = TaskRegistry::new(vec![task]);
@@ -362,7 +403,11 @@ mod tests {
             expires_at: None,
             grid_cell: None,
             edge_id: None,
-            pose: Some(Pose { x: 10.0, y: 0.0 , ..Default::default()}),
+            pose: Some(Pose {
+                x: 10.0,
+                y: 0.0,
+                ..Default::default()
+            }),
             kind: None,
         };
         let registry = TaskRegistry::new(vec![task]);
@@ -398,7 +443,11 @@ mod tests {
             expires_at: None,
             grid_cell: None,
             edge_id: None,
-            pose: Some(Pose { x: 3.0, y: 0.0 , ..Default::default()}),
+            pose: Some(Pose {
+                x: 3.0,
+                y: 0.0,
+                ..Default::default()
+            }),
             kind: None,
         };
         let registry = TaskRegistry::new(vec![task]);
@@ -428,7 +477,11 @@ mod tests {
             expires_at: None,
             grid_cell: None,
             edge_id: None,
-            pose: Some(Pose { x: 100.0, y: 0.0 , ..Default::default()}),
+            pose: Some(Pose {
+                x: 100.0,
+                y: 0.0,
+                ..Default::default()
+            }),
             kind: None,
         };
         let registry = TaskRegistry::new(vec![task]);
@@ -459,7 +512,11 @@ mod tests {
             expires_at: None,
             grid_cell: None,
             edge_id: None,
-            pose: Some(Pose { x: 100.0, y: 0.0 , ..Default::default()}),
+            pose: Some(Pose {
+                x: 100.0,
+                y: 0.0,
+                ..Default::default()
+            }),
             kind: None,
         };
         let registry = TaskRegistry::new(vec![task]);
@@ -478,12 +535,137 @@ mod tests {
     fn movement_no_target_no_movement() {
         let mut a = agent("agent-0");
         a.speed = 5.0;
-        let view_before = Pose { x: 0.0, y: 0.0 , ..Default::default()};
+        let view_before = Pose {
+            x: 0.0,
+            y: 0.0,
+            ..Default::default()
+        };
         let mut view = MembershipView::new(vec![a]);
         let (exhausted, distances) = view.apply_movement(&TaskRegistry::new(vec![]), 1000);
         assert!(exhausted.is_empty());
         assert!(distances.is_empty());
         let entry = view.get(&AgentId::from("agent-0".to_owned())).unwrap();
         assert!((entry.pose.x - view_before.x).abs() < 0.01);
+    }
+
+    #[test]
+    fn battery_v2_hover_drain_per_tick() {
+        use swarm_types::{BatteryModel, TaskId, TaskStatus};
+        // Agent with battery_model that has hover_drain_per_tick but no cruise/climb
+        let task = swarm_types::Task {
+            id: TaskId::from("t0".to_owned()),
+            status: TaskStatus::Assigned,
+            assigned_to: Some(AgentId::from("agent-0".to_owned())),
+            priority: 1,
+            required_capabilities: vec![],
+            required_role: None,
+            preferred_role: None,
+            expires_at: None,
+            grid_cell: None,
+            edge_id: None,
+            pose: Some(Pose {
+                x: 5.0,
+                y: 0.0,
+                ..Default::default()
+            }),
+            kind: None,
+        };
+        let registry = TaskRegistry::new(vec![task]);
+        let mut a = agent("agent-0");
+        a.speed = 1.0;
+        a.battery_model = Some(BatteryModel {
+            hover_drain_per_tick: 1.0,
+            climb_drain_per_meter: 0.0,
+            cruise_drain_per_meter: 0.0,
+            reserve_fraction: 0.0,
+        });
+        let mut view = MembershipView::new(vec![a]);
+        view.apply_movement(&registry, 1000);
+        let entry = view.get(&AgentId::from("agent-0".to_owned())).unwrap();
+        // hover_drain_per_tick = 1.0 regardless of cruise movement
+        assert!(
+            (entry.battery - 99.0).abs() < 0.01,
+            "battery={}",
+            entry.battery
+        );
+    }
+
+    #[test]
+    fn battery_v2_climb_drain_per_meter() {
+        use swarm_types::{BatteryModel, TaskId, TaskStatus};
+        // Agent moves from z=0 to z=10: climb_drain_per_meter * 10
+        let task = swarm_types::Task {
+            id: TaskId::from("t0".to_owned()),
+            status: TaskStatus::Assigned,
+            assigned_to: Some(AgentId::from("agent-0".to_owned())),
+            priority: 1,
+            required_capabilities: vec![],
+            required_role: None,
+            preferred_role: None,
+            expires_at: None,
+            grid_cell: None,
+            edge_id: None,
+            pose: Some(Pose {
+                x: 0.0,
+                y: 0.0,
+                z: 10.0,
+            }),
+            kind: None,
+        };
+        let registry = TaskRegistry::new(vec![task]);
+        let mut a = agent("agent-0");
+        a.speed = 100.0; // fast enough to reach in one tick
+        a.battery_model = Some(BatteryModel {
+            hover_drain_per_tick: 0.0,
+            climb_drain_per_meter: 1.0, // 1% per metre of climb
+            cruise_drain_per_meter: 0.0,
+            reserve_fraction: 0.0,
+        });
+        let mut view = MembershipView::new(vec![a]);
+        view.apply_movement(&registry, 1000);
+        let entry = view.get(&AgentId::from("agent-0".to_owned())).unwrap();
+        // climbed 10m → drain = 10 * 1.0 = 10
+        assert!(
+            (entry.battery - 90.0).abs() < 0.1,
+            "battery={}",
+            entry.battery
+        );
+    }
+
+    #[test]
+    fn battery_v1_legacy_path_unchanged() {
+        use swarm_types::{TaskId, TaskStatus};
+        let task = swarm_types::Task {
+            id: TaskId::from("t0".to_owned()),
+            status: TaskStatus::Assigned,
+            assigned_to: Some(AgentId::from("agent-0".to_owned())),
+            priority: 1,
+            required_capabilities: vec![],
+            required_role: None,
+            preferred_role: None,
+            expires_at: None,
+            grid_cell: None,
+            edge_id: None,
+            pose: Some(Pose {
+                x: 10.0,
+                y: 0.0,
+                ..Default::default()
+            }),
+            kind: None,
+        };
+        let registry = TaskRegistry::new(vec![task]);
+        let mut a = agent("agent-0");
+        a.speed = 10.0;
+        a.battery_drain_rate = 2.0;
+        // battery_model is None → uses v1 path
+        let mut view = MembershipView::new(vec![a]);
+        view.apply_movement(&registry, 1000);
+        let entry = view.get(&AgentId::from("agent-0".to_owned())).unwrap();
+        // 10m * 2.0 drain_rate = 20% drain
+        assert!(
+            (entry.battery - 80.0).abs() < 0.1,
+            "battery={}",
+            entry.battery
+        );
     }
 }

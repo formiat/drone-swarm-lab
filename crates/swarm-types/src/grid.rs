@@ -87,6 +87,16 @@ pub struct SensorModel {
     pub detection_probability: f64, // P(detect | target present)
     #[serde(default = "default_false_positive_rate")]
     pub false_positive_rate: f64, // P(detect | no target)
+    // v0.31 — sensor model v3: physical sensor parameters
+    /// Maximum detection range in metres (0 = unlimited).
+    #[serde(default)]
+    pub detection_range_m: f64,
+    /// Horizontal field of view in degrees (0 = unlimited).
+    #[serde(default)]
+    pub field_of_view_deg: f64,
+    /// PoD reduction factor per metre of altitude: effective_pod = base_pod * (1 - altitude_factor * z).max(0).
+    #[serde(default)]
+    pub altitude_factor: f64,
 }
 
 fn default_detection_probability() -> f64 {
@@ -105,6 +115,9 @@ impl SensorModel {
             relay_pod,
             detection_probability: 0.5,
             false_positive_rate: 0.1,
+            detection_range_m: 0.0,
+            field_of_view_deg: 0.0,
+            altitude_factor: 0.0,
         }
     }
 
@@ -121,6 +134,9 @@ impl SensorModel {
             relay_pod,
             detection_probability,
             false_positive_rate,
+            detection_range_m: 0.0,
+            field_of_view_deg: 0.0,
+            altitude_factor: 0.0,
         }
     }
 
@@ -242,10 +258,34 @@ mod tests {
     #[test]
     fn cell_at_pose_out_of_bounds() {
         let grid = SearchGrid::new(5, 5, 10.0);
-        assert!(grid.cell_at_pose(&Pose { x: -1.0, y: 0.0 , ..Default::default()}).is_none());
-        assert!(grid.cell_at_pose(&Pose { x: 0.0, y: -1.0 , ..Default::default()}).is_none());
-        assert!(grid.cell_at_pose(&Pose { x: 51.0, y: 0.0 , ..Default::default()}).is_none());
-        assert!(grid.cell_at_pose(&Pose { x: 0.0, y: 51.0 , ..Default::default()}).is_none());
+        assert!(grid
+            .cell_at_pose(&Pose {
+                x: -1.0,
+                y: 0.0,
+                ..Default::default()
+            })
+            .is_none());
+        assert!(grid
+            .cell_at_pose(&Pose {
+                x: 0.0,
+                y: -1.0,
+                ..Default::default()
+            })
+            .is_none());
+        assert!(grid
+            .cell_at_pose(&Pose {
+                x: 51.0,
+                y: 0.0,
+                ..Default::default()
+            })
+            .is_none());
+        assert!(grid
+            .cell_at_pose(&Pose {
+                x: 0.0,
+                y: 51.0,
+                ..Default::default()
+            })
+            .is_none());
     }
 
     #[test]

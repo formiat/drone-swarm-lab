@@ -128,7 +128,11 @@ mod tests {
     fn relay_agent(id: &str, x: f64, y: f64) -> AllocationAgent {
         AllocationAgent {
             id: AgentId::from(id.to_owned()),
-            pose: Pose { x, y , ..Default::default()},
+            pose: Pose {
+                x,
+                y,
+                ..Default::default()
+            },
             battery: 100.0,
             capabilities: vec![],
             role: Role::Relay,
@@ -142,7 +146,11 @@ mod tests {
     fn scout_agent(id: &str, x: f64, y: f64) -> AllocationAgent {
         AllocationAgent {
             id: AgentId::from(id.to_owned()),
-            pose: Pose { x, y , ..Default::default()},
+            pose: Pose {
+                x,
+                y,
+                ..Default::default()
+            },
             battery: 100.0,
             capabilities: vec![],
             role: Role::Scout,
@@ -163,7 +171,11 @@ mod tests {
             required_role: Some(Role::Relay),
             preferred_role: None,
             expires_at: None,
-            pose: Some(Pose { x, y , ..Default::default()}),
+            pose: Some(Pose {
+                x,
+                y,
+                ..Default::default()
+            }),
             grid_cell: None,
             edge_id: None,
             kind: None,
@@ -182,7 +194,11 @@ mod tests {
 
         let tasks = vec![AllocationTask { task: &task }];
         let agents = vec![relay.clone(), scout];
-        let ctx = make_context(Pose { x: 0.0, y: 0.0 , ..Default::default()});
+        let ctx = make_context(Pose {
+            x: 0.0,
+            y: 0.0,
+            ..Default::default()
+        });
 
         let result = allocator.allocate_with_connectivity(&tasks, &agents, &ctx);
         assert_eq!(result.len(), 1);
@@ -202,7 +218,11 @@ mod tests {
 
         let tasks = vec![AllocationTask { task: &task }];
         let agents = vec![relay, scout.clone()];
-        let ctx = make_context(Pose { x: 0.0, y: 0.0 , ..Default::default()});
+        let ctx = make_context(Pose {
+            x: 0.0,
+            y: 0.0,
+            ..Default::default()
+        });
 
         let result = allocator.allocate_with_connectivity(&tasks, &agents, &ctx);
         assert_eq!(result.len(), 1);

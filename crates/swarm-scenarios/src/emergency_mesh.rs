@@ -32,7 +32,11 @@ impl EmergencyMeshProfile {
                 scout_count: 3,
                 relay_count: 3,
                 ground_node_count: 2,
-                base_pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
+                base_pose: Pose {
+                    x: 0.0,
+                    y: 0.0,
+                    ..Default::default()
+                },
                 area_size: 100.0,
                 comms_range: 30.0,
                 failure_tick: 999,
@@ -46,7 +50,11 @@ impl EmergencyMeshProfile {
                 scout_count: 3,
                 relay_count: 3,
                 ground_node_count: 2,
-                base_pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
+                base_pose: Pose {
+                    x: 0.0,
+                    y: 0.0,
+                    ..Default::default()
+                },
                 area_size: 100.0,
                 comms_range: 30.0,
                 failure_tick: 999,
@@ -60,7 +68,11 @@ impl EmergencyMeshProfile {
                 scout_count: 3,
                 relay_count: 3,
                 ground_node_count: 2,
-                base_pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
+                base_pose: Pose {
+                    x: 0.0,
+                    y: 0.0,
+                    ..Default::default()
+                },
                 area_size: 100.0,
                 comms_range: 25.0,
                 failure_tick: 999,
@@ -74,7 +86,11 @@ impl EmergencyMeshProfile {
                 scout_count: 3,
                 relay_count: 3,
                 ground_node_count: 2,
-                base_pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
+                base_pose: Pose {
+                    x: 0.0,
+                    y: 0.0,
+                    ..Default::default()
+                },
                 area_size: 100.0,
                 comms_range: 30.0,
                 failure_tick: 10,
@@ -88,7 +104,11 @@ impl EmergencyMeshProfile {
                 scout_count: 3,
                 relay_count: 3,
                 ground_node_count: 2,
-                base_pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
+                base_pose: Pose {
+                    x: 0.0,
+                    y: 0.0,
+                    ..Default::default()
+                },
                 area_size: 100.0,
                 comms_range: 30.0,
                 failure_tick: 999,
@@ -144,7 +164,11 @@ pub fn build_emergency_mesh_scenario(config: &EmergencyMeshConfig) -> (Scenario,
                 id: AgentId::from(format!("scout-{i}")),
                 role: Role::Scout,
                 health: Health::Alive,
-                pose: Pose { x, y , ..Default::default()},
+                pose: Pose {
+                    x,
+                    y,
+                    ..Default::default()
+                },
                 capabilities: vec![],
                 current_task: None,
                 battery: 100.0,
@@ -153,6 +177,7 @@ pub fn build_emergency_mesh_scenario(config: &EmergencyMeshConfig) -> (Scenario,
                 speed: 0.0,
                 max_range: 0.0,
                 battery_drain_rate: 0.0,
+                battery_model: None,
             }
         })
         .collect();
@@ -168,7 +193,11 @@ pub fn build_emergency_mesh_scenario(config: &EmergencyMeshConfig) -> (Scenario,
                 id: AgentId::from(format!("relay-{i}")),
                 role: Role::Relay,
                 health: Health::Alive,
-                pose: Pose { x, y , ..Default::default()},
+                pose: Pose {
+                    x,
+                    y,
+                    ..Default::default()
+                },
                 capabilities: vec![],
                 current_task: None,
                 battery: 100.0,
@@ -177,6 +206,7 @@ pub fn build_emergency_mesh_scenario(config: &EmergencyMeshConfig) -> (Scenario,
                 speed: 0.0,
                 max_range: 0.0,
                 battery_drain_rate: 0.0,
+                battery_model: None,
             }
         })
         .collect();
@@ -192,7 +222,11 @@ pub fn build_emergency_mesh_scenario(config: &EmergencyMeshConfig) -> (Scenario,
             let y = rng.gen::<f64>() * config.area_size;
             GroundNode {
                 id: format!("gn-{i}"),
-                pose: Pose { x, y , ..Default::default()},
+                pose: Pose {
+                    x,
+                    y,
+                    ..Default::default()
+                },
                 comms_range: config.comms_range,
             }
         })

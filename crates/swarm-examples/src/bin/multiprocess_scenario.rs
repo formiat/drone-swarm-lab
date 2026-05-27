@@ -40,7 +40,11 @@ fn make_agent(id: &str) -> Agent {
         id: AgentId::from(id.to_owned()),
         role: Role::Scout,
         health: Health::Alive,
-        pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
+        pose: Pose {
+            x: 0.0,
+            y: 0.0,
+            ..Default::default()
+        },
         capabilities: vec![Capability::from("basic".to_owned())],
         current_task: None,
         battery: 100.0,
@@ -49,6 +53,7 @@ fn make_agent(id: &str) -> Agent {
         speed: 0.0,
         max_range: 0.0,
         battery_drain_rate: 0.0,
+        battery_model: None,
     }
 }
 

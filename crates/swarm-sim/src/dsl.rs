@@ -210,6 +210,62 @@ pub fn validate_mission_specific(entry: &ScenarioSuiteEntry) -> Vec<ValidationEr
         });
     }
 
+    // v0.31: validate battery_model fields if present
+    for (i, agent) in entry.scenario.agents.iter().enumerate() {
+        if let Some(ref bm) = agent.battery_model {
+            if bm.hover_drain_per_tick < 0.0 {
+                errors.push(ValidationError {
+                    field: format!("scenario.agents[{i}].battery_model.hover_drain_per_tick"),
+                    message: "hover_drain_per_tick must be >= 0".to_owned(),
+                });
+            }
+            if bm.climb_drain_per_meter < 0.0 {
+                errors.push(ValidationError {
+                    field: format!("scenario.agents[{i}].battery_model.climb_drain_per_meter"),
+                    message: "climb_drain_per_meter must be >= 0".to_owned(),
+                });
+            }
+            if bm.cruise_drain_per_meter < 0.0 {
+                errors.push(ValidationError {
+                    field: format!("scenario.agents[{i}].battery_model.cruise_drain_per_meter"),
+                    message: "cruise_drain_per_meter must be >= 0".to_owned(),
+                });
+            }
+            if !(0.0..=1.0).contains(&bm.reserve_fraction) {
+                errors.push(ValidationError {
+                    field: format!("scenario.agents[{i}].battery_model.reserve_fraction"),
+                    message: "reserve_fraction must be in [0, 1]".to_owned(),
+                });
+            }
+        }
+    }
+
+    // v0.31: validate sensor detection_range_m
+    if let Some(ref gs) = entry.run_config.grid_state {
+        if gs.sensor.detection_range_m < 0.0 {
+            errors.push(ValidationError {
+                field: "run_config.grid_state.sensor.detection_range_m".to_owned(),
+                message: "detection_range_m must be >= 0".to_owned(),
+            });
+        }
+    }
+
+    // v0.31: validate no-fly zone time windows
+    if let Some(ref safety) = entry.run_config.safety_config {
+        for (i, nfz) in safety.no_fly_zones.iter().enumerate() {
+            if let (Some(from), Some(until)) = (nfz.active_from_tick, nfz.active_until_tick) {
+                if from > until {
+                    errors.push(ValidationError {
+                        field: format!("run_config.safety_config.no_fly_zones[{i}]"),
+                        message: format!(
+                            "active_from_tick ({from}) must be <= active_until_tick ({until})"
+                        ),
+                    });
+                }
+            }
+        }
+    }
+
     errors
 }
 
@@ -230,7 +286,11 @@ mod tests {
                     id: swarm_types::AgentId::from("agent-0".to_owned()),
                     role: Role::Scout,
                     health: Health::Alive,
-                    pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
+                    pose: Pose {
+                        x: 0.0,
+                        y: 0.0,
+                        ..Default::default()
+                    },
                     capabilities: vec![],
                     current_task: None,
                     battery: 100.0,
@@ -239,6 +299,7 @@ mod tests {
                     speed: 0.0,
                     max_range: 0.0,
                     battery_drain_rate: 0.0,
+                    battery_model: None,
                 }],
                 tasks: vec![Task {
                     id: swarm_types::TaskId::from("task-0".to_owned()),

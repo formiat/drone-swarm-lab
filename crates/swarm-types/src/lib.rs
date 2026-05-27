@@ -7,7 +7,7 @@ pub mod mission;
 pub mod pose;
 pub mod task;
 
-pub use agent::{Agent, AgentId, Capability, GroundNode, Health, Role};
+pub use agent::{Agent, AgentId, BatteryModel, Capability, GroundNode, Health, Role};
 pub use allocation::AllocationAgent;
 pub use edge::{EdgeId, InspectionEdge, InspectionGraph};
 pub use grid::{BeliefCell, BeliefMap, CellState, HiddenTarget, SearchGrid, SensorModel};

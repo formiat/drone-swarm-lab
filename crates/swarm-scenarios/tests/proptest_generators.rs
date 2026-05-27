@@ -30,6 +30,7 @@ pub fn agent_strategy() -> impl Strategy<Value = Agent> {
                 pose: Pose {
                     x: (idx as f64) * 10.0,
                     y: (idx as f64) * 5.0,
+                    ..Default::default()
                 },
                 capabilities,
                 current_task: None,
@@ -39,6 +40,7 @@ pub fn agent_strategy() -> impl Strategy<Value = Agent> {
                 speed: 0.0,
                 max_range: 0.0,
                 battery_drain_rate: 0.0,
+                battery_model: None,
             },
         )
 }
@@ -63,6 +65,7 @@ pub fn task_strategy() -> impl Strategy<Value = Task> {
         pose: Some(Pose {
             x: (idx as f64) * 8.0,
             y: (idx as f64) * 4.0,
+            ..Default::default()
         }),
         kind: None,
     })
