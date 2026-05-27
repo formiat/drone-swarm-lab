@@ -1,5 +1,5 @@
 use swarm_comms::ConnectivitySnapshot;
-use swarm_types::{AgentId, Capability, MissionAdapter, Pose, Role, Task, TaskId};
+use swarm_types::{AdapterRegistry, AgentId, Capability, MissionAdapter, Pose, Role, Task, TaskId};
 
 pub use swarm_types::AllocationAgent;
 
@@ -55,6 +55,28 @@ pub trait Allocator {
     ) -> Vec<(TaskId, AgentId)> {
         self.allocate(tasks, agents)
     }
+
+    /// v0.33 extension for registry-based mission-semantic allocation.
+    /// Default implementation delegates to `allocate`, preserving backward compatibility.
+    fn allocate_with_registry(
+        &mut self,
+        tasks: &[AllocationTask<'_>],
+        agents: &[AllocationAgent],
+        registry: &AdapterRegistry,
+    ) -> Vec<(TaskId, AgentId)> {
+        // For backward compatibility, if no tasks have a kind, use plain allocate
+        let all_have_kind = tasks.iter().all(|t| t.task.kind.is_some());
+        if !all_have_kind {
+            return self.allocate(tasks, agents);
+        }
+        // Otherwise delegate to adapter-aware path via the first task's adapter
+        if let Some(first) = tasks.first() {
+            if let Some(adapter) = registry.for_task(first.task) {
+                return self.allocate_with_adapter(tasks, agents, adapter);
+            }
+        }
+        self.allocate(tasks, agents)
+    }
 }
 
 pub struct GreedyAllocator;
@@ -101,6 +123,65 @@ impl Allocator for GreedyAllocator {
                 "task allocated"
             );
             assignments.push((at.task.id.clone(), agent.id.clone()));
+            global_idx += 1;
+        }
+
+        assignments
+    }
+
+    fn allocate_with_adapter(
+        &mut self,
+        tasks: &[AllocationTask<'_>],
+        agents: &[AllocationAgent],
+        adapter: &dyn MissionAdapter,
+    ) -> Vec<(TaskId, AgentId)> {
+        if agents.is_empty() {
+            return Vec::new();
+        }
+
+        let mut ordered: Vec<&AllocationTask<'_>> = tasks.iter().collect();
+        ordered.sort_by(|a, b| {
+            b.task
+                .priority
+                .cmp(&a.task.priority)
+                .then_with(|| a.task.id.to_string().cmp(&b.task.id.to_string()))
+        });
+
+        let mut assignments = Vec::new();
+        let mut global_idx: usize = 0;
+
+        for at in ordered {
+            let capable: Vec<&AllocationAgent> = agents
+                .iter()
+                .filter(|agent| {
+                    has_all_capabilities(agent, &at.task.required_capabilities)
+                        && has_required_role(agent, &at.task.required_role)
+                        && agent.battery > 0.0
+                })
+                .collect();
+
+            if capable.is_empty() {
+                continue;
+            }
+
+            // Use adapter score to pick the best agent; fallback to round-robin
+            let best = capable
+                .iter()
+                .max_by(|a, b| {
+                    adapter
+                        .score(a, at.task)
+                        .partial_cmp(&adapter.score(b, at.task))
+                        .unwrap()
+                })
+                .copied()
+                .unwrap_or(capable[global_idx % capable.len()]);
+
+            tracing::debug!(
+                task_id = %at.task.id,
+                agent_id = %best.id,
+                "task allocated (adapter-aware)"
+            );
+            assignments.push((at.task.id.clone(), best.id.clone()));
             global_idx += 1;
         }
 
@@ -160,6 +241,64 @@ impl Allocator for AuctionAllocator {
                     task_id = %at.task.id,
                     agent_id = %agent.id,
                     "task allocated"
+                );
+                assignments.push((at.task.id.clone(), agent.id.clone()));
+            }
+        }
+
+        assignments
+    }
+
+    fn allocate_with_adapter(
+        &mut self,
+        tasks: &[AllocationTask<'_>],
+        agents: &[AllocationAgent],
+        adapter: &dyn MissionAdapter,
+    ) -> Vec<(TaskId, AgentId)> {
+        if agents.is_empty() {
+            return Vec::new();
+        }
+
+        let mut ordered: Vec<&AllocationTask<'_>> = tasks.iter().collect();
+        ordered.sort_by(|a, b| {
+            b.task
+                .priority
+                .cmp(&a.task.priority)
+                .then_with(|| a.task.id.to_string().cmp(&b.task.id.to_string()))
+        });
+
+        let mut assignments = Vec::new();
+
+        for at in ordered {
+            let best = agents
+                .iter()
+                .filter(|agent| {
+                    has_all_capabilities(agent, &at.task.required_capabilities)
+                        && has_required_role(agent, &at.task.required_role)
+                        && agent.battery > 0.0
+                })
+                .map(|agent| {
+                    let base_cost = adapter.route_cost(agent.pose, at.task);
+                    let battery_penalty = self.weight_battery * (1.0 - agent.battery / 100.0);
+                    let role_bonus = if at.task.preferred_role.as_ref() == Some(&agent.role) {
+                        -self.weight_role
+                    } else {
+                        0.0
+                    };
+                    let score_bonus = -adapter.score(agent, at.task) * 0.001;
+                    (
+                        agent,
+                        base_cost + battery_penalty + role_bonus + score_bonus,
+                    )
+                })
+                .filter(|(_, cost)| cost.is_finite())
+                .min_by(|(_, ca), (_, cb)| ca.partial_cmp(cb).unwrap());
+
+            if let Some((agent, _)) = best {
+                tracing::debug!(
+                    task_id = %at.task.id,
+                    agent_id = %agent.id,
+                    "task allocated (adapter-aware)"
                 );
                 assignments.push((at.task.id.clone(), agent.id.clone()));
             }

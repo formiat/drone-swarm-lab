@@ -81,7 +81,7 @@ cargo run --bin sitl_agent -- \
 | Infrastructure Inspection | ✅ Stable | M16 | Edge coverage, route efficiency |
 | Mock SITL | ✅ Stable | M20 | `sitl_agent --mock`, no external deps |
 | Replay / Debuggability | ✅ Stable | M23 | `replay` CLI, ASCII visualization |
-| Mission Semantics | ✅ Stable | M27 | `TaskKind`, `MissionAdapter`, `allocate_with_adapter` |
+| Mission Semantics | ✅ Stable | M33 | `TaskKind`, 6 concrete adapters, `AdapterRegistry`, adapter-driven completion/scoring in runner and allocator |
 | Planner Quality | ✅ Stable | M28 | `RoutePlanner` trait, 2-opt, battery-aware feasibility |
 | Regression & Baseline | ✅ Stable | M29 | `RegressionSuite`, `ThresholdChecker`, baseline artifacts |
 | Wildfire / Flood Mapping | ✅ Stable | M30 | `TaskKind::MappingZone`, `WildfireState`, hazard zones, dynamic threat |

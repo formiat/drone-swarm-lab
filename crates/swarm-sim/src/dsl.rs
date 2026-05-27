@@ -210,6 +210,41 @@ pub fn validate_mission_specific(entry: &ScenarioSuiteEntry) -> Vec<ValidationEr
         });
     }
 
+    // v0.33: validate task kind and required fields
+    for (i, task) in entry.scenario.tasks.iter().enumerate() {
+        if let Some(ref kind) = task.kind {
+            match kind {
+                swarm_types::TaskKind::SarScan | swarm_types::TaskKind::SarConfirmationScan => {
+                    if task.grid_cell.is_none() {
+                        errors.push(ValidationError {
+                            field: format!("scenario.tasks[{i}].grid_cell"),
+                            message: "SAR task requires grid_cell".to_owned(),
+                        });
+                    }
+                }
+                swarm_types::TaskKind::InspectionEdge => {
+                    if task.edge_id.is_none() {
+                        errors.push(ValidationError {
+                            field: format!("scenario.tasks[{i}].edge_id"),
+                            message: "Inspection task requires edge_id".to_owned(),
+                        });
+                    }
+                }
+                swarm_types::TaskKind::CoverageCell
+                | swarm_types::TaskKind::Waypoint
+                | swarm_types::TaskKind::RelayPlacement
+                | swarm_types::TaskKind::MappingZone => {
+                    if task.pose.is_none() {
+                        errors.push(ValidationError {
+                            field: format!("scenario.tasks[{i}].pose"),
+                            message: format!("{:?} task requires pose", kind),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
     // v0.31: validate battery_model fields if present
     for (i, agent) in entry.scenario.agents.iter().enumerate() {
         if let Some(ref bm) = agent.battery_model {

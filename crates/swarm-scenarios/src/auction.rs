@@ -1,5 +1,7 @@
 use swarm_sim::{DynamicTaskEvent, FailureEvent, RunConfig, Scenario};
-use swarm_types::{Agent, AgentId, Capability, Health, Pose, Role, Task, TaskId, TaskStatus};
+use swarm_types::{
+    Agent, AgentId, Capability, Health, Pose, Role, Task, TaskId, TaskKind, TaskStatus,
+};
 
 #[derive(Clone, Copy)]
 pub struct DynamicAuctionConfig {
@@ -95,7 +97,7 @@ pub fn build_dynamic_auction_scenario(config: &DynamicAuctionConfig) -> (Scenari
                 }),
                 grid_cell: None,
                 edge_id: None,
-                kind: None,
+                kind: Some(TaskKind::CoverageCell),
             }
         })
         .collect();
@@ -135,7 +137,7 @@ pub fn build_dynamic_auction_scenario(config: &DynamicAuctionConfig) -> (Scenari
                     }),
                     grid_cell: None,
                     edge_id: None,
-                    kind: None,
+                    kind: Some(TaskKind::CoverageCell),
                 },
             }
         })

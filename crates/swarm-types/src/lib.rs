@@ -1,3 +1,4 @@
+pub mod adapter;
 pub mod agent;
 pub mod allocation;
 pub mod edge;
@@ -7,6 +8,10 @@ pub mod mission;
 pub mod pose;
 pub mod task;
 
+pub use adapter::{
+    AdapterRegistry, CoverageAdapter, InspectionAdapter, RelayAdapter, SarAdapter, WaypointAdapter,
+    WildfireAdapter,
+};
 pub use agent::{Agent, AgentId, BatteryModel, Capability, GroundNode, Health, Role};
 pub use allocation::AllocationAgent;
 pub use edge::{EdgeId, InspectionEdge, InspectionGraph};

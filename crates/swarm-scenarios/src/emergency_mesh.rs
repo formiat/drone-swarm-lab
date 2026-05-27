@@ -1,7 +1,9 @@
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use swarm_sim::{FailureEvent, RunConfig, Scenario};
-use swarm_types::{Agent, AgentId, GroundNode, Health, Pose, Role, Task, TaskId, TaskStatus};
+use swarm_types::{
+    Agent, AgentId, GroundNode, Health, Pose, Role, Task, TaskId, TaskKind, TaskStatus,
+};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum EmergencyMeshProfile {
@@ -248,7 +250,7 @@ pub fn build_emergency_mesh_scenario(config: &EmergencyMeshConfig) -> (Scenario,
             pose: Some(scout.pose),
             grid_cell: None,
             edge_id: None,
-            kind: None,
+            kind: Some(TaskKind::CoverageCell),
         })
         .collect();
 
@@ -268,7 +270,7 @@ pub fn build_emergency_mesh_scenario(config: &EmergencyMeshConfig) -> (Scenario,
             pose: Some(relay.pose),
             grid_cell: None,
             edge_id: None,
-            kind: None,
+            kind: Some(TaskKind::RelayPlacement),
         })
         .collect();
 

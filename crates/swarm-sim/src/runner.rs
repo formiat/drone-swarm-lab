@@ -11,7 +11,9 @@ use swarm_comms::{
 use swarm_metrics::RunMetrics;
 use swarm_runtime::{AgentNode, Coordinator, GridState, NodeTickOutput};
 use swarm_safety::SafetyConfig;
-use swarm_types::{AgentId, EdgeId, Health, InspectionGraph, Role, Task, TaskId};
+use swarm_types::{
+    AdapterRegistry, AgentId, EdgeId, Health, InspectionGraph, Role, RunState, Task, TaskId,
+};
 
 use crate::{Clock, Scenario};
 
@@ -227,6 +229,62 @@ impl ScenarioRunner {
         Self::run_internal(scenario, config, allocator, Some(builder))
     }
 
+    /// Build a `RunState` from the current runtime state for adapter-driven checks.
+    fn build_run_state(
+        grid_state: &Option<swarm_runtime::GridState>,
+        inspection_state: &Option<InspectionState>,
+        wildfire_state: &Option<WildfireState>,
+        tasks: &[Task],
+    ) -> RunState {
+        let mut state = RunState::default();
+        if let Some(ref gs) = grid_state {
+            for (idx, cell) in gs.cells.iter().enumerate() {
+                if matches!(
+                    cell,
+                    swarm_types::CellState::Visited { .. }
+                        | swarm_types::CellState::TargetFound { .. }
+                ) {
+                    let x = (idx % gs.grid.width as usize) as u32;
+                    let y = (idx / gs.grid.width as usize) as u32;
+                    state.scanned_cells.insert((x, y));
+                }
+            }
+        }
+        if let Some(ref is) = inspection_state {
+            for edge_id in &is.covered {
+                state.covered_edges.insert(edge_id.clone());
+            }
+        }
+        if let Some(ref ws) = wildfire_state {
+            for zone in &ws.mapped_zone_ids {
+                state.mapped_zones.insert(zone.clone());
+            }
+        }
+        // Tasks that are already marked as completed in the registry
+        for task in tasks {
+            if matches!(task.status, swarm_types::TaskStatus::Completed) {
+                state.completed_tasks.insert(task.id.clone());
+            }
+        }
+        state
+    }
+
+    /// Check adapter-driven mission completion.
+    /// Returns true if all tasks with a known kind are completed according to their adapter.
+    fn adapter_driven_complete(
+        tasks: &[Task],
+        run_state: &RunState,
+        registry: &AdapterRegistry,
+    ) -> bool {
+        tasks.iter().filter(|t| t.kind.is_some()).all(|task| {
+            if let Some(adapter) = registry.for_task(task) {
+                adapter.is_completed(task, run_state)
+            } else {
+                true // no adapter for this kind → assume complete (or skip)
+            }
+        })
+    }
+
     fn run_internal<A: Allocator>(
         scenario: &Scenario,
         config: RunConfig,
@@ -317,6 +375,9 @@ impl ScenarioRunner {
 
         // v0.15 CBBA convergence tick tracking
         let mut cbba_convergence_tick: Option<u64> = None;
+
+        // v0.33 Adapter registry for mission-semantic completion checks
+        let adapter_registry = AdapterRegistry::new();
 
         // v0.30 Wildfire / Flood Mapping metrics
         let mut wildfire_state = config.wildfire_state;
@@ -1047,6 +1108,17 @@ impl ScenarioRunner {
                 .find(|(_, id)| !crashed_agents.contains(id))
                 .is_some_and(|(node, _)| node.coordinator.registry.all_assigned_or_completed());
 
+            // v0.33 adapter-driven completion checks
+            let run_state = Self::build_run_state(
+                &grid_state,
+                &inspection_state,
+                &wildfire_state,
+                &scenario.tasks,
+            );
+            let adapter_complete =
+                Self::adapter_driven_complete(&scenario.tasks, &run_state, &adapter_registry);
+
+            // Legacy mission-specific checks preserved as fallback
             let sar_complete = grid_state.as_ref().is_none_or(|g| g.all_targets_found());
 
             let inspection_complete = inspection_state
@@ -1061,6 +1133,7 @@ impl ScenarioRunner {
                 && post_partition_converged
                 && sar_complete
                 && inspection_complete
+                && adapter_complete
             {
                 break;
             }

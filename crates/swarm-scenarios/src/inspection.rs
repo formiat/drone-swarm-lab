@@ -1,7 +1,9 @@
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use swarm_sim::{InspectionState, RunConfig, Scenario};
-use swarm_types::{Agent, AgentId, Health, InspectionGraph, Role, Task, TaskId, TaskStatus};
+use swarm_types::{
+    Agent, AgentId, Health, InspectionGraph, Role, Task, TaskId, TaskKind, TaskStatus,
+};
 
 pub struct InspectionConfig {
     pub graph: InspectionGraph,
@@ -119,7 +121,7 @@ pub fn build_inspection_scenario(config: &InspectionConfig) -> (Scenario, RunCon
             pose: Some(edge.to),
             grid_cell: None,
             edge_id: Some(edge.id.clone()),
-            kind: None,
+            kind: Some(TaskKind::InspectionEdge),
         })
         .collect();
 

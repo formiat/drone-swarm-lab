@@ -5,7 +5,7 @@ use rand::SeedableRng;
 use swarm_sim::{RunConfig, Scenario};
 use swarm_types::{
     Agent, AgentId, Capability, Health, HiddenTarget, Pose, Role, SearchGrid, SensorModel, Task,
-    TaskId, TaskStatus,
+    TaskId, TaskKind, TaskStatus,
 };
 
 pub struct SarScenarioConfig {
@@ -191,7 +191,7 @@ pub fn build_sar_scenario(config: &SarScenarioConfig) -> (Scenario, RunConfig) {
                 pose: Some(config.grid.cell_center(x, y)),
                 grid_cell: Some((x, y)),
                 edge_id: None,
-                kind: None,
+                kind: Some(TaskKind::SarScan),
             });
         }
     }

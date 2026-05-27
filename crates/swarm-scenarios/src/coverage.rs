@@ -1,5 +1,5 @@
 use swarm_sim::{FailureEvent, RunConfig, Scenario};
-use swarm_types::{Agent, AgentId, Health, Pose, Role, Task, TaskId, TaskStatus};
+use swarm_types::{Agent, AgentId, Health, Pose, Role, Task, TaskId, TaskKind, TaskStatus};
 
 pub struct CoverageConfig {
     pub seed: u64,
@@ -68,7 +68,7 @@ pub fn build_coverage_scenario(config: &CoverageConfig) -> (Scenario, RunConfig)
                 pose: None,
                 grid_cell: None,
                 edge_id: None,
-                kind: None,
+                kind: Some(TaskKind::CoverageCell),
             }
         })
         .collect();
