@@ -88,6 +88,37 @@ fn strategy_comparison_quick_mode_is_default() {
 }
 
 #[test]
+fn strategy_comparison_accepts_custom_seed_count() {
+    let dir = "target/test-output/custom_seed_count";
+    let _ = std::fs::remove_dir_all(dir);
+    let output = run_strategy_comparison(&[
+        "--seeds",
+        "2",
+        "--mission",
+        "coverage",
+        "--jobs",
+        "2",
+        "--output-dir",
+        dir,
+    ]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "strategy_comparison --seeds failed: {}",
+        stderr
+    );
+
+    let json_path = std::path::Path::new(dir).join("results.json");
+    let json_content = std::fs::read_to_string(&json_path).unwrap();
+    let report: serde_json::Value = serde_json::from_str(&json_content).unwrap();
+    assert_eq!(report["rows"][0]["seed_range_start"], 0);
+    assert_eq!(report["rows"][0]["seed_range_end"], 2);
+    assert_eq!(report["rows"][0]["total_runs"], 2);
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn strategy_comparison_report_flag_creates_file() {
     let report_path = "/tmp/bench_report_test.md";
     let _ = std::fs::remove_file(report_path);

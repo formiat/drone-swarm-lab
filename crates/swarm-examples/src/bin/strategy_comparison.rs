@@ -24,9 +24,25 @@ type StrategyFactory =
 
 #[derive(Clone, Copy)]
 enum RunMode {
-    Smoke, // 1 seed
-    Quick, // 10 seeds (default)
-    Full,  // 1000 seeds
+    Smoke,       // 1 seed
+    Quick,       // 10 seeds (default)
+    Full,        // 1000 seeds
+    Custom(u64), // User-specified seed count
+}
+
+impl RunMode {
+    fn seed_count(self) -> u64 {
+        match self {
+            Self::Smoke => 1,
+            Self::Quick => 10,
+            Self::Full => 1000,
+            Self::Custom(seed_count) => seed_count,
+        }
+    }
+
+    fn uses_full_profile_matrix(self) -> bool {
+        matches!(self, Self::Full) || self.seed_count() > 10
+    }
 }
 
 #[derive(Clone)]
@@ -125,6 +141,23 @@ fn parse_args() -> CliArgs {
             "--smoke" => cli.mode = RunMode::Smoke,
             "--quick" => cli.mode = RunMode::Quick,
             "--full" => cli.mode = RunMode::Full,
+            "--seeds" => {
+                i += 1;
+                if i < args.len() {
+                    let seed_count = args[i].parse::<u64>().unwrap_or_else(|_| {
+                        eprintln!(
+                            "Invalid --seeds value '{}'. Expected positive integer.",
+                            args[i]
+                        );
+                        std::process::exit(1);
+                    });
+                    if seed_count == 0 {
+                        eprintln!("Invalid --seeds value '0'. Expected positive integer.");
+                        std::process::exit(1);
+                    }
+                    cli.mode = RunMode::Custom(seed_count);
+                }
+            }
             "--mission" => {
                 i += 1;
                 if i < args.len() {
@@ -349,7 +382,7 @@ fn main() {
 
         let (profile_names, builder): (Vec<String>, ScenarioBuilder) = match mission {
             Mission::Coverage => {
-                let profiles = if matches!(cli.mode, RunMode::Full) {
+                let profiles = if cli.mode.uses_full_profile_matrix() {
                     let nets = StandardProfiles::network_profiles();
                     let fails = StandardProfiles::failure_profiles();
                     let mut combos = Vec::new();
@@ -445,6 +478,13 @@ fn main() {
                 &factories,
                 &profile_names,
                 &builder,
+                mission_options,
+            ),
+            RunMode::Custom(seed_count) => BenchmarkHarness::run_with_seed_count_with_options(
+                &factories,
+                &profile_names,
+                &builder,
+                seed_count,
                 mission_options,
             ),
         };

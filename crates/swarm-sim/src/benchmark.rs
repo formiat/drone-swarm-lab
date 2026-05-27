@@ -209,6 +209,23 @@ impl BenchmarkHarness {
         )
     }
 
+    /// Run a benchmark with a custom number of seeds starting from 0.
+    pub fn run_with_seed_count_with_options(
+        strategies: &[StrategyFactory],
+        profile_names: &[String],
+        scenario_builder: &ScenarioBuilder,
+        seed_count: u64,
+        options: BenchmarkOptions,
+    ) -> BenchmarkResult {
+        Self::run_with_seeds(
+            strategies,
+            profile_names,
+            scenario_builder,
+            0..seed_count,
+            Some(options),
+        )
+    }
+
     fn run_with_seeds(
         strategies: &[StrategyFactory],
         profile_names: &[String],
@@ -318,10 +335,15 @@ fn generate_benchmark_run_id(
     prefix: Option<&str>,
 ) -> String {
     let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H%M%SZ");
-    let mode = if end_seed - start_seed <= 10 {
+    let seed_count = end_seed - start_seed;
+    let mode = if seed_count <= 1 {
+        "smoke"
+    } else if seed_count <= 10 {
         "quick"
-    } else {
+    } else if seed_count >= 1000 {
         "full"
+    } else {
+        "custom"
     };
     if let Some(p) = prefix {
         format!(
@@ -672,6 +694,39 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn custom_seed_count_produces_custom_report_id() {
+        let factories: Vec<StrategyFactory> =
+            vec![Box::new(|_scenario: &Scenario, _run_config: &RunConfig| {
+                Box::new(GreedyAllocator) as Box<dyn Strategy>
+            })];
+        let profiles = vec!["ideal".to_owned()];
+        let builder = make_scenario_builder();
+        let result = BenchmarkHarness::run_with_seed_count_with_options(
+            &factories,
+            &profiles,
+            &builder,
+            12,
+            BenchmarkOptions {
+                mission_name: "coverage",
+                jobs: Some(2),
+                ..BenchmarkOptions::default()
+            },
+        );
+
+        assert_eq!(result.report.seed_range_start, 0);
+        assert_eq!(result.report.seed_range_end, 12);
+        assert_eq!(result.report.total_runs_per_cell, 12);
+        assert!(
+            result
+                .report
+                .benchmark_run_id
+                .ends_with("_coverage_12_custom"),
+            "custom seed count should be marked custom, got: {}",
+            result.report.benchmark_run_id
+        );
     }
 
     #[test]
