@@ -305,6 +305,25 @@ fn with_realism(builder: ScenarioBuilder) -> ScenarioBuilder {
     })
 }
 
+fn ensure_parent_dir(path: impl AsRef<Path>) -> std::io::Result<()> {
+    let path = path.as_ref();
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    Ok(())
+}
+
+fn write_file_creating_parent(
+    path: impl AsRef<Path>,
+    contents: impl AsRef<[u8]>,
+) -> std::io::Result<()> {
+    let path = path.as_ref();
+    ensure_parent_dir(path)?;
+    std::fs::write(path, contents)
+}
+
 fn main() {
     let cli = parse_args();
 
@@ -446,14 +465,14 @@ fn main() {
     // Export JSON
     if let Some(path) = &cli.json_path {
         let json = export_json(&merged).expect("JSON export failed");
-        std::fs::write(path, json).expect("Failed to write JSON file");
+        write_file_creating_parent(path, json).expect("Failed to write JSON file");
         println!("JSON report written to {}", path);
     }
 
     // Export CSV
     if let Some(path) = &cli.csv_path {
         let csv = export_csv(&merged).expect("CSV export failed");
-        std::fs::write(path, csv).expect("Failed to write CSV file");
+        write_file_creating_parent(path, csv).expect("Failed to write CSV file");
         println!("CSV report written to {}", path);
     }
 
@@ -511,7 +530,7 @@ fn main() {
             })
             .collect();
         let report_md = swarm_sim::generate_focused_report(&named_reports);
-        std::fs::write(path, report_md).expect("Failed to write report file");
+        write_file_creating_parent(path, report_md).expect("Failed to write report file");
         println!("Focused report written to {}", path);
     }
 
@@ -641,13 +660,13 @@ fn run_from_suite(suite_path: &str, cli: &CliArgs) {
 
     if let Some(path) = &cli.json_path {
         let json = export_json(&report).expect("JSON export failed");
-        std::fs::write(path, json).expect("Failed to write JSON file");
+        write_file_creating_parent(path, json).expect("Failed to write JSON file");
         println!("JSON report written to {}", path);
     }
 
     if let Some(path) = &cli.csv_path {
         let csv = export_csv(&report).expect("CSV export failed");
-        std::fs::write(path, csv).expect("Failed to write CSV file");
+        write_file_creating_parent(path, csv).expect("Failed to write CSV file");
         println!("CSV report written to {}", path);
     }
 
@@ -665,7 +684,7 @@ fn run_from_suite(suite_path: &str, cli: &CliArgs) {
             .cloned()
             .unwrap_or_else(|| "suite".to_owned());
         let report_md = swarm_sim::generate_focused_report(&[(mission_name, report)]);
-        std::fs::write(path, report_md).expect("Failed to write report file");
+        write_file_creating_parent(path, report_md).expect("Failed to write report file");
         println!("Focused report written to {}", path);
     }
 }
@@ -971,6 +990,10 @@ fn run_regression(cli: &CliArgs) {
             .output()
         {
             baseline.commit = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        }
+        if let Err(e) = ensure_parent_dir(path) {
+            eprintln!("Failed to create baseline parent directory: {}", e);
+            std::process::exit(1);
         }
         if let Err(e) = baseline.save(path) {
             eprintln!("Failed to save baseline: {}", e);

@@ -117,3 +117,39 @@ fn strategy_comparison_report_contains_key_questions() {
     assert!(content.contains("SAR v2 vs SAR v1"));
     let _ = std::fs::remove_file(report_path);
 }
+
+#[test]
+fn strategy_comparison_creates_parent_dirs_for_explicit_outputs() {
+    let root = std::path::Path::new("target/test-output/strategy_comparison_nested_outputs");
+    let json_path = root.join("json/results.json");
+    let csv_path = root.join("csv/results.csv");
+    let report_path = root.join("reports/focused.md");
+    let _ = std::fs::remove_dir_all(root);
+
+    let json_arg = json_path.to_str().unwrap().to_owned();
+    let csv_arg = csv_path.to_str().unwrap().to_owned();
+    let report_arg = report_path.to_str().unwrap().to_owned();
+
+    let output = run_strategy_comparison(&[
+        "--smoke",
+        "--mission",
+        "coverage",
+        "--json",
+        json_arg.as_str(),
+        "--csv",
+        csv_arg.as_str(),
+        "--report",
+        report_arg.as_str(),
+    ]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "strategy_comparison nested output paths failed: {}",
+        stderr
+    );
+    assert!(json_path.exists(), "JSON file not written");
+    assert!(csv_path.exists(), "CSV file not written");
+    assert!(report_path.exists(), "report file not written");
+
+    let _ = std::fs::remove_dir_all(root);
+}
