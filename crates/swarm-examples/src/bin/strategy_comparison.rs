@@ -754,22 +754,30 @@ fn merge_reports(reports: &[swarm_sim::ComparisonReport]) -> swarm_sim::Comparis
             for profile_name in &report.profile_names {
                 let key = (strategy_name.clone(), profile_name.clone());
                 if let Some(metrics) = report.results.get(&key) {
-                    merged_results.insert(key, metrics.clone());
+                    let scoped_profile = format!("{}/{}", metrics.mission, profile_name);
+                    let scoped_key = (strategy_name.clone(), scoped_profile);
+                    merged_results.insert(scoped_key, metrics.clone());
                 }
             }
         }
     }
-    // Collect unique profile names in original order across reports
+    // Collect unique mission-scoped profile names in original order across reports
     let mut all_profile_names = Vec::new();
     for r in reports {
         for name in &r.profile_names {
-            if !all_profile_names.contains(name) {
-                all_profile_names.push(name.clone());
+            for strategy_name in &r.strategy_names {
+                let key = (strategy_name.clone(), name.clone());
+                if let Some(metrics) = r.results.get(&key) {
+                    let scoped = format!("{}/{}", metrics.mission, name);
+                    if !all_profile_names.contains(&scoped) {
+                        all_profile_names.push(scoped);
+                    }
+                }
             }
         }
     }
     swarm_sim::ComparisonReport {
-        benchmark_run_id: first.benchmark_run_id.clone(),
+        benchmark_run_id: swarm_sim::merged_benchmark_run_id(reports),
         seed_range_start: reports
             .iter()
             .map(|r| r.seed_range_start)

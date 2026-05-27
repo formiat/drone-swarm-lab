@@ -9,9 +9,10 @@ pub fn export_json(report: &ComparisonReport) -> Result<String, serde_json::Erro
         for profile_name in &report.profile_names {
             let key = (strategy_name.clone(), profile_name.clone());
             if let Some(metrics) = report.results.get(&key) {
+                let safe_profile = profile_name.replace('/', "_");
                 let row_id = format!(
-                    "{}_{}_{}",
-                    report.benchmark_run_id, strategy_name, profile_name
+                    "{}_{}_{}_{}",
+                    report.benchmark_run_id, metrics.mission, strategy_name, safe_profile
                 );
                 rows.push(ReportRow {
                     benchmark_run_id: report.benchmark_run_id.clone(),
@@ -143,9 +144,10 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
         for profile_name in &report.profile_names {
             let key = (strategy_name.clone(), profile_name.clone());
             if let Some(m) = report.results.get(&key) {
+                let safe_profile = profile_name.replace('/', "_");
                 let row_id = format!(
-                    "{}_{}_{}",
-                    report.benchmark_run_id, strategy_name, profile_name
+                    "{}_{}_{}_{}",
+                    report.benchmark_run_id, m.mission, strategy_name, safe_profile
                 );
                 wtr.write_record([
                     report.benchmark_run_id.as_str(),

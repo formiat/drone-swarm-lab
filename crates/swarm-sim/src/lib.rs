@@ -6,7 +6,9 @@ pub mod report_export;
 pub mod runner;
 pub mod scenario;
 
-pub use benchmark::{BenchmarkHarness, BenchmarkOptions, BenchmarkResult, ComparisonReport};
+pub use benchmark::{
+    merged_benchmark_run_id, BenchmarkHarness, BenchmarkOptions, BenchmarkResult, ComparisonReport,
+};
 pub use clock::{Clock, Tick};
 pub use dsl::{
     export_entry, export_suite, load_scenario_suite, validate_entry, validate_mission_specific,

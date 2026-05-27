@@ -153,3 +153,102 @@ fn strategy_comparison_creates_parent_dirs_for_explicit_outputs() {
 
     let _ = std::fs::remove_dir_all(root);
 }
+
+#[test]
+fn strategy_comparison_mission_all_has_all_benchmark_id() {
+    let dir = "target/test-output/mission_all_identity";
+    let _ = std::fs::remove_dir_all(dir);
+    let output = run_strategy_comparison(&[
+        "--smoke",
+        "--mission",
+        "all",
+        "--jobs",
+        "4",
+        "--output-dir",
+        dir,
+    ]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "strategy_comparison --mission all failed: {}",
+        stderr
+    );
+
+    // Read results.json
+    let json_path = std::path::Path::new(dir).join("results.json");
+    assert!(json_path.exists(), "results.json missing");
+    let json_content = std::fs::read_to_string(&json_path).unwrap();
+    let report: serde_json::Value = serde_json::from_str(&json_content).unwrap();
+
+    let benchmark_run_id = report["benchmark_run_id"].as_str().unwrap();
+    assert!(
+        benchmark_run_id.contains("_all_"),
+        "benchmark_run_id should contain '_all_', got: {}",
+        benchmark_run_id
+    );
+    assert!(
+        !benchmark_run_id.contains("coverage"),
+        "benchmark_run_id should not contain mission name 'coverage', got: {}",
+        benchmark_run_id
+    );
+
+    // Check rows have correct mission and mission-scoped profiles
+    let rows = report["rows"].as_array().unwrap();
+    assert!(!rows.is_empty(), "rows should not be empty");
+
+    let mut missions_found = std::collections::HashSet::new();
+    for row in rows {
+        let mission = row["mission"].as_str().unwrap();
+        let profile = row["profile"].as_str().unwrap();
+        let run_id = row["run_id"].as_str().unwrap();
+
+        missions_found.insert(mission.to_owned());
+
+        // Profile should be mission-scoped
+        assert!(
+            profile.starts_with(&format!("{}/", mission)),
+            "profile '{}' should be mission-scoped for mission '{}'",
+            profile,
+            mission
+        );
+
+        // run_id should contain the mission name
+        assert!(
+            run_id.contains(mission),
+            "run_id '{}' should contain mission '{}'",
+            run_id,
+            mission
+        );
+    }
+
+    assert!(
+        missions_found.contains("sar"),
+        "should have SAR rows, found: {:?}",
+        missions_found
+    );
+    assert!(
+        missions_found.contains("wildfire"),
+        "should have wildfire rows, found: {:?}",
+        missions_found
+    );
+    assert!(
+        missions_found.contains("coverage"),
+        "should have coverage rows, found: {:?}",
+        missions_found
+    );
+
+    // Check CSV has mission-scoped profiles too
+    let csv_path = std::path::Path::new(dir).join("results.csv");
+    assert!(csv_path.exists(), "results.csv missing");
+    let csv_content = std::fs::read_to_string(&csv_path).unwrap();
+    assert!(
+        csv_content.contains("sar/ideal"),
+        "CSV should contain mission-scoped profile 'sar/ideal'"
+    );
+    assert!(
+        csv_content.contains("wildfire/small-static"),
+        "CSV should contain mission-scoped profile 'wildfire/small-static'"
+    );
+
+    let _ = std::fs::remove_dir_all(dir);
+}

@@ -343,6 +343,46 @@ fn generate_benchmark_run_id(
     }
 }
 
+/// Generate a merged benchmark run id for `--mission all` mode.
+/// Preserves prefix and timestamp from the first report, replaces mission with "all".
+/// For a single report, returns the original id unchanged.
+pub fn merged_benchmark_run_id(reports: &[ComparisonReport]) -> String {
+    if reports.len() == 1 {
+        return reports[0].benchmark_run_id.clone();
+    }
+    let first_id = &reports[0].benchmark_run_id;
+    let parts: Vec<&str> = first_id.split('_').collect();
+
+    // Detect prefix by checking if first part looks like a timestamp (contains 'T')
+    let (prefix, timestamp) = if parts.len() >= 5 && !parts[0].contains('T') {
+        // Has prefix: prefix_timestamp_mission_count_mode
+        (Some(parts[0]), parts[1])
+    } else if parts.len() >= 4 && parts[0].contains('T') {
+        // No prefix: timestamp_mission_count_mode
+        (None, parts[0])
+    } else {
+        // Unrecognized format: fallback to appending _all
+        return format!("{}_all", first_id);
+    };
+
+    let seed_count = reports[0].total_runs_per_cell;
+    let mode = if seed_count <= 1 {
+        "smoke"
+    } else if seed_count <= 10 {
+        "quick"
+    } else if seed_count >= 1000 {
+        "full"
+    } else {
+        "custom"
+    };
+
+    if let Some(p) = prefix {
+        format!("{}_{}_all_{}_{}", p, timestamp, seed_count, mode)
+    } else {
+        format!("{}_all_{}_{}", timestamp, seed_count, mode)
+    }
+}
+
 fn run_with_strategy(
     scenario: &Scenario,
     run_config: RunConfig,
@@ -632,5 +672,101 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn merged_benchmark_run_id_single_report_unchanged() {
+        let report = ComparisonReport {
+            benchmark_run_id: "2026-01-01T000000Z_coverage_10_quick".to_owned(),
+            seed_range_start: 0,
+            seed_range_end: 10,
+            total_runs_per_cell: 10,
+            mission_names: vec!["coverage".to_owned()],
+            scenario_names: vec!["coverage".to_owned()],
+            strategy_names: vec!["greedy".to_owned()],
+            profile_names: vec!["ideal".to_owned()],
+            results: std::collections::HashMap::new(),
+        };
+        let id = merged_benchmark_run_id(&[report]);
+        assert_eq!(id, "2026-01-01T000000Z_coverage_10_quick");
+    }
+
+    #[test]
+    fn merged_benchmark_run_id_multiple_reports_contains_all() {
+        let r1 = ComparisonReport {
+            benchmark_run_id: "2026-01-01T000000Z_coverage_10_quick".to_owned(),
+            seed_range_start: 0,
+            seed_range_end: 10,
+            total_runs_per_cell: 10,
+            mission_names: vec!["coverage".to_owned()],
+            scenario_names: vec!["coverage".to_owned()],
+            strategy_names: vec!["greedy".to_owned()],
+            profile_names: vec!["ideal".to_owned()],
+            results: std::collections::HashMap::new(),
+        };
+        let r2 = ComparisonReport {
+            benchmark_run_id: "2026-01-01T000000Z_sar_10_quick".to_owned(),
+            seed_range_start: 0,
+            seed_range_end: 10,
+            total_runs_per_cell: 10,
+            mission_names: vec!["sar".to_owned()],
+            scenario_names: vec!["sar".to_owned()],
+            strategy_names: vec!["greedy".to_owned()],
+            profile_names: vec!["standard".to_owned()],
+            results: std::collections::HashMap::new(),
+        };
+        let id = merged_benchmark_run_id(&[r1, r2]);
+        assert!(
+            id.contains("_all_"),
+            "merged id should contain '_all_', got: {}",
+            id
+        );
+        assert!(
+            !id.contains("coverage"),
+            "merged id should not contain a mission name, got: {}",
+            id
+        );
+        assert!(
+            id.ends_with("_10_quick"),
+            "mode should be preserved, got: {}",
+            id
+        );
+    }
+
+    #[test]
+    fn merged_benchmark_run_id_preserves_prefix() {
+        let r1 = ComparisonReport {
+            benchmark_run_id: "myrun_2026-01-01T000000Z_coverage_1_smoke".to_owned(),
+            seed_range_start: 0,
+            seed_range_end: 1,
+            total_runs_per_cell: 1,
+            mission_names: vec!["coverage".to_owned()],
+            scenario_names: vec!["coverage".to_owned()],
+            strategy_names: vec!["greedy".to_owned()],
+            profile_names: vec!["ideal".to_owned()],
+            results: std::collections::HashMap::new(),
+        };
+        let r2 = ComparisonReport {
+            benchmark_run_id: "myrun_2026-01-01T000000Z_sar_1_smoke".to_owned(),
+            seed_range_start: 0,
+            seed_range_end: 1,
+            total_runs_per_cell: 1,
+            mission_names: vec!["sar".to_owned()],
+            scenario_names: vec!["sar".to_owned()],
+            strategy_names: vec!["greedy".to_owned()],
+            profile_names: vec!["standard".to_owned()],
+            results: std::collections::HashMap::new(),
+        };
+        let id = merged_benchmark_run_id(&[r1, r2]);
+        assert!(
+            id.starts_with("myrun_"),
+            "prefix should be preserved, got: {}",
+            id
+        );
+        assert!(
+            id.contains("_all_"),
+            "merged id should contain '_all_', got: {}",
+            id
+        );
     }
 }
