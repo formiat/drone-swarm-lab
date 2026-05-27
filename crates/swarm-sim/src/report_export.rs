@@ -16,8 +16,8 @@ pub fn export_json(report: &ComparisonReport) -> Result<String, serde_json::Erro
                 rows.push(ReportRow {
                     benchmark_run_id: report.benchmark_run_id.clone(),
                     run_id: row_id,
-                    mission: report.mission_names.first().cloned().unwrap_or_default(),
-                    scenario: report.scenario_names.first().cloned().unwrap_or_default(),
+                    mission: metrics.mission.clone(),
+                    scenario: metrics.scenario.clone(),
                     seed_range_start: report.seed_range_start,
                     seed_range_end: report.seed_range_end,
                     strategy: strategy_name.clone(),
@@ -60,6 +60,15 @@ pub fn export_json(report: &ComparisonReport) -> Result<String, serde_json::Erro
                     avg_missed_edges: metrics.avg_missed_edges,
                     avg_revisit_count: metrics.avg_revisit_count,
                     avg_route_efficiency: metrics.avg_route_efficiency,
+                    // v0.28 Planner Quality metrics
+                    avg_route_length: metrics.avg_route_length,
+                    avg_wasted_travel: metrics.avg_wasted_travel,
+                    avg_return_reserve: metrics.avg_return_reserve,
+                    avg_infeasible_routes: metrics.avg_infeasible_routes,
+                    // v0.30 Wildfire / Flood Mapping metrics
+                    avg_hazard_zones_mapped: metrics.avg_hazard_zones_mapped,
+                    avg_priority_updates: metrics.avg_priority_updates,
+                    avg_final_threat_level: metrics.avg_final_threat_level,
                 });
             }
         }
@@ -119,10 +128,16 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
         "avg_missed_edges",
         "avg_revisit_count",
         "avg_route_efficiency",
+        // v0.28 Planner Quality metrics
+        "avg_route_length",
+        "avg_wasted_travel",
+        "avg_return_reserve",
+        "avg_infeasible_routes",
+        // v0.30 Wildfire / Flood Mapping metrics
+        "avg_hazard_zones_mapped",
+        "avg_priority_updates",
+        "avg_final_threat_level",
     ])?;
-
-    let mission = report.mission_names.first().cloned().unwrap_or_default();
-    let scenario = report.scenario_names.first().cloned().unwrap_or_default();
 
     for strategy_name in &report.strategy_names {
         for profile_name in &report.profile_names {
@@ -135,8 +150,8 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
                 wtr.write_record([
                     report.benchmark_run_id.as_str(),
                     row_id.as_str(),
-                    mission.as_str(),
-                    scenario.as_str(),
+                    m.mission.as_str(),
+                    m.scenario.as_str(),
                     format!("{}", report.seed_range_start).as_str(),
                     format!("{}", report.seed_range_end).as_str(),
                     strategy_name,
@@ -174,6 +189,15 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
                     format!("{:.3}", m.avg_missed_edges).as_str(),
                     format!("{:.3}", m.avg_revisit_count).as_str(),
                     format!("{:.3}", m.avg_route_efficiency).as_str(),
+                    // v0.28 Planner Quality metrics
+                    format!("{:.3}", m.avg_route_length).as_str(),
+                    format!("{:.3}", m.avg_wasted_travel).as_str(),
+                    format!("{:.3}", m.avg_return_reserve).as_str(),
+                    format!("{:.3}", m.avg_infeasible_routes).as_str(),
+                    // v0.30 Wildfire / Flood Mapping metrics
+                    format!("{:.3}", m.avg_hazard_zones_mapped).as_str(),
+                    format!("{:.3}", m.avg_priority_updates).as_str(),
+                    format!("{:.3}", m.avg_final_threat_level).as_str(),
                 ])?;
             }
         }
@@ -238,6 +262,15 @@ struct ReportRow {
     avg_missed_edges: f64,
     avg_revisit_count: f64,
     avg_route_efficiency: f64,
+    // v0.28 Planner Quality metrics
+    avg_route_length: f64,
+    avg_wasted_travel: f64,
+    avg_return_reserve: f64,
+    avg_infeasible_routes: f64,
+    // v0.30 Wildfire / Flood Mapping metrics
+    avg_hazard_zones_mapped: f64,
+    avg_priority_updates: f64,
+    avg_final_threat_level: f64,
 }
 
 /// Benchmark run manifest for reproducibility.
@@ -253,6 +286,15 @@ pub struct BenchmarkManifest {
     pub strategy_names: Vec<String>,
     pub profile_names: Vec<String>,
     pub metric_schema_version: String,
+    // v0.31 Realism metadata
+    #[serde(default)]
+    pub realism_profile: Option<String>,
+    #[serde(default)]
+    pub wind_enabled: bool,
+    #[serde(default)]
+    pub pose_noise_m: f64,
+    #[serde(default)]
+    pub comms_jitter_ticks: u64,
 }
 
 impl BenchmarkManifest {
@@ -285,6 +327,10 @@ impl BenchmarkManifest {
             strategy_names,
             profile_names,
             metric_schema_version: "0.1".to_owned(),
+            realism_profile: None,
+            wind_enabled: false,
+            pose_noise_m: 0.0,
+            comms_jitter_ticks: 0,
         }
     }
 }
@@ -472,6 +518,8 @@ mod tests {
                 avg_hazard_zones_mapped: 0.0,
                 avg_priority_updates: 0.0,
                 avg_final_threat_level: 0.0,
+                mission: "sar".to_owned(),
+                scenario: "sar".to_owned(),
             },
         );
         ComparisonReport {
@@ -533,6 +581,10 @@ mod tests {
             strategy_names: vec!["greedy".to_owned()],
             profile_names: vec!["ideal".to_owned()],
             metric_schema_version: "0.1".to_owned(),
+            realism_profile: None,
+            wind_enabled: false,
+            pose_noise_m: 0.0,
+            comms_jitter_ticks: 0,
         };
         let json = serde_json::to_string(&manifest).unwrap();
         let decoded: BenchmarkManifest = serde_json::from_str(&json).unwrap();

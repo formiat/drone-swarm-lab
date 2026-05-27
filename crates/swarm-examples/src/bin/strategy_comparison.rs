@@ -492,7 +492,7 @@ fn main() {
     }
 
     if let Some(dir) = &cli.output_dir {
-        if let Err(e) = write_benchmark_pack(dir, &merged, None, &all_replay_logs) {
+        if let Err(e) = write_benchmark_pack(dir, &merged, None, &all_replay_logs, cli.realism) {
             eprintln!("Failed to write benchmark pack: {}", e);
             std::process::exit(1);
         }
@@ -613,10 +613,12 @@ fn run_from_suite(suite_path: &str, cli: &CliArgs) {
     let mut report_results: HashMap<(String, String), swarm_metrics::AggregateMetrics> =
         HashMap::new();
     for ((strategy, profile), runs) in &results {
-        report_results.insert(
-            (strategy.clone(), profile.clone()),
-            swarm_metrics::AggregateMetrics::from_runs(runs),
-        );
+        let mut metrics = swarm_metrics::AggregateMetrics::from_runs(runs);
+        // Extract mission from "{mission}/{profile}" profile key used in suite mode
+        let parts: Vec<&str> = profile.splitn(2, '/').collect();
+        metrics.mission = parts.first().unwrap_or(&"").to_string();
+        metrics.scenario = parts.get(1).unwrap_or(&"").to_string();
+        report_results.insert((strategy.clone(), profile.clone()), metrics);
     }
 
     let report = ComparisonReport {
@@ -650,7 +652,7 @@ fn run_from_suite(suite_path: &str, cli: &CliArgs) {
     }
 
     if let Some(dir) = &cli.output_dir {
-        if let Err(e) = write_benchmark_pack(dir, &report, Some(&suite), &[]) {
+        if let Err(e) = write_benchmark_pack(dir, &report, Some(&suite), &[], cli.realism) {
             eprintln!("Failed to write benchmark pack: {}", e);
             std::process::exit(1);
         }
@@ -673,6 +675,7 @@ fn write_benchmark_pack(
     report: &ComparisonReport,
     suite: Option<&swarm_sim::ScenarioSuite>,
     replay_logs: &[swarm_replay::EventLog],
+    realism: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     std::fs::create_dir_all(output_dir)?;
 
@@ -685,13 +688,19 @@ fn write_benchmark_pack(
     let md = swarm_sim::export_markdown(report);
     std::fs::write(format!("{}/table.md", output_dir), md)?;
 
-    let manifest = swarm_sim::BenchmarkManifest::new(
+    let mut manifest = swarm_sim::BenchmarkManifest::new(
         report.mission_names.join(","),
         report.seed_range_start,
         report.seed_range_end,
         report.strategy_names.clone(),
         report.profile_names.clone(),
     );
+    if realism {
+        manifest.realism_profile = Some("default".to_owned());
+        manifest.wind_enabled = true;
+        manifest.pose_noise_m = 0.5;
+        manifest.comms_jitter_ticks = 1;
+    }
     std::fs::write(
         format!("{}/manifest.json", output_dir),
         serde_json::to_string_pretty(&manifest)?,
@@ -722,17 +731,21 @@ fn merge_reports(reports: &[swarm_sim::ComparisonReport]) -> swarm_sim::Comparis
     let mut merged_results: HashMap<(String, String), swarm_metrics::AggregateMetrics> =
         HashMap::new();
     for report in reports {
-        let mission = report.mission_names.first().cloned().unwrap_or_default();
         for strategy_name in &report.strategy_names {
             for profile_name in &report.profile_names {
-                let old_key = (strategy_name.clone(), profile_name.clone());
-                let new_key = (
-                    strategy_name.clone(),
-                    format!("{}/{}", mission, profile_name),
-                );
-                if let Some(metrics) = report.results.get(&old_key) {
-                    merged_results.insert(new_key, metrics.clone());
+                let key = (strategy_name.clone(), profile_name.clone());
+                if let Some(metrics) = report.results.get(&key) {
+                    merged_results.insert(key, metrics.clone());
                 }
+            }
+        }
+    }
+    // Collect unique profile names in original order across reports
+    let mut all_profile_names = Vec::new();
+    for r in reports {
+        for name in &r.profile_names {
+            if !all_profile_names.contains(name) {
+                all_profile_names.push(name.clone());
             }
         }
     }
@@ -754,16 +767,7 @@ fn merge_reports(reports: &[swarm_sim::ComparisonReport]) -> swarm_sim::Comparis
             .flat_map(|r| r.scenario_names.clone())
             .collect(),
         strategy_names: first.strategy_names.clone(),
-        profile_names: {
-            let mut p = Vec::new();
-            for r in reports {
-                let mission = r.mission_names.first().cloned().unwrap_or_default();
-                for name in &r.profile_names {
-                    p.push(format!("{}/{}", mission, name));
-                }
-            }
-            p
-        },
+        profile_names: all_profile_names,
         results: merged_results,
     }
 }

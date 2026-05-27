@@ -22,16 +22,6 @@ pub struct ComparisonReport {
 
 impl std::fmt::Display for ComparisonReport {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mission = self
-            .mission_names
-            .first()
-            .map(|s| s.as_str())
-            .unwrap_or("-");
-        let scenario = self
-            .scenario_names
-            .first()
-            .map(|s| s.as_str())
-            .unwrap_or("-");
         let seeds = format!("{}-{}", self.seed_range_start, self.seed_range_end);
         writeln!(
             f,
@@ -49,6 +39,22 @@ impl std::fmt::Display for ComparisonReport {
                         format!("{:.1}", metrics.avg_time_to_find)
                     } else {
                         "-".to_owned()
+                    };
+                    let mission = if metrics.mission.is_empty() {
+                        self.mission_names
+                            .first()
+                            .map(|s| s.as_str())
+                            .unwrap_or("-")
+                    } else {
+                        &metrics.mission
+                    };
+                    let scenario = if metrics.scenario.is_empty() {
+                        self.scenario_names
+                            .first()
+                            .map(|s| s.as_str())
+                            .unwrap_or("-")
+                    } else {
+                        &metrics.scenario
                     };
                     writeln!(
                         f,
@@ -282,10 +288,10 @@ impl BenchmarkHarness {
             if !report_profile_names.contains(&profile_name) {
                 report_profile_names.push(profile_name.clone());
             }
-            report_results.insert(
-                (strategy_name, profile_name),
-                AggregateMetrics::from_runs(&runs),
-            );
+            let mut metrics = AggregateMetrics::from_runs(&runs);
+            metrics.mission = opts.mission_name.to_owned();
+            metrics.scenario = opts.mission_name.to_owned();
+            report_results.insert((strategy_name, profile_name), metrics);
         }
 
         BenchmarkResult {

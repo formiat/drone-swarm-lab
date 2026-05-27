@@ -1,8 +1,15 @@
 # Benchmark Results
 
+> **⚠️ Stale — pending regeneration after M32 fix.**
+> This report was generated before the M32 "Reporting & Metrics Hardening" fix.
+> Mixed-mission (`--mission all`) output in this document may show incorrect
+> per-row `mission`/`scenario` labels because old exporters used
+> `mission_names.first()` for every row. Regenerate with current code for
+> correct per-row identity and newly exported wildfire/planner metrics.
+
 ## Methodology
 
-- **Date:** 2026-05-23
+- **Date:** 2026-05-23 (pre-M32)
 - **Mode:** quick (10 seeds for SAR/Inspection, 1 seed for suite-based Safety/CBBA)
 - **Strategies:** greedy, auction, connectivity-aware, centralized, cbba
 - **Git commit:** `706ed47`

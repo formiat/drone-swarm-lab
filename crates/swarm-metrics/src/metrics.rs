@@ -183,6 +183,11 @@ pub struct AggregateMetrics {
     pub avg_priority_updates: f64,
     #[serde(default)]
     pub avg_final_threat_level: f64,
+    // v0.31 Report identity: per-row mission and scenario
+    #[serde(default)]
+    pub mission: String,
+    #[serde(default)]
+    pub scenario: String,
 }
 
 fn percentile_of_sorted(sorted: &[u64], p: f64) -> f64 {
@@ -241,6 +246,9 @@ impl AggregateMetrics {
                 avg_hazard_zones_mapped: 0.0,
                 avg_priority_updates: 0.0,
                 avg_final_threat_level: 0.0,
+                // v0.31 Report identity
+                mission: String::new(),
+                scenario: String::new(),
             };
         }
 
@@ -356,6 +364,9 @@ impl AggregateMetrics {
             avg_hazard_zones_mapped: total_hazard_zones_mapped as f64 / n,
             avg_priority_updates: total_priority_updates as f64 / n,
             avg_final_threat_level: total_final_threat_level / n,
+            // v0.31 Report identity: populated by caller after aggregation
+            mission: String::new(),
+            scenario: String::new(),
         }
     }
 }
@@ -492,11 +503,14 @@ impl fmt::Display for AggregateMetrics {
             self.avg_hazard_zones_mapped
         )?;
         writeln!(f, "avg_priority_updates: {:.3}", self.avg_priority_updates)?;
-        write!(
+        writeln!(
             f,
             "avg_final_threat_level: {:.3}",
             self.avg_final_threat_level
-        )
+        )?;
+        // v0.31 Report identity
+        writeln!(f, "mission: {}", self.mission)?;
+        write!(f, "scenario: {}", self.scenario)
     }
 }
 

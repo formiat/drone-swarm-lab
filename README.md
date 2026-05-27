@@ -86,6 +86,7 @@ cargo run --bin sitl_agent -- \
 | Regression & Baseline | ✅ Stable | M29 | `RegressionSuite`, `ThresholdChecker`, baseline artifacts |
 | Wildfire / Flood Mapping | ✅ Stable | M30 | `TaskKind::MappingZone`, `WildfireState`, hazard zones, dynamic threat |
 | Simulation Realism | ✅ Stable | M31 | Battery model v2, altitude sensor penalty, wind drift, pose noise, comms jitter, time-gated no-fly zones, `--realism` preset |
+| Reporting & Metrics | ✅ Stable | M32 | Per-row mission/scenario in exports, wildfire/planner metrics, realism metadata in manifest |
 | Real PX4 | 🧪 Experimental | M20 | Feature-gated, requires PX4 SITL setup |
 
 **Test coverage:** 270+ tests, 10 crates, 12 JSON scenarios.
@@ -146,9 +147,9 @@ Parametric sweeps over variables such as packet loss, agent count, or grid size 
 
 1. **Simulation only:** No real hardware integration beyond experimental PX4 SITL scaffold.
 2. **Single-agent SITL:** Multi-agent SITL not yet supported.
-3. **2D world:** All scenarios operate in 2D (x, y) with fixed altitude.
-4. **Deterministic RNG:** Scenarios use seeded RNG; real-world noise is not modeled.
-5. **Simplified kinematics:** Battery drain is proportional to distance, not accounting for hover/climb.
+3. **3D pose (M31):** Scenarios support `z` coordinate and altitude-aware sensors, but most missions still operate primarily in XY plane.
+4. **Deterministic RNG:** Scenarios use seeded RNG; real-world noise is modeled optionally via `--realism` preset.
+5. **Battery model v2 (M31):** Hover/climb/cruise drain rates are configurable but not yet calibrated against real flight data.
 
 See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known limitations.
 

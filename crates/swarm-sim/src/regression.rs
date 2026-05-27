@@ -587,6 +587,8 @@ mod tests {
             avg_hazard_zones_mapped: 0.0,
             avg_priority_updates: 0.0,
             avg_final_threat_level: 0.0,
+            mission: String::new(),
+            scenario: String::new(),
         }
     }
 
