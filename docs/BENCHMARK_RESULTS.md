@@ -7,16 +7,16 @@ older pre-M32 quick report whose mixed-mission rows had stale
 ## Current Run
 
 - **Date:** 2026-05-27
-- **Benchmark run id:** `2026-05-27T162606Z_all_200_custom`
-- **Benchmark git commit:** `261c6fa41393bcf2ca342c487d2dd7478b71e15c`
+- **Benchmark run id:** `2026-05-27T164016Z_all_500_custom`
+- **Benchmark git commit:** `8fb5ab130968a17b35c76314b7c133fb4fe791af`
 - **Build profile:** release
-- **Mode:** custom 200 seeds, all built-in missions
+- **Mode:** custom 500 seeds, all built-in missions
 - **Jobs:** 14 Rayon worker jobs on a 16-core machine
-- **Scenario runs:** `200 seeds * 5 strategies * 36 profiles = 36000`
+- **Scenario runs:** `500 seeds * 5 strategies * 36 profiles = 90000`
 - **Aggregated rows:** 180
-- **Runtime:** 6 min 16.21 sec
-- **Peak RSS:** 37228 KB
-- **Output pack:** `results/all_200_jobs14_m32b_release/`
+- **Runtime:** 14 min 50.67 sec
+- **Peak RSS:** 76232 KB
+- **Output pack:** `results/all_500_jobs14_m32b_release/`
 - **Identity check:** 0 bad rows for per-row `mission`, `scenario`, `profile`, and run id
 
 Command:
@@ -26,26 +26,27 @@ cargo build --release -p swarm-examples --bin strategy_comparison
 
 /usr/bin/time -f 'elapsed=%E maxrss_kb=%M' \
   target/release/strategy_comparison \
-    --seeds 200 \
+    --seeds 500 \
     --mission all \
     --jobs 14 \
-    --output-dir results/all_200_jobs14_m32b_release
+    --output-dir results/all_500_jobs14_m32b_release
 ```
 
 Generated artifacts:
 
-- `results/all_200_jobs14_m32b_release/manifest.json` - run metadata
-- `results/all_200_jobs14_m32b_release/results.json` - machine-readable aggregate data
-- `results/all_200_jobs14_m32b_release/results.csv` - tabular aggregate data
-- `results/all_200_jobs14_m32b_release/table.md` - full markdown table
+- `results/all_500_jobs14_m32b_release/manifest.json` - run metadata
+- `results/all_500_jobs14_m32b_release/results.json` - machine-readable aggregate data
+- `results/all_500_jobs14_m32b_release/results.csv` - tabular aggregate data
+- `results/all_500_jobs14_m32b_release/table.md` - full markdown table
 
 Previous validation packs are preserved in:
 
+- `results/all_200_jobs14_m32b_release/`
 - `results/all_50_jobs14_m32b_release/`
 - `results/all_50_jobs14_m32b/`
 - `results/all_20_jobs14_m32b/`
 
-The 200-seed release run is still a validation/custom run, not a publishable
+The 500-seed release run is still a validation/custom run, not a publishable
 statistical run. The next publishable benchmark should use the same release
 path with `--full` or `--seeds 1000`.
 
@@ -57,10 +58,11 @@ path with `--full` or `--seeds 1000`.
 | 50-seed validation | debug | 50 | 14 | 9:28.44 | 41992 KB | `results/all_50_jobs14_m32b/` |
 | 50-seed validation | release | 50 | 14 | 1:30.12 | 16480 KB | `results/all_50_jobs14_m32b_release/` |
 | 200-seed validation | release | 200 | 14 | 6:16.21 | 37228 KB | `results/all_200_jobs14_m32b_release/` |
+| 500-seed validation | release | 500 | 14 | 14:50.67 | 76232 KB | `results/all_500_jobs14_m32b_release/` |
 
-Release mode is about 6.3x faster than the 50-seed debug run. The 200-seed
-release run scales close to linearly from the 50-seed release run: 4x more
-seeds took about 4.17x more wall-clock time.
+Release mode is about 6.3x faster than the 50-seed debug run. The 500-seed
+release run scales well from the 200-seed release run: 2.5x more seeds took
+about 2.37x more wall-clock time.
 
 The aggregate metrics are close but not byte-identical between debug and
 release runs, so determinism should be audited before using these numbers as
@@ -77,26 +79,26 @@ Values below are averaged across all profiles of each mission for a strategy.
 | coverage | centralized | 24 | 1.000 | 1.000 | 0.991 | 0.0 |
 | coverage | connectivity-aware | 24 | 1.000 | 1.000 | 0.992 | 0.0 |
 | coverage | greedy | 24 | 1.000 | 1.000 | 0.992 | 0.0 |
-| emergency-mesh | auction | 5 | 0.385 | 0.589 | 0.538 | 2.2 |
-| emergency-mesh | cbba | 5 | 0.421 | 0.626 | 0.553 | 4.1 |
-| emergency-mesh | centralized | 5 | 0.796 | 1.000 | 0.585 | 0.0 |
-| emergency-mesh | connectivity-aware | 5 | 0.400 | 0.604 | 0.536 | 2.3 |
-| emergency-mesh | greedy | 5 | 0.394 | 0.598 | 0.540 | 2.7 |
-| inspection | auction | 3 | 0.745 | 0.745 | 0.289 | 11943.4 |
-| inspection | cbba | 3 | 0.558 | 0.558 | 0.721 | 6415.9 |
-| inspection | centralized | 3 | 0.688 | 0.688 | 0.336 | 6831.0 |
-| inspection | connectivity-aware | 3 | 0.730 | 0.730 | 0.290 | 11929.1 |
-| inspection | greedy | 3 | 0.807 | 0.807 | 0.627 | 12318.4 |
-| sar | auction | 2 | 0.703 | 0.705 | 0.043 | 1030.3 |
-| sar | cbba | 2 | 0.003 | 0.005 | 0.025 | 985.5 |
-| sar | centralized | 2 | 0.005 | 0.005 | 0.028 | 179.1 |
-| sar | connectivity-aware | 2 | 0.688 | 0.698 | 0.024 | 1151.5 |
-| sar | greedy | 2 | 0.705 | 0.735 | 0.043 | 4780.9 |
-| wildfire | auction | 2 | 0.985 | 1.000 | 1.000 | 17.3 |
-| wildfire | cbba | 2 | 0.620 | 1.000 | 1.000 | 764.6 |
-| wildfire | centralized | 2 | 0.985 | 1.000 | 1.000 | 17.2 |
-| wildfire | connectivity-aware | 2 | 0.985 | 1.000 | 1.000 | 17.3 |
-| wildfire | greedy | 2 | 0.995 | 1.000 | 1.000 | 3.7 |
+| emergency-mesh | auction | 5 | 0.398 | 0.570 | 0.514 | 2.1 |
+| emergency-mesh | cbba | 5 | 0.432 | 0.605 | 0.540 | 4.3 |
+| emergency-mesh | centralized | 5 | 0.828 | 1.000 | 0.551 | 0.0 |
+| emergency-mesh | connectivity-aware | 5 | 0.404 | 0.576 | 0.522 | 2.3 |
+| emergency-mesh | greedy | 5 | 0.376 | 0.548 | 0.489 | 2.7 |
+| inspection | auction | 3 | 0.733 | 0.733 | 0.288 | 11877.3 |
+| inspection | cbba | 3 | 0.560 | 0.560 | 0.729 | 6534.3 |
+| inspection | centralized | 3 | 0.683 | 0.683 | 0.344 | 6736.1 |
+| inspection | connectivity-aware | 3 | 0.729 | 0.729 | 0.291 | 11792.9 |
+| inspection | greedy | 3 | 0.775 | 0.775 | 0.628 | 12362.8 |
+| sar | auction | 2 | 0.730 | 0.733 | 0.047 | 1095.8 |
+| sar | cbba | 2 | 0.006 | 0.009 | 0.025 | 1113.7 |
+| sar | centralized | 2 | 0.004 | 0.004 | 0.033 | 178.9 |
+| sar | connectivity-aware | 2 | 0.715 | 0.717 | 0.038 | 1107.3 |
+| sar | greedy | 2 | 0.706 | 0.739 | 0.039 | 4812.3 |
+| wildfire | auction | 2 | 0.984 | 1.000 | 1.000 | 18.0 |
+| wildfire | cbba | 2 | 0.621 | 1.000 | 1.000 | 735.4 |
+| wildfire | centralized | 2 | 0.984 | 1.000 | 1.000 | 18.7 |
+| wildfire | connectivity-aware | 2 | 0.984 | 1.000 | 1.000 | 18.8 |
+| wildfire | greedy | 2 | 0.998 | 1.000 | 1.000 | 1.7 |
 
 ## Key Findings
 
@@ -109,30 +111,30 @@ Values below are averaged across all profiles of each mission for a strategy.
 2. **CBBA coverage rows still need investigation.** Six CBBA coverage profiles
    report `Success = 0.000` with `Completion = 1.000` and `Coverage = 0.000`.
    One more profile, `coverage/partition-prone-cascade-failure`, reports
-   `Success = 0.990` and `Completion = 0.990` but still `Coverage = 0.000`.
+   `Success = 0.996` and `Completion = 0.996` but still `Coverage = 0.000`.
    This looks suspicious enough to inspect the success predicate and metric
    extraction before treating it as an algorithm result.
 
 3. **Emergency mesh currently favors centralized allocation.** Centralized
-   reached 0.796 average success and 1.000 completion with zero conflicts.
-   The distributed strategies are functional but lower: CBBA 0.421,
-   connectivity-aware 0.400, greedy 0.394, and auction 0.385.
+   reached 0.828 average success and 1.000 completion with zero conflicts.
+   The distributed strategies are functional but lower: CBBA 0.432,
+   connectivity-aware 0.404, auction 0.398, and greedy 0.376.
 
-4. **SAR still exposes planner gaps.** Greedy and auction are effectively tied
-   around 0.705/0.703 average success, with connectivity-aware close at 0.688.
-   Centralized and CBBA remain near zero. SAR remains the clearest mission for
-   testing grid/belief task support.
+4. **SAR still exposes planner gaps.** Auction has the best average success
+   at 0.730, connectivity-aware follows at 0.715, and greedy is close at
+   0.706. Centralized and CBBA remain near zero. SAR remains the clearest
+   mission for testing grid/belief task support.
 
 5. **Inspection is profile-sensitive.** Greedy has the best average inspection
-   success at 0.807, followed by auction at 0.745 and connectivity-aware at
-   0.730. Linear and random are solved by most strategies, but perimeter
-   remains difficult: greedy reaches 0.420, auction 0.235,
-   connectivity-aware 0.190, centralized 0.065, and CBBA 0.025.
+   success at 0.775, followed by auction at 0.733 and connectivity-aware at
+   0.729. Linear and random are solved by most strategies, but perimeter
+   remains difficult: greedy reaches 0.326, auction 0.200,
+   connectivity-aware 0.188, centralized 0.048, and CBBA 0.034.
 
 6. **Wildfire is strong except CBBA on dynamic fire spread.** Greedy reaches
-   0.995 average success; auction, centralized, and connectivity-aware reach
-   0.985. CBBA remains much lower at 0.620 because
-   `wildfire/medium-dynamic` succeeds only 0.350 of the time.
+   0.998 average success; auction, centralized, and connectivity-aware reach
+   0.984. CBBA remains much lower at 0.621 because
+   `wildfire/medium-dynamic` succeeds only 0.358 of the time.
 
 ## Coverage Notes
 
@@ -140,93 +142,93 @@ Coverage rows with `Success < 1.000` are isolated to CBBA:
 
 | Strategy | Profile | Success | Completion | Coverage | Realloc | Availability |
 |---|---|---:|---:|---:|---:|---:|
-| cbba | coverage/high-latency-multiple-failures | 0.000 | 1.000 | 0.000 | 0.000 | 1.000 |
-| cbba | coverage/partition-prone-cascade-failure | 0.990 | 0.990 | 0.000 | 0.000 | 0.992 |
-| cbba | coverage/heavy-loss-cascade-failure | 0.000 | 1.000 | 0.000 | 0.000 | 1.000 |
-| cbba | coverage/high-latency-single-failure | 0.000 | 1.000 | 0.000 | 0.000 | 1.000 |
-| cbba | coverage/heavy-loss-single-failure | 0.000 | 1.000 | 0.000 | 0.000 | 1.000 |
 | cbba | coverage/high-latency-cascade-failure | 0.000 | 1.000 | 0.000 | 0.000 | 1.000 |
+| cbba | coverage/high-latency-multiple-failures | 0.000 | 1.000 | 0.000 | 0.000 | 1.000 |
+| cbba | coverage/heavy-loss-single-failure | 0.000 | 1.000 | 0.000 | 0.000 | 1.000 |
 | cbba | coverage/heavy-loss-multiple-failures | 0.000 | 1.000 | 0.000 | 0.000 | 1.000 |
+| cbba | coverage/partition-prone-cascade-failure | 0.996 | 0.996 | 0.000 | 0.000 | 0.992 |
+| cbba | coverage/high-latency-single-failure | 0.000 | 1.000 | 0.000 | 0.000 | 1.000 |
+| cbba | coverage/heavy-loss-cascade-failure | 0.000 | 1.000 | 0.000 | 0.000 | 1.000 |
 
 ## SAR Detail
 
 | Strategy | Profile | Success | Completion | PoD | Targets | BeliefEntropy | FalsePosRate |
 |---|---|---:|---:|---:|---:|---:|---:|
-| centralized | sar/ideal | 0.000 | 0.000 | 0.090 | 0.2 | 0.337 | 0.562 |
-| centralized | sar/standard | 0.010 | 0.010 | 0.063 | 0.2 | 0.305 | 0.448 |
-| auction | sar/ideal | 0.675 | 0.680 | 0.163 | 0.3 | 0.370 | 0.549 |
-| auction | sar/standard | 0.730 | 0.730 | 0.100 | 0.3 | 0.317 | 0.450 |
-| connectivity-aware | sar/ideal | 0.640 | 0.650 | 0.135 | 0.3 | 0.370 | 0.571 |
-| connectivity-aware | sar/standard | 0.735 | 0.745 | 0.100 | 0.3 | 0.315 | 0.433 |
-| greedy | sar/ideal | 0.685 | 0.735 | 0.083 | 0.2 | 0.362 | 0.573 |
-| greedy | sar/standard | 0.725 | 0.735 | 0.060 | 0.2 | 0.311 | 0.448 |
-| cbba | sar/ideal | 0.005 | 0.010 | 0.142 | 0.3 | 0.371 | 0.570 |
-| cbba | sar/standard | 0.000 | 0.000 | 0.087 | 0.3 | 0.315 | 0.442 |
+| auction | sar/ideal | 0.686 | 0.688 | 0.124 | 0.2 | 0.365 | 0.543 |
+| auction | sar/standard | 0.774 | 0.778 | 0.083 | 0.2 | 0.315 | 0.428 |
+| greedy | sar/ideal | 0.668 | 0.726 | 0.113 | 0.2 | 0.359 | 0.538 |
+| greedy | sar/standard | 0.744 | 0.752 | 0.068 | 0.2 | 0.309 | 0.418 |
+| cbba | sar/ideal | 0.012 | 0.014 | 0.148 | 0.3 | 0.369 | 0.547 |
+| cbba | sar/standard | 0.000 | 0.004 | 0.079 | 0.2 | 0.313 | 0.425 |
+| connectivity-aware | sar/ideal | 0.642 | 0.644 | 0.149 | 0.3 | 0.363 | 0.531 |
+| connectivity-aware | sar/standard | 0.788 | 0.790 | 0.079 | 0.2 | 0.314 | 0.427 |
+| centralized | sar/ideal | 0.004 | 0.004 | 0.087 | 0.2 | 0.333 | 0.534 |
+| centralized | sar/standard | 0.004 | 0.004 | 0.052 | 0.2 | 0.303 | 0.427 |
 
 ## Inspection Detail
 
 | Strategy | Profile | Success | EdgeCoverage | MissedEdges | RouteEfficiency |
 |---|---|---:|---:|---:|---:|
-| centralized | inspection/perimeter | 0.065 | 0.597 | 16.1 | 0.194 |
-| centralized | inspection/random | 1.000 | 1.000 | 0.0 | 0.688 |
-| centralized | inspection/linear | 1.000 | 1.000 | 0.0 | 0.556 |
-| auction | inspection/perimeter | 0.235 | 0.769 | 9.2 | 0.150 |
-| auction | inspection/random | 1.000 | 1.000 | 0.0 | 0.375 |
-| auction | inspection/linear | 1.000 | 1.000 | 0.0 | 0.300 |
-| connectivity-aware | inspection/perimeter | 0.190 | 0.762 | 9.5 | 0.150 |
-| connectivity-aware | inspection/random | 1.000 | 1.000 | 0.0 | 0.378 |
-| connectivity-aware | inspection/linear | 1.000 | 1.000 | 0.0 | 0.304 |
-| greedy | inspection/perimeter | 0.420 | 0.865 | 5.4 | 0.076 |
-| greedy | inspection/random | 1.000 | 1.000 | 0.0 | 0.222 |
-| greedy | inspection/linear | 1.000 | 1.000 | 0.0 | 0.154 |
-| cbba | inspection/perimeter | 0.025 | 0.908 | 3.7 | 0.101 |
-| cbba | inspection/random | 0.750 | 0.954 | 1.1 | 0.223 |
-| cbba | inspection/linear | 0.900 | 0.949 | 0.5 | 0.176 |
+| auction | inspection/random | 1.000 | 1.000 | 0.0 | 0.363 |
+| auction | inspection/perimeter | 0.200 | 0.764 | 9.4 | 0.151 |
+| auction | inspection/linear | 1.000 | 1.000 | 0.0 | 0.304 |
+| greedy | inspection/random | 1.000 | 1.000 | 0.0 | 0.212 |
+| greedy | inspection/perimeter | 0.326 | 0.863 | 5.5 | 0.076 |
+| greedy | inspection/linear | 1.000 | 1.000 | 0.0 | 0.157 |
+| cbba | inspection/random | 0.732 | 0.957 | 1.0 | 0.217 |
+| cbba | inspection/perimeter | 0.034 | 0.903 | 3.9 | 0.103 |
+| cbba | inspection/linear | 0.914 | 0.953 | 0.5 | 0.178 |
+| connectivity-aware | inspection/random | 1.000 | 1.000 | 0.0 | 0.370 |
+| connectivity-aware | inspection/perimeter | 0.188 | 0.759 | 9.6 | 0.149 |
+| connectivity-aware | inspection/linear | 1.000 | 1.000 | 0.0 | 0.302 |
+| centralized | inspection/random | 1.000 | 1.000 | 0.0 | 0.669 |
+| centralized | inspection/perimeter | 0.048 | 0.588 | 16.5 | 0.194 |
+| centralized | inspection/linear | 1.000 | 1.000 | 0.0 | 0.550 |
 
 ## Emergency Mesh Detail
 
 | Strategy | Profile | Success | Completion | Availability | Realloc | Conflicts |
 |---|---|---:|---:|---:|---:|---:|
-| centralized | emergency-mesh/packet-loss-10 | 0.725 | 1.000 | 0.618 | 0.000 | 0.0 |
-| centralized | emergency-mesh/single-failure | 1.000 | 1.000 | 0.571 | 0.000 | 0.0 |
-| centralized | emergency-mesh/medium-loss | 0.825 | 1.000 | 0.500 | 0.000 | 0.0 |
-| centralized | emergency-mesh/low-loss | 0.715 | 1.000 | 0.618 | 0.000 | 0.0 |
-| centralized | emergency-mesh/ideal | 0.715 | 1.000 | 0.618 | 0.000 | 0.0 |
-| auction | emergency-mesh/packet-loss-10 | 0.370 | 0.645 | 0.648 | 0.000 | 1.8 |
-| auction | emergency-mesh/single-failure | 0.555 | 0.555 | 0.281 | 0.000 | 1.4 |
-| auction | emergency-mesh/medium-loss | 0.320 | 0.495 | 0.501 | 0.000 | 5.2 |
-| auction | emergency-mesh/low-loss | 0.315 | 0.600 | 0.604 | 0.000 | 1.4 |
-| auction | emergency-mesh/ideal | 0.365 | 0.650 | 0.653 | 0.000 | 1.3 |
-| connectivity-aware | emergency-mesh/packet-loss-10 | 0.340 | 0.615 | 0.619 | 0.000 | 2.2 |
-| connectivity-aware | emergency-mesh/single-failure | 0.620 | 0.620 | 0.264 | 0.000 | 1.4 |
-| connectivity-aware | emergency-mesh/medium-loss | 0.310 | 0.485 | 0.492 | 0.000 | 4.8 |
-| connectivity-aware | emergency-mesh/low-loss | 0.370 | 0.655 | 0.658 | 0.000 | 1.5 |
-| connectivity-aware | emergency-mesh/ideal | 0.360 | 0.645 | 0.649 | 0.000 | 1.4 |
-| greedy | emergency-mesh/packet-loss-10 | 0.395 | 0.670 | 0.673 | 0.000 | 2.6 |
-| greedy | emergency-mesh/single-failure | 0.570 | 0.570 | 0.262 | 0.000 | 1.7 |
-| greedy | emergency-mesh/medium-loss | 0.330 | 0.505 | 0.511 | 0.000 | 5.5 |
-| greedy | emergency-mesh/low-loss | 0.350 | 0.635 | 0.639 | 0.000 | 1.8 |
-| greedy | emergency-mesh/ideal | 0.325 | 0.610 | 0.614 | 0.000 | 1.7 |
-| cbba | emergency-mesh/packet-loss-10 | 0.380 | 0.655 | 0.658 | 0.000 | 4.3 |
-| cbba | emergency-mesh/single-failure | 0.640 | 0.640 | 0.260 | 0.000 | 3.8 |
-| cbba | emergency-mesh/medium-loss | 0.335 | 0.515 | 0.523 | 0.000 | 6.0 |
-| cbba | emergency-mesh/low-loss | 0.385 | 0.670 | 0.673 | 0.000 | 3.2 |
-| cbba | emergency-mesh/ideal | 0.365 | 0.650 | 0.652 | 0.000 | 3.1 |
+| auction | emergency-mesh/packet-loss-10 | 0.378 | 0.610 | 0.614 | 0.000 | 2.0 |
+| auction | emergency-mesh/low-loss | 0.358 | 0.604 | 0.608 | 0.000 | 1.2 |
+| auction | emergency-mesh/single-failure | 0.560 | 0.560 | 0.259 | 0.000 | 1.3 |
+| auction | emergency-mesh/ideal | 0.344 | 0.592 | 0.596 | 0.000 | 1.1 |
+| auction | emergency-mesh/medium-loss | 0.352 | 0.486 | 0.492 | 0.000 | 5.1 |
+| greedy | emergency-mesh/packet-loss-10 | 0.350 | 0.582 | 0.587 | 0.000 | 2.7 |
+| greedy | emergency-mesh/low-loss | 0.352 | 0.598 | 0.602 | 0.000 | 1.7 |
+| greedy | emergency-mesh/single-failure | 0.570 | 0.570 | 0.254 | 0.000 | 1.9 |
+| greedy | emergency-mesh/ideal | 0.322 | 0.570 | 0.575 | 0.000 | 1.5 |
+| greedy | emergency-mesh/medium-loss | 0.288 | 0.422 | 0.430 | 0.000 | 6.0 |
+| cbba | emergency-mesh/packet-loss-10 | 0.382 | 0.614 | 0.621 | 0.000 | 4.6 |
+| cbba | emergency-mesh/low-loss | 0.414 | 0.660 | 0.663 | 0.000 | 3.6 |
+| cbba | emergency-mesh/single-failure | 0.598 | 0.598 | 0.254 | 0.000 | 3.6 |
+| cbba | emergency-mesh/ideal | 0.408 | 0.656 | 0.659 | 0.000 | 3.7 |
+| cbba | emergency-mesh/medium-loss | 0.360 | 0.496 | 0.503 | 0.000 | 6.2 |
+| connectivity-aware | emergency-mesh/packet-loss-10 | 0.390 | 0.622 | 0.626 | 0.000 | 2.3 |
+| connectivity-aware | emergency-mesh/low-loss | 0.376 | 0.622 | 0.626 | 0.000 | 1.4 |
+| connectivity-aware | emergency-mesh/single-failure | 0.554 | 0.554 | 0.264 | 0.000 | 1.3 |
+| connectivity-aware | emergency-mesh/ideal | 0.352 | 0.600 | 0.604 | 0.000 | 1.1 |
+| connectivity-aware | emergency-mesh/medium-loss | 0.348 | 0.482 | 0.488 | 0.000 | 5.1 |
+| centralized | emergency-mesh/packet-loss-10 | 0.768 | 1.000 | 0.583 | 0.000 | 0.0 |
+| centralized | emergency-mesh/low-loss | 0.754 | 1.000 | 0.583 | 0.000 | 0.0 |
+| centralized | emergency-mesh/single-failure | 1.000 | 1.000 | 0.553 | 0.000 | 0.0 |
+| centralized | emergency-mesh/ideal | 0.752 | 1.000 | 0.583 | 0.000 | 0.0 |
+| centralized | emergency-mesh/medium-loss | 0.866 | 1.000 | 0.453 | 0.000 | 0.0 |
 
 ## Wildfire Detail
 
 | Strategy | Profile | Success | Completion | ZonesMapped | PriorityUpdates | FinalThreat |
 |---|---|---:|---:|---:|---:|---:|
-| centralized | wildfire/small-static | 0.995 | 1.000 | 0.015 | 0.0 | 0.500 |
-| centralized | wildfire/medium-dynamic | 0.975 | 1.000 | 0.100 | 2.9 | 0.317 |
-| auction | wildfire/small-static | 0.995 | 1.000 | 0.015 | 0.0 | 0.500 |
-| auction | wildfire/medium-dynamic | 0.975 | 1.000 | 0.100 | 2.9 | 0.317 |
-| connectivity-aware | wildfire/small-static | 0.995 | 1.000 | 0.015 | 0.0 | 0.500 |
-| connectivity-aware | wildfire/medium-dynamic | 0.975 | 1.000 | 0.100 | 2.9 | 0.317 |
-| greedy | wildfire/small-static | 0.995 | 1.000 | 0.015 | 0.0 | 0.500 |
-| greedy | wildfire/medium-dynamic | 0.995 | 1.000 | 0.020 | 0.6 | 0.303 |
-| cbba | wildfire/small-static | 0.890 | 1.000 | 0.195 | 0.0 | 0.500 |
-| cbba | wildfire/medium-dynamic | 0.350 | 1.000 | 2.840 | 88.2 | 0.813 |
+| auction | wildfire/small-static | 0.992 | 1.000 | 0.016 | 0.0 | 0.500 |
+| auction | wildfire/medium-dynamic | 0.976 | 1.000 | 0.110 | 3.2 | 0.319 |
+| greedy | wildfire/small-static | 0.998 | 1.000 | 0.008 | 0.0 | 0.500 |
+| greedy | wildfire/medium-dynamic | 0.998 | 1.000 | 0.008 | 0.2 | 0.301 |
+| cbba | wildfire/small-static | 0.884 | 1.000 | 0.224 | 0.0 | 0.500 |
+| cbba | wildfire/medium-dynamic | 0.358 | 1.000 | 2.754 | 86.5 | 0.804 |
+| connectivity-aware | wildfire/small-static | 0.992 | 1.000 | 0.018 | 0.0 | 0.500 |
+| connectivity-aware | wildfire/medium-dynamic | 0.976 | 1.000 | 0.112 | 3.2 | 0.319 |
+| centralized | wildfire/small-static | 0.992 | 1.000 | 0.018 | 0.0 | 0.500 |
+| centralized | wildfire/medium-dynamic | 0.976 | 1.000 | 0.112 | 3.2 | 0.319 |
 
 ## Next Steps
 
