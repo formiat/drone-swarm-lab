@@ -15,13 +15,13 @@ fn create_test_replay_log(path: &str) {
     builder.push(Event::TickStart { tick: 0 });
     builder.push(Event::PoseUpdated {
         agent_id: AgentId::from("agent-0".to_owned()),
-        pose: Pose { x: 0.0, y: 0.0 },
+        pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
         tick: 0,
     });
     builder.push(Event::TickStart { tick: 50 });
     builder.push(Event::PoseUpdated {
         agent_id: AgentId::from("agent-0".to_owned()),
-        pose: Pose { x: 10.0, y: 10.0 },
+        pose: Pose { x: 10.0, y: 10.0 , ..Default::default()},
         tick: 50,
     });
     builder.push(Event::TickStart { tick: 100 });

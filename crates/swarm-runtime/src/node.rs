@@ -461,7 +461,7 @@ fn allocate_unassigned<A: Allocator>(coordinator: &mut Coordinator, allocator: &
     let base_pose = agents
         .first()
         .map(|a| a.pose)
-        .unwrap_or(swarm_types::Pose { x: 0.0, y: 0.0 });
+        .unwrap_or(swarm_types::Pose { x: 0.0, y: 0.0 , ..Default::default()});
     let connectivity = ConnectivityContext {
         snapshot: ConnectivitySnapshot {
             agent_entries,
@@ -503,7 +503,7 @@ mod tests {
             id: AgentId::from(id.to_owned()),
             role: Role::Scout,
             health: Health::Alive,
-            pose: Pose { x: 0.0, y: 0.0 },
+            pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
             capabilities: vec![],
             current_task: None,
             battery: 100.0,

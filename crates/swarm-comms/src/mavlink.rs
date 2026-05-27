@@ -257,7 +257,7 @@ mod tests {
             required_role: None,
             preferred_role: None,
             expires_at: None,
-            pose: Some(swarm_types::Pose { x: 10.0, y: 20.0 }),
+            pose: Some(swarm_types::Pose { x: 10.0, y: 20.0 , ..Default::default()}),
             grid_cell: None,
             edge_id: None,
             kind: None,

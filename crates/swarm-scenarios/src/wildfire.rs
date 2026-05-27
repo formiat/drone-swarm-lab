@@ -149,7 +149,7 @@ pub fn build_wildfire_scenario(config: &WildfireConfig) -> (Scenario, RunConfig)
                 id: AgentId::from(format!("agent-{i}")),
                 role: Role::Scout,
                 health: Health::Alive,
-                pose: Pose { x, y },
+                pose: Pose { x, y , ..Default::default()},
                 capabilities: vec![Capability::from("thermal".to_owned())],
                 current_task: None,
                 battery: 100.0,

@@ -398,13 +398,13 @@ mod tests {
         use swarm_types::{Health, Pose};
         let agent_entries = agents
             .into_iter()
-            .map(|(id, (x, y), range)| (id, Pose { x, y }, range, Health::Alive))
+            .map(|(id, (x, y), range)| (id, Pose { x, y , ..Default::default()}, range, Health::Alive))
             .collect();
         ConnectivitySnapshot {
             agent_entries,
             ground_nodes: vec![],
             base_id: "base".to_owned(),
-            base_pose: Pose { x: 0.0, y: 0.0 },
+            base_pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
         }
     }
 

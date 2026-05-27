@@ -391,7 +391,7 @@ mod tests {
                     id: AgentId::from(format!("agent-{i}")),
                     role: Role::Scout,
                     health: Health::Alive,
-                    pose: Pose { x: 0.0, y: 0.0 },
+                    pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
                     capabilities: vec![],
                     current_task: None,
                     battery: 100.0,

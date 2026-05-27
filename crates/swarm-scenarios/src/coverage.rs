@@ -28,7 +28,7 @@ pub fn build_coverage_scenario(config: &CoverageConfig) -> (Scenario, RunConfig)
             id: AgentId::from(format!("agent-{index}")),
             role: Role::Scout,
             health: Health::Alive,
-            pose: Pose { x: 0.0, y: 0.0 },
+            pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
             capabilities: Vec::new(),
             current_task: None,
             battery: 100.0,

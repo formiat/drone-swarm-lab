@@ -330,7 +330,7 @@ impl ScenarioRunner {
             .unwrap_or_else(|| AgentId::from("base".to_owned()));
         let base_pose = scenario
             .base_station
-            .unwrap_or(swarm_types::Pose { x: 0.0, y: 0.0 });
+            .unwrap_or(swarm_types::Pose { x: 0.0, y: 0.0 , ..Default::default()});
 
         for _ in 0..config.max_ticks {
             clock.advance();
@@ -1312,7 +1312,7 @@ mod tests {
                 id: AgentId::from(format!("agent-{index}")),
                 role: Role::Scout,
                 health: Health::Alive,
-                pose: Pose { x: 0.0, y: 0.0 },
+                pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
                 capabilities: Vec::new(),
                 current_task: None,
                 battery: 100.0,

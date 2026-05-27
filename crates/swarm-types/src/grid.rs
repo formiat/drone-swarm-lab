@@ -24,6 +24,7 @@ impl SearchGrid {
         Pose {
             x: (x as f64 + 0.5) * self.cell_size,
             y: (y as f64 + 0.5) * self.cell_size,
+            ..Default::default()
         }
     }
 
@@ -241,10 +242,10 @@ mod tests {
     #[test]
     fn cell_at_pose_out_of_bounds() {
         let grid = SearchGrid::new(5, 5, 10.0);
-        assert!(grid.cell_at_pose(&Pose { x: -1.0, y: 0.0 }).is_none());
-        assert!(grid.cell_at_pose(&Pose { x: 0.0, y: -1.0 }).is_none());
-        assert!(grid.cell_at_pose(&Pose { x: 51.0, y: 0.0 }).is_none());
-        assert!(grid.cell_at_pose(&Pose { x: 0.0, y: 51.0 }).is_none());
+        assert!(grid.cell_at_pose(&Pose { x: -1.0, y: 0.0 , ..Default::default()}).is_none());
+        assert!(grid.cell_at_pose(&Pose { x: 0.0, y: -1.0 , ..Default::default()}).is_none());
+        assert!(grid.cell_at_pose(&Pose { x: 51.0, y: 0.0 , ..Default::default()}).is_none());
+        assert!(grid.cell_at_pose(&Pose { x: 0.0, y: 51.0 , ..Default::default()}).is_none());
     }
 
     #[test]

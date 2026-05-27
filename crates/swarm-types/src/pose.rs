@@ -1,15 +1,25 @@
 use serde::{Deserialize, Serialize};
 
-/// 2D position in simulation space (metres or arbitrary units).
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+/// 3D position in simulation space (metres or arbitrary units).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Pose {
     pub x: f64,
     pub y: f64,
+    #[serde(default)]
+    pub z: f64,
 }
 
 impl Pose {
-    /// Euclidean distance to another pose.
+    /// Euclidean distance to another pose in 3D space.
     pub fn distance_to(&self, other: &Pose) -> f64 {
+        let dx = self.x - other.x;
+        let dy = self.y - other.y;
+        let dz = self.z - other.z;
+        (dx * dx + dy * dy + dz * dz).sqrt()
+    }
+
+    /// Horizontal (XY) distance — used for legacy 2D calculations.
+    pub fn distance_to_2d(&self, other: &Pose) -> f64 {
         let dx = self.x - other.x;
         let dy = self.y - other.y;
         (dx * dx + dy * dy).sqrt()
@@ -34,6 +44,7 @@ impl Aabb {
         Pose {
             x: (self.min_x + self.max_x) / 2.0,
             y: (self.min_y + self.max_y) / 2.0,
+            ..Default::default()
         }
     }
 

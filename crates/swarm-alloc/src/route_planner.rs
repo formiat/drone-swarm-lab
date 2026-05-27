@@ -215,7 +215,7 @@ mod tests {
             required_role: None,
             preferred_role: None,
             expires_at: None,
-            pose: Some(Pose { x, y }),
+            pose: Some(Pose { x, y , ..Default::default()}),
             grid_cell: None,
             edge_id: None,
             kind: None,
@@ -227,7 +227,7 @@ mod tests {
             id: AgentId::from("a0".to_owned()),
             role: Role::Scout,
             health: Health::Alive,
-            pose: Pose { x: 0.0, y: 0.0 },
+            pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
             capabilities: vec![],
             current_task: None,
             battery,
@@ -243,7 +243,7 @@ mod tests {
     fn nn_orders_nearest_first() {
         let tasks = vec![make_task("far", 100.0, 0.0), make_task("near", 1.0, 0.0)];
         let agent = make_agent(100.0, 0.0);
-        let ordered = NearestNeighbourPlanner.order(Pose { x: 0.0, y: 0.0 }, &tasks, &agent);
+        let ordered = NearestNeighbourPlanner.order(Pose { x: 0.0, y: 0.0 , ..Default::default()}, &tasks, &agent);
         assert_eq!(ordered[0], TaskId::from("near".to_owned()));
         assert_eq!(ordered[1], TaskId::from("far".to_owned()));
     }
@@ -254,7 +254,7 @@ mod tests {
             .map(|i| make_task(&format!("t{i}"), i as f64, 0.0))
             .collect();
         let agent = make_agent(100.0, 0.0);
-        let ordered = NearestNeighbourPlanner.order(Pose { x: 0.0, y: 0.0 }, &tasks, &agent);
+        let ordered = NearestNeighbourPlanner.order(Pose { x: 0.0, y: 0.0 , ..Default::default()}, &tasks, &agent);
         assert_eq!(ordered.len(), 5);
         let unique: HashSet<_> = ordered.iter().collect();
         assert_eq!(unique.len(), 5);
@@ -266,7 +266,7 @@ mod tests {
             .map(|i| make_task(&format!("t{i}"), (i * 7) as f64, (i * 3) as f64))
             .collect();
         let agent = make_agent(100.0, 0.0);
-        let start = Pose { x: 0.0, y: 0.0 };
+        let start = Pose { x: 0.0, y: 0.0 , ..Default::default()};
 
         let nn = NearestNeighbourPlanner.order(start, &tasks, &agent);
         let two = TwoOptPlanner::default().order(start, &tasks, &agent);
@@ -302,7 +302,7 @@ mod tests {
             reserve_fraction: 0.2,
             inner: Box::new(NearestNeighbourPlanner),
         };
-        let start = Pose { x: 0.0, y: 0.0 };
+        let start = Pose { x: 0.0, y: 0.0 , ..Default::default()};
 
         assert!(!planner.is_feasible(start, &tasks, &agent));
         let ordered = planner.order(start, &tasks, &agent);
@@ -317,7 +317,7 @@ mod tests {
         let tasks = vec![make_task("t0", 1.0, 0.0)];
         let agent = make_agent(100.0, 0.1);
         let planner = BatteryAwarePlanner::default();
-        let start = Pose { x: 0.0, y: 0.0 };
+        let start = Pose { x: 0.0, y: 0.0 , ..Default::default()};
 
         assert!(planner.is_feasible(start, &tasks, &agent));
         let ordered = planner.order(start, &tasks, &agent);
@@ -326,14 +326,14 @@ mod tests {
 
     #[test]
     fn route_cost_empty_is_zero() {
-        let cost = route_cost(Pose { x: 0.0, y: 0.0 }, &[]);
+        let cost = route_cost(Pose { x: 0.0, y: 0.0 , ..Default::default()}, &[]);
         assert_eq!(cost, 0.0);
     }
 
     #[test]
     fn route_cost_single_task() {
         let t = make_task("t0", 5.0, 0.0);
-        let cost = route_cost(Pose { x: 0.0, y: 0.0 }, &[&t]);
+        let cost = route_cost(Pose { x: 0.0, y: 0.0 , ..Default::default()}, &[&t]);
         assert!((cost - 5.0).abs() < 1e-6);
     }
 
@@ -343,7 +343,7 @@ mod tests {
             .map(|i| make_task(&format!("t{i}"), i as f64 * 5.0, i as f64 * 3.0))
             .collect();
         let agent = make_agent(100.0, 0.0);
-        let start = Pose { x: 0.0, y: 0.0 };
+        let start = Pose { x: 0.0, y: 0.0 , ..Default::default()};
 
         let ordered = TwoOptPlanner::default().order(start, &tasks, &agent);
         assert_eq!(ordered.len(), tasks.len());

@@ -81,7 +81,7 @@ impl super::Strategy for CentralizedPlanner {
 }
 
 fn cost(task: &swarm_types::Task, agent: &AllocationAgent) -> f64 {
-    let task_pose = task.pose.unwrap_or(Pose { x: 0.0, y: 0.0 });
+    let task_pose = task.pose.unwrap_or(Pose { x: 0.0, y: 0.0 , ..Default::default()});
     let dx = agent.pose.x - task_pose.x;
     let dy = agent.pose.y - task_pose.y;
     let distance_cost = (dx * dx + dy * dy).sqrt();
@@ -130,7 +130,7 @@ mod tests {
     fn agent(id: &str) -> AllocationAgent {
         AllocationAgent {
             id: AgentId::from(id.to_owned()),
-            pose: Pose { x: 0.0, y: 0.0 },
+            pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
             battery: 100.0,
             capabilities: vec![],
             role: Role::Scout,

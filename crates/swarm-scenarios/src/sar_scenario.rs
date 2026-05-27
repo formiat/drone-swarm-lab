@@ -223,7 +223,7 @@ pub fn build_sar_scenario(config: &SarScenarioConfig) -> (Scenario, RunConfig) {
             id: AgentId::from(format!("agent-{i}")),
             role,
             health: Health::Alive,
-            pose: Pose { x, y },
+            pose: Pose { x, y , ..Default::default()},
             capabilities,
             current_task: None,
             battery: 100.0,

@@ -86,6 +86,22 @@ pub struct Agent {
     /// Battery % drained per meter travelled. Computed as 100.0/max_range if not set.
     #[serde(default)]
     pub battery_drain_rate: f64,
+    /// Battery model v2 (hover, climb, cruise drain). Takes precedence over battery_drain_rate.
+    #[serde(default)]
+    pub battery_model: Option<BatteryModel>,
+}
+
+/// Battery model v2 with per-activity drain rates.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct BatteryModel {
+    #[serde(default)]
+    pub hover_drain_per_tick: f64,
+    #[serde(default)]
+    pub climb_drain_per_meter: f64,
+    #[serde(default)]
+    pub cruise_drain_per_meter: f64,
+    #[serde(default)]
+    pub reserve_fraction: f64,
 }
 
 fn default_comms_range() -> f64 {
@@ -110,7 +126,7 @@ mod tests {
             id: AgentId::from(id.to_owned()),
             role: Role::Scout,
             health: Health::Alive,
-            pose: Pose { x: 0.0, y: 0.0 },
+            pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
             capabilities: Vec::new(),
             current_task: None,
             battery: 100.0,
@@ -119,6 +135,7 @@ mod tests {
             speed: 0.0,
             max_range: 0.0,
             battery_drain_rate: 0.0,
+            battery_model: None,
         }
     }
 

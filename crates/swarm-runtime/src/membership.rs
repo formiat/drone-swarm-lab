@@ -176,7 +176,8 @@ impl MembershipView {
 
             let dx = target_pose.x - entry.pose.x;
             let dy = target_pose.y - entry.pose.y;
-            let distance_to_target = (dx * dx + dy * dy).sqrt();
+            let dz = target_pose.z - entry.pose.z;
+            let distance_to_target = (dx * dx + dy * dy + dz * dz).sqrt();
 
             if distance_to_target < 1e-9 {
                 continue;
@@ -188,9 +189,19 @@ impl MembershipView {
             let ratio = distance_moved / distance_to_target;
             entry.pose.x += dx * ratio;
             entry.pose.y += dy * ratio;
+            entry.pose.z += dz * ratio;
 
-            let drain = distance_moved * entry.battery_drain_rate;
-            entry.battery = (entry.battery - drain).max(0.0);
+            if let Some(ref bm) = entry.battery_model {
+                let horizontal_dist = (dx * dx + dy * dy).sqrt().min(distance_moved);
+                let vertical_dist = dz.abs() * ratio;
+                let drain = horizontal_dist * bm.cruise_drain_per_meter
+                    + vertical_dist * bm.climb_drain_per_meter
+                    + bm.hover_drain_per_tick;
+                entry.battery = (entry.battery - drain).max(0.0);
+            } else {
+                let drain = distance_moved * entry.battery_drain_rate;
+                entry.battery = (entry.battery - drain).max(0.0);
+            }
 
             if entry.battery <= 0.0 {
                 exhausted.push(agent_id.clone());
@@ -211,7 +222,7 @@ mod tests {
             id: AgentId::from(id.to_owned()),
             role: Role::Scout,
             health: Health::Alive,
-            pose: Pose { x: 0.0, y: 0.0 },
+            pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
             capabilities: Vec::new(),
             current_task: None,
             battery: 100.0,
@@ -302,7 +313,7 @@ mod tests {
     fn membership_entry_has_battery_and_pose() {
         let mut a = agent("a0");
         a.battery = 50.0;
-        a.pose = Pose { x: 1.0, y: 2.0 };
+        a.pose = Pose { x: 1.0, y: 2.0 , ..Default::default()};
         let view = MembershipView::new(vec![a]);
         let id = AgentId::from("a0".to_owned());
         let entry = view.get(&id).unwrap();
@@ -326,7 +337,7 @@ mod tests {
             expires_at: None,
             grid_cell: None,
             edge_id: None,
-            pose: Some(Pose { x: 10.0, y: 0.0 }),
+            pose: Some(Pose { x: 10.0, y: 0.0 , ..Default::default()}),
             kind: None,
         };
         let registry = TaskRegistry::new(vec![task]);
@@ -351,7 +362,7 @@ mod tests {
             expires_at: None,
             grid_cell: None,
             edge_id: None,
-            pose: Some(Pose { x: 10.0, y: 0.0 }),
+            pose: Some(Pose { x: 10.0, y: 0.0 , ..Default::default()}),
             kind: None,
         };
         let registry = TaskRegistry::new(vec![task]);
@@ -387,7 +398,7 @@ mod tests {
             expires_at: None,
             grid_cell: None,
             edge_id: None,
-            pose: Some(Pose { x: 3.0, y: 0.0 }),
+            pose: Some(Pose { x: 3.0, y: 0.0 , ..Default::default()}),
             kind: None,
         };
         let registry = TaskRegistry::new(vec![task]);
@@ -417,7 +428,7 @@ mod tests {
             expires_at: None,
             grid_cell: None,
             edge_id: None,
-            pose: Some(Pose { x: 100.0, y: 0.0 }),
+            pose: Some(Pose { x: 100.0, y: 0.0 , ..Default::default()}),
             kind: None,
         };
         let registry = TaskRegistry::new(vec![task]);
@@ -448,7 +459,7 @@ mod tests {
             expires_at: None,
             grid_cell: None,
             edge_id: None,
-            pose: Some(Pose { x: 100.0, y: 0.0 }),
+            pose: Some(Pose { x: 100.0, y: 0.0 , ..Default::default()}),
             kind: None,
         };
         let registry = TaskRegistry::new(vec![task]);
@@ -467,7 +478,7 @@ mod tests {
     fn movement_no_target_no_movement() {
         let mut a = agent("agent-0");
         a.speed = 5.0;
-        let view_before = Pose { x: 0.0, y: 0.0 };
+        let view_before = Pose { x: 0.0, y: 0.0 , ..Default::default()};
         let mut view = MembershipView::new(vec![a]);
         let (exhausted, distances) = view.apply_movement(&TaskRegistry::new(vec![]), 1000);
         assert!(exhausted.is_empty());

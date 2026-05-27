@@ -270,7 +270,7 @@ mod tests {
             },
             Event::SarDetection {
                 agent_id: AgentId::from("a0".to_owned()),
-                target_pose: Pose { x: 1.0, y: 2.0 },
+                target_pose: Pose { x: 1.0, y: 2.0 , ..Default::default()},
                 tick: 5,
             },
             Event::EdgeVisited {

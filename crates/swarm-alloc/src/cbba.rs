@@ -83,7 +83,7 @@ impl CbbaAllocator {
     /// Compute the marginal score for assigning a task to an agent,
     /// given the agent's existing bundle.
     pub fn marginal_score(&self, agent: &AllocationAgent, task: &Task, bundle: &[TaskId]) -> f64 {
-        let task_pose = task.pose.unwrap_or(Pose { x: 0.0, y: 0.0 });
+        let task_pose = task.pose.unwrap_or(Pose { x: 0.0, y: 0.0 , ..Default::default()});
         let dist = agent.pose.distance_to(&task_pose);
         let base = -self.config.score_weight_distance * dist
             + self.config.score_weight_battery * agent.battery;
@@ -351,7 +351,7 @@ mod tests {
             required_role: None,
             preferred_role: None,
             expires_at: None,
-            pose: Some(Pose { x, y }),
+            pose: Some(Pose { x, y , ..Default::default()}),
             grid_cell: None,
             edge_id: None,
             kind: None,
@@ -361,7 +361,7 @@ mod tests {
     fn agent(id: &str, x: f64, y: f64) -> AllocationAgent {
         AllocationAgent {
             id: AgentId::from(id.to_owned()),
-            pose: Pose { x, y },
+            pose: Pose { x, y , ..Default::default()},
             battery: 100.0,
             capabilities: vec![],
             role: Role::Scout,
@@ -533,7 +533,7 @@ mod tests {
 
     #[test]
     fn route_planner_nearest_first() {
-        let agent_pose = Pose { x: 0.0, y: 0.0 };
+        let agent_pose = Pose { x: 0.0, y: 0.0 , ..Default::default()};
         let t_near = task("t_near", 1, 1.0, 0.0);
         let t_far = task("t_far", 1, 100.0, 0.0);
         let tasks = vec![t_far.clone(), t_near.clone()];
@@ -544,7 +544,7 @@ mod tests {
 
     #[test]
     fn route_planner_all_tasks_included() {
-        let agent_pose = Pose { x: 0.0, y: 0.0 };
+        let agent_pose = Pose { x: 0.0, y: 0.0 , ..Default::default()};
         let t1 = task("t1", 1, 10.0, 0.0);
         let t2 = task("t2", 1, 50.0, 0.0);
         let t3 = task("t3", 1, 30.0, 0.0);
@@ -591,7 +591,7 @@ mod tests {
 
     #[test]
     fn cbba_route_planner_reduces_travel_distance() {
-        let agent_pose = Pose { x: 0.0, y: 0.0 };
+        let agent_pose = Pose { x: 0.0, y: 0.0 , ..Default::default()};
         let tasks = vec![
             task("t_far", 1, 100.0, 0.0),
             task("t_near", 1, 1.0, 0.0),
@@ -628,7 +628,7 @@ mod tests {
             id: AgentId::from("a0".to_owned()),
             role: Role::Scout,
             health: swarm_types::Health::Alive,
-            pose: Pose { x: 0.0, y: 0.0 },
+            pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
             capabilities: vec![],
             current_task: None,
             battery,

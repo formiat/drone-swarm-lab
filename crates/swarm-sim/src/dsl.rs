@@ -230,7 +230,7 @@ mod tests {
                     id: swarm_types::AgentId::from("agent-0".to_owned()),
                     role: Role::Scout,
                     health: Health::Alive,
-                    pose: Pose { x: 0.0, y: 0.0 },
+                    pose: Pose { x: 0.0, y: 0.0 , ..Default::default()},
                     capabilities: vec![],
                     current_task: None,
                     battery: 100.0,
