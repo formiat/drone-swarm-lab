@@ -19,6 +19,7 @@
 - `crates/swarm-alloc/src/route_planner.rs` содержит `BatteryAwarePlanner` и уже имеет несколько feasibility tests.
 - `crates/swarm-examples/tests/support_matrix.rs` частично документирует supported/unsupported combinations через тесты, но полноценной support matrix model пока нет.
 - `crates/swarm-sim/src/regression.rs` содержит default suites and thresholds, где часть weak combinations уже помечена comments как experimental/physically constrained.
+- `crates/swarm-alloc/src/centralized.rs` содержит отдельный centralized strategy path: `CentralizedPlanner::new`, private `cost(...)`, optional `route_planner` ordering и `bundle_travel_distance`. Его нельзя сводить к generic `allocator.rs`, потому что SAR + centralized уже классифицируется как unsupported `static_pre_plan`.
 
 Важное наблюдение по текущему коду: `compute_mission_success` в `crates/swarm-sim/src/runner.rs` принимает `_adapter_complete`, но параметр сейчас не используется напрямую в mission-specific branches. Это не обязательно баг, но M41 должен явно проверить, где completion должен быть adapter-driven, где mission-state driven, а где это intentional fallback.
 
@@ -35,6 +36,7 @@
 - `crates/swarm-sim/src/runner.rs`, особенно `compute_mission_success`, `build_run_state`, `adapter_driven_complete`, финальный metrics block.
 - `crates/swarm-sim/src/dsl.rs`, особенно `validate_mission_specific`.
 - `crates/swarm-alloc/src/route_planner.rs`, especially `BatteryAwarePlanner`.
+- `crates/swarm-alloc/src/centralized.rs`, especially `CentralizedPlanner::new`, private `cost(...)`, optional `route_planner` path and travel-distance accounting.
 - `crates/swarm-examples/tests/support_matrix.rs`.
 - `crates/swarm-sim/src/regression.rs`, default suites comments/thresholds.
 
@@ -54,6 +56,8 @@
   - possible follow-up tagging of stable vs experimental suites, but avoid broad M42 work.
 - `crates/swarm-alloc/src/allocator.rs`
   - adapter-aware allocation path for greedy/auction-style allocators.
+- `crates/swarm-alloc/src/centralized.rs`
+  - centralized strategy path: `CentralizedPlanner::new`, private `cost(...)`, optional `route_planner`, `bundle_travel_distance`, and SAR + centralized `static_pre_plan` classification.
 - `crates/swarm-alloc/src/cbba.rs`
   - likely classification target: CBBA scoring is mostly distance/battery and may not be mission-adapter-aware.
 - `crates/swarm-alloc/src/route_planner.rs`
@@ -74,7 +78,7 @@
 ## Implementation steps
 
 1. Inventory current semantics paths.
-   - Read and summarize `crates/swarm-types/src/adapter.rs`, `crates/swarm-sim/src/runner.rs`, `crates/swarm-sim/src/dsl.rs`, `crates/swarm-alloc/src/allocator.rs`, `crates/swarm-alloc/src/cbba.rs`, `crates/swarm-alloc/src/route_planner.rs`.
+   - Read and summarize `crates/swarm-types/src/adapter.rs`, `crates/swarm-sim/src/runner.rs`, `crates/swarm-sim/src/dsl.rs`, `crates/swarm-alloc/src/allocator.rs`, `crates/swarm-alloc/src/centralized.rs`, `crates/swarm-alloc/src/cbba.rs`, `crates/swarm-alloc/src/route_planner.rs`.
    - Create `docs_raw/M41_SEMANTICS_AUDIT.md` with sections: `Scope`, `Semantics paths`, `Gap classes`, `Support matrix`, `High-confidence fixes`, `Regression candidates`, `Follow-ups`.
    - Do not use long benchmark runs as evidence; use code audit and small deterministic fixtures.
 
@@ -106,6 +110,8 @@
 
 5. Audit allocator/planner semantic context.
    - In `crates/swarm-alloc/src/allocator.rs`, confirm adapter-aware greedy/auction paths call `adapter.score` and `adapter.route_cost` where intended.
+   - In `crates/swarm-alloc/src/centralized.rs`, audit `CentralizedPlanner::new`, private `cost(...)`, capability/role filtering, optional `route_planner` ordering, `bundle_travel_distance`, and whether centralized should remain a mission-agnostic oracle baseline for each mission.
+   - Explicitly classify SAR + centralized `static_pre_plan` using `crates/swarm-examples/tests/support_matrix.rs`, so this unsupported combination remains tracked and is not accidentally promoted to stable support.
    - In `crates/swarm-alloc/src/cbba.rs`, classify current mission-agnostic scoring as either accepted limitation, experimental, or implementation gap. Avoid rewriting CBBA unless a tiny high-confidence bug is found.
    - In `crates/swarm-alloc/src/route_planner.rs`, strengthen `BatteryAwarePlanner` tests so they prove it drops only as many tasks as required for the current ordered subset. Existing tests show the area but one test has a weak assertion and should be made precise.
 
@@ -151,6 +157,7 @@
    - Run only targeted tests touched by M41, for example:
      - `PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 timeout 300s /home/formi/.local/bin/runlim cargo test -p swarm-types -- adapter`
      - `PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 timeout 300s /home/formi/.local/bin/runlim cargo test -p swarm-sim -- dsl runner`
+     - `PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 timeout 300s /home/formi/.local/bin/runlim cargo test -p swarm-alloc -- centralized`
      - `PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 timeout 300s /home/formi/.local/bin/runlim cargo test -p swarm-alloc -- route_planner`
      - `PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 timeout 300s /home/formi/.local/bin/runlim cargo test -p swarm-examples --test support_matrix`
    - If code changes are made, run `cargo fmt --all` and clippy over affected crates with a hard timeout.
@@ -173,8 +180,12 @@
 - `crates/swarm-alloc/src/route_planner.rs`
   - Replace weak feasibility assertion with a precise test where the full ordered route is infeasible but dropping exactly the tail task makes it feasible.
   - Add one negative case where even the first task is infeasible and output should be empty.
+- `crates/swarm-alloc/src/centralized.rs`
+  - Add or strengthen a short unit test around centralized route ordering/travel-distance accounting when `route_planner` is set, if M41 touches that path.
+  - Add a negative/edge test for capability/role filtering if audit finds an ambiguity in `CentralizedPlanner::new`.
 - `crates/swarm-examples/tests/support_matrix.rs`
   - Add assertions for combinations already known unsupported or experimental, without requiring long runs.
+  - Preserve or strengthen the existing SAR + centralized unsupported assertion (`static_pre_plan`) so centralized classification remains explicit in M41.
 - `crates/swarm-metrics/src/metrics.rs`
   - Add targeted metric consistency tests if a high-confidence metric bug is found.
 
