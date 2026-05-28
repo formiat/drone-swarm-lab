@@ -316,6 +316,9 @@ pub struct BenchmarkManifest {
     // v0.37 Battery model metadata
     #[serde(default)]
     pub battery_model: Option<swarm_types::BatteryModel>,
+    /// Number of rayon worker threads used; `None` means all available CPUs.
+    #[serde(default)]
+    pub jobs: Option<usize>,
 }
 
 impl BenchmarkManifest {
@@ -353,6 +356,7 @@ impl BenchmarkManifest {
             pose_noise_m: 0.0,
             comms_jitter_ticks: 0,
             battery_model: None,
+            jobs: None,
         }
     }
 }
@@ -488,6 +492,109 @@ pub fn generate_focused_report(reports: &[(String, crate::ComparisonReport)]) ->
     out
 }
 
+/// Compare two [`crate::ComparisonReport`]s for metric equality, ignoring timestamps,
+/// run ids, and iteration-order differences in strategy/profile names.
+///
+/// Returns `Ok(())` when the reports agree on all checked metrics, or `Err(msgs)` with a
+/// list of human-readable mismatch descriptions. Because both inputs are expected to use the
+/// same seeds in sorted order, metric values must be bit-identical — no tolerance is applied.
+pub fn compare_reports(
+    a: &crate::ComparisonReport,
+    b: &crate::ComparisonReport,
+) -> Result<(), Vec<String>> {
+    let mut errors: Vec<String> = Vec::new();
+
+    // Strategy set equality (order-insensitive).
+    let mut a_strats = a.strategy_names.clone();
+    let mut b_strats = b.strategy_names.clone();
+    a_strats.sort();
+    b_strats.sort();
+    if a_strats != b_strats {
+        errors.push(format!(
+            "strategy_names differ: {:?} vs {:?}",
+            a_strats, b_strats
+        ));
+    }
+
+    // Profile set equality (order-insensitive).
+    let mut a_profs = a.profile_names.clone();
+    let mut b_profs = b.profile_names.clone();
+    a_profs.sort();
+    b_profs.sort();
+    if a_profs != b_profs {
+        errors.push(format!(
+            "profile_names differ: {:?} vs {:?}",
+            a_profs, b_profs
+        ));
+    }
+
+    // Row count.
+    if a.results.len() != b.results.len() {
+        errors.push(format!(
+            "row count differs: {} vs {}",
+            a.results.len(),
+            b.results.len()
+        ));
+    }
+
+    // Per-row metric equality.
+    for key in a.results.keys() {
+        match (a.results.get(key), b.results.get(key)) {
+            (Some(ma), Some(mb)) => {
+                if !ma.mission.is_empty() && !mb.mission.is_empty() && ma.mission != mb.mission {
+                    errors.push(format!(
+                        "key {key:?}: mission {:?} vs {:?}",
+                        ma.mission, mb.mission
+                    ));
+                }
+                if ma.total_runs != mb.total_runs {
+                    errors.push(format!(
+                        "key {key:?}: total_runs {} vs {}",
+                        ma.total_runs, mb.total_runs
+                    ));
+                }
+                if ma.success_rate != mb.success_rate {
+                    errors.push(format!(
+                        "key {key:?}: success_rate {} vs {}",
+                        ma.success_rate, mb.success_rate
+                    ));
+                }
+                if ma.avg_task_completion_rate != mb.avg_task_completion_rate {
+                    errors.push(format!(
+                        "key {key:?}: avg_task_completion_rate {} vs {}",
+                        ma.avg_task_completion_rate, mb.avg_task_completion_rate
+                    ));
+                }
+                if ma.avg_messages_attempted != mb.avg_messages_attempted {
+                    errors.push(format!(
+                        "key {key:?}: avg_messages_attempted {} vs {}",
+                        ma.avg_messages_attempted, mb.avg_messages_attempted
+                    ));
+                }
+            }
+            (Some(_), None) => {
+                errors.push(format!(
+                    "key {key:?} present in first report but not in second"
+                ));
+            }
+            _ => {}
+        }
+    }
+    for key in b.results.keys() {
+        if !a.results.contains_key(key) {
+            errors.push(format!(
+                "key {key:?} present in second report but not in first"
+            ));
+        }
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -611,6 +718,7 @@ mod tests {
             pose_noise_m: 0.0,
             comms_jitter_ticks: 0,
             battery_model: None,
+            jobs: None,
         };
         let json = serde_json::to_string(&manifest).unwrap();
         let decoded: BenchmarkManifest = serde_json::from_str(&json).unwrap();
@@ -658,5 +766,111 @@ mod tests {
         let focused = generate_focused_report(&[("sar".to_owned(), report)]);
         assert!(focused.contains("| Strategy"));
         assert!(focused.contains("| Profile"));
+    }
+
+    #[test]
+    fn benchmark_manifest_jobs_field_roundtrips() {
+        let mut manifest = BenchmarkManifest::new(
+            "test",
+            0,
+            1,
+            vec!["greedy".to_owned()],
+            vec!["ideal".to_owned()],
+        );
+        manifest.jobs = Some(4);
+        let json = serde_json::to_string(&manifest).unwrap();
+        let decoded: BenchmarkManifest = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.jobs, Some(4));
+    }
+
+    #[test]
+    fn benchmark_manifest_jobs_default_is_none() {
+        let manifest = BenchmarkManifest::new(
+            "test",
+            0,
+            1,
+            vec!["greedy".to_owned()],
+            vec!["ideal".to_owned()],
+        );
+        assert!(manifest.jobs.is_none());
+        // Old manifests without the field deserialize to None.
+        let json_without_jobs = r#"{"timestamp":"t","git_commit":"abc","command_line":"c","suite_name":"s","schema_version":"0.1","seed_range_start":0,"seed_range_end":1,"strategy_names":[],"profile_names":[],"metric_schema_version":"0.1"}"#;
+        let decoded: BenchmarkManifest = serde_json::from_str(json_without_jobs).unwrap();
+        assert!(decoded.jobs.is_none());
+    }
+
+    fn make_aggregate(mission: &str, success_rate: f64) -> AggregateMetrics {
+        AggregateMetrics {
+            total_runs: 1,
+            success_rate,
+            mission: mission.to_owned(),
+            scenario: mission.to_owned(),
+            avg_network_availability: 1.0,
+            avg_task_completion_rate: 1.0,
+            ..AggregateMetrics::default()
+        }
+    }
+
+    fn make_report_for_comparison(mission: &str, success: f64) -> crate::ComparisonReport {
+        let mut results = HashMap::new();
+        results.insert(
+            ("greedy".to_owned(), "ideal".to_owned()),
+            make_aggregate(mission, success),
+        );
+        crate::ComparisonReport {
+            benchmark_run_id: "ignored".to_owned(),
+            seed_range_start: 0,
+            seed_range_end: 1,
+            total_runs_per_cell: 1,
+            mission_names: vec![mission.to_owned()],
+            scenario_names: vec![],
+            strategy_names: vec!["greedy".to_owned()],
+            profile_names: vec!["ideal".to_owned()],
+            results,
+        }
+    }
+
+    #[test]
+    fn compare_reports_identical_ok() {
+        let r = make_report_for_comparison("sar", 0.9);
+        assert!(compare_reports(&r, &r).is_ok());
+    }
+
+    #[test]
+    fn compare_reports_detects_success_rate_mismatch() {
+        let r1 = make_report_for_comparison("sar", 1.0);
+        let r2 = make_report_for_comparison("sar", 0.0);
+        let err = compare_reports(&r1, &r2).unwrap_err();
+        assert!(
+            err.iter().any(|e| e.contains("success_rate")),
+            "should report success_rate mismatch, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn compare_reports_detects_strategy_set_mismatch() {
+        let r1 = make_report_for_comparison("sar", 1.0);
+        let mut r2 = make_report_for_comparison("sar", 1.0);
+        r2.strategy_names.push("cbba".to_owned());
+        let err = compare_reports(&r1, &r2).unwrap_err();
+        assert!(
+            err.iter().any(|e| e.contains("strategy_names")),
+            "should report strategy_names mismatch, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn compare_reports_detects_row_count_mismatch() {
+        let r1 = make_report_for_comparison("sar", 1.0);
+        let mut r2 = make_report_for_comparison("sar", 1.0);
+        r2.results.insert(
+            ("cbba".to_owned(), "ideal".to_owned()),
+            make_aggregate("sar", 1.0),
+        );
+        let err = compare_reports(&r1, &r2).unwrap_err();
+        assert!(
+            err.iter().any(|e| e.contains("row count")),
+            "should report row count mismatch, got: {err:?}"
+        );
     }
 }

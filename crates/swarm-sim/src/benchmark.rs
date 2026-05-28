@@ -311,6 +311,10 @@ impl BenchmarkHarness {
             report_results.insert((strategy_name, profile_name), metrics);
         }
 
+        // Sort for deterministic display and export ordering regardless of HashMap iteration order.
+        strategy_names.sort();
+        report_profile_names.sort();
+
         BenchmarkResult {
             report: ComparisonReport {
                 benchmark_run_id,
@@ -664,6 +668,77 @@ mod tests {
         assert_eq!(
             m1.avg_task_completion_rate, m4.avg_task_completion_rate,
             "avg_task_completion_rate must be identical for jobs=1 and jobs=4"
+        );
+    }
+
+    #[test]
+    fn report_row_order_stable_across_jobs() {
+        // Verifies that strategy_names and profile_names — and therefore the Display output —
+        // are identical regardless of rayon thread count.
+        let factories: Vec<StrategyFactory> = vec![
+            Box::new(|_scenario: &Scenario, _run_config: &RunConfig| {
+                Box::new(GreedyAllocator) as Box<dyn Strategy>
+            }),
+            Box::new(|scenario: &Scenario, _run_config: &RunConfig| {
+                let allocation_tasks: Vec<AllocationTask<'_>> = scenario
+                    .tasks
+                    .iter()
+                    .map(|t| AllocationTask { task: t })
+                    .collect();
+                let allocation_agents: Vec<AllocationAgent> = scenario
+                    .agents
+                    .iter()
+                    .map(|a| AllocationAgent {
+                        id: a.id.clone(),
+                        pose: a.pose,
+                        battery: a.battery,
+                        capabilities: a.capabilities.clone(),
+                        role: a.role.clone(),
+                        comms_range: a.comms_range,
+                        speed: 0.0,
+                        max_range: 0.0,
+                        battery_drain_rate: 0.0,
+                    })
+                    .collect();
+                Box::new(CentralizedPlanner::new(
+                    &allocation_tasks,
+                    &allocation_agents,
+                )) as Box<dyn Strategy>
+            }),
+        ];
+        let profiles = vec!["profile-a".to_owned(), "profile-b".to_owned()];
+        let builder = make_scenario_builder();
+
+        let run = |jobs: usize| {
+            BenchmarkHarness::run_with_seeds(
+                &factories,
+                &profiles,
+                &builder,
+                0..4,
+                Some(BenchmarkOptions {
+                    jobs: Some(jobs),
+                    ..Default::default()
+                }),
+            )
+            .report
+        };
+
+        let r1 = run(1);
+        let r2 = run(2);
+
+        assert_eq!(
+            r1.strategy_names, r2.strategy_names,
+            "strategy_names order must be stable across jobs"
+        );
+        assert_eq!(
+            r1.profile_names, r2.profile_names,
+            "profile_names order must be stable across jobs"
+        );
+        // Display output must be bit-identical (same row order, same values).
+        assert_eq!(
+            format!("{r1}"),
+            format!("{r2}"),
+            "Display output must be identical for jobs=1 vs jobs=2"
         );
     }
 

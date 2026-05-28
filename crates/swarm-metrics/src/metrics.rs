@@ -129,7 +129,7 @@ pub struct RunMetrics {
     pub wind: Option<(f64, f64, f64)>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct AggregateMetrics {
     pub total_runs: u64,
     pub success_rate: f64,

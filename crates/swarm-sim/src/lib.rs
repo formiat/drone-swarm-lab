@@ -19,7 +19,8 @@ pub use regression::{
     RegressionSuite, SuiteMode, SuiteResult, Threshold, ThresholdChecker, ThresholdViolation,
 };
 pub use report_export::{
-    export_csv, export_json, export_markdown, generate_focused_report, BenchmarkManifest,
+    compare_reports, export_csv, export_json, export_markdown, generate_focused_report,
+    BenchmarkManifest,
 };
 pub use runner::{
     DynamicTaskEvent, FailureEvent, InspectionState, PartitionEvent, RunConfig, ScenarioRunner,
