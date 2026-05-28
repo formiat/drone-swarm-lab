@@ -64,18 +64,20 @@ pub trait Allocator {
         agents: &[AllocationAgent],
         registry: &AdapterRegistry,
     ) -> Vec<(TaskId, AgentId)> {
-        // For backward compatibility, if no tasks have a kind, use plain allocate
-        let all_have_kind = tasks.iter().all(|t| t.task.kind.is_some());
-        if !all_have_kind {
-            return self.allocate(tasks, agents);
-        }
-        // Otherwise delegate to adapter-aware path via the first task's adapter
-        if let Some(first) = tasks.first() {
-            if let Some(adapter) = registry.for_task(first.task) {
-                return self.allocate_with_adapter(tasks, agents, adapter);
+        use std::collections::HashSet;
+        // Collect unique kinds present in the task pool.
+        let kinds: HashSet<_> = tasks.iter().filter_map(|t| t.task.kind.as_ref()).collect();
+        match kinds.len() {
+            // No tasks have a kind → backward-compatible plain allocation.
+            0 => self.allocate(tasks, agents),
+            // All tasks share the same kind → use that kind's adapter for scoring.
+            1 => {
+                let kind = kinds.into_iter().next().unwrap();
+                self.allocate_with_adapter(tasks, agents, registry.get(kind))
             }
+            // Mixed kinds → fall back to plain allocation to avoid cross-kind scoring errors.
+            _ => self.allocate(tasks, agents),
         }
-        self.allocate(tasks, agents)
     }
 }
 
@@ -186,6 +188,16 @@ impl Allocator for GreedyAllocator {
         }
 
         assignments
+    }
+
+    fn allocate_with_connectivity(
+        &mut self,
+        tasks: &[AllocationTask<'_>],
+        agents: &[AllocationAgent],
+        _connectivity: &ConnectivityContext,
+    ) -> Vec<(TaskId, AgentId)> {
+        // GreedyAllocator ignores connectivity; use registry-aware scoring when tasks have kind.
+        self.allocate_with_registry(tasks, agents, &AdapterRegistry::new())
     }
 }
 
@@ -305,6 +317,16 @@ impl Allocator for AuctionAllocator {
         }
 
         assignments
+    }
+
+    fn allocate_with_connectivity(
+        &mut self,
+        tasks: &[AllocationTask<'_>],
+        agents: &[AllocationAgent],
+        _connectivity: &ConnectivityContext,
+    ) -> Vec<(TaskId, AgentId)> {
+        // AuctionAllocator ignores connectivity; use registry-aware scoring when tasks have kind.
+        self.allocate_with_registry(tasks, agents, &AdapterRegistry::new())
     }
 }
 

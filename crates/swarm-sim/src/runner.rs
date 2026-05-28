@@ -260,9 +260,14 @@ impl ScenarioRunner {
                 state.mapped_zones.insert(zone.clone());
             }
         }
-        // Tasks that are already marked as completed in the registry
+        // A task is "complete" for adapter purposes when it has been assigned or explicitly
+        // completed. SAR/Inspection/Wildfire adapters use scanned_cells/covered_edges/
+        // mapped_zones; only coverage-type adapters rely on completed_tasks. Treating
+        // assigned tasks as complete here enables CoverageAdapter to report early-exit.
         for task in tasks {
-            if matches!(task.status, swarm_types::TaskStatus::Completed) {
+            if task.assigned_to.is_some()
+                || matches!(task.status, swarm_types::TaskStatus::Completed)
+            {
                 state.completed_tasks.insert(task.id.clone());
             }
         }
@@ -1108,15 +1113,18 @@ impl ScenarioRunner {
                 .find(|(_, id)| !crashed_agents.contains(id))
                 .is_some_and(|(node, _)| node.coordinator.registry.all_assigned_or_completed());
 
-            // v0.33 adapter-driven completion checks
-            let run_state = Self::build_run_state(
-                &grid_state,
-                &inspection_state,
-                &wildfire_state,
-                &scenario.tasks,
-            );
+            // v0.33 adapter-driven completion checks — use live tasks from the registry so
+            // that statuses (Assigned, Completed) reflect the current simulation state rather
+            // than the initial snapshot stored in scenario.tasks.
+            let live_tasks: Vec<Task> = nodes
+                .iter()
+                .find(|(_, id)| !crashed_agents.contains(id))
+                .map(|(node, _)| node.coordinator.registry.tasks().cloned().collect())
+                .unwrap_or_default();
+            let run_state =
+                Self::build_run_state(&grid_state, &inspection_state, &wildfire_state, &live_tasks);
             let adapter_complete =
-                Self::adapter_driven_complete(&scenario.tasks, &run_state, &adapter_registry);
+                Self::adapter_driven_complete(&live_tasks, &run_state, &adapter_registry);
 
             // Legacy mission-specific checks preserved as fallback
             let sar_complete = grid_state.as_ref().is_none_or(|g| g.all_targets_found());
@@ -1641,6 +1649,71 @@ mod tests {
         let cfg = config(vec![]);
         let metrics = ScenarioRunner::run_with(&s, cfg, DuplicateAllocator);
         assert!(metrics.conflicting_assignments > 0);
+    }
+
+    #[test]
+    fn runner_coverage_kind_exits_before_max_ticks() {
+        // Tasks with kind: CoverageCell should trigger adapter-driven early exit once assigned,
+        // so total_ticks must be less than max_ticks.
+        use swarm_types::TaskKind;
+        let scenario = {
+            let agents = (0..3)
+                .map(|i| Agent {
+                    id: AgentId::from(format!("agent-{i}")),
+                    role: Role::Scout,
+                    health: Health::Alive,
+                    pose: Pose {
+                        x: 0.0,
+                        y: 0.0,
+                        ..Default::default()
+                    },
+                    capabilities: vec![],
+                    current_task: None,
+                    battery: 100.0,
+                    comms_range: f64::INFINITY,
+                    generation: 1,
+                    speed: 0.0,
+                    max_range: 0.0,
+                    battery_drain_rate: 0.0,
+                    battery_model: None,
+                })
+                .collect();
+            let tasks = (0..3)
+                .map(|i| Task {
+                    id: TaskId::from(format!("task-{i}")),
+                    status: TaskStatus::Unassigned,
+                    assigned_to: None,
+                    priority: 1,
+                    required_capabilities: vec![],
+                    required_role: None,
+                    preferred_role: None,
+                    expires_at: None,
+                    pose: None,
+                    grid_cell: None,
+                    edge_id: None,
+                    kind: Some(TaskKind::CoverageCell),
+                })
+                .collect();
+            Scenario {
+                name: "coverage_early_exit".to_owned(),
+                seed: 0,
+                agents,
+                tasks,
+                ground_nodes: vec![],
+                base_station: None,
+            }
+        };
+        let cfg = RunConfig {
+            max_ticks: 200,
+            ..config(vec![])
+        };
+        let metrics = ScenarioRunner::run(&scenario, cfg);
+        assert!(
+            metrics.total_ticks < 200,
+            "coverage with kind-tagged tasks should exit early, got total_ticks={}",
+            metrics.total_ticks
+        );
+        assert!(metrics.all_tasks_assigned);
     }
 
     #[test]
