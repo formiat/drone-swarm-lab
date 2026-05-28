@@ -1,18 +1,44 @@
-use std::collections::HashMap;
-
 use swarm_alloc::{
     AllocationAgent, AllocationTask, AuctionAllocator, CbbaAllocator, CentralizedPlanner,
     ConnectivityAwareAllocator, GreedyAllocator,
 };
 use swarm_sim::{
-    default_suites, Baseline, BenchmarkHarness, BenchmarkOptions, RegressionRunner, RunConfig,
-    Scenario, SuiteMode,
+    all_suites, default_suites, suites_by_group, Baseline, RegressionReport, RegressionRunner,
+    RegressionSuite, RunConfig, Scenario, SuiteGroup,
 };
 
-use swarm_examples::regression_lib::{build_mission_scenario_builder, with_realism_if_needed};
+use swarm_examples::regression_lib::{run_regression_suite, StrategyFactory};
 
-type StrategyFactory =
-    Box<dyn Fn(&Scenario, &RunConfig) -> Box<dyn swarm_alloc::Strategy> + Send + Sync>;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OutputFormat {
+    Human,
+    Json,
+}
+
+#[derive(Debug)]
+struct CliOptions {
+    compare_baseline: Option<String>,
+    update_baseline: Option<String>,
+    jobs: Option<usize>,
+    list_suites: bool,
+    suite_group: Option<SuiteGroup>,
+    suite_name: Option<String>,
+    format: OutputFormat,
+}
+
+impl Default for CliOptions {
+    fn default() -> Self {
+        Self {
+            compare_baseline: None,
+            update_baseline: None,
+            jobs: None,
+            list_suites: false,
+            suite_group: None,
+            suite_name: None,
+            format: OutputFormat::Human,
+        }
+    }
+}
 
 fn make_cbba_allocator() -> CbbaAllocator {
     use swarm_alloc::route_planner::NearestNeighbourPlanner;
@@ -62,115 +88,203 @@ fn make_factories() -> Vec<StrategyFactory> {
     ]
 }
 
-fn main() {
-    let args: Vec<String> = std::env::args().collect();
-    let mut compare_baseline: Option<String> = None;
-    let mut update_baseline: Option<String> = None;
-    let mut jobs: Option<usize> = None;
+fn usage() -> &'static str {
+    "Usage: regression_runner [--list-suites] [--suite smoke|quick|experimental|validation] [--suite-name NAME] [--format human|json] [--compare-baseline PATH] [--update-baseline PATH] [--jobs N]"
+}
+
+fn next_arg(args: &[String], index: &mut usize, flag: &str) -> Result<String, String> {
+    *index += 1;
+    args.get(*index)
+        .cloned()
+        .ok_or_else(|| format!("missing value for {flag}"))
+}
+
+fn parse_args(args: &[String]) -> Result<CliOptions, String> {
+    let mut options = CliOptions::default();
 
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
             "--compare-baseline" => {
-                i += 1;
-                if i < args.len() {
-                    compare_baseline = Some(args[i].clone());
-                }
+                options.compare_baseline = Some(next_arg(args, &mut i, "--compare-baseline")?);
             }
             "--update-baseline" => {
-                i += 1;
-                if i < args.len() {
-                    update_baseline = Some(args[i].clone());
-                }
+                options.update_baseline = Some(next_arg(args, &mut i, "--update-baseline")?);
             }
             "--jobs" => {
-                i += 1;
-                if i < args.len() {
-                    jobs = args[i].parse::<usize>().ok();
-                }
+                let value = next_arg(args, &mut i, "--jobs")?;
+                options.jobs = Some(
+                    value
+                        .parse::<usize>()
+                        .map_err(|_| format!("invalid --jobs value: {value}"))?,
+                );
             }
-            _ => {}
+            "--list-suites" => {
+                options.list_suites = true;
+            }
+            "--suite" => {
+                let value = next_arg(args, &mut i, "--suite")?;
+                options.suite_group = Some(value.parse::<SuiteGroup>()?);
+            }
+            "--suite-name" => {
+                options.suite_name = Some(next_arg(args, &mut i, "--suite-name")?);
+            }
+            "--format" => {
+                let value = next_arg(args, &mut i, "--format")?;
+                options.format = match value.as_str() {
+                    "human" => OutputFormat::Human,
+                    "json" => OutputFormat::Json,
+                    _ => return Err(format!("invalid --format value: {value}")),
+                };
+            }
+            "--json" => {
+                options.format = OutputFormat::Json;
+            }
+            "--help" | "-h" => {
+                println!("{}", usage());
+                std::process::exit(0);
+            }
+            unknown => {
+                return Err(format!("unknown argument: {unknown}"));
+            }
         }
         i += 1;
     }
 
-    let baseline = compare_baseline
-        .as_ref()
-        .and_then(|path| Baseline::load(path).ok());
+    Ok(options)
+}
 
-    let suites = default_suites();
-    let factories = make_factories();
+fn selected_suites(options: &CliOptions) -> Vec<RegressionSuite> {
+    let mut suites = if let Some(group) = options.suite_group {
+        suites_by_group(group)
+    } else {
+        default_suites()
+    };
 
-    let report = RegressionRunner::run(&suites, baseline.as_ref(), |suite| {
-        let mut builder = build_mission_scenario_builder(&suite.mission).unwrap_or_else(|| {
-            eprintln!("Unknown mission: {}", suite.mission);
-            std::process::exit(1);
-        });
-        builder = with_realism_if_needed(builder, suite);
+    if let Some(name) = &options.suite_name {
+        suites.retain(|suite| suite.name == *name);
+    }
 
-        let profile_names = vec![suite.profile.clone()];
-        let result = match suite.mode {
-            SuiteMode::Smoke => BenchmarkHarness::run_smoke_with_options(
-                &factories,
-                &profile_names,
-                &builder,
-                BenchmarkOptions {
-                    prefix: Some(&suite.name),
-                    enable_replay_log: false,
-                    mission_name: &suite.mission,
-                    jobs,
-                },
-            ),
-            SuiteMode::Quick => BenchmarkHarness::run_quick_with_options(
-                &factories,
-                &profile_names,
-                &builder,
-                BenchmarkOptions {
-                    prefix: Some(&suite.name),
-                    enable_replay_log: false,
-                    mission_name: &suite.mission,
-                    jobs,
-                },
-            ),
-        };
+    suites
+}
 
-        let mut metrics_map = HashMap::new();
-        for (strategy_name, _profile_name) in result.report.results.keys() {
-            let key = (strategy_name.clone(), suite.profile.clone());
-            if let Some(metrics) = result.report.results.get(&key) {
-                metrics_map.insert(strategy_name.clone(), metrics.clone());
-            }
+fn suites_for_listing(options: &CliOptions) -> Vec<RegressionSuite> {
+    if options.suite_group.is_some() || options.suite_name.is_some() {
+        selected_suites(options)
+    } else {
+        all_suites()
+    }
+}
+
+fn print_suites(suites: &[RegressionSuite]) {
+    for suite in suites {
+        println!(
+            "{} group={} mode={} mission={} profile={} strategy={} gating={}",
+            suite.name,
+            suite.group.as_str(),
+            suite.mode.as_str(),
+            suite.mission,
+            suite.profile,
+            suite.strategy,
+            suite.group.is_gating()
+        );
+    }
+}
+
+fn emit_report(report: &RegressionReport, format: OutputFormat) -> Result<(), serde_json::Error> {
+    match format {
+        OutputFormat::Human => {
+            println!("{report}");
+            Ok(())
         }
-        metrics_map
+        OutputFormat::Json => {
+            println!("{}", serde_json::to_string_pretty(report)?);
+            Ok(())
+        }
+    }
+}
+
+fn has_threshold_violations(report: &RegressionReport) -> bool {
+    report
+        .suite_results
+        .iter()
+        .any(|result| !result.violations.is_empty())
+}
+
+fn current_commit() -> String {
+    std::process::Command::new("git")
+        .args(["rev-parse", "--short", "HEAD"])
+        .output()
+        .ok()
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .map(|commit| commit.trim().to_owned())
+        .unwrap_or_default()
+}
+
+fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    let options = match parse_args(&args) {
+        Ok(options) => options,
+        Err(error) => {
+            eprintln!("{error}");
+            eprintln!("{}", usage());
+            std::process::exit(2);
+        }
+    };
+
+    if options.list_suites {
+        let suites = suites_for_listing(&options);
+        print_suites(&suites);
+        std::process::exit(0);
+    }
+
+    let baseline = match &options.compare_baseline {
+        Some(path) => match Baseline::load(path) {
+            Ok(baseline) => Some(baseline),
+            Err(error) => {
+                eprintln!("Failed to load baseline {path}: {error}");
+                std::process::exit(2);
+            }
+        },
+        None => None,
+    };
+
+    let suites = selected_suites(&options);
+    if suites.is_empty() && options.suite_name.is_some() {
+        eprintln!("No regression suite matched the requested --suite-name");
+        std::process::exit(2);
+    }
+
+    let factories = make_factories();
+    let report = RegressionRunner::run(&suites, baseline.as_ref(), |suite| {
+        run_regression_suite(suite, &factories, options.jobs).unwrap_or_else(|error| {
+            eprintln!("Failed to run suite {}: {}", suite.name, error);
+            std::process::exit(2);
+        })
     });
 
-    println!("{}", report);
+    if let Err(error) = emit_report(&report, options.format) {
+        eprintln!("Failed to serialize regression report: {error}");
+        std::process::exit(1);
+    }
 
-    if let Some(path) = &update_baseline {
-        let results: Vec<(String, swarm_metrics::AggregateMetrics)> = report
-            .suite_results
-            .iter()
-            .map(|sr| {
-                let key = if sr.suite.strategy == "all" {
-                    format!("{}/{}", sr.suite.name, sr.actual_strategy)
-                } else {
-                    sr.suite.name.clone()
-                };
-                (key, sr.metrics.clone())
-            })
-            .collect();
-        let mut baseline = Baseline::from_suites(&results);
-        if let Ok(output) = std::process::Command::new("git")
-            .args(["rev-parse", "--short", "HEAD"])
-            .output()
-        {
-            baseline.commit = String::from_utf8_lossy(&output.stdout).trim().to_owned();
-        }
-        if let Err(e) = baseline.save(path) {
-            eprintln!("Failed to save baseline: {}", e);
+    if let Some(path) = &options.update_baseline {
+        if has_threshold_violations(&report) {
+            eprintln!("Refusing to update baseline from a report with threshold violations");
             std::process::exit(1);
         }
-        println!("Baseline saved to {}", path);
+
+        let suite_group = options
+            .suite_group
+            .map(SuiteGroup::as_str)
+            .unwrap_or("default");
+        let mut baseline = Baseline::from_report(&report, Some(suite_group));
+        baseline.commit = current_commit();
+        if let Err(e) = baseline.save(path) {
+            eprintln!("Failed to save baseline: {e}");
+            std::process::exit(1);
+        }
+        eprintln!("Baseline saved to {path}");
     }
 
     std::process::exit(if report.overall_pass { 0 } else { 1 });

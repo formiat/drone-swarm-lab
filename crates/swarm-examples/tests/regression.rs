@@ -1,11 +1,17 @@
 use std::process::Command;
-use tempfile::NamedTempFile;
+use tempfile::{NamedTempFile, TempDir};
+
+fn regression_runner_binary() -> &'static str {
+    env!("CARGO_BIN_EXE_regression_runner")
+}
+
+fn strategy_comparison_binary() -> &'static str {
+    env!("CARGO_BIN_EXE_strategy_comparison")
+}
 
 #[test]
 fn regression_runner_smoke_passes() {
-    let binary_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/debug/regression_runner");
-    let output = Command::new(&binary_path)
+    let output = Command::new(regression_runner_binary())
         .output()
         .expect("failed to execute regression_runner");
 
@@ -20,6 +26,85 @@ fn regression_runner_smoke_passes() {
         "Expected exit code 0. stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+#[test]
+fn regression_runner_list_suites_shows_groups() {
+    let output = Command::new(regression_runner_binary())
+        .arg("--list-suites")
+        .output()
+        .expect("failed to execute regression_runner");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "Expected exit code 0. stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(stdout.contains("group=smoke"), "stdout:\n{stdout}");
+    assert!(stdout.contains("group=quick"), "stdout:\n{stdout}");
+    assert!(stdout.contains("group=experimental"), "stdout:\n{stdout}");
+    assert!(stdout.contains("gating=false"), "stdout:\n{stdout}");
+}
+
+#[test]
+fn regression_runner_validation_json_is_machine_readable() {
+    let output = Command::new(regression_runner_binary())
+        .args(["--suite", "validation", "--format", "json"])
+        .output()
+        .expect("failed to execute regression_runner");
+
+    assert!(
+        output.status.success(),
+        "Expected exit code 0. stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["overall_pass"], true);
+    assert_eq!(value["suite_results"].as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn regression_runner_rejects_unknown_suite_group() {
+    let output = Command::new(regression_runner_binary())
+        .args(["--suite", "unknown"])
+        .output()
+        .expect("failed to execute regression_runner");
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("unknown regression suite group"),
+        "stderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn regression_runner_update_baseline_writes_caller_path() {
+    let tmp_dir = TempDir::new().unwrap();
+    let baseline_path = tmp_dir.path().join("validation-baseline.json");
+    let baseline_path = baseline_path.to_str().unwrap().to_owned();
+    let output = Command::new(regression_runner_binary())
+        .args([
+            "--suite",
+            "validation",
+            "--format",
+            "json",
+            "--update-baseline",
+            &baseline_path,
+        ])
+        .output()
+        .expect("failed to execute regression_runner");
+
+    assert!(
+        output.status.success(),
+        "Expected exit code 0. stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let baseline_json = std::fs::read_to_string(&baseline_path).unwrap();
+    let baseline: serde_json::Value = serde_json::from_str(&baseline_json).unwrap();
+    assert_eq!(baseline["suite_group"], "validation");
+    assert_eq!(baseline["results"].as_object().unwrap().len(), 0);
 }
 
 #[test]
@@ -77,9 +162,7 @@ fn regression_runner_with_forced_failure() {
     let baseline_path = tmp_file.path().to_str().unwrap().to_owned();
     std::fs::write(&baseline_path, baseline_json).unwrap();
 
-    let binary_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/debug/regression_runner");
-    let output = Command::new(&binary_path)
+    let output = Command::new(regression_runner_binary())
         .args(["--compare-baseline", &baseline_path])
         .output()
         .expect("failed to execute regression_runner");
@@ -101,10 +184,7 @@ fn regression_runner_with_forced_failure() {
 
 #[test]
 fn strategy_comparison_regression_flag() {
-    // Use the pre-built binary directly to avoid cargo file lock contention.
-    let binary_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/debug/strategy_comparison");
-    let output = Command::new(&binary_path)
+    let output = Command::new(strategy_comparison_binary())
         .args(["--regression"])
         .output()
         .expect("failed to execute strategy_comparison");

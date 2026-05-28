@@ -16,8 +16,9 @@ pub use dsl::{
     validate_scenario_suite, ScenarioSuite, ScenarioSuiteEntry, ValidationError,
 };
 pub use regression::{
-    default_suites, Baseline, BaselineDelta, DeltaStatus, RegressionReport, RegressionRunner,
-    RegressionSuite, SuiteMode, SuiteResult, Threshold, ThresholdChecker, ThresholdViolation,
+    all_suites, default_suites, suites_by_group, Baseline, BaselineDelta, DeltaStatus,
+    RegressionReport, RegressionRunner, RegressionSuite, SuiteGroup, SuiteMode, SuiteResult,
+    Threshold, ThresholdChecker, ThresholdViolation,
 };
 pub use report_export::{
     compare_reports, export_csv, export_json, export_markdown, generate_focused_report,

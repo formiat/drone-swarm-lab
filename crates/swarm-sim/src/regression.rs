@@ -1,6 +1,6 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 
-use serde::{Deserialize, Serialize};
+use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use swarm_metrics::AggregateMetrics;
 
 // ---------------------------------------------------------------------------
@@ -19,6 +19,8 @@ pub struct Threshold {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct RegressionSuite {
     pub name: String,
+    #[serde(default)]
+    pub group: SuiteGroup,
     pub mission: String,
     pub profile: String,
     pub strategy: String,
@@ -29,14 +31,70 @@ pub struct RegressionSuite {
     pub realism: bool,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SuiteGroup {
+    #[default]
+    Smoke,
+    Quick,
+    Experimental,
+    Validation,
+}
+
+impl SuiteGroup {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Smoke => "smoke",
+            Self::Quick => "quick",
+            Self::Experimental => "experimental",
+            Self::Validation => "validation",
+        }
+    }
+
+    pub fn is_gating(self) -> bool {
+        matches!(self, Self::Smoke | Self::Quick)
+    }
+}
+
+impl FromStr for SuiteGroup {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "smoke" => Ok(Self::Smoke),
+            "quick" => Ok(Self::Quick),
+            "experimental" => Ok(Self::Experimental),
+            "validation" => Ok(Self::Validation),
+            _ => Err(format!("unknown regression suite group: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum SuiteMode {
     Smoke, // 1 seed, < 5s
     Quick, // 10 seeds, < 30s
 }
 
+impl SuiteMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Smoke => "smoke",
+            Self::Quick => "quick",
+        }
+    }
+
+    /// value: `(first_seed, last_seed_inclusive)`
+    pub fn seed_range(self) -> (u64, u64) {
+        match self {
+            Self::Smoke => (0, 0),
+            Self::Quick => (0, 9),
+        }
+    }
+}
+
 /// Result of running one concrete strategy within a suite.
-/// value: `(seed_start, seed_end_exclusive)`
 #[derive(Clone, Debug)]
 pub struct SuiteResult {
     pub suite: RegressionSuite,
@@ -47,11 +105,59 @@ pub struct SuiteResult {
     pub seed_range: (u64, u64),
 }
 
+impl Serialize for SuiteResult {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut state = serializer.serialize_struct("SuiteResult", 8)?;
+        state.serialize_field("suite", &self.suite)?;
+        state.serialize_field("actual_strategy", &self.actual_strategy)?;
+        state.serialize_field("metrics", &self.metrics)?;
+        state.serialize_field("violations", &self.violations)?;
+        state.serialize_field("seed_range", &self.seed_range)?;
+        state.serialize_field("regression_key", &self.regression_key())?;
+        state.serialize_field("status", self.status_label())?;
+        state.serialize_field("reproduction_command", &self.reproduction_command())?;
+        state.end()
+    }
+}
+
+impl SuiteResult {
+    pub fn regression_key(&self) -> String {
+        if self.suite.strategy == "all" {
+            let suite_name = &self.suite.name;
+            let strategy_name = &self.actual_strategy;
+            format!("{suite_name}/{strategy_name}")
+        } else {
+            self.suite.name.clone()
+        }
+    }
+
+    pub fn reproduction_command(&self) -> String {
+        let group = self.suite.group.as_str();
+        let suite_name = &self.suite.name;
+        format!(
+            "cargo run -p swarm-examples --bin regression_runner -- --suite {group} --suite-name {suite_name} --jobs 1"
+        )
+    }
+
+    pub fn status_label(&self) -> &'static str {
+        if self.violations.is_empty() {
+            "PASS"
+        } else if self.suite.group.is_gating() {
+            "FAIL"
+        } else {
+            "NON-GATING-FAIL"
+        }
+    }
+}
+
 /// A single threshold violation with the amount by which the threshold was missed.
 ///
 /// For a `min` bound: `delta = actual - min` (negative means violation).
 /// For a `max` bound: `delta = max - actual` (negative means violation).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ThresholdViolation {
     pub threshold: Threshold,
     pub actual: f64,
@@ -161,6 +267,13 @@ pub struct Baseline {
     pub version: String,
     pub created_at: String, // ISO 8601
     pub commit: String,
+    /// Seed range covered by this baseline: `(first_seed, last_seed_inclusive)`.
+    #[serde(default)]
+    pub seed_range: Option<(u64, u64)>,
+    #[serde(default)]
+    pub seed_count: Option<u64>,
+    #[serde(default)]
+    pub suite_group: Option<String>,
     pub results: HashMap<String, AggregateMetrics>,
 }
 
@@ -170,7 +283,30 @@ impl Baseline {
             version: "1.0".to_owned(),
             created_at: chrono::Utc::now().to_rfc3339(),
             commit: String::new(),
+            seed_range: None,
+            seed_count: None,
+            suite_group: None,
             results: results.iter().cloned().collect(),
+        }
+    }
+
+    pub fn from_report(report: &RegressionReport, suite_group: Option<&str>) -> Self {
+        let results = report
+            .suite_results
+            .iter()
+            .map(|result| (result.regression_key(), result.metrics.clone()))
+            .collect();
+        let seed_range = seed_range_for_results(&report.suite_results);
+        let seed_count = seed_range.map(|(start, end)| end.saturating_sub(start) + 1);
+
+        Self {
+            version: "1.0".to_owned(),
+            created_at: chrono::Utc::now().to_rfc3339(),
+            commit: String::new(),
+            seed_range,
+            seed_count,
+            suite_group: suite_group.map(str::to_owned),
+            results,
         }
     }
 
@@ -265,9 +401,19 @@ impl Baseline {
         }
         deltas
     }
+
+    pub fn has_result(&self, suite_name: &str) -> bool {
+        self.results.contains_key(suite_name)
+    }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+fn seed_range_for_results(results: &[SuiteResult]) -> Option<(u64, u64)> {
+    let start = results.iter().map(|result| result.seed_range.0).min()?;
+    let end = results.iter().map(|result| result.seed_range.1).max()?;
+    Some((start, end))
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct BaselineDelta {
     pub suite_name: String,
     pub metric: String,
@@ -277,11 +423,22 @@ pub struct BaselineDelta {
     pub status: DeltaStatus,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum DeltaStatus {
     Improved,
     Degraded,
     Stable,
+}
+
+impl DeltaStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Improved => "improved",
+            Self::Degraded => "degraded",
+            Self::Stable => "stable",
+        }
+    }
 }
 
 fn compare_field(
@@ -344,34 +501,36 @@ impl RegressionRunner {
     ) -> RegressionReport {
         let mut suite_results = Vec::new();
         let mut deltas = Vec::new();
+        let mut missing_baselines = Vec::new();
         let mut overall_pass = true;
 
         for suite in suites {
             let metrics_map = suite_runner(suite);
-            let seed_range = match suite.mode {
-                SuiteMode::Smoke => (0u64, 0u64),
-                SuiteMode::Quick => (0u64, 9u64),
-            };
+            let seed_range = suite.mode.seed_range();
 
             if suite.strategy == "all" {
                 // Run thresholds against every strategy returned.
                 for (strategy_name, metrics) in &metrics_map {
                     let violations = ThresholdChecker::check(metrics, &suite.thresholds);
-                    let pass = violations.is_empty();
-                    if !pass {
+                    if !violations.is_empty() && suite.group.is_gating() {
                         overall_pass = false;
                     }
-                    suite_results.push(SuiteResult {
+                    let result = SuiteResult {
                         suite: suite.clone(),
                         actual_strategy: strategy_name.clone(),
                         metrics: metrics.clone(),
                         violations,
                         seed_range,
-                    });
+                    };
                     if let Some(b) = baseline {
-                        let suite_key = format!("{}/{}", suite.name, strategy_name);
-                        deltas.extend(b.compare(metrics, &suite_key));
+                        let suite_key = result.regression_key();
+                        if b.has_result(&suite_key) {
+                            deltas.extend(b.compare(metrics, &suite_key));
+                        } else {
+                            missing_baselines.push(suite_key);
+                        }
                     }
+                    suite_results.push(result);
                 }
             } else {
                 let metrics = metrics_map
@@ -379,35 +538,42 @@ impl RegressionRunner {
                     .cloned()
                     .unwrap_or_else(|| AggregateMetrics::from_runs(&[]));
                 let violations = ThresholdChecker::check(&metrics, &suite.thresholds);
-                let pass = violations.is_empty();
-                if !pass {
+                if !violations.is_empty() && suite.group.is_gating() {
                     overall_pass = false;
                 }
-                suite_results.push(SuiteResult {
+                let result = SuiteResult {
                     suite: suite.clone(),
                     actual_strategy: suite.strategy.clone(),
                     metrics: metrics.clone(),
-                    violations: violations.clone(),
+                    violations,
                     seed_range,
-                });
+                };
                 if let Some(b) = baseline {
-                    deltas.extend(b.compare(&metrics, &suite.name));
+                    let suite_key = result.regression_key();
+                    if b.has_result(&suite_key) {
+                        deltas.extend(b.compare(&metrics, &suite_key));
+                    } else {
+                        missing_baselines.push(suite_key);
+                    }
                 }
+                suite_results.push(result);
             }
         }
 
         RegressionReport {
             suite_results,
             deltas,
+            missing_baselines,
             overall_pass,
         }
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct RegressionReport {
     pub suite_results: Vec<SuiteResult>,
     pub deltas: Vec<BaselineDelta>,
+    pub missing_baselines: Vec<String>,
     pub overall_pass: bool,
 }
 
@@ -417,20 +583,17 @@ impl std::fmt::Display for RegressionReport {
         writeln!(f, "overall_pass: {}", self.overall_pass)?;
         writeln!(f)?;
         for result in &self.suite_results {
-            let status = if result.violations.is_empty() {
-                "PASS"
-            } else {
-                "FAIL"
-            };
-            let mode = match result.suite.mode {
-                SuiteMode::Smoke => "smoke",
-                SuiteMode::Quick => "quick",
-            };
+            let group = result.suite.group.as_str();
+            let mode = result.suite.mode.as_str();
+            let status = result.status_label();
             writeln!(
                 f,
-                "## {} (strategy={} mode={} seeds={}..={}) -> {}",
+                "## {} (mission={} profile={} strategy={} group={} mode={} seeds={}..={}) -> {}",
                 result.suite.name,
+                result.suite.mission,
+                result.suite.profile,
                 result.actual_strategy,
+                group,
                 mode,
                 result.seed_range.0,
                 result.seed_range.1,
@@ -439,6 +602,9 @@ impl std::fmt::Display for RegressionReport {
             for v in &result.violations {
                 writeln!(f, "  VIOLATION: {v}")?;
             }
+            if !result.violations.is_empty() {
+                writeln!(f, "  reproduce: {}", result.reproduction_command())?;
+            }
         }
         if !self.deltas.is_empty() {
             writeln!(f)?;
@@ -446,9 +612,21 @@ impl std::fmt::Display for RegressionReport {
             for d in &self.deltas {
                 writeln!(
                     f,
-                    "  {} {}: {:.3} -> {:.3} ({:+.1}%)",
-                    d.suite_name, d.metric, d.baseline_value, d.current_value, d.change_pct
+                    "  {} {}: {:.3} -> {:.3} ({:+.1}%, {})",
+                    d.suite_name,
+                    d.metric,
+                    d.baseline_value,
+                    d.current_value,
+                    d.change_pct,
+                    d.status.as_str()
                 )?;
+            }
+        }
+        if !self.missing_baselines.is_empty() {
+            writeln!(f)?;
+            writeln!(f, "## Missing Baseline Entries")?;
+            for suite_name in &self.missing_baselines {
+                writeln!(f, "  {suite_name}")?;
             }
         }
         Ok(())
@@ -459,12 +637,13 @@ impl std::fmt::Display for RegressionReport {
 // 5. Default suites
 // ---------------------------------------------------------------------------
 
-pub fn default_suites() -> Vec<RegressionSuite> {
+pub fn all_suites() -> Vec<RegressionSuite> {
     vec![
         // SAR — M35 changed success semantics to targets-found; use task_completion_rate
         // for the primary threshold since success_rate on seed 0 is unreliable.
         RegressionSuite {
             name: "sar_ideal_greedy".to_owned(),
+            group: SuiteGroup::Smoke,
             mission: "sar".to_owned(),
             profile: "ideal".to_owned(),
             strategy: "greedy".to_owned(),
@@ -485,6 +664,7 @@ pub fn default_suites() -> Vec<RegressionSuite> {
         },
         RegressionSuite {
             name: "sar_standard_greedy".to_owned(),
+            group: SuiteGroup::Smoke,
             mission: "sar".to_owned(),
             profile: "standard".to_owned(),
             strategy: "greedy".to_owned(),
@@ -506,6 +686,7 @@ pub fn default_suites() -> Vec<RegressionSuite> {
         // Inspection
         RegressionSuite {
             name: "inspection_linear_all".to_owned(),
+            group: SuiteGroup::Smoke,
             mission: "inspection".to_owned(),
             profile: "linear".to_owned(),
             strategy: "all".to_owned(),
@@ -528,6 +709,7 @@ pub fn default_suites() -> Vec<RegressionSuite> {
         // Floor threshold guards against complete failure; greedy-only suite has a stricter check.
         RegressionSuite {
             name: "inspection_perimeter_all".to_owned(),
+            group: SuiteGroup::Smoke,
             mission: "inspection".to_owned(),
             profile: "perimeter".to_owned(),
             strategy: "all".to_owned(),
@@ -542,6 +724,7 @@ pub fn default_suites() -> Vec<RegressionSuite> {
         // Experimental perimeter suite: greedy-only, softer threshold for tracking coverage floor.
         RegressionSuite {
             name: "inspection_perimeter_experimental".to_owned(),
+            group: SuiteGroup::Experimental,
             mission: "inspection".to_owned(),
             profile: "perimeter".to_owned(),
             strategy: "greedy".to_owned(),
@@ -556,6 +739,7 @@ pub fn default_suites() -> Vec<RegressionSuite> {
         // CBBA coverage — renamed from cbba_stress_pl_0_0 / cbba_stress_pl_0_2.
         RegressionSuite {
             name: "cbba_coverage_ideal_no_failures".to_owned(),
+            group: SuiteGroup::Quick,
             mission: "coverage".to_owned(),
             profile: "ideal-no-failures".to_owned(),
             strategy: "cbba".to_owned(),
@@ -581,6 +765,7 @@ pub fn default_suites() -> Vec<RegressionSuite> {
         },
         RegressionSuite {
             name: "cbba_coverage_light_loss_no_failures".to_owned(),
+            group: SuiteGroup::Quick,
             mission: "coverage".to_owned(),
             profile: "light-loss-no-failures".to_owned(),
             strategy: "cbba".to_owned(),
@@ -602,6 +787,7 @@ pub fn default_suites() -> Vec<RegressionSuite> {
         // Safety
         RegressionSuite {
             name: "safety_coverage".to_owned(),
+            group: SuiteGroup::Smoke,
             mission: "coverage".to_owned(),
             profile: "ideal-no-failures".to_owned(),
             strategy: "greedy".to_owned(),
@@ -616,6 +802,7 @@ pub fn default_suites() -> Vec<RegressionSuite> {
         // Emergency mesh — success semantics on seed 0 produce 0; use network_availability floor.
         RegressionSuite {
             name: "emergency_mesh_ideal".to_owned(),
+            group: SuiteGroup::Smoke,
             mission: "emergency-mesh".to_owned(),
             profile: "ideal".to_owned(),
             strategy: "greedy".to_owned(),
@@ -630,6 +817,7 @@ pub fn default_suites() -> Vec<RegressionSuite> {
         // Wildfire — M35 changed success to mapped-ratio; task_completion_rate is the reliable signal.
         RegressionSuite {
             name: "wildfire_small_static_greedy".to_owned(),
+            group: SuiteGroup::Smoke,
             mission: "wildfire".to_owned(),
             profile: "small-static".to_owned(),
             strategy: "greedy".to_owned(),
@@ -644,6 +832,7 @@ pub fn default_suites() -> Vec<RegressionSuite> {
         // Experimental: dynamic semantics; task_completion_rate as floor.
         RegressionSuite {
             name: "wildfire_medium_dynamic_greedy".to_owned(),
+            group: SuiteGroup::Experimental,
             mission: "wildfire".to_owned(),
             profile: "medium-dynamic".to_owned(),
             strategy: "greedy".to_owned(),
@@ -658,6 +847,7 @@ pub fn default_suites() -> Vec<RegressionSuite> {
         // Realism smoke: coverage under M31 realism preset; softer threshold due to noise overhead.
         RegressionSuite {
             name: "realism_coverage_smoke".to_owned(),
+            group: SuiteGroup::Experimental,
             mission: "coverage".to_owned(),
             profile: "ideal-no-failures".to_owned(),
             strategy: "greedy".to_owned(),
@@ -670,6 +860,20 @@ pub fn default_suites() -> Vec<RegressionSuite> {
             realism: true,
         },
     ]
+}
+
+pub fn default_suites() -> Vec<RegressionSuite> {
+    all_suites()
+        .into_iter()
+        .filter(|suite| suite.group.is_gating())
+        .collect()
+}
+
+pub fn suites_by_group(group: SuiteGroup) -> Vec<RegressionSuite> {
+    all_suites()
+        .into_iter()
+        .filter(|suite| suite.group == group)
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -728,6 +932,28 @@ mod tests {
             avg_zone_observations: 0.0,
             mission: String::new(),
             scenario: String::new(),
+        }
+    }
+
+    fn make_suite(
+        name: &str,
+        group: SuiteGroup,
+        mode: SuiteMode,
+        min_success_rate: f64,
+    ) -> RegressionSuite {
+        RegressionSuite {
+            name: name.to_owned(),
+            group,
+            mission: "coverage".to_owned(),
+            profile: "ideal".to_owned(),
+            strategy: "greedy".to_owned(),
+            thresholds: vec![Threshold {
+                metric: "success_rate".to_owned(),
+                min: Some(min_success_rate),
+                max: None,
+            }],
+            mode,
+            realism: false,
         }
     }
 
@@ -821,6 +1047,9 @@ mod tests {
             version: "1.0".to_owned(),
             created_at: "2025-05-26T12:00:00Z".to_owned(),
             commit: "abc123".to_owned(),
+            seed_range: Some((0, 9)),
+            seed_count: Some(10),
+            suite_group: Some("quick".to_owned()),
             results: {
                 let mut map = HashMap::new();
                 map.insert("suite1".to_owned(), make_metrics(0.8));
@@ -902,9 +1131,159 @@ mod tests {
     }
 
     #[test]
+    fn default_suites_exclude_experimental_and_validation() {
+        let all = all_suites();
+        assert!(all
+            .iter()
+            .any(|suite| suite.group == SuiteGroup::Experimental));
+
+        let default = default_suites();
+        assert!(default.iter().all(|suite| suite.group.is_gating()));
+        assert!(!default
+            .iter()
+            .any(|suite| suite.name == "inspection_perimeter_experimental"));
+        assert!(!default
+            .iter()
+            .any(|suite| suite.name == "wildfire_medium_dynamic_greedy"));
+        assert!(!default
+            .iter()
+            .any(|suite| suite.name == "realism_coverage_smoke"));
+    }
+
+    #[test]
+    fn suites_by_group_returns_only_requested_group() {
+        let experimental = suites_by_group(SuiteGroup::Experimental);
+        assert!(!experimental.is_empty());
+        assert!(experimental
+            .iter()
+            .all(|suite| suite.group == SuiteGroup::Experimental));
+
+        let validation = suites_by_group(SuiteGroup::Validation);
+        assert!(validation.is_empty());
+    }
+
+    #[test]
+    fn experimental_threshold_violations_are_non_gating() {
+        let suites = vec![make_suite(
+            "experimental_failure",
+            SuiteGroup::Experimental,
+            SuiteMode::Smoke,
+            1.0,
+        )];
+        let report = RegressionRunner::run(&suites, None, |_| {
+            let mut map = HashMap::new();
+            map.insert("greedy".to_owned(), make_metrics(0.5));
+            map
+        });
+
+        assert!(report.overall_pass);
+        assert_eq!(report.suite_results[0].status_label(), "NON-GATING-FAIL");
+    }
+
+    #[test]
+    fn missing_baseline_entries_are_reported() {
+        let suites = vec![make_suite(
+            "missing_baseline",
+            SuiteGroup::Smoke,
+            SuiteMode::Smoke,
+            0.1,
+        )];
+        let baseline = Baseline::from_suites(&[]);
+        let report = RegressionRunner::run(&suites, Some(&baseline), |_| {
+            let mut map = HashMap::new();
+            map.insert("greedy".to_owned(), make_metrics(0.9));
+            map
+        });
+
+        assert_eq!(report.missing_baselines, vec!["missing_baseline"]);
+        let display = report.to_string();
+        assert!(
+            display.contains("## Missing Baseline Entries"),
+            "got: {display}"
+        );
+        assert!(display.contains("missing_baseline"), "got: {display}");
+    }
+
+    #[test]
+    fn failure_output_includes_reproduction_command_and_context() {
+        let suites = vec![make_suite(
+            "actionable_failure",
+            SuiteGroup::Smoke,
+            SuiteMode::Smoke,
+            1.0,
+        )];
+        let report = RegressionRunner::run(&suites, None, |_| {
+            let mut map = HashMap::new();
+            map.insert("greedy".to_owned(), make_metrics(0.5));
+            map
+        });
+        let display = report.to_string();
+
+        assert!(display.contains("mission=coverage"), "got: {display}");
+        assert!(display.contains("profile=ideal"), "got: {display}");
+        assert!(display.contains("strategy=greedy"), "got: {display}");
+        assert!(display.contains("metric=success_rate"), "got: {display}");
+        assert!(display.contains("threshold=min:1.000"), "got: {display}");
+        assert!(display.contains("delta=-0.500"), "got: {display}");
+        assert!(
+            display.contains(
+                "cargo run -p swarm-examples --bin regression_runner -- --suite smoke --suite-name actionable_failure --jobs 1"
+            ),
+            "got: {display}"
+        );
+    }
+
+    #[test]
+    fn baseline_from_report_stores_metadata() {
+        let suites = vec![make_suite(
+            "metadata_suite",
+            SuiteGroup::Quick,
+            SuiteMode::Quick,
+            0.1,
+        )];
+        let report = RegressionRunner::run(&suites, None, |_| {
+            let mut map = HashMap::new();
+            map.insert("greedy".to_owned(), make_metrics(0.9));
+            map
+        });
+        let baseline = Baseline::from_report(&report, Some("quick"));
+
+        assert_eq!(baseline.seed_range, Some((0, 9)));
+        assert_eq!(baseline.seed_count, Some(10));
+        assert_eq!(baseline.suite_group.as_deref(), Some("quick"));
+        assert!(baseline.results.contains_key("metadata_suite"));
+    }
+
+    #[test]
+    fn regression_report_serializes_to_json() {
+        let suites = vec![make_suite(
+            "json_suite",
+            SuiteGroup::Smoke,
+            SuiteMode::Smoke,
+            0.1,
+        )];
+        let report = RegressionRunner::run(&suites, None, |_| {
+            let mut map = HashMap::new();
+            map.insert("greedy".to_owned(), make_metrics(0.9));
+            map
+        });
+        let value = serde_json::to_value(&report).unwrap();
+
+        assert_eq!(value["overall_pass"], true);
+        assert_eq!(value["suite_results"][0]["suite"]["group"], "smoke");
+        assert_eq!(value["suite_results"][0]["suite"]["mode"], "smoke");
+        assert_eq!(value["suite_results"][0]["status"], "PASS");
+        assert!(value["suite_results"][0]["reproduction_command"]
+            .as_str()
+            .unwrap()
+            .contains("--suite smoke --suite-name json_suite --jobs 1"));
+    }
+
+    #[test]
     fn suite_result_has_correct_seed_range_for_smoke() {
         let suites = vec![RegressionSuite {
             name: "test_smoke".to_owned(),
+            group: SuiteGroup::Smoke,
             mission: "coverage".to_owned(),
             profile: "ideal".to_owned(),
             strategy: "greedy".to_owned(),
@@ -924,6 +1303,7 @@ mod tests {
     fn suite_result_has_correct_seed_range_for_quick() {
         let suites = vec![RegressionSuite {
             name: "test_quick".to_owned(),
+            group: SuiteGroup::Quick,
             mission: "coverage".to_owned(),
             profile: "ideal".to_owned(),
             strategy: "greedy".to_owned(),
@@ -945,6 +1325,9 @@ mod tests {
             version: "1.0".to_owned(),
             created_at: "2025-05-26T12:00:00Z".to_owned(),
             commit: "abc".to_owned(),
+            seed_range: None,
+            seed_count: None,
+            suite_group: None,
             results: {
                 let mut map = HashMap::new();
                 map.insert("suite1".to_owned(), make_metrics(0.8));
@@ -964,6 +1347,9 @@ mod tests {
             version: "1.0".to_owned(),
             created_at: "2025-05-26T12:00:00Z".to_owned(),
             commit: "abc".to_owned(),
+            seed_range: None,
+            seed_count: None,
+            suite_group: None,
             results: {
                 let mut map = HashMap::new();
                 map.insert("suite1".to_owned(), make_metrics(0.8));
@@ -983,6 +1369,9 @@ mod tests {
             version: "1.0".to_owned(),
             created_at: "2025-05-26T12:00:00Z".to_owned(),
             commit: "abc".to_owned(),
+            seed_range: None,
+            seed_count: None,
+            suite_group: None,
             results: {
                 let mut map = HashMap::new();
                 map.insert("suite1".to_owned(), make_metrics(0.8));
@@ -1004,6 +1393,9 @@ mod tests {
             version: "1.0".to_owned(),
             created_at: "2025-05-26T12:00:00Z".to_owned(),
             commit: "abc".to_owned(),
+            seed_range: None,
+            seed_count: None,
+            suite_group: None,
             results: {
                 let mut map = HashMap::new();
                 map.insert("suite1".to_owned(), baseline_metrics);
@@ -1024,6 +1416,7 @@ mod tests {
     fn regression_runner_single_suite() {
         let suites = vec![RegressionSuite {
             name: "test_suite".to_owned(),
+            group: SuiteGroup::Smoke,
             mission: "coverage".to_owned(),
             profile: "ideal".to_owned(),
             strategy: "greedy".to_owned(),
@@ -1049,6 +1442,7 @@ mod tests {
     fn regression_runner_forced_failure() {
         let suites = vec![RegressionSuite {
             name: "test_suite".to_owned(),
+            group: SuiteGroup::Smoke,
             mission: "coverage".to_owned(),
             profile: "ideal".to_owned(),
             strategy: "greedy".to_owned(),
@@ -1078,6 +1472,7 @@ mod tests {
     fn regression_runner_all_strategy_mode() {
         let suites = vec![RegressionSuite {
             name: "inspection_all".to_owned(),
+            group: SuiteGroup::Smoke,
             mission: "inspection".to_owned(),
             profile: "linear".to_owned(),
             strategy: "all".to_owned(),
