@@ -1,8 +1,14 @@
 # Benchmark Results
 
-This document records the current post-M32b benchmark pack. It replaces the
-older pre-M32 quick report whose mixed-mission rows had stale
-`mission`/`scenario` identity fields.
+> **Historical Note:** This report reflects a 500-seed benchmark run on commit
+> `8fb5ab130968a17b35c76314b7c133fb4fe791af` (pre-M33 Mission Semantics
+> Integration, pre-M34-M38). It remains useful as a historical validation of
+> M32b reporting identity, but does not represent the current HEAD. For
+> up-to-date project status, see [`STATUS.md`](STATUS.md).
+
+This document records the post-M32b benchmark pack. It replaces the older
+pre-M32 quick report whose mixed-mission rows had stale `mission`/`scenario`
+identity fields.
 
 ## Current Run
 
