@@ -84,13 +84,13 @@ cargo run --bin sitl_agent -- \
 | Mission Semantics | ✅ Stable | M33 | `TaskKind`, 6 concrete adapters, `AdapterRegistry`, adapter-driven completion/scoring in runner and allocator |
 | Planner Quality | ✅ Stable | M34 | `RoutePlanner` trait, 2-opt, battery-aware feasibility v2 (ordered-subset feasibility, battery model v2 integration, meaningful runner metrics) |
 | Dynamic Mission Correctness | ✅ Stable | M35 | Mission-specific success semantics (SAR=targets-found, inspection=coverage-threshold, wildfire=mapped-ratio), SAR unsupported reasons (cbba=delayed-reconvergence, centralized=static-pre-plan), support matrix tests |
-| Regression & Baseline | ✅ Stable | M29 | `RegressionSuite`, `ThresholdChecker`, baseline artifacts |
+| Regression Harness v2 | ✅ Stable | M36 | Calibrated thresholds, portability fixes, wildfire/realism suites, failure delta output |
 | Wildfire / Flood Mapping | ✅ Stable | M30 | `TaskKind::MappingZone`, `WildfireState`, hazard zones, dynamic threat |
 | Simulation Realism | ✅ Stable | M31 | Battery model v2, altitude sensor penalty, wind drift, pose noise, comms jitter, time-gated no-fly zones, `--realism` preset |
 | Reporting & Metrics | ✅ Stable | M32 | Per-row mission/scenario in exports, mission-scoped profiles, merged `all` benchmark id, wildfire/planner metrics, realism metadata in manifest |
 | Real PX4 | 🧪 Experimental | M20 | Feature-gated, requires PX4 SITL setup |
 
-**Test coverage:** 340+ tests, 10 crates, 12 JSON scenarios.
+**Test coverage:** 360+ tests, 10 crates, 12 JSON scenarios.
 
 ---
 
@@ -100,27 +100,50 @@ The benchmark platform includes a regression harness (`RegressionSuite`, `Thresh
 
 ```bash
 # Run all default regression suites
-cargo run -p swarm-examples --bin regression_runner
+cargo run -p swarm-examples --bin regression_runner -- --jobs 4
 
 # Run regression via strategy_comparison CLI
 cargo run -p swarm-examples --bin strategy_comparison -- --regression
 
-# Update baseline after intentional improvement
-cargo run -p swarm-examples --bin regression_runner -- --update-baseline results/baseline.json
+# Compare against committed baseline
+cargo run -p swarm-examples --bin regression_runner -- --compare-baseline results/baseline.json --jobs 4
 ```
 
-Suites cover SAR, Inspection, Coverage (CBBA stress), Safety, and Emergency Mesh missions. Each suite specifies a mission, profile, strategy, and metric thresholds (min/max). Exit code is `0` if all suites pass, `1` if any threshold is violated.
+Exit code is `0` if all suites pass, `1` if any threshold is violated. Failure output includes metric name, actual value, threshold bound, and delta.
+
+### Default Suites (M36)
+
+| Suite | Mission | Profile | Strategy | Mode | Key Thresholds |
+|---|---|---|---|---|---|
+| `sar_ideal_greedy` | sar | ideal | greedy | smoke | task_completion_rate ≥ 0.80, belief_entropy_final ≤ 0.5 |
+| `sar_standard_greedy` | sar | standard | greedy | smoke | task_completion_rate ≥ 0.70, belief_entropy_final ≤ 0.6 |
+| `inspection_linear_all` | inspection | linear | all | smoke | edge_coverage_rate ≥ 0.85, success_rate ≥ 0.90 |
+| `inspection_perimeter_all` | inspection | perimeter | all | smoke | edge_coverage_rate ≥ 0.25 (floor) |
+| `inspection_perimeter_experimental` | inspection | perimeter | greedy | smoke | edge_coverage_rate ≥ 0.30 |
+| `cbba_coverage_ideal_no_failures` | coverage | ideal-no-failures | cbba | quick | success_rate ≥ 0.90, convergence_ticks_p95 ≤ 15 |
+| `cbba_coverage_light_loss_no_failures` | coverage | light-loss-no-failures | cbba | quick | success_rate ≥ 0.80, convergence_ticks_p95 ≤ 20 |
+| `safety_coverage` | coverage | ideal-no-failures | greedy | smoke | safety_violations ≤ 0 |
+| `emergency_mesh_ideal` | emergency-mesh | ideal | greedy | smoke | network_availability ≥ 0.001 |
+| `wildfire_small_static_greedy` | wildfire | small-static | greedy | smoke | task_completion_rate ≥ 0.80 |
+| `wildfire_medium_dynamic_greedy` | wildfire | medium-dynamic | greedy | smoke | task_completion_rate ≥ 0.60 |
+| `realism_coverage_smoke` | coverage | ideal-no-failures | greedy | smoke | success_rate ≥ 0.75 (realism preset) |
+
+**Modes:** `smoke` = 1 seed; `quick` = 10 seeds. **SAR and wildfire** use `task_completion_rate` (not `success_rate`) because M35 changed success semantics to mission-specific definitions.
+
+### Threshold Policy
+
+- **No `>= 0.0` thresholds.** Every threshold must be calibrated to catch real regressions.
+- **Smoke thresholds** are set against seed 0 results; allow variance headroom (~20–30% below observed).
+- **Quick thresholds** are tighter (10-seed average is more stable).
+- When adding a new suite: run smoke first, observe metrics, set threshold ~20% below the passing value.
 
 ## Baseline Management
 
 Baselines are committed JSON artifacts (`results/baseline.json`) that store reference metric values per suite. They enable delta comparison across runs.
 
 ```bash
-# Compare current run against baseline
-cargo run -p swarm-examples --bin regression_runner -- --compare-baseline results/baseline.json
-
-# Generate a fresh baseline
-cargo run -p swarm-examples --bin regression_runner -- --update-baseline results/baseline.json
+# Generate a fresh baseline after code changes
+cargo run -p swarm-examples --bin regression_runner -- --update-baseline results/baseline.json --jobs 4
 ```
 
 Baseline format:
@@ -128,7 +151,7 @@ Baseline format:
 ```json
 {
   "version": "1.0",
-  "created_at": "2025-05-26T12:00:00Z",
+  "created_at": "2026-05-28T...",
   "commit": "abc123",
   "results": {
     "suite_name": { "success_rate": 0.85, "avg_edge_coverage_rate": 0.98, ... }
@@ -136,11 +159,15 @@ Baseline format:
 }
 ```
 
-**Note:** Initial thresholds are calibrated guesswork. Smoke runs (1 seed) have high variance; consider switching critical suites to `Quick` (10 seeds) for more stable thresholds.
+**Update process:**
+1. Complete the milestone (all tests pass, code is stable).
+2. Run `--update-baseline results/baseline.json`.
+3. Commit `results/baseline.json` referencing the code commit hash.
+4. The `commit` field in the JSON is set automatically by `regression_runner`.
 
 ## Stress Testing
 
-Parametric sweeps over variables such as packet loss, agent count, or grid size are supported via the stress harness (M29 foundation). Stress profiles will be expanded in M30+.
+Parametric sweeps over variables such as packet loss, agent count, or grid size are supported via the stress harness. Coverage CBBA suites already exercise `ideal-no-failures` and `light-loss-no-failures` profiles.
 
 ---
 
@@ -148,9 +175,10 @@ Parametric sweeps over variables such as packet loss, agent count, or grid size 
 
 1. **Simulation only:** No real hardware integration beyond experimental PX4 SITL scaffold.
 2. **Single-agent SITL:** Multi-agent SITL not yet supported.
-3. **3D pose (M31):** Scenarios support `z` coordinate and altitude-aware sensors, but most missions still operate primarily in XY plane.
+3. **3D pose:** Scenarios support `z` coordinate and altitude-aware sensors, but most missions operate primarily in XY plane.
 4. **Deterministic RNG:** Scenarios use seeded RNG; real-world noise is modeled optionally via `--realism` preset.
-5. **Battery model v2 (M31):** Hover/climb/cruise drain rates are configurable but not yet calibrated against real flight data.
+5. **Battery model v2:** Hover/climb/cruise drain rates are configurable but not calibrated against real flight data.
+6. **Regression smoke variance:** Smoke suites use 1 seed; high-variance missions (SAR, emergency-mesh, wildfire) have conservative thresholds. Promote to `Quick` (10 seeds) for tighter coverage.
 
 See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known limitations.
 
@@ -237,6 +265,9 @@ See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known l
 | M31 | ✅ | Simulation Realism Foundation: battery model v2, altitude sensor penalty, wind drift, pose noise, comms jitter, time-gated no-fly zones |
 | M32 | ✅ | Benchmark Identity Hardening: per-row mission/scenario in exports, mission-scoped profiles, merged `all` benchmark id, realism metadata in manifest |
 | M33 | ✅ | Mission Semantics Integration: 6 concrete adapters, `AdapterRegistry`, adapter-driven completion/scoring in runner and allocator, DSL kind validation |
+| M34 | ✅ | Planner Correctness v2: `RoutePlanner` trait, 2-opt, battery-aware feasibility (ordered-subset), meaningful route metrics |
+| M35 | ✅ | Dynamic Mission Correctness: mission-specific success semantics, SAR unsupported reasons, support matrix tests |
+| M36 | ✅ | Regression Harness v2: calibrated thresholds, wildfire/realism suites, portable tests (tempdir), failure delta output, refreshed baseline |
 
 ---
 

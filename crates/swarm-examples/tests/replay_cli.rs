@@ -7,7 +7,7 @@ fn run_replay(args: &[&str]) -> std::process::Output {
     cmd.output().expect("Failed to execute replay")
 }
 
-fn create_test_replay_log(path: &str) {
+fn create_test_replay_log(path: &std::path::Path) {
     use swarm_replay::{Event, EventLogBuilder};
     use swarm_types::{AgentId, Pose};
 
@@ -35,7 +35,7 @@ fn create_test_replay_log(path: &str) {
     builder.push(Event::TickStart { tick: 100 });
     let log = builder.build();
     let json = serde_json::to_string_pretty(&log).unwrap();
-    if let Some(parent) = std::path::Path::new(path).parent() {
+    if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
     std::fs::write(path, json).unwrap();
@@ -43,9 +43,11 @@ fn create_test_replay_log(path: &str) {
 
 #[test]
 fn replay_cli_summary_outputs_ticks() {
-    let log_path = "/tmp/replay_test_dir/coverage_with_failure_0.replay.json";
-    create_test_replay_log(log_path);
-    let output = run_replay(&["--log", log_path, "--summary"]);
+    let tmp_dir = tempfile::TempDir::new().unwrap();
+    let log_path = tmp_dir.path().join("coverage_with_failure_0.replay.json");
+    create_test_replay_log(&log_path);
+    let log_str = log_path.to_str().unwrap();
+    let output = run_replay(&["--log", log_str, "--summary"]);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         output.status.success(),
@@ -59,9 +61,11 @@ fn replay_cli_summary_outputs_ticks() {
 
 #[test]
 fn replay_cli_tick_outputs_ascii() {
-    let log_path = "/tmp/replay_test_dir/coverage_with_failure_0.replay.json";
-    create_test_replay_log(log_path);
-    let output = run_replay(&["--log", log_path, "--tick", "50"]);
+    let tmp_dir = tempfile::TempDir::new().unwrap();
+    let log_path = tmp_dir.path().join("coverage_with_failure_0.replay.json");
+    create_test_replay_log(&log_path);
+    let log_str = log_path.to_str().unwrap();
+    let output = run_replay(&["--log", log_str, "--tick", "50"]);
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Snapshot at tick 50"));
@@ -69,6 +73,8 @@ fn replay_cli_tick_outputs_ascii() {
 
 #[test]
 fn replay_cli_invalid_log_exits_error() {
-    let output = run_replay(&["--log", "/tmp/nonexistent_replay.json", "--summary"]);
+    let tmp_dir = tempfile::TempDir::new().unwrap();
+    let nonexistent = tmp_dir.path().join("nonexistent_replay.json");
+    let output = run_replay(&["--log", nonexistent.to_str().unwrap(), "--summary"]);
     assert!(!output.status.success());
 }

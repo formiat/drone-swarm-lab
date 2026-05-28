@@ -23,3 +23,4 @@ swarm-types = { workspace = true }
 [dev-dependencies]
 proptest = { workspace = true }
 swarm-scenarios = { workspace = true }
+tempfile = { workspace = true }

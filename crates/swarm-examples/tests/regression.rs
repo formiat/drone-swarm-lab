@@ -1,4 +1,5 @@
 use std::process::Command;
+use tempfile::NamedTempFile;
 
 #[test]
 fn regression_runner_smoke_passes() {
@@ -78,8 +79,9 @@ fn regression_runner_with_forced_failure() {
       }
     }"#;
 
-    let baseline_path = "/tmp/test_forced_fail_baseline.json";
-    std::fs::write(baseline_path, baseline_json).unwrap();
+    let tmp_file = NamedTempFile::new().unwrap();
+    let baseline_path = tmp_file.path().to_str().unwrap().to_owned();
+    std::fs::write(&baseline_path, baseline_json).unwrap();
 
     let output = Command::new("cargo")
         .args([
@@ -90,7 +92,7 @@ fn regression_runner_with_forced_failure() {
             "regression_runner",
             "--",
             "--compare-baseline",
-            baseline_path,
+            &baseline_path,
         ])
         .output()
         .expect("failed to execute regression_runner");

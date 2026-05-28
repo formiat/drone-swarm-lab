@@ -404,13 +404,13 @@ mod tests {
             scenarios: vec![make_minimal_entry()],
         };
         let json = serde_json::to_string_pretty(&suite).unwrap();
-        let tmp = "/tmp/test_scenario_suite.json";
+        let tmp_file = tempfile::NamedTempFile::new().unwrap();
+        let tmp = tmp_file.path().to_str().unwrap();
         std::fs::write(tmp, &json).unwrap();
         let loaded = load_scenario_suite(tmp).unwrap();
         assert_eq!(loaded.name, "Test Suite");
         assert_eq!(loaded.scenarios.len(), 1);
         assert_eq!(loaded.scenarios[0].mission, "coverage");
-        std::fs::remove_file(tmp).unwrap();
     }
 
     #[test]

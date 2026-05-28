@@ -939,6 +939,7 @@ dependencies = [
  "swarm-scenarios",
  "swarm-sim",
  "swarm-types",
+ "tempfile",
  "tracing",
  "tracing-subscriber",
 ]
@@ -1015,6 +1016,7 @@ dependencies = [
  "swarm-safety",
  "swarm-scenarios",
  "swarm-types",
+ "tempfile",
 ]
 
 [[package]]
