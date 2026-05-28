@@ -85,13 +85,13 @@ cargo run --bin sitl_agent -- \
 | Planner Quality | ✅ Stable | M34 | `RoutePlanner` trait, 2-opt, battery-aware feasibility v2 (ordered-subset feasibility, battery model v2 integration, meaningful runner metrics) |
 | Dynamic Mission Correctness | ✅ Stable | M35 | Mission-specific success semantics (SAR=targets-found, inspection=coverage-threshold, wildfire=mapped-ratio), SAR unsupported reasons (cbba=delayed-reconvergence, centralized=static-pre-plan), support matrix tests |
 | Regression Harness v2 | ✅ Stable | M36 | Calibrated thresholds, portability fixes, wildfire/realism suites, failure delta output |
-| Realism Scenario Pack | 📝 Planned | M37 | Realism profiles (light/medium/heavy), scenario JSONs, battery model metadata, baseline vs realism comparison |
+| Realism Scenario Pack | ✅ Stable | M37 | Realism profiles (light/medium/heavy), scenario JSONs, battery model metadata, baseline vs realism comparison |
 | Wildfire / Flood Mapping | ✅ Stable | M30 | `TaskKind::MappingZone`, `WildfireState`, hazard zones, dynamic threat |
 | Simulation Realism | ✅ Stable | M31 | Battery model v2, altitude sensor penalty, wind drift, pose noise, comms jitter, time-gated no-fly zones, `--realism` preset |
 | Reporting & Metrics | ✅ Stable | M32 | Per-row mission/scenario in exports, mission-scoped profiles, merged `all` benchmark id, wildfire/planner metrics, realism metadata in manifest |
 | Real PX4 | 🧪 Experimental | M20 | Feature-gated, requires PX4 SITL setup |
 
-**Test coverage:** 360+ tests, 10 crates, 12 JSON scenarios.
+**Test coverage:** 360+ tests, 10 crates, 16 JSON scenarios.
 
 ---
 
@@ -291,20 +291,58 @@ cargo test --workspace
 cargo clippy --all-targets -- -D warnings
 ```
 
-## Realism Preset (M31)
+## Realism Profiles (M37)
 
-Pass `--realism` to `strategy_comparison` to enable the M31 simulation realism preset:
+The simulation supports three realism profiles that model environmental noise, wind drift, communication jitter, and battery drain at different intensities.
+
+### Profile Parameters
+
+| Profile | Pose Noise (m) | Wind (m/tick) | Comms Jitter (ticks) | Hover Drain | Climb Drain | Cruise Drain | Reserve |
+|---|---|---|---|---|---|---|---|
+| **Light** | 0.2 | (0.05, 0.05, 0.0) | 1 | 0.005/tick | 0.03/m | 0.01/m | 10% |
+| **Medium** (default) | 0.5 | (0.1, 0.1, 0.0) | 1 | 0.01/tick | 0.05/m | 0.02/m | 15% |
+| **Heavy** | 1.0 | (0.2, 0.2, 0.0) | 2 | 0.02/tick | 0.08/m | 0.03/m | 20% |
+
+### CLI Usage
 
 ```bash
+# Default medium profile
 cargo run -p swarm-examples --bin strategy_comparison -- --realism --smoke
+
+# Explicit profile selection
+cargo run -p swarm-examples --bin strategy_comparison -- --realism --realism-profile light --smoke
+cargo run -p swarm-examples --bin strategy_comparison -- --realism --realism-profile heavy --quick
 ```
 
-The preset activates for every produced scenario:
+### Realism Scenario Files
 
-- `pose_noise_m = 0.5` — Gaussian position noise per tick
-- `wind = (0.1, 0.1, 0.0)` — constant wind drift
-- `comms_jitter_ticks = 1` — random ±1-tick delivery jitter
-- Battery model v2 (`hover_drain = 0.01`, `climb_drain = 0.05`, `cruise_drain = 0.02`, `reserve = 10%`)
+Pre-configured scenario suites with realism presets are available in `scenarios/`:
+
+| File | Mission | Profile |
+|---|---|---|
+| `scenarios/coverage.realism.json` | Coverage | medium |
+| `scenarios/sar.realism.json` | SAR | medium |
+| `scenarios/inspection.realism.json` | Inspection | medium |
+| `scenarios/wildfire.realism.json` | Wildfire | medium |
+
+Load a realism scenario directly:
+
+```bash
+cargo run -p swarm-examples --bin strategy_comparison -- \
+  --scenario-suite scenarios/coverage.realism.json --output-dir results/coverage_realism/
+```
+
+### Expected Impact on Metrics
+
+Realism typically degrades mission metrics relative to ideal conditions:
+
+- **Coverage**: -5% to -15% due to pose noise and wind drift
+- **SAR**: +10-30% detection time due to sensor noise and wind
+- **Inspection**: -10% to -20% edge coverage due to battery drain and positioning errors
+- **Wildfire**: -5% to -10% mapped ratio due to comms jitter and drift
+- **Battery**: -10% to -25% margin due to hover/climb/cruise drain
+
+Battery model metadata (`hover_drain_per_tick`, `climb_drain_per_meter`, `cruise_drain_per_meter`, `reserve_fraction`) is now included in `BenchmarkManifest` for reproducibility.
 
 ## License
 

@@ -297,6 +297,9 @@ pub struct BenchmarkManifest {
     pub pose_noise_m: f64,
     #[serde(default)]
     pub comms_jitter_ticks: u64,
+    // v0.37 Battery model metadata
+    #[serde(default)]
+    pub battery_model: Option<swarm_types::BatteryModel>,
 }
 
 impl BenchmarkManifest {
@@ -333,6 +336,7 @@ impl BenchmarkManifest {
             wind_enabled: false,
             pose_noise_m: 0.0,
             comms_jitter_ticks: 0,
+            battery_model: None,
         }
     }
 }
@@ -587,6 +591,7 @@ mod tests {
             wind_enabled: false,
             pose_noise_m: 0.0,
             comms_jitter_ticks: 0,
+            battery_model: None,
         };
         let json = serde_json::to_string(&manifest).unwrap();
         let decoded: BenchmarkManifest = serde_json::from_str(&json).unwrap();

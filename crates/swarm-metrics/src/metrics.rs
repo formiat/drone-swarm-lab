@@ -113,6 +113,11 @@ pub struct RunMetrics {
     // v0.35 Dynamic Mission Correctness
     #[serde(default)]
     pub unsupported_reason: Option<String>,
+    // v0.37 Realism Scenario Pack
+    #[serde(default)]
+    pub realism_profile: Option<String>,
+    #[serde(default)]
+    pub wind: Option<(f64, f64, f64)>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -602,6 +607,9 @@ mod tests {
             final_avg_threat_level: 0.0,
             // v0.35 Dynamic Mission Correctness
             unsupported_reason: None,
+            // v0.37 Realism Scenario Pack
+            realism_profile: None,
+            wind: None,
         }
     }
 

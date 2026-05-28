@@ -197,6 +197,10 @@ pub struct RunConfig {
     /// Success threshold for inspection (fraction of edges that must be covered).
     #[serde(default = "default_inspection_threshold")]
     pub inspection_coverage_threshold: f64,
+    // v0.37 Realism Scenario Pack
+    /// Realism profile name (light, medium, heavy).
+    #[serde(default)]
+    pub realism_profile: Option<String>,
 }
 
 fn default_max_unassigned() -> u64 {
@@ -1604,6 +1608,9 @@ impl ScenarioRunner {
                 }),
                 // v0.35 Dynamic Mission Correctness
                 unsupported_reason,
+                // v0.37 Realism Scenario Pack
+                realism_profile: config.realism_profile.clone(),
+                wind: config.wind,
             },
             event_log,
         )

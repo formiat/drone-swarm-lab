@@ -13,31 +13,11 @@ use swarm_sim::{
     default_suites, Baseline, BenchmarkHarness, BenchmarkOptions, RegressionRunner, RunConfig,
     Scenario, SuiteMode,
 };
-use swarm_types::{AgentId, BatteryModel};
+use swarm_types::AgentId;
+
+use swarm_examples::realism::{apply_realism_preset, RealismProfile};
 
 type ScenarioBuilder = Box<dyn Fn(u64, &str) -> (Scenario, RunConfig) + Send + Sync>;
-
-/// Applies M31 realism preset to a scenario/run-config pair.
-fn apply_realism_preset(
-    mut scenario: Scenario,
-    mut run_config: RunConfig,
-) -> (Scenario, RunConfig) {
-    run_config.pose_noise_m = 0.5;
-    run_config.wind = Some((0.1, 0.1, 0.0));
-    run_config.comms_jitter_ticks = 1;
-    let battery = BatteryModel {
-        hover_drain_per_tick: 0.01,
-        climb_drain_per_meter: 0.05,
-        cruise_drain_per_meter: 0.02,
-        reserve_fraction: 0.1,
-    };
-    for agent in &mut scenario.agents {
-        if agent.battery_model.is_none() {
-            agent.battery_model = Some(battery.clone());
-        }
-    }
-    (scenario, run_config)
-}
 type StrategyFactory =
     Box<dyn Fn(&Scenario, &RunConfig) -> Box<dyn swarm_alloc::Strategy> + Send + Sync>;
 
@@ -270,9 +250,10 @@ fn main() {
 
         let realism = suite.realism;
         let realism_builder: ScenarioBuilder = if realism {
-            Box::new(move |seed, profile| {
-                let (scenario, run_config) = builder(seed, profile);
-                apply_realism_preset(scenario, run_config)
+            let profile = RealismProfile::Medium;
+            Box::new(move |seed, profile_name| {
+                let (scenario, run_config) = builder(seed, profile_name);
+                apply_realism_preset(scenario, run_config, profile.clone())
             })
         } else {
             builder

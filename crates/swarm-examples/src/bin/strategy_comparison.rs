@@ -16,7 +16,9 @@ use swarm_sim::{
     ComparisonReport, FailureEvent, PartitionEvent, RegressionRunner, RunConfig, Scenario,
     SuiteMode,
 };
-use swarm_types::{AgentId, BatteryModel};
+use swarm_types::AgentId;
+
+use swarm_examples::realism::{apply_realism_preset, RealismProfile};
 
 type ScenarioBuilder = Box<dyn Fn(u64, &str) -> (Scenario, RunConfig) + Send + Sync>;
 type StrategyFactory =
@@ -113,6 +115,8 @@ struct CliArgs {
     update_baseline: Option<String>,
     /// Enable M31 realism preset (wind, pose noise, comms jitter, battery model v2).
     realism: bool,
+    /// Realism profile: light, medium, or heavy (default: medium).
+    realism_profile: Option<String>,
 }
 
 fn parse_args() -> CliArgs {
@@ -133,6 +137,7 @@ fn parse_args() -> CliArgs {
         compare_baseline: None,
         update_baseline: None,
         realism: false,
+        realism_profile: None,
     };
 
     let mut i = 1;
@@ -231,6 +236,12 @@ fn parse_args() -> CliArgs {
             }
             "--regression" => cli.regression = true,
             "--realism" => cli.realism = true,
+            "--realism-profile" => {
+                i += 1;
+                if i < args.len() {
+                    cli.realism_profile = Some(args[i].clone());
+                }
+            }
             "--compare-baseline" => {
                 i += 1;
                 if i < args.len() {
@@ -308,33 +319,11 @@ fn make_factories(planner: &PlannerChoice) -> Vec<StrategyFactory> {
     ]
 }
 
-/// Applies M31 realism preset to a (Scenario, RunConfig) pair.
-fn apply_realism_preset(
-    mut scenario: Scenario,
-    mut run_config: RunConfig,
-) -> (Scenario, RunConfig) {
-    run_config.pose_noise_m = 0.5;
-    run_config.wind = Some((0.1, 0.1, 0.0));
-    run_config.comms_jitter_ticks = 1;
-    let battery = BatteryModel {
-        hover_drain_per_tick: 0.01,
-        climb_drain_per_meter: 0.05,
-        cruise_drain_per_meter: 0.02,
-        reserve_fraction: 0.1,
-    };
-    for agent in &mut scenario.agents {
-        if agent.battery_model.is_none() {
-            agent.battery_model = Some(battery.clone());
-        }
-    }
-    (scenario, run_config)
-}
-
 /// Wraps a ScenarioBuilder so that every produced pair passes through the realism preset.
-fn with_realism(builder: ScenarioBuilder) -> ScenarioBuilder {
-    Box::new(move |seed, profile| {
-        let (scenario, run_config) = builder(seed, profile);
-        apply_realism_preset(scenario, run_config)
+fn with_realism(builder: ScenarioBuilder, profile: RealismProfile) -> ScenarioBuilder {
+    Box::new(move |seed, profile_name| {
+        let (scenario, run_config) = builder(seed, profile_name);
+        apply_realism_preset(scenario, run_config, profile.clone())
     })
 }
 
@@ -450,7 +439,12 @@ fn main() {
         };
 
         let builder = if cli.realism {
-            with_realism(builder)
+            let profile = cli
+                .realism_profile
+                .as_deref()
+                .and_then(RealismProfile::parse)
+                .unwrap_or(RealismProfile::Medium);
+            with_realism(builder, profile)
         } else {
             builder
         };
@@ -551,7 +545,20 @@ fn main() {
     }
 
     if let Some(dir) = &cli.output_dir {
-        if let Err(e) = write_benchmark_pack(dir, &merged, None, &all_replay_logs, cli.realism) {
+        let profile_name = if cli.realism {
+            cli.realism_profile
+                .clone()
+                .or_else(|| Some("medium".to_owned()))
+        } else {
+            None
+        };
+        if let Err(e) = write_benchmark_pack(
+            dir,
+            &merged,
+            None,
+            &all_replay_logs,
+            profile_name.as_deref(),
+        ) {
             eprintln!("Failed to write benchmark pack: {}", e);
             std::process::exit(1);
         }
@@ -647,7 +654,12 @@ fn run_from_suite(suite_path: &str, cli: &CliArgs) {
         }
 
         let (scenario, run_config) = if cli.realism {
-            apply_realism_preset(entry.scenario.clone(), entry.run_config.clone())
+            let profile = cli
+                .realism_profile
+                .as_deref()
+                .and_then(RealismProfile::parse)
+                .unwrap_or(RealismProfile::Medium);
+            apply_realism_preset(entry.scenario.clone(), entry.run_config.clone(), profile)
         } else {
             (entry.scenario.clone(), entry.run_config.clone())
         };
@@ -711,7 +723,16 @@ fn run_from_suite(suite_path: &str, cli: &CliArgs) {
     }
 
     if let Some(dir) = &cli.output_dir {
-        if let Err(e) = write_benchmark_pack(dir, &report, Some(&suite), &[], cli.realism) {
+        let profile_name = if cli.realism {
+            cli.realism_profile
+                .clone()
+                .or_else(|| Some("medium".to_owned()))
+        } else {
+            None
+        };
+        if let Err(e) =
+            write_benchmark_pack(dir, &report, Some(&suite), &[], profile_name.as_deref())
+        {
             eprintln!("Failed to write benchmark pack: {}", e);
             std::process::exit(1);
         }
@@ -734,7 +755,7 @@ fn write_benchmark_pack(
     report: &ComparisonReport,
     suite: Option<&swarm_sim::ScenarioSuite>,
     replay_logs: &[swarm_replay::EventLog],
-    realism: bool,
+    realism_profile: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     std::fs::create_dir_all(output_dir)?;
 
@@ -754,11 +775,15 @@ fn write_benchmark_pack(
         report.strategy_names.clone(),
         report.profile_names.clone(),
     );
-    if realism {
-        manifest.realism_profile = Some("default".to_owned());
-        manifest.wind_enabled = true;
-        manifest.pose_noise_m = 0.5;
-        manifest.comms_jitter_ticks = 1;
+    if let Some(profile) = realism_profile {
+        let params = RealismProfile::parse(profile)
+            .unwrap_or(RealismProfile::Medium)
+            .params();
+        manifest.realism_profile = Some(profile.to_owned());
+        manifest.wind_enabled = params.wind.is_some();
+        manifest.pose_noise_m = params.pose_noise_m;
+        manifest.comms_jitter_ticks = params.comms_jitter_ticks;
+        manifest.battery_model = Some(params.battery);
     }
     std::fs::write(
         format!("{}/manifest.json", output_dir),
