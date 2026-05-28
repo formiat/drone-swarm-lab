@@ -204,13 +204,6 @@ fn emit_report(report: &RegressionReport, format: OutputFormat) -> Result<(), se
     }
 }
 
-fn has_threshold_violations(report: &RegressionReport) -> bool {
-    report
-        .suite_results
-        .iter()
-        .any(|result| !result.violations.is_empty())
-}
-
 fn current_commit() -> String {
     std::process::Command::new("git")
         .args(["rev-parse", "--short", "HEAD"])
@@ -269,7 +262,7 @@ fn main() {
     }
 
     if let Some(path) = &options.update_baseline {
-        if has_threshold_violations(&report) {
+        if report.has_threshold_violations() {
             eprintln!("Refusing to update baseline from a report with threshold violations");
             std::process::exit(1);
         }

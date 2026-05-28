@@ -577,6 +577,14 @@ pub struct RegressionReport {
     pub overall_pass: bool,
 }
 
+impl RegressionReport {
+    pub fn has_threshold_violations(&self) -> bool {
+        self.suite_results
+            .iter()
+            .any(|result| !result.violations.is_empty())
+    }
+}
+
 impl std::fmt::Display for RegressionReport {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "# Regression Report")?;

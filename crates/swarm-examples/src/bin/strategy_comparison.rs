@@ -12,7 +12,7 @@ use swarm_scenarios::{
 };
 use swarm_sim::{
     default_suites, export_csv, export_json, Baseline, BenchmarkHarness, BenchmarkOptions,
-    ComparisonReport, RegressionRunner, RunConfig, Scenario, SuiteMode,
+    ComparisonReport, RegressionReport, RegressionRunner, RunConfig, Scenario, SuiteMode,
 };
 
 use swarm_examples::regression_lib::{
@@ -336,6 +336,29 @@ fn ensure_parent_dir(path: impl AsRef<Path>) -> std::io::Result<()> {
         }
     }
     Ok(())
+}
+
+fn current_commit() -> String {
+    std::process::Command::new("git")
+        .args(["rev-parse", "--short", "HEAD"])
+        .output()
+        .ok()
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .map(|commit| commit.trim().to_owned())
+        .unwrap_or_default()
+}
+
+fn baseline_from_green_report(
+    report: &RegressionReport,
+    suite_group: &str,
+) -> Result<Baseline, &'static str> {
+    if report.has_threshold_violations() {
+        return Err("threshold violations");
+    }
+
+    let mut baseline = Baseline::from_report(report, Some(suite_group));
+    baseline.commit = current_commit();
+    Ok(baseline)
 }
 
 fn write_file_creating_parent(
@@ -932,25 +955,10 @@ fn run_regression(cli: &CliArgs) {
     println!("{}", report);
 
     if let Some(path) = &cli.update_baseline {
-        let results: Vec<(String, swarm_metrics::AggregateMetrics)> = report
-            .suite_results
-            .iter()
-            .map(|sr| {
-                let key = if sr.suite.strategy == "all" {
-                    format!("{}/{}", sr.suite.name, sr.actual_strategy)
-                } else {
-                    sr.suite.name.clone()
-                };
-                (key, sr.metrics.clone())
-            })
-            .collect();
-        let mut baseline = Baseline::from_suites(&results);
-        if let Ok(output) = std::process::Command::new("git")
-            .args(["rev-parse", "--short", "HEAD"])
-            .output()
-        {
-            baseline.commit = String::from_utf8_lossy(&output.stdout).trim().to_owned();
-        }
+        let baseline = baseline_from_green_report(&report, "default").unwrap_or_else(|reason| {
+            eprintln!("Refusing to update baseline from a report with {reason}");
+            std::process::exit(1);
+        });
         if let Err(e) = ensure_parent_dir(path) {
             eprintln!("Failed to create baseline parent directory: {}", e);
             std::process::exit(1);
@@ -996,6 +1004,52 @@ mod tests {
         }
     }
 
+    fn regression_report(has_threshold_violations: bool) -> RegressionReport {
+        let threshold = swarm_sim::Threshold {
+            metric: "success_rate".to_owned(),
+            min: Some(0.9),
+            max: None,
+        };
+        let violations = if has_threshold_violations {
+            vec![swarm_sim::ThresholdViolation {
+                threshold: threshold.clone(),
+                actual: 0.5,
+                delta: -0.4,
+            }]
+        } else {
+            Vec::new()
+        };
+        let metrics = swarm_metrics::AggregateMetrics {
+            total_runs: 10,
+            success_rate: 0.95,
+            mission: "coverage".to_owned(),
+            scenario: "ideal".to_owned(),
+            ..swarm_metrics::AggregateMetrics::default()
+        };
+
+        RegressionReport {
+            suite_results: vec![swarm_sim::SuiteResult {
+                suite: swarm_sim::RegressionSuite {
+                    name: "strategy_comparison_regression".to_owned(),
+                    group: swarm_sim::SuiteGroup::Quick,
+                    mission: "coverage".to_owned(),
+                    profile: "ideal".to_owned(),
+                    strategy: "greedy".to_owned(),
+                    thresholds: vec![threshold],
+                    mode: swarm_sim::SuiteMode::Quick,
+                    realism: false,
+                },
+                actual_strategy: "greedy".to_owned(),
+                metrics,
+                violations,
+                seed_range: (0, 9),
+            }],
+            deltas: Vec::new(),
+            missing_baselines: Vec::new(),
+            overall_pass: !has_threshold_violations,
+        }
+    }
+
     #[test]
     fn benchmark_pack_manifest_records_jobs() {
         let dir = tempfile::tempdir().unwrap();
@@ -1021,5 +1075,28 @@ mod tests {
         assert!(dir.path().join("results.json").exists());
         assert!(dir.path().join("results.csv").exists());
         assert!(dir.path().join("table.md").exists());
+    }
+
+    #[test]
+    fn regression_baseline_update_refuses_threshold_violations() {
+        let report = regression_report(true);
+
+        assert_eq!(
+            baseline_from_green_report(&report, "default").unwrap_err(),
+            "threshold violations"
+        );
+    }
+
+    #[test]
+    fn regression_baseline_update_stores_m42_metadata() {
+        let report = regression_report(false);
+        let baseline = baseline_from_green_report(&report, "default").unwrap();
+
+        assert_eq!(baseline.seed_range, Some((0, 9)));
+        assert_eq!(baseline.seed_count, Some(10));
+        assert_eq!(baseline.suite_group.as_deref(), Some("default"));
+        assert!(baseline
+            .results
+            .contains_key("strategy_comparison_regression"));
     }
 }
