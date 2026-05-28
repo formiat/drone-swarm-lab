@@ -110,6 +110,9 @@ pub struct RunMetrics {
     pub priority_updates: u64,
     #[serde(default)]
     pub final_avg_threat_level: f64,
+    // v0.35 Dynamic Mission Correctness
+    #[serde(default)]
+    pub unsupported_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -597,6 +600,8 @@ mod tests {
             hazard_zones_mapped: 0,
             priority_updates: 0,
             final_avg_threat_level: 0.0,
+            // v0.35 Dynamic Mission Correctness
+            unsupported_reason: None,
         }
     }
 

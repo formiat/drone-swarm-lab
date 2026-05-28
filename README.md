@@ -83,14 +83,14 @@ cargo run --bin sitl_agent -- \
 | Replay / Debuggability | ✅ Stable | M23 | `replay` CLI, ASCII visualization |
 | Mission Semantics | ✅ Stable | M33 | `TaskKind`, 6 concrete adapters, `AdapterRegistry`, adapter-driven completion/scoring in runner and allocator |
 | Planner Quality | ✅ Stable | M34 | `RoutePlanner` trait, 2-opt, battery-aware feasibility v2 (ordered-subset feasibility, battery model v2 integration, meaningful runner metrics) |
-| Dynamic Mission Correctness | 📝 Planned | M35 | Mission-specific success semantics, SAR unsupported reasons, wildfire completion alignment, support matrix tests |
+| Dynamic Mission Correctness | ✅ Stable | M35 | Mission-specific success semantics (SAR=targets-found, inspection=coverage-threshold, wildfire=mapped-ratio), SAR unsupported reasons (cbba=delayed-reconvergence, centralized=static-pre-plan), support matrix tests |
 | Regression & Baseline | ✅ Stable | M29 | `RegressionSuite`, `ThresholdChecker`, baseline artifacts |
 | Wildfire / Flood Mapping | ✅ Stable | M30 | `TaskKind::MappingZone`, `WildfireState`, hazard zones, dynamic threat |
 | Simulation Realism | ✅ Stable | M31 | Battery model v2, altitude sensor penalty, wind drift, pose noise, comms jitter, time-gated no-fly zones, `--realism` preset |
 | Reporting & Metrics | ✅ Stable | M32 | Per-row mission/scenario in exports, mission-scoped profiles, merged `all` benchmark id, wildfire/planner metrics, realism metadata in manifest |
 | Real PX4 | 🧪 Experimental | M20 | Feature-gated, requires PX4 SITL setup |
 
-**Test coverage:** 270+ tests, 10 crates, 12 JSON scenarios.
+**Test coverage:** 340+ tests, 10 crates, 12 JSON scenarios.
 
 ---
 
@@ -162,7 +162,7 @@ See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known l
 |---------|----------|--------|-------|
 | coverage | all | stable | All strategies produce success_rate > 0.9 on ideal/standard profiles |
 | sar | greedy, auction, connectivity-aware | stable | — |
-| sar | cbba | unsupported | CBBA re-convergence delay after `release_task()` exceeds `max_unassigned_ticks`; fix scoped to M27 |
+| sar | cbba | unsupported | CBBA re-convergence delay after `release_task()` exceeds `max_unassigned_ticks`; explicit `unsupported_reason: delayed_reconvergence` (M35) |
 | sar | centralized | unsupported | Static pre-planning incompatible with SAR dynamic task release; agents revisit stale cell assignments |
 | inspection (linear/random) | all | stable | — |
 | inspection (perimeter) | greedy, auction, connectivity-aware | experimental | Battery/time constraint limits coverage; success rate ~0–0.4 |

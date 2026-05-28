@@ -187,6 +187,16 @@ pub struct RunConfig {
     /// Gaussian pose noise radius in metres. Applied after movement.
     #[serde(default)]
     pub pose_noise_m: f64,
+    // v0.35 Dynamic Mission Correctness
+    /// Strategy name for support matrix detection.
+    #[serde(default)]
+    pub strategy_name: Option<String>,
+    /// Success threshold for wildfire (fraction of zones that must be mapped).
+    #[serde(default = "default_wildfire_threshold")]
+    pub wildfire_success_threshold: f64,
+    /// Success threshold for inspection (fraction of edges that must be covered).
+    #[serde(default = "default_inspection_threshold")]
+    pub inspection_coverage_threshold: f64,
 }
 
 fn default_max_unassigned() -> u64 {
@@ -199,6 +209,82 @@ fn default_gossip_interval() -> u64 {
 
 fn default_tick_duration() -> u64 {
     100
+}
+
+fn default_wildfire_threshold() -> f64 {
+    0.8
+}
+
+fn default_inspection_threshold() -> f64 {
+    0.8
+}
+
+/// Compute mission-specific success and detect unsupported configurations.
+#[allow(clippy::too_many_arguments)]
+fn compute_mission_success(
+    max_unassigned_ticks_config: u64,
+    strategy_name: &Option<String>,
+    wildfire_success_threshold: f64,
+    inspection_coverage_threshold: f64,
+    all_tasks_assigned: bool,
+    all_expected_failures_detected: bool,
+    max_task_unassigned_ticks: u64,
+    grid_state: &Option<swarm_runtime::GridState>,
+    inspection_state: &Option<InspectionState>,
+    wildfire_state: &Option<WildfireState>,
+    _adapter_complete: bool,
+) -> (bool, Option<String>) {
+    let base_success = all_tasks_assigned
+        && all_expected_failures_detected
+        && max_task_unassigned_ticks <= max_unassigned_ticks_config;
+
+    // SAR mission
+    if let Some(ref gs) = grid_state {
+        let sar_success = gs.all_targets_found()
+            && all_expected_failures_detected
+            && max_task_unassigned_ticks <= max_unassigned_ticks_config;
+
+        // Detect unsupported strategies for SAR
+        if let Some(ref strategy) = strategy_name {
+            if !sar_success && !all_tasks_assigned {
+                match strategy.as_str() {
+                    "cbba" => {
+                        return (false, Some("delayed_reconvergence".to_owned()));
+                    }
+                    "centralized" => {
+                        return (false, Some("static_pre_plan".to_owned()));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        return (sar_success, None);
+    }
+
+    // Inspection mission
+    if let Some(ref is) = inspection_state {
+        let total = is.graph.edges.len() as f64;
+        let covered = is.covered.len() as f64;
+        let coverage_ratio = if total > 0.0 { covered / total } else { 1.0 };
+        let inspection_success = coverage_ratio >= inspection_coverage_threshold
+            && all_expected_failures_detected
+            && max_task_unassigned_ticks <= max_unassigned_ticks_config;
+        return (inspection_success, None);
+    }
+
+    // Wildfire mission
+    if let Some(ref ws) = wildfire_state {
+        let total = ws.zones.len() as f64;
+        let mapped = ws.mapped_zone_ids.len() as f64;
+        let mapped_ratio = if total > 0.0 { mapped / total } else { 1.0 };
+        let wildfire_success = mapped_ratio >= wildfire_success_threshold
+            && all_expected_failures_detected
+            && max_task_unassigned_ticks <= max_unassigned_ticks_config;
+        return (wildfire_success, None);
+    }
+
+    // Default (coverage and other missions)
+    (base_success, None)
 }
 
 pub struct ScenarioRunner;
@@ -1157,9 +1243,36 @@ impl ScenarioRunner {
             .iter()
             .find(|(_, id)| !crashed_agents.contains(id))
             .is_some_and(|(node, _)| node.coordinator.registry.all_assigned_or_completed());
-        let success = all_tasks_assigned
-            && all_expected_failures_detected
-            && max_task_unassigned_ticks <= config.max_unassigned_ticks;
+
+        // v0.35: Recompute adapter_complete after loop for final success determination.
+        let final_live_tasks: Vec<Task> = nodes
+            .iter()
+            .find(|(_, id)| !crashed_agents.contains(id))
+            .map(|(node, _)| node.coordinator.registry.tasks().cloned().collect())
+            .unwrap_or_default();
+        let final_run_state = Self::build_run_state(
+            &grid_state,
+            &inspection_state,
+            &wildfire_state,
+            &final_live_tasks,
+        );
+        let adapter_complete =
+            Self::adapter_driven_complete(&final_live_tasks, &final_run_state, &adapter_registry);
+
+        // v0.35: Mission-specific success semantics
+        let (success, unsupported_reason) = compute_mission_success(
+            config.max_unassigned_ticks,
+            &config.strategy_name,
+            config.wildfire_success_threshold,
+            config.inspection_coverage_threshold,
+            all_tasks_assigned,
+            all_expected_failures_detected,
+            max_task_unassigned_ticks,
+            &grid_state,
+            &inspection_state,
+            &wildfire_state,
+            adapter_complete,
+        );
 
         let msgs_attempted = bus.borrow().messages_attempted();
         let msgs_dropped = bus.borrow().messages_dropped();
@@ -1489,6 +1602,8 @@ impl ScenarioRunner {
                         w.zones.iter().map(|z| z.threat_level).sum::<f64>() / w.zones.len() as f64
                     }
                 }),
+                // v0.35 Dynamic Mission Correctness
+                unsupported_reason,
             },
             event_log,
         )

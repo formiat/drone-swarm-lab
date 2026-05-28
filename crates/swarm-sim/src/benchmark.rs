@@ -407,7 +407,7 @@ pub fn merged_benchmark_run_id(reports: &[ComparisonReport]) -> String {
 
 fn run_with_strategy(
     scenario: &Scenario,
-    run_config: RunConfig,
+    mut run_config: RunConfig,
     strategy: &mut dyn Strategy,
     enable_log: bool,
 ) -> (swarm_metrics::RunMetrics, Option<swarm_replay::EventLog>) {
@@ -435,6 +435,9 @@ fn run_with_strategy(
             self.0.allocation_metrics()
         }
     }
+
+    // v0.35: Pass strategy name for support matrix detection.
+    run_config.strategy_name = Some(strategy.name().to_owned());
 
     if enable_log {
         ScenarioRunner::run_with_log(scenario, run_config, StrategyWrapper(strategy))
