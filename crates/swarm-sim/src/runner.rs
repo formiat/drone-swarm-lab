@@ -4,7 +4,9 @@ use std::rc::Rc;
 
 use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
-use swarm_alloc::Allocator;
+use swarm_alloc::{
+    route_cost, Allocator, BatteryAwarePlanner, NearestNeighbourPlanner, RoutePlanner,
+};
 use swarm_comms::{
     ConnectivityModel, ConnectivitySnapshot, InMemAgentTransport, InMemNetwork, NetworkConfig,
 };
@@ -1278,6 +1280,113 @@ impl ScenarioRunner {
             .filter_map(|(n, _)| n.cbba.as_ref().map(|c| c.bundle_travel_distance))
             .sum();
 
+        // v0.34: Compute meaningful planner metrics from final agent state.
+        let (avg_wasted_travel, avg_return_reserve, infeasible_routes) =
+            if let Some((node, _)) = nodes.iter().find(|(_, id)| !crashed_agents.contains(id)) {
+                let mut wasted_travel_sum = 0.0;
+                let mut return_reserve_sum = 0.0;
+                let mut return_reserve_count = 0u64;
+                let mut infeasible_count = 0u64;
+                let battery_planner = BatteryAwarePlanner::default();
+                let nn_planner = NearestNeighbourPlanner;
+                let task_list: Vec<Task> = node.coordinator.registry.tasks().cloned().collect();
+
+                for (agent_id, entry) in node.coordinator.membership.all_agents() {
+                    if crashed_agents.contains(agent_id) {
+                        continue;
+                    }
+                    let assigned_tasks: Vec<Task> = task_list
+                        .iter()
+                        .filter(|t| t.assigned_to.as_ref() == Some(agent_id))
+                        .cloned()
+                        .collect();
+
+                    // Wasted travel: compare CBBA bundle distance to NN optimal for same tasks.
+                    if let Some(ref cbba) = node.cbba {
+                        if let Some(bundle) = cbba.bundles.get(agent_id) {
+                            let bundle_tasks: Vec<&Task> = bundle
+                                .iter()
+                                .filter_map(|tid| task_list.iter().find(|t| t.id == *tid))
+                                .collect();
+                            let actual_cost = route_cost(entry.pose, &bundle_tasks);
+                            let nn_ordered = nn_planner.order(
+                                entry.pose,
+                                &assigned_tasks,
+                                &swarm_types::Agent {
+                                    id: agent_id.clone(),
+                                    role: entry.role.clone(),
+                                    health: swarm_types::Health::Alive,
+                                    pose: entry.pose,
+                                    capabilities: entry.capabilities.clone(),
+                                    current_task: None,
+                                    battery: entry.battery,
+                                    comms_range: entry.comms_range,
+                                    generation: entry.generation,
+                                    speed: entry.speed,
+                                    max_range: entry.max_range,
+                                    battery_drain_rate: entry.battery_drain_rate,
+                                    battery_model: entry.battery_model.clone(),
+                                },
+                            );
+                            let nn_tasks: Vec<&Task> = nn_ordered
+                                .iter()
+                                .filter_map(|tid| task_list.iter().find(|t| t.id == *tid))
+                                .collect();
+                            let nn_cost = route_cost(entry.pose, &nn_tasks);
+                            if actual_cost > nn_cost {
+                                wasted_travel_sum += actual_cost - nn_cost;
+                            }
+                        }
+                    }
+
+                    // Return reserve: battery minus battery needed to return to base.
+                    let return_dist = entry.pose.distance_to(&base_pose);
+                    let return_drain = if let Some(ref model) = entry.battery_model {
+                        let horizontal = entry.pose.distance_to_2d(&base_pose);
+                        let vertical = (entry.pose.z - base_pose.z).abs();
+                        horizontal * model.cruise_drain_per_meter
+                            + vertical * model.climb_drain_per_meter
+                    } else {
+                        return_dist * entry.battery_drain_rate
+                    };
+                    let reserve = entry.battery - return_drain;
+                    return_reserve_sum += reserve.max(0.0);
+                    return_reserve_count += 1;
+
+                    // Infeasible routes: check if assigned tasks are feasible.
+                    if !assigned_tasks.is_empty() {
+                        let agent_full = swarm_types::Agent {
+                            id: agent_id.clone(),
+                            role: entry.role.clone(),
+                            health: swarm_types::Health::Alive,
+                            pose: entry.pose,
+                            capabilities: entry.capabilities.clone(),
+                            current_task: None,
+                            battery: entry.battery,
+                            comms_range: entry.comms_range,
+                            generation: entry.generation,
+                            speed: entry.speed,
+                            max_range: entry.max_range,
+                            battery_drain_rate: entry.battery_drain_rate,
+                            battery_model: entry.battery_model.clone(),
+                        };
+                        if !battery_planner.is_feasible(entry.pose, &assigned_tasks, &agent_full) {
+                            infeasible_count += 1;
+                        }
+                    }
+                }
+
+                let avg_wasted = wasted_travel_sum;
+                let avg_reserve = if return_reserve_count > 0 {
+                    return_reserve_sum / return_reserve_count as f64
+                } else {
+                    0.0
+                };
+                (avg_wasted, avg_reserve, infeasible_count)
+            } else {
+                (0.0, 0.0, 0)
+            };
+
         (
             RunMetrics {
                 seed: scenario.seed,
@@ -1365,9 +1474,9 @@ impl ScenarioRunner {
                 route_efficiency,
                 // v0.28 Planner Quality metrics
                 avg_route_length: bundle_travel_distance,
-                avg_wasted_travel: 0.0,
-                avg_return_reserve: final_battery_min,
-                infeasible_routes: 0,
+                avg_wasted_travel,
+                avg_return_reserve,
+                infeasible_routes,
                 // v0.30 Wildfire / Flood Mapping metrics
                 hazard_zones_mapped: wildfire_state
                     .as_ref()

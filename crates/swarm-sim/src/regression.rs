@@ -214,6 +214,24 @@ impl Baseline {
                 baseline_metrics.avg_bundle_travel_distance,
                 current.avg_bundle_travel_distance,
             ));
+            deltas.extend(compare_field(
+                suite_name,
+                "avg_wasted_travel",
+                baseline_metrics.avg_wasted_travel,
+                current.avg_wasted_travel,
+            ));
+            deltas.extend(compare_field(
+                suite_name,
+                "avg_return_reserve",
+                baseline_metrics.avg_return_reserve,
+                current.avg_return_reserve,
+            ));
+            deltas.extend(compare_field(
+                suite_name,
+                "avg_infeasible_routes",
+                baseline_metrics.avg_infeasible_routes,
+                current.avg_infeasible_routes,
+            ));
         }
         deltas
     }

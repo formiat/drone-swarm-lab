@@ -12,5 +12,7 @@ pub use allocator::{
 pub use cbba::{CbbaAllocator, CbbaConfig};
 pub use centralized::CentralizedPlanner;
 pub use connectivity_aware::ConnectivityAwareAllocator;
-pub use route_planner::{route_cost, RoutePlanner};
+pub use route_planner::{
+    route_cost, BatteryAwarePlanner, NearestNeighbourPlanner, RoutePlanner, TwoOptPlanner,
+};
 pub use strategy::{Strategy, StrategyRegistry};

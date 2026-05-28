@@ -1,5 +1,6 @@
-use swarm_types::{AgentId, Pose, TaskId};
+use swarm_types::{AgentId, Pose, Task, TaskId};
 
+use crate::route_planner::{route_cost, RoutePlanner};
 use crate::{AllocationAgent, AllocationTask, Allocator};
 
 /// Centralized oracle planner that knows the full scenario state.
@@ -13,6 +14,10 @@ use crate::{AllocationAgent, AllocationTask, Allocator};
 pub struct CentralizedPlanner {
     /// Pre-computed optimal assignments from scenario data.
     assignments: Vec<(TaskId, AgentId)>,
+    /// Optional route planner for ordering tasks per agent.
+    pub route_planner: Option<Box<dyn RoutePlanner>>,
+    /// Cached bundle travel distance (computed after allocation if planner is set).
+    pub bundle_travel_distance: f64,
 }
 
 impl CentralizedPlanner {
@@ -48,7 +53,11 @@ impl CentralizedPlanner {
             }
         }
 
-        Self { assignments }
+        Self {
+            assignments,
+            route_planner: None,
+            bundle_travel_distance: 0.0,
+        }
     }
 }
 
@@ -56,17 +65,61 @@ impl Allocator for CentralizedPlanner {
     fn allocate(
         &mut self,
         tasks: &[AllocationTask<'_>],
-        _agents: &[AllocationAgent],
+        agents: &[AllocationAgent],
     ) -> Vec<(TaskId, AgentId)> {
         // Only return assignments for tasks that are currently unassigned
         // (avoids duplicate-assignment conflicts when called from every agent)
         let unassigned_ids: std::collections::HashSet<String> =
             tasks.iter().map(|at| at.task.id.to_string()).collect();
-        self.assignments
+        let result: Vec<(TaskId, AgentId)> = self
+            .assignments
             .iter()
             .filter(|(task_id, _)| unassigned_ids.contains(task_id.as_ref()))
             .cloned()
-            .collect()
+            .collect();
+
+        // v0.34: If a route planner is configured, order tasks per agent and
+        // compute bundle travel distance.
+        if let Some(planner) = &self.route_planner {
+            self.bundle_travel_distance = 0.0;
+            let mut agent_tasks: std::collections::HashMap<AgentId, Vec<Task>> =
+                std::collections::HashMap::new();
+            for (task_id, agent_id) in &result {
+                if let Some(at) = tasks.iter().find(|t| &t.task.id == task_id) {
+                    agent_tasks
+                        .entry(agent_id.clone())
+                        .or_default()
+                        .push(at.task.clone());
+                }
+            }
+            for (agent_id, agent_tasks_list) in &agent_tasks {
+                if let Some(agent) = agents.iter().find(|a| &a.id == agent_id) {
+                    let agent_full = swarm_types::Agent {
+                        id: agent.id.clone(),
+                        role: agent.role.clone(),
+                        health: swarm_types::Health::Alive,
+                        pose: agent.pose,
+                        capabilities: agent.capabilities.clone(),
+                        current_task: None,
+                        battery: agent.battery,
+                        comms_range: agent.comms_range,
+                        generation: 1,
+                        speed: agent.speed,
+                        max_range: agent.max_range,
+                        battery_drain_rate: agent.battery_drain_rate,
+                        battery_model: None,
+                    };
+                    let ordered = planner.order(agent.pose, agent_tasks_list, &agent_full);
+                    let ordered_tasks: Vec<&Task> = ordered
+                        .iter()
+                        .filter_map(|tid| agent_tasks_list.iter().find(|t| t.id == *tid))
+                        .collect();
+                    self.bundle_travel_distance += route_cost(agent.pose, &ordered_tasks);
+                }
+            }
+        }
+
+        result
     }
 }
 
