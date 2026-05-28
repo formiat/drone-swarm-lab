@@ -234,6 +234,8 @@ See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known l
 | M29 | ✅ | Stress & Regression Harness: `RegressionSuite`, baseline artifacts, threshold checking |
 | M30 | ✅ | New Mission Prototype: Wildfire / Flood Mapping with `TaskKind::MappingZone`, hazard zones, dynamic threat |
 | M31 | ✅ | Simulation Realism Foundation: battery model v2, altitude sensor penalty, wind drift, pose noise, comms jitter, time-gated no-fly zones |
+| M32 | ✅ | Benchmark Identity Hardening: per-row mission/scenario in exports, mission-scoped profiles, merged `all` benchmark id, realism metadata in manifest |
+| M33 | ✅ | Mission Semantics Integration: 6 concrete adapters, `AdapterRegistry`, adapter-driven completion/scoring in runner and allocator, DSL kind validation |
 
 ---
 
