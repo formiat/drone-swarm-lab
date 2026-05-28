@@ -182,6 +182,13 @@ mod tests {
         }
     }
 
+    fn scout_task(id: &str, x: f64, y: f64) -> Task {
+        let mut task = relay_task(id, x, y);
+        task.required_role = Some(Role::Scout);
+        task.preferred_role = Some(Role::Scout);
+        task
+    }
+
     #[test]
     fn connectivity_aware_prefers_relay_for_relay_task() {
         let mut allocator = ConnectivityAwareAllocator {
@@ -227,5 +234,76 @@ mod tests {
         let result = allocator.allocate_with_connectivity(&tasks, &agents, &ctx);
         assert_eq!(result.len(), 1);
         assert_eq!(*result[0].1, "scout");
+    }
+
+    #[test]
+    fn connectivity_aware_pose_task_maximizes_reachability() {
+        let mut allocator = ConnectivityAwareAllocator {
+            base_allocator: AuctionAllocator::default(),
+        };
+
+        let already_useful = relay_agent("already-useful", 5.0, 0.0);
+        let better_if_moved = relay_agent("better-if-moved", 100.0, 0.0);
+        let scout = scout_agent("scout", 10.0, 0.0);
+        let task = relay_task("relay-task", 5.0, 0.0);
+        let tasks = vec![AllocationTask { task: &task }];
+        let agents = vec![already_useful, better_if_moved.clone(), scout];
+        let ctx = make_context(Pose {
+            x: 0.0,
+            y: 0.0,
+            ..Default::default()
+        });
+
+        let result = allocator.allocate_with_connectivity(&tasks, &agents, &ctx);
+
+        assert_eq!(result, vec![(task.id.clone(), better_if_moved.id)]);
+    }
+
+    #[test]
+    fn connectivity_aware_no_pose_relay_task_falls_back_to_base_allocator() {
+        let mut allocator = ConnectivityAwareAllocator {
+            base_allocator: AuctionAllocator::default(),
+        };
+
+        let near = relay_agent("near", 1.0, 0.0);
+        let far = relay_agent("far", 100.0, 0.0);
+        let mut task = relay_task("relay-task", 5.0, 0.0);
+        task.pose = None;
+        let tasks = vec![AllocationTask { task: &task }];
+        let agents = vec![near.clone(), far];
+        let ctx = make_context(Pose {
+            x: 0.0,
+            y: 0.0,
+            ..Default::default()
+        });
+
+        let result = allocator.allocate_with_connectivity(&tasks, &agents, &ctx);
+
+        assert_eq!(result, vec![(task.id.clone(), near.id)]);
+    }
+
+    #[test]
+    fn connectivity_aware_without_relay_agents_preserves_scout_assignments() {
+        let mut allocator = ConnectivityAwareAllocator {
+            base_allocator: AuctionAllocator::default(),
+        };
+
+        let scout = scout_agent("scout", 1.0, 0.0);
+        let relay_task = relay_task("relay-task", 5.0, 0.0);
+        let scout_task = scout_task("scout-task", 2.0, 0.0);
+        let tasks = vec![
+            AllocationTask { task: &relay_task },
+            AllocationTask { task: &scout_task },
+        ];
+        let agents = vec![scout.clone()];
+        let ctx = make_context(Pose {
+            x: 0.0,
+            y: 0.0,
+            ..Default::default()
+        });
+
+        let result = allocator.allocate_with_connectivity(&tasks, &agents, &ctx);
+
+        assert_eq!(result, vec![(scout_task.id.clone(), scout.id)]);
     }
 }

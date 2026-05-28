@@ -449,19 +449,18 @@ mod tests {
 
     #[test]
     fn battery_aware_order_drops_tasks_on_ordered_subset() {
-        // Tasks ordered as t0(10), t1(20), t2(30) — total 60m + return 30m = 90m
-        // With battery 20 and drain 1.0/m, reserve 0.2 → budget = 16.
+        // Tasks ordered as t0(5), t1(10), t2(20).
+        // With battery 30 and drain 1.0/m, reserve 0.2 -> budget = 24.
         // NN orders: t0, t1, t2 (nearest first from origin).
-        // Dropping t2: 30m + return 20m = 50m > 16.
-        // Dropping t1,t2: 10m + return 10m = 20m > 16.
-        // All dropped: 0m ≤ 16.
-        // The fix should drop from the ordered subset, not the original set.
+        // Full route: 0->5->10->20->0 = 40m, infeasible.
+        // Dropping only t2: 0->5->10->0 = 20m, feasible.
+        // This proves feasibility is checked on the current ordered subset.
         let tasks = vec![
-            make_task("t0", 10.0, 0.0),
-            make_task("t1", 20.0, 0.0),
-            make_task("t2", 30.0, 0.0),
+            make_task("t0", 5.0, 0.0),
+            make_task("t1", 10.0, 0.0),
+            make_task("t2", 20.0, 0.0),
         ];
-        let agent = make_agent(20.0, 1.0);
+        let agent = make_agent(30.0, 1.0);
         let planner = BatteryAwarePlanner {
             reserve_fraction: 0.2,
             inner: Box::new(NearestNeighbourPlanner),
@@ -473,11 +472,31 @@ mod tests {
         };
 
         let ordered = planner.order(start, &tasks, &agent);
-        // With the bug, is_feasible checked the original 3-task set, so
-        // ordered would be empty (all popped). With the fix, ordered subset
-        // feasibility is checked, so all 3 tasks are still infeasible and empty.
-        // Let's use a case where the ordered subset matters.
-        assert!(ordered.len() <= tasks.len());
+        assert_eq!(
+            ordered,
+            vec![TaskId::from("t0".to_owned()), TaskId::from("t1".to_owned())]
+        );
+    }
+
+    #[test]
+    fn battery_aware_order_returns_empty_when_first_task_infeasible() {
+        let tasks = vec![make_task("t0", 20.0, 0.0)];
+        let agent = make_agent(30.0, 1.0);
+        let planner = BatteryAwarePlanner {
+            reserve_fraction: 0.2,
+            inner: Box::new(NearestNeighbourPlanner),
+        };
+        let start = Pose {
+            x: 0.0,
+            y: 0.0,
+            ..Default::default()
+        };
+
+        let ordered = planner.order(start, &tasks, &agent);
+        assert!(
+            ordered.is_empty(),
+            "Single task route requires 40m battery drain, above the 24m budget"
+        );
     }
 
     #[test]

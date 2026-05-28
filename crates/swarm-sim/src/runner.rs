@@ -1730,7 +1730,10 @@ fn released_tasks_reassigned(coordinator: &Coordinator, released_tasks: &[TaskId
 mod tests {
     use super::*;
     use swarm_alloc::{AllocationAgent, AllocationTask, Allocator};
-    use swarm_types::{Agent, Capability, Health, Pose, Role, Task, TaskStatus};
+    use swarm_types::{
+        Agent, Capability, CellState, Health, InspectionEdge, Pose, Role, SearchGrid, SensorModel,
+        Task, TaskKind, TaskStatus,
+    };
 
     fn scenario(seed: u64, agent_count: usize, task_count: usize) -> Scenario {
         let agents = (0..agent_count)
@@ -2026,6 +2029,92 @@ mod tests {
     }
 
     #[test]
+    fn build_run_state_collects_mission_semantics() {
+        let grid = SearchGrid::new(2, 2, 1.0);
+        let mut grid_state =
+            swarm_runtime::GridState::new(grid.clone(), vec![], SensorModel::new(1.0, 1.0, 1.0));
+        grid_state.cells[grid.cell_index(1, 0)] = CellState::Visited {
+            scanned_by: vec![AgentId::from("agent-0".to_owned())],
+            scan_tick: 1,
+        };
+        grid_state.cells[grid.cell_index(0, 1)] = CellState::TargetFound {
+            target_id: "target-0".to_owned(),
+            found_by: AgentId::from("agent-1".to_owned()),
+            found_at_tick: 2,
+        };
+
+        let edge_id = EdgeId::from("edge-0".to_owned());
+        let mut inspection_state = InspectionState::new(swarm_types::InspectionGraph {
+            edges: vec![InspectionEdge {
+                id: edge_id.clone(),
+                from: Pose::default(),
+                to: Pose {
+                    x: 1.0,
+                    ..Default::default()
+                },
+                length_m: 1.0,
+                priority: 1,
+            }],
+            depot: Pose::default(),
+        });
+        inspection_state.covered.insert(edge_id.clone());
+
+        let mut wildfire_state = WildfireState::default();
+        wildfire_state.mapped_zone_ids.insert("zone-0".to_owned());
+
+        let mut assigned = semantic_task("assigned", TaskKind::CoverageCell);
+        assigned.assigned_to = Some(AgentId::from("agent-0".to_owned()));
+        let mut completed = semantic_task("completed", TaskKind::Waypoint);
+        completed.status = TaskStatus::Completed;
+
+        let state = ScenarioRunner::build_run_state(
+            &Some(grid_state),
+            &Some(inspection_state),
+            &Some(wildfire_state),
+            &[assigned.clone(), completed.clone()],
+        );
+
+        assert!(state.scanned_cells.contains(&(1, 0)));
+        assert!(state.scanned_cells.contains(&(0, 1)));
+        assert!(state.covered_edges.contains(&edge_id));
+        assert!(state.mapped_zones.contains("zone-0"));
+        assert!(state.completed_tasks.contains(&assigned.id));
+        assert!(state.completed_tasks.contains(&completed.id));
+    }
+
+    #[test]
+    fn adapter_driven_complete_requires_exact_semantic_state() {
+        let registry = AdapterRegistry::new();
+        let mut sar = semantic_task("sar-0", TaskKind::SarScan);
+        sar.grid_cell = Some((1, 1));
+        let mut inspection = semantic_task("inspection-0", TaskKind::InspectionEdge);
+        inspection.edge_id = Some(EdgeId::from("edge-0".to_owned()));
+        let wildfire = semantic_task("zone-0", TaskKind::MappingZone);
+        let waypoint = semantic_task("waypoint-0", TaskKind::Waypoint);
+        let tasks = vec![
+            sar.clone(),
+            inspection.clone(),
+            wildfire.clone(),
+            waypoint.clone(),
+        ];
+
+        let mut state = RunState::default();
+        state.scanned_cells.insert((1, 1));
+        state
+            .covered_edges
+            .insert(EdgeId::from("edge-0".to_owned()));
+        state.mapped_zones.insert("zone-0".to_owned());
+        assert!(!ScenarioRunner::adapter_driven_complete(
+            &tasks, &state, &registry
+        ));
+
+        state.completed_tasks.insert(waypoint.id.clone());
+        assert!(ScenarioRunner::adapter_driven_complete(
+            &tasks, &state, &registry
+        ));
+    }
+
+    #[test]
     fn cbba_distributed_path_succeeds() {
         use swarm_alloc::CbbaAllocator;
         let s = scenario(0, 3, 2);
@@ -2040,5 +2129,22 @@ mod tests {
             metrics.cbba_rounds_to_convergence > 0,
             "CBBA did not converge"
         );
+    }
+
+    fn semantic_task(id: &str, kind: TaskKind) -> Task {
+        Task {
+            id: TaskId::from(id.to_owned()),
+            status: TaskStatus::Unassigned,
+            assigned_to: None,
+            priority: 1,
+            required_capabilities: vec![],
+            required_role: None,
+            preferred_role: None,
+            expires_at: None,
+            pose: Some(Pose::default()),
+            grid_cell: None,
+            edge_id: None,
+            kind: Some(kind),
+        }
     }
 }

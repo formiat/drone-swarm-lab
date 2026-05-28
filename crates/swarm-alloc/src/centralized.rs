@@ -226,4 +226,24 @@ mod tests {
 
         assert!(result.is_empty());
     }
+
+    #[test]
+    fn centralized_respects_required_role_filter() {
+        let mut relay_task = task("relay-task");
+        relay_task.required_role = Some(Role::Relay);
+        let tasks = vec![AllocationTask { task: &relay_task }];
+        let scout = agent("scout");
+        let mut relay = agent("relay");
+        relay.role = Role::Relay;
+        relay.pose = Pose {
+            x: 100.0,
+            y: 0.0,
+            ..Default::default()
+        };
+
+        let mut planner = CentralizedPlanner::new(&tasks, &[scout, relay.clone()]);
+        let result = planner.allocate(&tasks, &[relay.clone()]);
+
+        assert_eq!(result, vec![(relay_task.id.clone(), relay.id)]);
+    }
 }

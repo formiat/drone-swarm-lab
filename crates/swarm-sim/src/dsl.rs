@@ -213,6 +213,15 @@ pub fn validate_mission_specific(entry: &ScenarioSuiteEntry) -> Vec<ValidationEr
     // v0.33: validate task kind and required fields
     for (i, task) in entry.scenario.tasks.iter().enumerate() {
         if let Some(ref kind) = task.kind {
+            if !mission_allows_task_kind(entry.mission.as_str(), kind) {
+                errors.push(ValidationError {
+                    field: format!("scenario.tasks[{i}].kind"),
+                    message: format!(
+                        "Mission '{}' does not support task kind {:?}",
+                        entry.mission, kind
+                    ),
+                });
+            }
             match kind {
                 swarm_types::TaskKind::SarScan | swarm_types::TaskKind::SarConfirmationScan => {
                     if task.grid_cell.is_none() {
@@ -302,6 +311,24 @@ pub fn validate_mission_specific(entry: &ScenarioSuiteEntry) -> Vec<ValidationEr
     }
 
     errors
+}
+
+fn mission_allows_task_kind(mission: &str, kind: &swarm_types::TaskKind) -> bool {
+    match mission {
+        "sar" => matches!(
+            kind,
+            swarm_types::TaskKind::SarScan | swarm_types::TaskKind::SarConfirmationScan
+        ),
+        "inspection" => matches!(kind, swarm_types::TaskKind::InspectionEdge),
+        "wildfire" => matches!(kind, swarm_types::TaskKind::MappingZone),
+        "sitl" => matches!(kind, swarm_types::TaskKind::Waypoint),
+        "coverage" => matches!(kind, swarm_types::TaskKind::CoverageCell),
+        "emergency-mesh" => matches!(
+            kind,
+            swarm_types::TaskKind::CoverageCell | swarm_types::TaskKind::RelayPlacement
+        ),
+        _ => true,
+    }
 }
 
 #[cfg(test)]
@@ -560,6 +587,63 @@ mod tests {
         entry.run_config.grid_state = None;
         let errors = validate_entry(&entry);
         assert!(errors.iter().any(|e| e.field == "run_config.grid_state"));
+    }
+
+    #[test]
+    fn validate_sar_rejects_non_sar_task_kind() {
+        let mut entry = make_minimal_entry();
+        entry.mission = "sar".to_owned();
+        entry.run_config.grid_state = Some(swarm_runtime::GridState::new(
+            swarm_types::SearchGrid::new(1, 1, 1.0),
+            vec![],
+            swarm_types::SensorModel::new(1.0, 1.0, 1.0),
+        ));
+        entry.scenario.tasks[0].kind = Some(swarm_types::TaskKind::Waypoint);
+        entry.scenario.tasks[0].pose = Some(Pose::default());
+        entry.scenario.tasks[0].grid_cell = Some((0, 0));
+
+        let errors = validate_entry(&entry);
+        assert!(
+            errors.iter().any(|e| e.field == "scenario.tasks[0].kind"),
+            "Expected SAR task-kind mismatch, got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn validate_inspection_rejects_non_inspection_task_kind() {
+        let mut entry = make_minimal_entry();
+        entry.mission = "inspection".to_owned();
+        entry.run_config.enable_movement = true;
+        entry.scenario.tasks[0].kind = Some(swarm_types::TaskKind::CoverageCell);
+        entry.scenario.tasks[0].pose = Some(Pose::default());
+        entry.scenario.tasks[0].edge_id = Some(swarm_types::EdgeId::from("edge-0".to_owned()));
+
+        let errors = validate_entry(&entry);
+        assert!(
+            errors.iter().any(|e| e.field == "scenario.tasks[0].kind"),
+            "Expected inspection task-kind mismatch, got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn validate_emergency_mesh_allows_coverage_and_relay_kinds() {
+        let mut entry = make_minimal_entry();
+        entry.mission = "emergency-mesh".to_owned();
+        entry.scenario.tasks[0].kind = Some(swarm_types::TaskKind::CoverageCell);
+        entry.scenario.tasks[0].pose = Some(Pose::default());
+
+        let mut relay = entry.scenario.tasks[0].clone();
+        relay.id = swarm_types::TaskId::from("relay-0".to_owned());
+        relay.kind = Some(swarm_types::TaskKind::RelayPlacement);
+        relay.required_role = Some(Role::Relay);
+        entry.scenario.tasks.push(relay);
+
+        let errors = validate_entry(&entry);
+        assert!(
+            errors.iter().all(|e| e.field != "scenario.tasks[0].kind"
+                && e.field != "scenario.tasks[1].kind"),
+            "Emergency mesh should allow coverage + relay task kinds, got: {errors:?}"
+        );
     }
 
     #[test]

@@ -288,6 +288,38 @@ mod tests {
     }
 
     #[test]
+    fn sar_adapter_requires_exact_grid_cell() {
+        let adapter = SarAdapter;
+        let mut t = task("t0", TaskKind::SarScan);
+        let mut state = RunState::default();
+        state.scanned_cells.insert((5, 5));
+
+        assert!(
+            !adapter.is_completed(&t, &state),
+            "SAR task without grid_cell must not complete from unrelated scan state"
+        );
+
+        t.grid_cell = Some((1, 1));
+        assert!(
+            !adapter.is_completed(&t, &state),
+            "SAR task must require its exact grid cell"
+        );
+    }
+
+    #[test]
+    fn sar_confirmation_scan_uses_sar_cell_context() {
+        let registry = AdapterRegistry::new();
+        let mut t = task("confirm-0", TaskKind::SarConfirmationScan);
+        t.grid_cell = Some((2, 3));
+        let adapter = registry.for_task(&t).unwrap();
+        let mut state = RunState::default();
+        state.scanned_cells.insert((2, 3));
+
+        assert_eq!(adapter.task_kind(&t), TaskKind::SarScan);
+        assert!(adapter.is_completed(&t, &state));
+    }
+
+    #[test]
     fn inspection_adapter_is_completed_when_covered() {
         let adapter = InspectionAdapter;
         let mut t = task("t0", TaskKind::InspectionEdge);
@@ -298,6 +330,27 @@ mod tests {
 
         state.covered_edges.insert(EdgeId::from("e0".to_owned()));
         assert!(adapter.is_completed(&t, &state));
+    }
+
+    #[test]
+    fn inspection_adapter_requires_exact_edge() {
+        let adapter = InspectionAdapter;
+        let mut t = task("t0", TaskKind::InspectionEdge);
+        let mut state = RunState::default();
+        state
+            .covered_edges
+            .insert(EdgeId::from("edge-a".to_owned()));
+
+        assert!(
+            !adapter.is_completed(&t, &state),
+            "Inspection task without edge_id must not complete"
+        );
+
+        t.edge_id = Some(EdgeId::from("edge-b".to_owned()));
+        assert!(
+            !adapter.is_completed(&t, &state),
+            "Inspection task must require its exact edge_id"
+        );
     }
 
     #[test]
@@ -313,6 +366,19 @@ mod tests {
     }
 
     #[test]
+    fn wildfire_adapter_requires_exact_zone_id() {
+        let adapter = WildfireAdapter;
+        let t = task("zone-0", TaskKind::MappingZone);
+        let mut state = RunState::default();
+        state.mapped_zones.insert("zone-1".to_owned());
+
+        assert!(
+            !adapter.is_completed(&t, &state),
+            "Mapping task must require its own task id as zone id"
+        );
+    }
+
+    #[test]
     fn coverage_adapter_is_completed_when_in_completed_tasks() {
         let adapter = CoverageAdapter;
         let t = task("t0", TaskKind::CoverageCell);
@@ -322,6 +388,32 @@ mod tests {
 
         state.completed_tasks.insert(TaskId::from("t0".to_owned()));
         assert!(adapter.is_completed(&t, &state));
+    }
+
+    #[test]
+    fn completed_task_adapters_require_exact_task_id() {
+        let coverage = CoverageAdapter;
+        let relay = RelayAdapter;
+        let waypoint = WaypointAdapter;
+        let coverage_task = task("coverage-0", TaskKind::CoverageCell);
+        let relay_task = task("relay-0", TaskKind::RelayPlacement);
+        let waypoint_task = task("waypoint-0", TaskKind::Waypoint);
+        let mut state = RunState::default();
+        state
+            .completed_tasks
+            .insert(TaskId::from("other-task".to_owned()));
+
+        assert!(!coverage.is_completed(&coverage_task, &state));
+        assert!(!relay.is_completed(&relay_task, &state));
+        assert!(!waypoint.is_completed(&waypoint_task, &state));
+
+        state.completed_tasks.insert(coverage_task.id.clone());
+        state.completed_tasks.insert(relay_task.id.clone());
+        state.completed_tasks.insert(waypoint_task.id.clone());
+
+        assert!(coverage.is_completed(&coverage_task, &state));
+        assert!(relay.is_completed(&relay_task, &state));
+        assert!(waypoint.is_completed(&waypoint_task, &state));
     }
 
     #[test]

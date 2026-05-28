@@ -3,7 +3,7 @@ use swarm_scenarios::{
     build_inspection_scenario, build_sar_scenario, build_wildfire_scenario, InspectionProfile,
     SarProfile, WildfireProfile,
 };
-use swarm_sim::ScenarioRunner;
+use swarm_sim::{classify_support, ScenarioRunner, SupportReason, SupportStatus};
 use swarm_types::AllocationAgent;
 
 // ---------------------------------------------------------------------------
@@ -26,6 +26,10 @@ fn support_matrix_sar_greedy_is_supported() {
 
 #[test]
 fn support_matrix_sar_cbba_is_unsupported() {
+    let support = classify_support("sar", "ideal", "cbba");
+    assert_eq!(support.status, SupportStatus::Unsupported);
+    assert_eq!(support.reason, SupportReason::DelayedReconvergence);
+
     let config = SarProfile::Ideal.config(42);
     let (scenario, mut run_config) = build_sar_scenario(&config);
     run_config.strategy_name = Some("cbba".to_owned());
@@ -40,6 +44,10 @@ fn support_matrix_sar_cbba_is_unsupported() {
 
 #[test]
 fn support_matrix_sar_centralized_is_unsupported() {
+    let support = classify_support("sar", "ideal", "centralized");
+    assert_eq!(support.status, SupportStatus::Unsupported);
+    assert_eq!(support.reason, SupportReason::StaticPrePlan);
+
     let config = SarProfile::Ideal.config(42);
     let (scenario, mut run_config) = build_sar_scenario(&config);
     let agents: Vec<AllocationAgent> = scenario
@@ -133,4 +141,11 @@ fn support_matrix_wildfire_medium_dynamic_completion_consistency() {
         metrics.unsupported_reason.is_none(),
         "wildfire medium-dynamic should not have unsupported_reason"
     );
+}
+
+#[test]
+fn support_matrix_emergency_mesh_connectivity_aware_is_experimental() {
+    let support = classify_support("emergency-mesh", "ideal", "connectivity-aware");
+    assert_eq!(support.status, SupportStatus::Experimental);
+    assert_eq!(support.reason, SupportReason::RelayPlacementExperimental);
 }
