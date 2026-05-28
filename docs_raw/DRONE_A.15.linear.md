@@ -4,7 +4,7 @@
 
 ## Назначение документа
 
-Этот документ содержит только дальнейший линейный план развития проекта.
+Этот документ содержит объединённый дальнейший линейный план развития проекта на базе `DRONE_A.15.linear.md` и `DRONE_B.15.linear.md`.
 
 Документ начинается с будущих milestones и не пересказывает уже выполненную работу.
 
@@ -13,17 +13,24 @@
 ## Линейная последовательность
 
 ```text
-M40 Deterministic Reporting & Benchmark Credibility
--> M41 Algorithmic Gap Triage
+M40 Benchmark Trust & Deterministic Reporting
+-> M41 Semantics Audit & Algorithmic Gap Triage
 -> M42 Regression Harness v3
--> M43 Realism Calibration
+-> M43 Realism Calibration Pack
 -> M44 Flood Naming / Scope Decision
 -> M45 Big Direction Decision
 ```
 
-Этот порядок сохраняет линейность: сначала делаем результаты воспроизводимыми, затем разбираем слабые места алгоритмов, после этого усиливаем regression harness, калибруем realism, закрываем вопрос flood scope, и только потом выбираем большую ветку развития.
+Порядок мотивирован зависимостями:
 
-## M40 - Deterministic Reporting & Benchmark Credibility
+- нельзя интерпретировать benchmark artifacts, пока не проверены report identity, determinism and manifest reproducibility;
+- диагностика алгоритмических провалов полезна только после короткого audit of semantics/planner wiring;
+- regression thresholds нельзя нормально калибровать, пока метрики и gaps не классифицированы;
+- realism calibration требует устойчивого regression/reporting foundation;
+- flood scope лучше решать после clarity around disaster-mapping support;
+- большую ветку развития нужно выбирать после того, как technical foundation перестал искажать картину.
+
+## M40 - Benchmark Trust & Deterministic Reporting
 
 Цель:
 
@@ -31,7 +38,7 @@ M40 Deterministic Reporting & Benchmark Credibility
 
 Суть:
 
-Сейчас benchmark/reporting уже умеет собирать данные, но следующий этап должен зафиксировать, что одинаковая конфигурация даёт одинаковые aggregate metrics независимо от уровня параллелизма, порядка обхода структур данных и формата экспорта.
+Benchmark/reporting уже умеет собирать данные, но следующий этап должен зафиксировать, что одинаковая конфигурация даёт одинаковые aggregate metrics независимо от уровня параллелизма, порядка обхода структур данных и формата экспорта.
 
 Это не milestone "сделать большой прогон". Большой прогон может быть validation artifact после завершения M40, но сама задача M40 - инженерная: убрать источники nondeterminism and ambiguity.
 
@@ -43,14 +50,19 @@ M40 Deterministic Reporting & Benchmark Credibility
    - JSON/CSV/Markdown must agree on row identity;
    - visible row order must be stable;
    - timestamps/run ids must be ignored in metric equality checks.
-2. Найти и убрать источники nondeterminism:
-   - unordered map iteration in report output;
+2. Проверить report identity:
+   - every row has explicit mission/scenario/profile/strategy identity;
+   - merged reports preserve source mission;
+   - no fallback can silently relabel rows;
+   - no duplicate report row keys.
+3. Найти и убрать источники nondeterminism:
+   - unordered map iteration in visible report output;
    - unseeded randomness;
    - order-dependent aggregation;
    - inconsistent profile ordering;
    - inconsistent strategy ordering;
    - accidental dependence on rayon scheduling.
-3. Усилить manifest:
+4. Усилить manifest:
    - command shape;
    - mission/suite selection;
    - seed range or seed count;
@@ -58,15 +70,17 @@ M40 Deterministic Reporting & Benchmark Credibility
    - build profile when available;
    - git commit when available;
    - schema/report version if available.
-4. Добавить report comparison helper:
+5. Добавить report comparison helper:
    - compare metrics while ignoring timestamps;
    - compare JSON/CSV identities;
    - compare row counts;
-   - compare mission/scenario/profile/strategy keys.
-5. Обновить docs around validation:
+   - compare mission/scenario/profile/strategy keys;
+   - compare jobs=1 vs jobs=N outputs.
+6. Обновить docs around validation:
    - validation run is an artifact;
    - artifact must reference exact code state;
-   - artifact must be reproducible from manifest.
+   - artifact must be reproducible from manifest;
+   - benchmark docs are results storage, not roadmap milestones.
 
 Ожидаемый результат:
 
@@ -96,89 +110,110 @@ Tests that need no refactoring:
 - report row ordering test;
 - JSON/CSV identity parity test;
 - manifest metadata assertions;
-- no duplicate report row keys test.
+- no duplicate report row keys test;
+- integration test around output directory and machine-readable reports.
 
 Tests that need light refactoring:
 
 - helper to compare JSON reports while ignoring timestamp/run id;
 - shared fixture builder for multi-mission reports;
 - reusable manifest assertion helper;
-- small CLI integration test for deterministic output.
+- JSON/CSV parsing helpers for tests;
+- tempdir-based output tests.
 
 Tests that need heavy refactoring:
 
 - reproducibility harness for complete benchmark packs;
 - report schema compatibility tests;
+- property tests for report row identity and uniqueness;
 - statistical diff tooling for long validation artifacts.
 
-## M41 - Algorithmic Gap Triage
+## M41 - Semantics Audit & Algorithmic Gap Triage
 
 Цель:
 
-> разобрать слабые места алгоритмов и метрик, не пытаясь чинить всё сразу.
+> сначала проверить wiring semantics/planner layers, затем разобрать слабые места алгоритмов и метрик без попытки чинить всё сразу.
 
 Суть:
 
-Проект уже содержит несколько mission families, strategies and metrics. Следующий разумный шаг - не добавлять новую функциональность, а классифицировать видимые провалы: где это баг метрики, где баг реализации, где неподходящий алгоритм, где слишком жёсткий сценарий, а где допустимое known limitation.
+Проект содержит несколько mission families, strategies, adapters, planners and metrics. Перед глубоким algorithmic triage нужно сделать короткий architecture audit: правильные ли semantics попадают в runner/allocator/planner, не теряется ли task context, корректно ли считаются completion and route feasibility.
+
+После этого можно классифицировать видимые провалы: где это баг метрики, где баг реализации, где неподходящий алгоритм, где слишком жёсткий сценарий, а где допустимое known limitation.
 
 Что сделать:
 
-1. Составить список gap classes:
+1. Провести semantics/planner audit:
+   - runner uses mission adapter completion where intended;
+   - scoring path receives mission/task context;
+   - route cost path uses current task semantics where applicable;
+   - battery-aware feasibility checks the current candidate route, not stale full task list;
+   - DSL validation catches task-kind field mismatch.
+2. Проверить key wiring with focused tests:
+   - SAR scan keeps grid cell context;
+   - inspection edge keeps edge id context;
+   - wildfire mapping keeps zone/threat context;
+   - waypoint tasks keep pose context;
+   - planner feasibility drops only tasks needed for feasible route.
+3. Составить список gap classes:
    - suspicious metric mismatch;
    - unsupported strategy/mission combination;
    - weak distributed behavior;
    - profile-specific failure;
    - dynamic scenario weakness;
    - route/battery feasibility mismatch.
-2. Для каждого gap class сделать короткую investigation note:
+4. Для каждого gap class сделать короткую investigation note:
    - reproducible command or fixture;
    - expected behavior;
    - actual behavior;
    - likely cause;
    - confidence level;
    - recommended action.
-3. Классифицировать каждый gap:
+5. Классифицировать каждый gap:
    - metric bug;
    - implementation bug;
    - algorithm mismatch;
    - scenario too hard or ill-posed;
    - accepted limitation;
    - needs more data.
-4. Исправить только high-confidence bugs:
+6. Исправить только high-confidence bugs:
    - obvious metric extraction bugs;
    - obvious success predicate inconsistencies;
    - obvious assignment/completion mismatches;
-   - support matrix mistakes.
-5. Обновить support matrix:
+   - support matrix mistakes;
+   - small wiring mismatches.
+7. Обновить support matrix:
    - supported;
    - experimental;
    - unsupported with reason;
    - failing due to known bug;
    - not yet evaluated.
-6. Подготовить вход для regression update:
+8. Подготовить вход для regression update:
    - which gaps should become regression checks;
    - which gaps should remain experimental;
    - which gaps should be excluded from default gate.
 
 Ожидаемый результат:
 
-- слабые места перестают быть набором разрозненных наблюдений;
+- weak spots перестают быть набором разрозненных наблюдений;
 - становится понятно, что чинить кодом, что документировать, а что оставить outside default support;
-- дальнейшая работа по алгоритмам получает нормальный backlog.
+- algorithm backlog получает concrete root-cause notes;
+- regression v3 получает осмысленные suites instead of accidental thresholds.
 
 Не входит в scope:
 
 - полностью переписать strategies;
 - решать все weak combinations;
 - делать новые большие validation artifacts;
-- менять public API без необходимости.
+- менять public API без необходимости;
+- строить новую mission family.
 
 Acceptance criteria:
 
+- key semantics/planner wiring is tested or explicitly scoped out;
 - every major weak spot has a classification;
 - every suspicious metric mismatch has a reproduction path;
 - support matrix reflects current support boundaries;
-- high-confidence bugs are fixed or isolated into a concrete follow-up;
+- high-confidence bugs are fixed or isolated into concrete follow-ups;
 - no known unsupported combination is presented as stable support.
 
 Tests that need no refactoring:
@@ -186,6 +221,8 @@ Tests that need no refactoring:
 - targeted metric consistency tests;
 - support matrix assertions for known unsupported combinations;
 - unit tests for success/completion predicates;
+- unit tests for adapter completion on in-memory state;
+- battery-aware planner feasibility test;
 - regression test for each high-confidence metric bug fixed in this milestone.
 
 Tests that need light refactoring:
@@ -193,11 +230,14 @@ Tests that need light refactoring:
 - reusable scenario-specific metric assertion helpers;
 - small reproduction fixtures for gap classes;
 - helper to compare per-run metrics and aggregate metrics;
-- support matrix fixture builder.
+- support matrix fixture builder;
+- shared task builders by `TaskKind`;
+- in-memory `RunState` fixtures.
 
 Tests that need heavy refactoring:
 
 - algorithm-comparison oracle tests;
+- full lifecycle tests: DSL -> adapter -> allocator -> runner -> metrics;
 - mission-specific simulation invariants;
 - scenario minimization tooling;
 - property tests for success/completion/coverage consistency.
@@ -210,7 +250,7 @@ Tests that need heavy refactoring:
 
 Суть:
 
-Regression harness должен помогать быстро понимать, сломался ли проект, где именно он сломался, и насколько это важно. Для этого нужно разделить типы suites, сделать failure output action-oriented, а нестабильные или экспериментальные проверки вынести из default gate.
+Regression harness должен помогать быстро понимать, сломался ли проект, где именно он сломался, и насколько это важно. Для этого нужно разделить типы suites, сделать failure output action-oriented, добавить нормальный baseline workflow, а нестабильные или экспериментальные проверки вынести из default gate.
 
 Что сделать:
 
@@ -233,26 +273,34 @@ Regression harness должен помогать быстро понимать, 
    - reproduction command;
    - baseline comparison if available.
 4. Улучшить baseline workflow:
-   - baseline update only from green state;
-   - baseline stores enough metadata;
-   - baseline delta output is readable;
-   - missing baseline entries are explicit.
+   - update only from green state;
+   - baseline stores metadata: git commit, date, seed range/count, suite group;
+   - delta output readable;
+   - missing baseline entries explicit;
+   - baseline update can write to caller-provided path.
 5. Обновить CLI:
-   - list suites;
-   - select suite group;
-   - run experimental explicitly;
-   - emit machine-readable report.
-6. Обновить docs:
+   - `--list-suites`;
+   - `--suite smoke|quick|experimental|validation`;
+   - explicit opt-in for experimental/validation suites;
+   - machine-readable report output;
+   - stable exit code semantics.
+6. Убрать machine-specific test assumptions:
+   - no hardcoded `/tmp/...`;
+   - use tempdir-owned paths;
+   - portable fixtures only.
+7. Обновить docs:
    - what default regression means;
    - when to update baseline;
    - how to reproduce failure;
-   - how to promote a suite.
+   - how to promote a suite;
+   - how validation artifacts relate to milestones.
 
 Ожидаемый результат:
 
 - default regression становится стабильной ежедневной проверкой;
 - failure reports становятся actionable;
 - experimental scenarios можно отслеживать без поломки основного gate;
+- baseline workflow становится безопасным;
 - future milestones получают надёжную safety net.
 
 Не входит в scope:
@@ -268,6 +316,7 @@ Acceptance criteria:
 - suites are grouped by purpose;
 - experimental suites are opt-in;
 - baseline workflow is documented and tested;
+- tests do not depend on machine-specific paths;
 - CLI can emit both human-readable and machine-readable reports.
 
 Tests that need no refactoring:
@@ -276,12 +325,13 @@ Tests that need no refactoring:
 - baseline delta tests;
 - CLI exit-code tests;
 - suite grouping tests;
-- failure formatting tests.
+- failure formatting tests with reproduction command.
 
 Tests that need light refactoring:
 
 - regression report parser for tests;
 - tempdir-based baseline update tests;
+- shared baseline fixtures;
 - ignored repeated-run check for flakiness;
 - CLI fixture helpers.
 
@@ -292,19 +342,23 @@ Tests that need heavy refactoring:
 - baseline history store;
 - end-to-end regression report golden tests.
 
-## M43 - Realism Calibration
+## M43 - Realism Calibration Pack
 
 Цель:
 
-> превратить realism profiles из набора параметров в измеримый model layer.
+> превратить realism profiles из набора параметров в измеримый, воспроизводимый model layer.
 
 Суть:
 
-Realism profiles уже задают noise, wind, comms jitter and battery behavior. Теперь нужно понять, насколько эти профили реально влияют на миссии, соответствуют ли ожиданиям, и можно ли безопасно использовать их в regression/validation.
+Realism profiles задают noise, wind, comms jitter and battery behavior. Теперь нужно понять, насколько эти профили реально влияют на миссии, соответствуют ли ожиданиям, и можно ли безопасно использовать их в regression/validation.
 
 Что сделать:
 
-1. Определить expected realism effects:
+1. Определить expected realism effects для профилей:
+   - light;
+   - medium;
+   - heavy.
+2. Определить expected effects by metric:
    - effect on success/completion;
    - effect on route length;
    - effect on wasted travel;
@@ -312,28 +366,34 @@ Realism profiles уже задают noise, wind, comms jitter and battery behav
    - effect on communication availability;
    - effect on detection time;
    - effect on mapping ratio.
-2. Сравнить controlled profiles:
+3. Сравнить controlled profiles:
    - ideal;
    - light;
    - medium;
    - heavy.
-3. Для каждой mission family описать expected degradation:
+4. Для каждой mission family описать expected degradation:
    - which metrics should move;
    - which metrics should remain stable;
    - which metrics are too noisy for default gate.
-4. Проверить profile parameters:
+5. Проверить profile parameters:
    - pose noise;
    - wind vector;
    - comms jitter;
    - battery drain;
    - reserve fraction;
    - sensor penalties.
-5. Обновить docs:
+6. Усилить manifest metadata:
+   - active realism profile;
+   - profile parameters;
+   - whether realism preset is enabled;
+   - scenario/profile identity.
+7. Обновить docs:
    - what each realism profile means;
    - what effects are expected;
    - how to run realism validation;
-   - which realism suites are regression-safe.
-6. Подготовить regression integration:
+   - which realism suites are regression-safe;
+   - what is not modeled.
+8. Подготовить regression integration:
    - stable realism smoke checks;
    - optional realism quick checks;
    - non-gating realism validation artifacts.
@@ -354,8 +414,10 @@ Realism profiles уже задают noise, wind, comms jitter and battery behav
 
 Acceptance criteria:
 
+- expected realism effects are documented by profile;
 - realism effects are measured and explained;
 - profile parameters are documented;
+- manifest contains active realism metadata;
 - realism validation commands are reproducible;
 - stable realism checks are safe for regression;
 - noisy realism checks are marked experimental/validation-only.
@@ -363,7 +425,7 @@ Acceptance criteria:
 Tests that need no refactoring:
 
 - scenario JSON validation for realism files;
-- manifest metadata assertions;
+- manifest metadata assertions for realism fields;
 - realism preset smoke test;
 - profile selection tests.
 
@@ -372,10 +434,12 @@ Tests that need light refactoring:
 - ideal-vs-realism comparison helper;
 - realism delta summarizer;
 - deterministic fixture for realism profile selection;
-- test helper for battery/noise/comms parameter assertions.
+- test helper for battery/noise/comms parameter assertions;
+- manifest assertion helpers.
 
 Tests that need heavy refactoring:
 
+- stochastic realism regression;
 - statistical realism analysis harness;
 - calibrated external model comparison;
 - mission-specific realism acceptance tests;
@@ -469,7 +533,17 @@ Tests that need heavy refactoring:
 
 Суть:
 
-До этого этапа проект должен иметь воспроизводимые reports, классифицированные algorithmic gaps, стабильный regression gate, понятный realism layer and clarified disaster-mapping scope. Только после этого имеет смысл выбирать крупное направление.
+До этого этапа проект должен иметь reproducible benchmark artifacts, classified algorithmic gaps, stable regression gate, measurable realism layer and clarified disaster-mapping scope. Только после этого имеет смысл выбирать крупное направление.
+
+Что оценить:
+
+| Вопрос | Влияет на |
+|---|---|
+| Насколько чисты алгоритмические результаты? | Research Benchmark |
+| Насколько болезненен анализ replay вручную? | Replay / Visualization |
+| Стабильны ли semantics для SITL upload? | Real SITL / PX4 |
+| Есть ли внешние пользователи? | Platform / API |
+| Нужна ли более глубокая динамика миссий? | Disaster Mapping v2 |
 
 Возможные направления:
 
@@ -493,6 +567,10 @@ Tests that need heavy refactoring:
    - better command lifecycle;
    - robust operational errors;
    - safety boundaries around real/simulated control.
+5. Disaster Mapping v2 track:
+   - deeper dynamic hazards;
+   - flood or other hazard variants;
+   - richer mission semantics for disaster response.
 
 Что сделать:
 
@@ -517,7 +595,7 @@ Tests that need heavy refactoring:
 Acceptance criteria:
 
 - one primary direction selected;
-- alternatives documented as deferred;
+- alternatives documented as deferred with return conditions;
 - next roadmap created for selected direction;
 - README/project description matches chosen direction;
 - validation approach for selected direction is explicit.
@@ -535,17 +613,17 @@ Tests that need light refactoring:
 Tests that need heavy refactoring:
 
 - depends on selected direction;
-- visualization tests, API compatibility tests, SITL integration tests or statistical benchmark harness may become necessary after the decision.
+- visualization tests, API compatibility tests, SITL integration tests, disaster-scenario tests or statistical benchmark harness may become necessary after the decision.
 
 ## Итоговый порядок
 
 ```text
-1. M40 Deterministic Reporting & Benchmark Credibility
-2. M41 Algorithmic Gap Triage
+1. M40 Benchmark Trust & Deterministic Reporting
+2. M41 Semantics Audit & Algorithmic Gap Triage
 3. M42 Regression Harness v3
-4. M43 Realism Calibration
+4. M43 Realism Calibration Pack
 5. M44 Flood Naming / Scope Decision
 6. M45 Big Direction Decision
 ```
 
-Ключевая идея: сначала сделать результаты воспроизводимыми и понятными, затем разобраться с качеством алгоритмов и regression, затем уточнить realism/disaster scope, и только после этого выбирать следующую крупную ветку.
+Ключевая идея: сначала сделать результаты воспроизводимыми и понятными, затем проверить semantics wiring and classify algorithmic gaps, затем усилить regression, калибровать realism, уточнить disaster scope, и только после этого выбирать следующую крупную ветку.
