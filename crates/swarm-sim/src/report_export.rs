@@ -1,6 +1,28 @@
 use serde::{Deserialize, Serialize};
+use swarm_metrics::AggregateMetrics;
 
 use crate::ComparisonReport;
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct RowIdentity {
+    mission: String,
+    scenario: String,
+    strategy: String,
+    profile: String,
+}
+
+fn row_identity(
+    strategy_name: &str,
+    profile_name: &str,
+    metrics: &AggregateMetrics,
+) -> RowIdentity {
+    RowIdentity {
+        mission: metrics.mission.clone(),
+        scenario: metrics.scenario.clone(),
+        strategy: strategy_name.to_owned(),
+        profile: profile_name.to_owned(),
+    }
+}
 
 /// Export a ComparisonReport to JSON.
 pub fn export_json(report: &ComparisonReport) -> Result<String, serde_json::Error> {
@@ -9,20 +31,21 @@ pub fn export_json(report: &ComparisonReport) -> Result<String, serde_json::Erro
         for profile_name in &report.profile_names {
             let key = (strategy_name.clone(), profile_name.clone());
             if let Some(metrics) = report.results.get(&key) {
-                let safe_profile = profile_name.replace('/', "_");
+                let identity = row_identity(strategy_name, profile_name, metrics);
+                let safe_profile = identity.profile.replace('/', "_");
                 let row_id = format!(
                     "{}_{}_{}_{}",
-                    report.benchmark_run_id, metrics.mission, strategy_name, safe_profile
+                    report.benchmark_run_id, identity.mission, identity.strategy, safe_profile
                 );
                 rows.push(ReportRow {
                     benchmark_run_id: report.benchmark_run_id.clone(),
                     run_id: row_id,
-                    mission: metrics.mission.clone(),
-                    scenario: metrics.scenario.clone(),
+                    mission: identity.mission,
+                    scenario: identity.scenario,
                     seed_range_start: report.seed_range_start,
                     seed_range_end: report.seed_range_end,
-                    strategy: strategy_name.clone(),
-                    profile: profile_name.clone(),
+                    strategy: identity.strategy,
+                    profile: identity.profile,
                     total_runs: metrics.total_runs,
                     success_rate: metrics.success_rate,
                     avg_task_completion_rate: metrics.avg_task_completion_rate,
@@ -152,20 +175,21 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
         for profile_name in &report.profile_names {
             let key = (strategy_name.clone(), profile_name.clone());
             if let Some(m) = report.results.get(&key) {
-                let safe_profile = profile_name.replace('/', "_");
+                let identity = row_identity(strategy_name, profile_name, m);
+                let safe_profile = identity.profile.replace('/', "_");
                 let row_id = format!(
                     "{}_{}_{}_{}",
-                    report.benchmark_run_id, m.mission, strategy_name, safe_profile
+                    report.benchmark_run_id, identity.mission, identity.strategy, safe_profile
                 );
                 wtr.write_record([
                     report.benchmark_run_id.as_str(),
                     row_id.as_str(),
-                    m.mission.as_str(),
-                    m.scenario.as_str(),
+                    identity.mission.as_str(),
+                    identity.scenario.as_str(),
                     format!("{}", report.seed_range_start).as_str(),
                     format!("{}", report.seed_range_end).as_str(),
-                    strategy_name,
-                    profile_name,
+                    identity.strategy.as_str(),
+                    identity.profile.as_str(),
                     m.total_runs.to_string().as_str(),
                     format!("{:.3}", m.success_rate).as_str(),
                     format!("{:.3}", m.avg_task_completion_rate).as_str(),
@@ -319,6 +343,9 @@ pub struct BenchmarkManifest {
     /// Number of rayon worker threads used; `None` means all available CPUs.
     #[serde(default)]
     pub jobs: Option<usize>,
+    /// Cargo build profile when known (`debug` or `release`).
+    #[serde(default)]
+    pub build_profile: Option<String>,
 }
 
 impl BenchmarkManifest {
@@ -357,6 +384,14 @@ impl BenchmarkManifest {
             comms_jitter_ticks: 0,
             battery_model: None,
             jobs: None,
+            build_profile: Some(
+                if cfg!(debug_assertions) {
+                    "debug"
+                } else {
+                    "release"
+                }
+                .to_owned(),
+            ),
         }
     }
 }
@@ -504,31 +539,62 @@ pub fn compare_reports(
 ) -> Result<(), Vec<String>> {
     let mut errors: Vec<String> = Vec::new();
 
-    // Strategy set equality (order-insensitive).
-    let mut a_strats = a.strategy_names.clone();
-    let mut b_strats = b.strategy_names.clone();
-    a_strats.sort();
-    b_strats.sort();
-    if a_strats != b_strats {
+    validate_report_identity("first", a, &mut errors);
+    validate_report_identity("second", b, &mut errors);
+
+    compare_string_sets(
+        "mission_names",
+        &a.mission_names,
+        &b.mission_names,
+        &mut errors,
+    );
+    compare_string_sets(
+        "scenario_names",
+        &a.scenario_names,
+        &b.scenario_names,
+        &mut errors,
+    );
+    compare_string_sets(
+        "strategy_names",
+        &a.strategy_names,
+        &b.strategy_names,
+        &mut errors,
+    );
+    compare_string_sets(
+        "profile_names",
+        &a.profile_names,
+        &b.profile_names,
+        &mut errors,
+    );
+
+    if a.seed_range_start != b.seed_range_start {
         errors.push(format!(
-            "strategy_names differ: {:?} vs {:?}",
-            a_strats, b_strats
+            "seed_range_start differs: {} vs {}",
+            a.seed_range_start, b.seed_range_start
+        ));
+    }
+    if a.seed_range_end != b.seed_range_end {
+        errors.push(format!(
+            "seed_range_end differs: {} vs {}",
+            a.seed_range_end, b.seed_range_end
+        ));
+    }
+    if a.total_runs_per_cell != b.total_runs_per_cell {
+        errors.push(format!(
+            "total_runs_per_cell differs: {} vs {}",
+            a.total_runs_per_cell, b.total_runs_per_cell
         ));
     }
 
-    // Profile set equality (order-insensitive).
-    let mut a_profs = a.profile_names.clone();
-    let mut b_profs = b.profile_names.clone();
-    a_profs.sort();
-    b_profs.sort();
-    if a_profs != b_profs {
+    let a_identities = sorted_report_identities(a);
+    let b_identities = sorted_report_identities(b);
+    if a_identities != b_identities {
         errors.push(format!(
-            "profile_names differ: {:?} vs {:?}",
-            a_profs, b_profs
+            "row identities differ: {:?} vs {:?}",
+            a_identities, b_identities
         ));
     }
 
-    // Row count.
     if a.results.len() != b.results.len() {
         errors.push(format!(
             "row count differs: {} vs {}",
@@ -541,36 +607,7 @@ pub fn compare_reports(
     for key in a.results.keys() {
         match (a.results.get(key), b.results.get(key)) {
             (Some(ma), Some(mb)) => {
-                if !ma.mission.is_empty() && !mb.mission.is_empty() && ma.mission != mb.mission {
-                    errors.push(format!(
-                        "key {key:?}: mission {:?} vs {:?}",
-                        ma.mission, mb.mission
-                    ));
-                }
-                if ma.total_runs != mb.total_runs {
-                    errors.push(format!(
-                        "key {key:?}: total_runs {} vs {}",
-                        ma.total_runs, mb.total_runs
-                    ));
-                }
-                if ma.success_rate != mb.success_rate {
-                    errors.push(format!(
-                        "key {key:?}: success_rate {} vs {}",
-                        ma.success_rate, mb.success_rate
-                    ));
-                }
-                if ma.avg_task_completion_rate != mb.avg_task_completion_rate {
-                    errors.push(format!(
-                        "key {key:?}: avg_task_completion_rate {} vs {}",
-                        ma.avg_task_completion_rate, mb.avg_task_completion_rate
-                    ));
-                }
-                if ma.avg_messages_attempted != mb.avg_messages_attempted {
-                    errors.push(format!(
-                        "key {key:?}: avg_messages_attempted {} vs {}",
-                        ma.avg_messages_attempted, mb.avg_messages_attempted
-                    ));
-                }
+                compare_aggregate_metrics(key, ma, mb, &mut errors);
             }
             (Some(_), None) => {
                 errors.push(format!(
@@ -592,6 +629,171 @@ pub fn compare_reports(
         Ok(())
     } else {
         Err(errors)
+    }
+}
+
+fn sorted_report_identities(report: &crate::ComparisonReport) -> Vec<RowIdentity> {
+    let mut identities = Vec::new();
+    for strategy_name in &report.strategy_names {
+        for profile_name in &report.profile_names {
+            let key = (strategy_name.clone(), profile_name.clone());
+            if let Some(metrics) = report.results.get(&key) {
+                identities.push(row_identity(strategy_name, profile_name, metrics));
+            }
+        }
+    }
+    identities.sort();
+    identities
+}
+
+fn compare_string_sets(label: &str, a: &[String], b: &[String], errors: &mut Vec<String>) {
+    let mut a_sorted = a.to_vec();
+    let mut b_sorted = b.to_vec();
+    a_sorted.sort();
+    b_sorted.sort();
+    if a_sorted != b_sorted {
+        errors.push(format!("{label} differ: {a_sorted:?} vs {b_sorted:?}"));
+    }
+}
+
+fn validate_report_identity(
+    label: &str,
+    report: &crate::ComparisonReport,
+    errors: &mut Vec<String>,
+) {
+    validate_name_list(label, "strategy_names", &report.strategy_names, errors);
+    validate_name_list(label, "profile_names", &report.profile_names, errors);
+
+    let mut visible_identities = std::collections::BTreeSet::new();
+    for identity in sorted_report_identities(report) {
+        if identity.mission.is_empty() {
+            errors.push(format!("{label}: row {identity:?} has empty mission"));
+        }
+        if identity.scenario.is_empty() {
+            errors.push(format!("{label}: row {identity:?} has empty scenario"));
+        }
+        if identity.strategy.is_empty() {
+            errors.push(format!("{label}: row {identity:?} has empty strategy"));
+        }
+        if identity.profile.is_empty() {
+            errors.push(format!("{label}: row {identity:?} has empty profile"));
+        }
+        if !visible_identities.insert(identity.clone()) {
+            errors.push(format!("{label}: duplicate row identity {identity:?}"));
+        }
+    }
+
+    for key in report.results.keys() {
+        if !report.strategy_names.contains(&key.0) {
+            errors.push(format!(
+                "{label}: results key {key:?} uses a strategy absent from strategy_names"
+            ));
+        }
+        if !report.profile_names.contains(&key.1) {
+            errors.push(format!(
+                "{label}: results key {key:?} uses a profile absent from profile_names"
+            ));
+        }
+    }
+}
+
+fn validate_name_list(
+    report_label: &str,
+    field_label: &str,
+    values: &[String],
+    errors: &mut Vec<String>,
+) {
+    let mut seen = std::collections::BTreeSet::new();
+    for value in values {
+        if value.is_empty() {
+            errors.push(format!(
+                "{report_label}: {field_label} contains an empty name"
+            ));
+        }
+        if !seen.insert(value) {
+            errors.push(format!(
+                "{report_label}: {field_label} contains duplicate name {value:?}"
+            ));
+        }
+    }
+}
+
+fn compare_metric_field<T: PartialEq + std::fmt::Debug>(
+    errors: &mut Vec<String>,
+    key: &(String, String),
+    field: &str,
+    a: &T,
+    b: &T,
+) {
+    if a != b {
+        errors.push(format!("key {key:?}: {field} {a:?} vs {b:?}"));
+    }
+}
+
+fn compare_aggregate_metrics(
+    key: &(String, String),
+    a: &AggregateMetrics,
+    b: &AggregateMetrics,
+    errors: &mut Vec<String>,
+) {
+    let errors_before = errors.len();
+    macro_rules! compare_field {
+        ($field:ident) => {
+            compare_metric_field(errors, key, stringify!($field), &a.$field, &b.$field);
+        };
+    }
+
+    compare_field!(total_runs);
+    compare_field!(success_rate);
+    compare_field!(avg_detection_ticks);
+    compare_field!(avg_reallocation_ticks);
+    compare_field!(avg_messages_attempted);
+    compare_field!(avg_messages_dropped);
+    compare_field!(avg_tasks_injected);
+    compare_field!(avg_tasks_expired);
+    compare_field!(avg_conflicting_assignments);
+    compare_field!(avg_network_availability);
+    compare_field!(avg_relay_reallocation_ticks);
+    compare_field!(avg_avg_hop_count);
+    compare_field!(avg_disconnected_agents_max);
+    compare_field!(avg_coverage_progress);
+    compare_field!(avg_bytes_sent);
+    compare_field!(avg_stale_state_age_ticks);
+    compare_field!(avg_battery_margin_min);
+    compare_field!(avg_battery_margin_avg);
+    compare_field!(avg_task_completion_rate);
+    compare_field!(avg_time_to_find);
+    compare_field!(avg_probability_of_detection);
+    compare_field!(avg_targets_found);
+    compare_field!(avg_safety_violations);
+    compare_field!(avg_belief_entropy_final);
+    compare_field!(avg_false_positive_rate);
+    compare_field!(avg_confirmation_scans);
+    compare_field!(convergence_ticks_p50);
+    compare_field!(convergence_ticks_p95);
+    compare_field!(convergence_ticks_max);
+    compare_field!(avg_bundle_travel_distance);
+    compare_field!(avg_edge_coverage_rate);
+    compare_field!(avg_missed_edges);
+    compare_field!(avg_revisit_count);
+    compare_field!(avg_route_efficiency);
+    compare_field!(avg_route_length);
+    compare_field!(avg_wasted_travel);
+    compare_field!(avg_return_reserve);
+    compare_field!(avg_infeasible_routes);
+    compare_field!(avg_hazard_zones_mapped);
+    compare_field!(avg_priority_updates);
+    compare_field!(avg_final_threat_level);
+    compare_field!(avg_high_priority_zones_mapped);
+    compare_field!(avg_time_to_map_first_high_risk);
+    compare_field!(avg_zone_observations);
+    compare_field!(mission);
+    compare_field!(scenario);
+
+    if a != b && errors.len() == errors_before {
+        errors.push(format!(
+            "key {key:?}: aggregate metrics differ in an unlisted field"
+        ));
     }
 }
 
@@ -719,6 +921,7 @@ mod tests {
             comms_jitter_ticks: 0,
             battery_model: None,
             jobs: None,
+            build_profile: None,
         };
         let json = serde_json::to_string(&manifest).unwrap();
         let decoded: BenchmarkManifest = serde_json::from_str(&json).unwrap();
@@ -748,6 +951,7 @@ mod tests {
         assert!(!manifest.timestamp.is_empty());
         assert_eq!(manifest.schema_version, "0.1");
         assert_eq!(manifest.metric_schema_version, "0.1");
+        assert!(manifest.build_profile.is_some());
     }
 
     #[test]
@@ -797,14 +1001,15 @@ mod tests {
         let json_without_jobs = r#"{"timestamp":"t","git_commit":"abc","command_line":"c","suite_name":"s","schema_version":"0.1","seed_range_start":0,"seed_range_end":1,"strategy_names":[],"profile_names":[],"metric_schema_version":"0.1"}"#;
         let decoded: BenchmarkManifest = serde_json::from_str(json_without_jobs).unwrap();
         assert!(decoded.jobs.is_none());
+        assert!(decoded.build_profile.is_none());
     }
 
-    fn make_aggregate(mission: &str, success_rate: f64) -> AggregateMetrics {
+    fn make_aggregate(mission: &str, scenario: &str, success_rate: f64) -> AggregateMetrics {
         AggregateMetrics {
             total_runs: 1,
             success_rate,
             mission: mission.to_owned(),
-            scenario: mission.to_owned(),
+            scenario: scenario.to_owned(),
             avg_network_availability: 1.0,
             avg_task_completion_rate: 1.0,
             ..AggregateMetrics::default()
@@ -815,7 +1020,7 @@ mod tests {
         let mut results = HashMap::new();
         results.insert(
             ("greedy".to_owned(), "ideal".to_owned()),
-            make_aggregate(mission, success),
+            make_aggregate(mission, mission, success),
         );
         crate::ComparisonReport {
             benchmark_run_id: "ignored".to_owned(),
@@ -865,12 +1070,114 @@ mod tests {
         let mut r2 = make_report_for_comparison("sar", 1.0);
         r2.results.insert(
             ("cbba".to_owned(), "ideal".to_owned()),
-            make_aggregate("sar", 1.0),
+            make_aggregate("sar", "sar", 1.0),
         );
         let err = compare_reports(&r1, &r2).unwrap_err();
         assert!(
             err.iter().any(|e| e.contains("row count")),
             "should report row count mismatch, got: {err:?}"
         );
+    }
+
+    #[test]
+    fn compare_reports_detects_scenario_mismatch() {
+        let r1 = make_report_for_comparison("sar", 1.0);
+        let mut r2 = make_report_for_comparison("sar", 1.0);
+        r2.results
+            .get_mut(&("greedy".to_owned(), "ideal".to_owned()))
+            .unwrap()
+            .scenario = "sar-v2".to_owned();
+        let err = compare_reports(&r1, &r2).unwrap_err();
+        assert!(
+            err.iter().any(|e| e.contains("scenario")),
+            "should report scenario mismatch, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn compare_reports_detects_empty_identity() {
+        let r1 = make_report_for_comparison("sar", 1.0);
+        let mut r2 = make_report_for_comparison("sar", 1.0);
+        r2.results
+            .get_mut(&("greedy".to_owned(), "ideal".to_owned()))
+            .unwrap()
+            .mission
+            .clear();
+        let err = compare_reports(&r1, &r2).unwrap_err();
+        assert!(
+            err.iter().any(|e| e.contains("empty mission")),
+            "should report empty mission, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn compare_reports_detects_unlisted_metric_mismatch() {
+        let r1 = make_report_for_comparison("sar", 1.0);
+        let mut r2 = make_report_for_comparison("sar", 1.0);
+        r2.results
+            .get_mut(&("greedy".to_owned(), "ideal".to_owned()))
+            .unwrap()
+            .avg_bytes_sent = 42.0;
+        let err = compare_reports(&r1, &r2).unwrap_err();
+        assert!(
+            err.iter().any(|e| e.contains("avg_bytes_sent")),
+            "should report avg_bytes_sent mismatch, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn compare_reports_detects_duplicate_visible_identity() {
+        let mut r = make_report_for_comparison("sar", 1.0);
+        r.strategy_names.push("greedy".to_owned());
+        let err = compare_reports(&r, &r).unwrap_err();
+        assert!(
+            err.iter().any(|e| e.contains("duplicate")),
+            "should report duplicate identity, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn report_identity_matches_json_csv_markdown() {
+        let report = make_report();
+        let json = export_json(&report).unwrap();
+        let json_value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let json_row = &json_value["rows"][0];
+        let json_identity = (
+            json_row["mission"].as_str().unwrap().to_owned(),
+            json_row["scenario"].as_str().unwrap().to_owned(),
+            json_row["strategy"].as_str().unwrap().to_owned(),
+            json_row["profile"].as_str().unwrap().to_owned(),
+        );
+
+        let csv = export_csv(&report).unwrap();
+        let mut reader = csv::Reader::from_reader(csv.as_bytes());
+        let csv_row = reader.records().next().unwrap().unwrap();
+        let csv_identity = (
+            csv_row.get(2).unwrap().to_owned(),
+            csv_row.get(3).unwrap().to_owned(),
+            csv_row.get(6).unwrap().to_owned(),
+            csv_row.get(7).unwrap().to_owned(),
+        );
+
+        let markdown = export_markdown(&report);
+        let markdown_row = markdown
+            .lines()
+            .find(|line| line.contains("| sar") && line.contains("| greedy"))
+            .unwrap();
+        let cells: Vec<String> = markdown_row
+            .split('|')
+            .map(str::trim)
+            .filter(|cell| !cell.is_empty())
+            .map(str::to_owned)
+            .collect();
+        let markdown_identity = (
+            cells[0].clone(),
+            cells[1].clone(),
+            cells[2].clone(),
+            cells[3].clone(),
+        );
+
+        assert_eq!(json_identity, csv_identity);
+        assert_eq!(json_identity, markdown_identity);
     }
 }

@@ -563,6 +563,7 @@ fn main() {
             None,
             &all_replay_logs,
             profile_name.as_deref(),
+            cli.jobs,
         ) {
             eprintln!("Failed to write benchmark pack: {}", e);
             std::process::exit(1);
@@ -735,9 +736,14 @@ fn run_from_suite(suite_path: &str, cli: &CliArgs) {
         } else {
             None
         };
-        if let Err(e) =
-            write_benchmark_pack(dir, &report, Some(&suite), &[], profile_name.as_deref())
-        {
+        if let Err(e) = write_benchmark_pack(
+            dir,
+            &report,
+            Some(&suite),
+            &[],
+            profile_name.as_deref(),
+            cli.jobs,
+        ) {
             eprintln!("Failed to write benchmark pack: {}", e);
             std::process::exit(1);
         }
@@ -761,6 +767,7 @@ fn write_benchmark_pack(
     suite: Option<&swarm_sim::ScenarioSuite>,
     replay_logs: &[swarm_replay::EventLog],
     realism_profile: Option<&str>,
+    jobs: Option<usize>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     std::fs::create_dir_all(output_dir)?;
 
@@ -780,6 +787,7 @@ fn write_benchmark_pack(
         report.strategy_names.clone(),
         report.profile_names.clone(),
     );
+    manifest.jobs = jobs;
     if let Some(profile) = realism_profile {
         let params = RealismProfile::parse(profile)
             .unwrap_or(RealismProfile::Medium)
@@ -955,4 +963,63 @@ fn run_regression(cli: &CliArgs) {
     }
 
     std::process::exit(if report.overall_pass { 0 } else { 1 });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn benchmark_pack_report() -> ComparisonReport {
+        let mut results = HashMap::new();
+        results.insert(
+            ("greedy".to_owned(), "ideal".to_owned()),
+            swarm_metrics::AggregateMetrics {
+                total_runs: 1,
+                success_rate: 1.0,
+                avg_task_completion_rate: 1.0,
+                mission: "coverage".to_owned(),
+                scenario: "coverage".to_owned(),
+                ..swarm_metrics::AggregateMetrics::default()
+            },
+        );
+
+        ComparisonReport {
+            benchmark_run_id: "test_1_smoke".to_owned(),
+            seed_range_start: 0,
+            seed_range_end: 1,
+            total_runs_per_cell: 1,
+            mission_names: vec!["coverage".to_owned()],
+            scenario_names: vec!["coverage".to_owned()],
+            strategy_names: vec!["greedy".to_owned()],
+            profile_names: vec!["ideal".to_owned()],
+            results,
+        }
+    }
+
+    #[test]
+    fn benchmark_pack_manifest_records_jobs() {
+        let dir = tempfile::tempdir().unwrap();
+        let report = benchmark_pack_report();
+
+        write_benchmark_pack(
+            dir.path().to_str().unwrap(),
+            &report,
+            None,
+            &[],
+            None,
+            Some(14),
+        )
+        .unwrap();
+
+        let manifest_path = dir.path().join("manifest.json");
+        let manifest: swarm_sim::BenchmarkManifest =
+            serde_json::from_str(&std::fs::read_to_string(manifest_path).unwrap()).unwrap();
+        assert_eq!(manifest.jobs, Some(14));
+        assert_eq!(manifest.suite_name, "coverage");
+        assert!(manifest.build_profile.is_some());
+
+        assert!(dir.path().join("results.json").exists());
+        assert!(dir.path().join("results.csv").exists());
+        assert!(dir.path().join("table.md").exists());
+    }
 }

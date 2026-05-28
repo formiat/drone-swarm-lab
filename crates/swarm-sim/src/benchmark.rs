@@ -40,27 +40,11 @@ impl std::fmt::Display for ComparisonReport {
                     } else {
                         "-".to_owned()
                     };
-                    let mission = if metrics.mission.is_empty() {
-                        self.mission_names
-                            .first()
-                            .map(|s| s.as_str())
-                            .unwrap_or("-")
-                    } else {
-                        &metrics.mission
-                    };
-                    let scenario = if metrics.scenario.is_empty() {
-                        self.scenario_names
-                            .first()
-                            .map(|s| s.as_str())
-                            .unwrap_or("-")
-                    } else {
-                        &metrics.scenario
-                    };
                     writeln!(
                         f,
                         "| {:7} | {:8} | {:8} | {:7} | {:5} | {:7.3} | {:10.3} | {:9.3} | {:7.3} | {:8.3} | {:8.3} | {:5.0} | {:9.3} | {:5.0} | {:10.3} | {:10.3} | {:12.3} | {:>10} | {:3.3} | {:7.1} | {:13.3} | {:12.3} | {:17.3} | {:7.3} | {:7.3} | {:10.3} | {:12.3} | {:11.3} | {:8.3} | {:15.3} |",
-                        mission,
-                        scenario,
+                        metrics.mission.as_str(),
+                        metrics.scenario.as_str(),
                         strategy_name,
                         profile_name,
                         seeds,
