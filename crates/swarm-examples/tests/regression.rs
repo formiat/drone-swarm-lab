@@ -3,15 +3,9 @@ use tempfile::NamedTempFile;
 
 #[test]
 fn regression_runner_smoke_passes() {
-    let output = Command::new("cargo")
-        .args([
-            "run",
-            "-p",
-            "swarm-examples",
-            "--bin",
-            "regression_runner",
-            "--",
-        ])
+    let binary_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/debug/regression_runner");
+    let output = Command::new(&binary_path)
         .output()
         .expect("failed to execute regression_runner");
 
@@ -83,17 +77,10 @@ fn regression_runner_with_forced_failure() {
     let baseline_path = tmp_file.path().to_str().unwrap().to_owned();
     std::fs::write(&baseline_path, baseline_json).unwrap();
 
-    let output = Command::new("cargo")
-        .args([
-            "run",
-            "-p",
-            "swarm-examples",
-            "--bin",
-            "regression_runner",
-            "--",
-            "--compare-baseline",
-            &baseline_path,
-        ])
+    let binary_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/debug/regression_runner");
+    let output = Command::new(&binary_path)
+        .args(["--compare-baseline", &baseline_path])
         .output()
         .expect("failed to execute regression_runner");
 
@@ -114,16 +101,11 @@ fn regression_runner_with_forced_failure() {
 
 #[test]
 fn strategy_comparison_regression_flag() {
-    let output = Command::new("cargo")
-        .args([
-            "run",
-            "-p",
-            "swarm-examples",
-            "--bin",
-            "strategy_comparison",
-            "--",
-            "--regression",
-        ])
+    // Use the pre-built binary directly to avoid cargo file lock contention.
+    let binary_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/debug/strategy_comparison");
+    let output = Command::new(&binary_path)
+        .args(["--regression"])
         .output()
         .expect("failed to execute strategy_comparison");
 

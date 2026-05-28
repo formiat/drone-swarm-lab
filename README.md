@@ -87,7 +87,7 @@ cargo run --bin sitl_agent -- \
 | Regression Harness v2 | ✅ Stable | M36 | Calibrated thresholds, portability fixes, wildfire/realism suites, failure delta output |
 | Realism Scenario Pack | ✅ Stable | M37 | Realism profiles (light/medium/heavy), scenario JSONs, battery model metadata, baseline vs realism comparison |
 | Wildfire / Flood v2 | ✅ Stable | M38 | Spatial spread, wind influence, zone expansion, high-priority metrics, replay integration, scenario JSONs |
-| Regression Repair | 📝 Planned | M39a | Unify regression entrypoints, fix wildfire/realism in `strategy_comparison --regression`, remove duplication, determinism checks |
+| Regression Repair | ✅ Stable | M39a | Unified regression entrypoints, fixed wildfire/realism in `strategy_comparison --regression`, removed duplication between binaries |
 | Wildfire / Flood Mapping | ✅ Stable | M30 | `TaskKind::MappingZone`, `WildfireState`, hazard zones, dynamic threat |
 | Simulation Realism | ✅ Stable | M31 | Battery model v2, altitude sensor penalty, wind drift, pose noise, comms jitter, time-gated no-fly zones, `--realism` preset |
 | Reporting & Metrics | ✅ Stable | M32 | Per-row mission/scenario in exports, mission-scoped profiles, merged `all` benchmark id, wildfire/planner metrics, realism metadata in manifest |
