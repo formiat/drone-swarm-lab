@@ -145,11 +145,6 @@ pub fn summarize(log: &EventLog) -> ReplaySummary {
             Event::HazardMapUpdated { .. } => {
                 summary.hazard_updates += 1;
             }
-            Event::TaskCompleted { .. } => {
-                // Wildfire zones are mapped via TaskCompleted after AgentObservation
-                // We count completions generically; wildfire-specific logic can filter by mission
-                summary.completions += 1;
-            }
             _ => {}
         }
     }
