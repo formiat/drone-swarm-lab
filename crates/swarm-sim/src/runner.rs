@@ -133,6 +133,11 @@ pub struct WildfireState {
     pub mapped_zone_ids: std::collections::HashSet<String>,
     pub update_interval_ticks: u64,
     pub enable_dynamic_threat: bool,
+    // v0.38 Wildfire / Flood v2
+    #[serde(default)]
+    pub enable_zone_expansion: bool,
+    #[serde(default)]
+    pub enable_spatial_spread: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -479,6 +484,11 @@ impl ScenarioRunner {
         // v0.30 Wildfire / Flood Mapping metrics
         let mut wildfire_state = config.wildfire_state;
         let mut priority_updates: u64 = 0;
+        // v0.38 Wildfire / Flood v2 metrics
+        let mut high_priority_zones_mapped: u64 = 0;
+        let mut time_to_map_first_high_risk: Option<u64> = None;
+        let mut threat_level_over_time: Vec<f64> = Vec::new();
+        let mut zone_observations: u64 = 0;
 
         // v0.9 SAR metrics
         let mut coverage_over_time: Vec<f64> = Vec::new();
@@ -906,6 +916,7 @@ impl ScenarioRunner {
                             let threshold = 1.0; // 1 metre proximity
                             if dist < threshold {
                                 let zone_id = task.id.to_string();
+                                zone_observations += 1;
                                 if wildfire_state.mapped_zone_ids.insert(zone_id.clone()) {
                                     if let Some(ref mut builder) = log_builder {
                                         builder.push(swarm_replay::Event::AgentObservation {
@@ -920,6 +931,17 @@ impl ScenarioRunner {
                                         });
                                     }
                                     node.coordinator.registry.complete_assigned_task(&task.id);
+                                    // Track high-priority zone mapping
+                                    if let Some(zone) =
+                                        wildfire_state.zones.iter().find(|z| z.id == zone_id)
+                                    {
+                                        if zone.priority >= 5 {
+                                            high_priority_zones_mapped += 1;
+                                            if time_to_map_first_high_risk.is_none() {
+                                                time_to_map_first_high_risk = Some(current_tick);
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -931,9 +953,48 @@ impl ScenarioRunner {
                     && current_tick > 0
                     && current_tick % wildfire_state.update_interval_ticks == 0
                 {
-                    for zone in &mut wildfire_state.zones {
-                        zone.threat_level = (zone.threat_level + 0.1).min(1.0);
-                        zone.priority = (zone.priority + 1).min(10);
+                    let zone_count = wildfire_state.zones.len();
+                    let mut threat_changes: Vec<f64> = vec![0.0; zone_count];
+                    for (i, zone) in wildfire_state.zones.iter().enumerate() {
+                        let base_increase = 0.1;
+                        let mut increase = base_increase;
+                        // Wind influence: if wind is set, downwind zones get extra escalation
+                        if let Some((wx, wy, _)) = config.wind {
+                            // Simple wind influence: wind direction accelerates threat growth
+                            let wind_magnitude = (wx * wx + wy * wy).sqrt();
+                            if wind_magnitude > 0.0 && zone.threat_level > 0.5 {
+                                increase += wind_magnitude * 0.05;
+                            }
+                        }
+                        threat_changes[i] = increase;
+                    }
+                    // Spatial spread: high-threat zones spread to adjacent zones
+                    if wildfire_state.enable_spatial_spread {
+                        for i in 0..zone_count {
+                            if wildfire_state.zones[i].threat_level > 0.8 {
+                                // Spread to adjacent zones (neighbor indices)
+                                let neighbors = match i {
+                                    0 => vec![1],
+                                    n if n == zone_count - 1 => vec![n - 1],
+                                    _ => vec![i - 1, i + 1],
+                                };
+                                for &neighbor in &neighbors {
+                                    if neighbor < zone_count {
+                                        threat_changes[neighbor] += 0.05;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    for (i, zone) in wildfire_state.zones.iter_mut().enumerate() {
+                        let old_threat = zone.threat_level;
+                        zone.threat_level = (zone.threat_level + threat_changes[i]).min(1.0);
+                        // Significant threat increase boosts priority
+                        if zone.threat_level - old_threat > 0.2 {
+                            zone.priority = (zone.priority + 2).min(10);
+                        } else {
+                            zone.priority = (zone.priority + 1).min(10);
+                        }
                         if let Some(ref mut builder) = log_builder {
                             builder.push(swarm_replay::Event::HazardMapUpdated {
                                 zone_id: zone.id.clone(),
@@ -974,6 +1035,18 @@ impl ScenarioRunner {
                         }
                     }
                 }
+                // Record average threat level over time
+                let avg_threat: f64 = if !wildfire_state.zones.is_empty() {
+                    wildfire_state
+                        .zones
+                        .iter()
+                        .map(|z| z.threat_level)
+                        .sum::<f64>()
+                        / wildfire_state.zones.len() as f64
+                } else {
+                    0.0
+                };
+                threat_level_over_time.push(avg_threat);
             }
 
             // v0.5: Compute connectivity metrics for this tick
@@ -1606,6 +1679,11 @@ impl ScenarioRunner {
                         w.zones.iter().map(|z| z.threat_level).sum::<f64>() / w.zones.len() as f64
                     }
                 }),
+                // v0.38 Wildfire / Flood v2
+                high_priority_zones_mapped,
+                time_to_map_first_high_risk,
+                threat_level_over_time,
+                zone_observations,
                 // v0.35 Dynamic Mission Correctness
                 unsupported_reason,
                 // v0.37 Realism Scenario Pack

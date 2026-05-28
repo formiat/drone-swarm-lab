@@ -108,7 +108,9 @@ impl MissionAdapter for WildfireAdapter {
         let distance = self.route_cost(agent.pose, task);
         let battery_factor = agent.battery / 100.0;
         // Wildfire: prioritize high-priority zones and proximity
-        1000.0 - distance + battery_factor * 50.0 + f64::from(task.priority) * 20.0
+        // v0.38: threat urgency bonus for critically high priority
+        let threat_urgency = if task.priority >= 8 { 200.0 } else { 0.0 };
+        1000.0 - distance + battery_factor * 50.0 + f64::from(task.priority) * 20.0 + threat_urgency
     }
 }
 

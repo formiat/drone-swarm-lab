@@ -30,6 +30,10 @@ pub struct ReplaySummary {
     pub cbba_convergence_ticks: Vec<u64>,
     pub messages_sent: u64,
     pub messages_dropped: u64,
+    // v0.38 Wildfire / Flood v2
+    pub zones_mapped: usize,
+    pub hazard_updates: usize,
+    pub observations: usize,
 }
 
 /// Snapshot of the system at a specific tick.
@@ -134,6 +138,17 @@ pub fn summarize(log: &EventLog) -> ReplaySummary {
             }
             Event::CbbaConverged { tick } => {
                 summary.cbba_convergence_ticks.push(*tick);
+            }
+            Event::AgentObservation { .. } => {
+                summary.observations += 1;
+            }
+            Event::HazardMapUpdated { .. } => {
+                summary.hazard_updates += 1;
+            }
+            Event::TaskCompleted { .. } => {
+                // Wildfire zones are mapped via TaskCompleted after AgentObservation
+                // We count completions generically; wildfire-specific logic can filter by mission
+                summary.completions += 1;
             }
             _ => {}
         }

@@ -427,8 +427,12 @@ fn main() {
                 (profiles, builder)
             }
             Mission::Wildfire => {
-                let profiles: Vec<String> =
-                    vec!["small-static".to_owned(), "medium-dynamic".to_owned()];
+                let profiles: Vec<String> = vec![
+                    "small-static".to_owned(),
+                    "medium-dynamic".to_owned(),
+                    "large-static".to_owned(),
+                    "high-threat-dynamic".to_owned(),
+                ];
                 let builder: ScenarioBuilder = Box::new(|seed: u64, profile_name: &str| {
                     let profile = WildfireProfile::from_str(profile_name)
                         .unwrap_or(WildfireProfile::SmallStatic);

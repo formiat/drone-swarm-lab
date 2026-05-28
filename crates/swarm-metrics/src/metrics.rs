@@ -110,6 +110,15 @@ pub struct RunMetrics {
     pub priority_updates: u64,
     #[serde(default)]
     pub final_avg_threat_level: f64,
+    // v0.38 Wildfire / Flood v2
+    #[serde(default)]
+    pub high_priority_zones_mapped: u64,
+    #[serde(default)]
+    pub time_to_map_first_high_risk: Option<u64>,
+    #[serde(default)]
+    pub threat_level_over_time: Vec<f64>,
+    #[serde(default)]
+    pub zone_observations: u64,
     // v0.35 Dynamic Mission Correctness
     #[serde(default)]
     pub unsupported_reason: Option<String>,
@@ -191,6 +200,13 @@ pub struct AggregateMetrics {
     pub avg_priority_updates: f64,
     #[serde(default)]
     pub avg_final_threat_level: f64,
+    // v0.38 Wildfire / Flood v2
+    #[serde(default)]
+    pub avg_high_priority_zones_mapped: f64,
+    #[serde(default)]
+    pub avg_time_to_map_first_high_risk: f64,
+    #[serde(default)]
+    pub avg_zone_observations: f64,
     // v0.31 Report identity: per-row mission and scenario
     #[serde(default)]
     pub mission: String,
@@ -254,6 +270,10 @@ impl AggregateMetrics {
                 avg_hazard_zones_mapped: 0.0,
                 avg_priority_updates: 0.0,
                 avg_final_threat_level: 0.0,
+                // v0.38 Wildfire / Flood v2
+                avg_high_priority_zones_mapped: 0.0,
+                avg_time_to_map_first_high_risk: 0.0,
+                avg_zone_observations: 0.0,
                 // v0.31 Report identity
                 mission: String::new(),
                 scenario: String::new(),
@@ -305,6 +325,18 @@ impl AggregateMetrics {
         let total_hazard_zones_mapped: u64 = runs.iter().map(|run| run.hazard_zones_mapped).sum();
         let total_priority_updates: u64 = runs.iter().map(|run| run.priority_updates).sum();
         let total_final_threat_level: f64 = runs.iter().map(|run| run.final_avg_threat_level).sum();
+        // v0.38 Wildfire / Flood v2
+        let total_high_priority_zones_mapped: u64 =
+            runs.iter().map(|run| run.high_priority_zones_mapped).sum();
+        let total_time_to_map_first_high_risk: u64 = runs
+            .iter()
+            .filter_map(|run| run.time_to_map_first_high_risk)
+            .sum();
+        let time_to_map_first_high_risk_count = runs
+            .iter()
+            .filter(|run| run.time_to_map_first_high_risk.is_some())
+            .count() as f64;
+        let total_zone_observations: u64 = runs.iter().map(|run| run.zone_observations).sum();
         let mut convergence_ticks: Vec<u64> = runs
             .iter()
             .filter_map(|run| run.cbba_convergence_tick)
@@ -372,6 +404,14 @@ impl AggregateMetrics {
             avg_hazard_zones_mapped: total_hazard_zones_mapped as f64 / n,
             avg_priority_updates: total_priority_updates as f64 / n,
             avg_final_threat_level: total_final_threat_level / n,
+            // v0.38 Wildfire / Flood v2
+            avg_high_priority_zones_mapped: total_high_priority_zones_mapped as f64 / n,
+            avg_time_to_map_first_high_risk: if time_to_map_first_high_risk_count > 0.0 {
+                total_time_to_map_first_high_risk as f64 / time_to_map_first_high_risk_count
+            } else {
+                0.0
+            },
+            avg_zone_observations: total_zone_observations as f64 / n,
             // v0.31 Report identity: populated by caller after aggregation
             mission: String::new(),
             scenario: String::new(),
@@ -516,6 +556,22 @@ impl fmt::Display for AggregateMetrics {
             "avg_final_threat_level: {:.3}",
             self.avg_final_threat_level
         )?;
+        // v0.38 Wildfire / Flood v2
+        writeln!(
+            f,
+            "avg_high_priority_zones_mapped: {:.3}",
+            self.avg_high_priority_zones_mapped
+        )?;
+        writeln!(
+            f,
+            "avg_time_to_map_first_high_risk: {:.3}",
+            self.avg_time_to_map_first_high_risk
+        )?;
+        writeln!(
+            f,
+            "avg_zone_observations: {:.3}",
+            self.avg_zone_observations
+        )?;
         // v0.31 Report identity
         writeln!(f, "mission: {}", self.mission)?;
         write!(f, "scenario: {}", self.scenario)
@@ -605,6 +661,11 @@ mod tests {
             hazard_zones_mapped: 0,
             priority_updates: 0,
             final_avg_threat_level: 0.0,
+            // v0.38 Wildfire / Flood v2
+            high_priority_zones_mapped: 0,
+            time_to_map_first_high_risk: None,
+            threat_level_over_time: vec![],
+            zone_observations: 0,
             // v0.35 Dynamic Mission Correctness
             unsupported_reason: None,
             // v0.37 Realism Scenario Pack

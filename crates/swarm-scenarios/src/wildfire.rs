@@ -28,6 +28,8 @@ pub struct WildfireConfig {
 pub enum WildfireProfile {
     SmallStatic,
     MediumDynamic,
+    LargeStatic,
+    HighThreatDynamic,
 }
 
 impl WildfireProfile {
@@ -36,6 +38,8 @@ impl WildfireProfile {
         match s.to_lowercase().as_str() {
             "small-static" | "smallstatic" => Some(Self::SmallStatic),
             "medium-dynamic" | "mediumdynamic" => Some(Self::MediumDynamic),
+            "large-static" | "largestatic" => Some(Self::LargeStatic),
+            "high-threat-dynamic" | "highthreatdynamic" => Some(Self::HighThreatDynamic),
             _ => None,
         }
     }
@@ -126,6 +130,134 @@ impl WildfireProfile {
                 max_ticks: 400,
                 enable_dynamic_threat: true,
             },
+            Self::LargeStatic => WildfireConfig {
+                seed,
+                agent_count: 6,
+                zones: vec![
+                    HazardZone {
+                        id: "zone-a".to_owned(),
+                        bounds: Aabb {
+                            min_x: 0.0,
+                            min_y: 0.0,
+                            max_x: 15.0,
+                            max_y: 15.0,
+                        },
+                        threat_level: 0.8,
+                        priority: 5,
+                    },
+                    HazardZone {
+                        id: "zone-b".to_owned(),
+                        bounds: Aabb {
+                            min_x: 15.0,
+                            min_y: 0.0,
+                            max_x: 30.0,
+                            max_y: 15.0,
+                        },
+                        threat_level: 0.4,
+                        priority: 3,
+                    },
+                    HazardZone {
+                        id: "zone-c".to_owned(),
+                        bounds: Aabb {
+                            min_x: 0.0,
+                            min_y: 15.0,
+                            max_x: 15.0,
+                            max_y: 30.0,
+                        },
+                        threat_level: 0.6,
+                        priority: 4,
+                    },
+                    HazardZone {
+                        id: "zone-d".to_owned(),
+                        bounds: Aabb {
+                            min_x: 15.0,
+                            min_y: 15.0,
+                            max_x: 30.0,
+                            max_y: 30.0,
+                        },
+                        threat_level: 0.2,
+                        priority: 2,
+                    },
+                    HazardZone {
+                        id: "zone-e".to_owned(),
+                        bounds: Aabb {
+                            min_x: 30.0,
+                            min_y: 0.0,
+                            max_x: 45.0,
+                            max_y: 15.0,
+                        },
+                        threat_level: 0.5,
+                        priority: 3,
+                    },
+                    HazardZone {
+                        id: "zone-f".to_owned(),
+                        bounds: Aabb {
+                            min_x: 30.0,
+                            min_y: 15.0,
+                            max_x: 45.0,
+                            max_y: 30.0,
+                        },
+                        threat_level: 0.3,
+                        priority: 2,
+                    },
+                ],
+                update_interval_ticks: 999,
+                max_ticks: 300,
+                enable_dynamic_threat: false,
+            },
+            Self::HighThreatDynamic => WildfireConfig {
+                seed,
+                agent_count: 4,
+                zones: vec![
+                    HazardZone {
+                        id: "zone-a".to_owned(),
+                        bounds: Aabb {
+                            min_x: 0.0,
+                            min_y: 0.0,
+                            max_x: 20.0,
+                            max_y: 20.0,
+                        },
+                        threat_level: 0.7,
+                        priority: 5,
+                    },
+                    HazardZone {
+                        id: "zone-b".to_owned(),
+                        bounds: Aabb {
+                            min_x: 20.0,
+                            min_y: 0.0,
+                            max_x: 40.0,
+                            max_y: 20.0,
+                        },
+                        threat_level: 0.3,
+                        priority: 3,
+                    },
+                    HazardZone {
+                        id: "zone-c".to_owned(),
+                        bounds: Aabb {
+                            min_x: 0.0,
+                            min_y: 20.0,
+                            max_x: 20.0,
+                            max_y: 40.0,
+                        },
+                        threat_level: 0.5,
+                        priority: 4,
+                    },
+                    HazardZone {
+                        id: "zone-d".to_owned(),
+                        bounds: Aabb {
+                            min_x: 20.0,
+                            min_y: 20.0,
+                            max_x: 40.0,
+                            max_y: 40.0,
+                        },
+                        threat_level: 0.2,
+                        priority: 2,
+                    },
+                ],
+                update_interval_ticks: 25,
+                max_ticks: 500,
+                enable_dynamic_threat: true,
+            },
         }
     }
 }
@@ -134,7 +266,12 @@ pub struct WildfireStandardProfiles;
 
 impl WildfireStandardProfiles {
     pub fn profile_names() -> Vec<&'static str> {
-        vec!["small-static", "medium-dynamic"]
+        vec![
+            "small-static",
+            "medium-dynamic",
+            "large-static",
+            "high-threat-dynamic",
+        ]
     }
 }
 
@@ -208,6 +345,8 @@ pub fn build_wildfire_scenario(config: &WildfireConfig) -> (Scenario, RunConfig)
         mapped_zone_ids: std::collections::HashSet::new(),
         update_interval_ticks: config.update_interval_ticks,
         enable_dynamic_threat: config.enable_dynamic_threat,
+        enable_zone_expansion: false,
+        enable_spatial_spread: config.enable_dynamic_threat,
     };
 
     let run_config = RunConfig {
@@ -289,6 +428,46 @@ mod tests {
             max_y: 10.0,
         };
         assert!(aabb.contains(&aabb.center()));
+    }
+
+    #[test]
+    fn large_static_builds_scenario() {
+        let config = WildfireProfile::LargeStatic.config(42);
+        let (scenario, run_config) = build_wildfire_scenario(&config);
+        assert_eq!(scenario.tasks.len(), 6);
+        assert_eq!(scenario.agents.len(), 6);
+        assert_eq!(run_config.max_ticks, 300);
+        assert!(
+            !run_config
+                .wildfire_state
+                .as_ref()
+                .unwrap()
+                .enable_dynamic_threat
+        );
+    }
+
+    #[test]
+    fn high_threat_dynamic_builds_scenario() {
+        let config = WildfireProfile::HighThreatDynamic.config(42);
+        let (scenario, run_config) = build_wildfire_scenario(&config);
+        assert_eq!(scenario.tasks.len(), 4);
+        assert_eq!(scenario.agents.len(), 4);
+        assert_eq!(run_config.max_ticks, 500);
+        assert!(
+            run_config
+                .wildfire_state
+                .as_ref()
+                .unwrap()
+                .enable_dynamic_threat
+        );
+        assert_eq!(
+            run_config
+                .wildfire_state
+                .as_ref()
+                .unwrap()
+                .update_interval_ticks,
+            25
+        );
     }
 
     #[test]
