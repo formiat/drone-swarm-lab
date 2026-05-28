@@ -20,6 +20,7 @@
 - `crates/swarm-examples/tests/support_matrix.rs` частично документирует supported/unsupported combinations через тесты, но полноценной support matrix model пока нет.
 - `crates/swarm-sim/src/regression.rs` содержит default suites and thresholds, где часть weak combinations уже помечена comments как experimental/physically constrained.
 - `crates/swarm-alloc/src/centralized.rs` содержит отдельный centralized strategy path: `CentralizedPlanner::new`, private `cost(...)`, optional `route_planner` ordering и `bundle_travel_distance`. Его нельзя сводить к generic `allocator.rs`, потому что SAR + centralized уже классифицируется как unsupported `static_pre_plan`.
+- `crates/swarm-alloc/src/connectivity_aware.rs` содержит отдельный `connectivity-aware` strategy path для relay-placement: `ConnectivityAwareAllocator::allocate_with_connectivity`, разделение relay/scout tasks, использование `task.pose`, fallback при отсутствии pose и private `simulate_reachability_with_agent_at_pose`.
 
 Важное наблюдение по текущему коду: `compute_mission_success` в `crates/swarm-sim/src/runner.rs` принимает `_adapter_complete`, но параметр сейчас не используется напрямую в mission-specific branches. Это не обязательно баг, но M41 должен явно проверить, где completion должен быть adapter-driven, где mission-state driven, а где это intentional fallback.
 
@@ -37,6 +38,7 @@
 - `crates/swarm-sim/src/dsl.rs`, особенно `validate_mission_specific`.
 - `crates/swarm-alloc/src/route_planner.rs`, especially `BatteryAwarePlanner`.
 - `crates/swarm-alloc/src/centralized.rs`, especially `CentralizedPlanner::new`, private `cost(...)`, optional `route_planner` path and travel-distance accounting.
+- `crates/swarm-alloc/src/connectivity_aware.rs`, especially `ConnectivityAwareAllocator::allocate_with_connectivity`, relay/scout separation, `task.pose` relay placement, no-pose fallback and reachability simulation.
 - `crates/swarm-examples/tests/support_matrix.rs`.
 - `crates/swarm-sim/src/regression.rs`, default suites comments/thresholds.
 
@@ -58,6 +60,8 @@
   - adapter-aware allocation path for greedy/auction-style allocators.
 - `crates/swarm-alloc/src/centralized.rs`
   - centralized strategy path: `CentralizedPlanner::new`, private `cost(...)`, optional `route_planner`, `bundle_travel_distance`, and SAR + centralized `static_pre_plan` classification.
+- `crates/swarm-alloc/src/connectivity_aware.rs`
+  - connectivity-aware strategy path: `ConnectivityAwareAllocator::allocate_with_connectivity`, relay/scout task split, relay candidate filtering, use of `task.pose`, fallback without pose, and private `simulate_reachability_with_agent_at_pose`.
 - `crates/swarm-alloc/src/cbba.rs`
   - likely classification target: CBBA scoring is mostly distance/battery and may not be mission-adapter-aware.
 - `crates/swarm-alloc/src/route_planner.rs`
@@ -78,7 +82,7 @@
 ## Implementation steps
 
 1. Inventory current semantics paths.
-   - Read and summarize `crates/swarm-types/src/adapter.rs`, `crates/swarm-sim/src/runner.rs`, `crates/swarm-sim/src/dsl.rs`, `crates/swarm-alloc/src/allocator.rs`, `crates/swarm-alloc/src/centralized.rs`, `crates/swarm-alloc/src/cbba.rs`, `crates/swarm-alloc/src/route_planner.rs`.
+   - Read and summarize `crates/swarm-types/src/adapter.rs`, `crates/swarm-sim/src/runner.rs`, `crates/swarm-sim/src/dsl.rs`, `crates/swarm-alloc/src/allocator.rs`, `crates/swarm-alloc/src/centralized.rs`, `crates/swarm-alloc/src/connectivity_aware.rs`, `crates/swarm-alloc/src/cbba.rs`, `crates/swarm-alloc/src/route_planner.rs`.
    - Create `docs_raw/M41_SEMANTICS_AUDIT.md` with sections: `Scope`, `Semantics paths`, `Gap classes`, `Support matrix`, `High-confidence fixes`, `Regression candidates`, `Follow-ups`.
    - Do not use long benchmark runs as evidence; use code audit and small deterministic fixtures.
 
@@ -86,6 +90,7 @@
    - Preferred: add `crates/swarm-sim/src/support_matrix.rs` with small enums/structs such as `SupportStatus`, `SupportReason`, and a lookup function keyed by mission/profile/strategy.
    - Export it from `crates/swarm-sim/src/lib.rs` only if needed by tests or examples.
    - Mirror existing expectations from `crates/swarm-examples/tests/support_matrix.rs`: SAR + greedy supported, SAR + CBBA `delayed_reconvergence`, SAR + centralized `static_pre_plan`, wildfire/inspection stable/experimental boundaries.
+   - Add or document classification for `connectivity-aware` on emergency-mesh/relay combinations, because it is a registered strategy with mission-specific relay placement semantics rather than a generic auction alias.
    - Keep this model descriptive; do not wire it into regression gating yet unless implementation is trivial. Gating belongs mostly to M42.
 
 3. Audit and test adapter completion semantics.
@@ -112,6 +117,8 @@
    - In `crates/swarm-alloc/src/allocator.rs`, confirm adapter-aware greedy/auction paths call `adapter.score` and `adapter.route_cost` where intended.
    - In `crates/swarm-alloc/src/centralized.rs`, audit `CentralizedPlanner::new`, private `cost(...)`, capability/role filtering, optional `route_planner` ordering, `bundle_travel_distance`, and whether centralized should remain a mission-agnostic oracle baseline for each mission.
    - Explicitly classify SAR + centralized `static_pre_plan` using `crates/swarm-examples/tests/support_matrix.rs`, so this unsupported combination remains tracked and is not accidentally promoted to stable support.
+   - In `crates/swarm-alloc/src/connectivity_aware.rs`, audit `ConnectivityAwareAllocator::allocate_with_connectivity`: relay/scout partitioning, Relay role filtering, `task.pose` as relay-placement input, fallback through `base_allocator` when pose is absent, and private `simulate_reachability_with_agent_at_pose`.
+   - Classify whether `connectivity-aware` is stable, experimental, or unsupported for emergency-mesh/relay support matrix combinations, and make sure relay-placement semantics are not hidden under generic `auction` behavior.
    - In `crates/swarm-alloc/src/cbba.rs`, classify current mission-agnostic scoring as either accepted limitation, experimental, or implementation gap. Avoid rewriting CBBA unless a tiny high-confidence bug is found.
    - In `crates/swarm-alloc/src/route_planner.rs`, strengthen `BatteryAwarePlanner` tests so they prove it drops only as many tasks as required for the current ordered subset. Existing tests show the area but one test has a weak assertion and should be made precise.
 
@@ -158,6 +165,7 @@
      - `PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 timeout 300s /home/formi/.local/bin/runlim cargo test -p swarm-types -- adapter`
      - `PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 timeout 300s /home/formi/.local/bin/runlim cargo test -p swarm-sim -- dsl runner`
      - `PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 timeout 300s /home/formi/.local/bin/runlim cargo test -p swarm-alloc -- centralized`
+     - `PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 timeout 300s /home/formi/.local/bin/runlim cargo test -p swarm-alloc -- connectivity_aware`
      - `PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 timeout 300s /home/formi/.local/bin/runlim cargo test -p swarm-alloc -- route_planner`
      - `PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 timeout 300s /home/formi/.local/bin/runlim cargo test -p swarm-examples --test support_matrix`
    - If code changes are made, run `cargo fmt --all` and clippy over affected crates with a hard timeout.
@@ -183,9 +191,17 @@
 - `crates/swarm-alloc/src/centralized.rs`
   - Add or strengthen a short unit test around centralized route ordering/travel-distance accounting when `route_planner` is set, if M41 touches that path.
   - Add a negative/edge test for capability/role filtering if audit finds an ambiguity in `CentralizedPlanner::new`.
+- `crates/swarm-alloc/src/connectivity_aware.rs`
+  - Add or strengthen unit tests for `allocate_with_connectivity`:
+    - relay tasks are handled by Relay agents, while scout/non-relay tasks still go through the base allocator;
+    - relay task with `pose = Some(...)` chooses the candidate that maximizes simulated reachability;
+    - relay task with `pose = None` falls back to `base_allocator` rather than silently dropping the task;
+    - no Relay-capable agent produces no relay assignment and does not affect scout assignments.
+  - Add an edge-case test around `simulate_reachability_with_agent_at_pose` if visibility allows a small local unit test; otherwise verify through `allocate_with_connectivity`.
 - `crates/swarm-examples/tests/support_matrix.rs`
   - Add assertions for combinations already known unsupported or experimental, without requiring long runs.
   - Preserve or strengthen the existing SAR + centralized unsupported assertion (`static_pre_plan`) so centralized classification remains explicit in M41.
+  - Add or document short support-matrix coverage for `connectivity-aware` on emergency-mesh/relay combinations once the support matrix model can express that strategy.
 - `crates/swarm-metrics/src/metrics.rs`
   - Add targeted metric consistency tests if a high-confidence metric bug is found.
 
@@ -199,6 +215,7 @@
 - Add in-memory `RunState` fixture helpers for adapter/runner tests.
 - Add small scenario fixtures for runner tests that avoid shelling out to binaries.
 - Add support matrix fixture builder if `crates/swarm-sim/src/support_matrix.rs` is introduced.
+- Add small connectivity fixtures for relay placement tests: base pose, candidate Relay agents with different comms reachability, scout tasks that should remain unaffected, and relay tasks with and without `pose`.
 - Add helper to compare per-run metrics and aggregate metrics for suspicious metric mismatch tests, reusing M40 compare style where practical.
 
 ### 3. Tests that need heavy refactoring
@@ -223,6 +240,7 @@ These heavy tests should be listed as follow-ups unless a small subset can be is
   - Changing success/completion semantics can move benchmark/regression numbers. Проверка: only change high-confidence bugs and add targeted before/after tests.
 - Algorithm behavior:
   - Making allocators more adapter-aware can change task assignment order. Проверка: keep broad allocator rewrites out of M41; classify algorithm mismatch instead.
+  - Tightening connectivity-aware relay semantics can change emergency-mesh relay assignment order or expose no-pose relay tasks that previously fell back implicitly. Проверка: add targeted `connectivity_aware` tests and support-matrix classification for relay/emergency-mesh combinations.
 - Data/docs:
   - `docs_raw/M41_SEMANTICS_AUDIT.md` can become stale if it mixes observations and intended future work. Проверка: record exact commit hash and keep follow-ups separate from verified findings.
 - Performance/resources:
@@ -237,4 +255,5 @@ Tradeoff: a stricter support matrix and validator improve clarity but can expose
 - Are SAR + CBBA and SAR + centralized permanently unsupported, or experimental until planner/strategy semantics improve?
 - For wildfire/flood mapping, is task id the canonical zone identity, or should task metadata carry an explicit zone id/threat id?
 - Should mission/task-kind mismatch validation be strict for every mission, or should emergency mesh remain explicitly mixed-kind?
+- Is `connectivity-aware` stable for emergency-mesh relay placement now, or should it be marked experimental until reachability/relay placement invariants are promoted to regression gates?
 - Which M41 findings should become M42 default gates versus experimental tracking suites?
