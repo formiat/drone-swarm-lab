@@ -60,7 +60,18 @@ cargo run -p swarm-examples --bin strategy_comparison -- \
   --smoke --mission wildfire --output-dir results/wildfire_smoke/
 ```
 
-### 7. Run mock SITL
+### 7. Inspect SITL waypoint plan
+
+```bash
+cargo run --bin sitl_agent -- \
+  --dry-run --scenario scenarios/sitl.waypoints.json --agent-id agent-0
+```
+
+Expected: a portable mission upload plan printed without PX4, including
+scenario name, task ids, waypoint sequence, local coordinates, and altitude
+interpretation.
+
+### 8. Run mock SITL
 
 ```bash
 cargo run --bin sitl_agent -- \
@@ -80,6 +91,7 @@ cargo run --bin sitl_agent -- \
 | CBBA Robustness | ✅ Stable | M15 | Convergence metrics, TSP ordering, retransmission |
 | Infrastructure Inspection | ✅ Stable | M16 | Edge coverage, route efficiency |
 | Mock SITL | ✅ Stable | M20 | `sitl_agent --mock`, no external deps |
+| SITL Dry-Run | ✅ Stable | M43 | `sitl_agent --dry-run`, portable mission upload plan without PX4 |
 | Replay / Debuggability | ✅ Stable | M23 | `replay` CLI, ASCII visualization |
 | Mission Semantics | ✅ Stable | M33 | `TaskKind`, 6 concrete adapters, `AdapterRegistry`, adapter-driven completion/scoring in runner and allocator |
 | Planner Quality | ✅ Stable | M34 | `RoutePlanner` trait, 2-opt, battery-aware feasibility v2 (ordered-subset feasibility, battery model v2 integration, meaningful runner metrics) |
@@ -92,7 +104,7 @@ cargo run --bin sitl_agent -- \
 | Wildfire / Flood Mapping | ✅ Stable | M30 | `TaskKind::MappingZone`, `WildfireState`, hazard zones, dynamic threat |
 | Simulation Realism | ✅ Stable | M31 | Battery model v2, altitude sensor penalty, wind drift, pose noise, comms jitter, time-gated no-fly zones, `--realism` preset |
 | Reporting & Metrics | ✅ Stable | M32 | Per-row mission/scenario in exports, mission-scoped profiles, merged `all` benchmark id, wildfire/planner metrics, realism metadata in manifest |
-| Real PX4 | 🧪 Experimental | M20 | Feature-gated, requires PX4 SITL setup |
+| Real PX4 | 🧪 Experimental | M20 | Feature-gated scaffold; real mission upload is not implemented yet |
 
 **Test coverage:** 360+ tests, 10 crates, 18 JSON scenarios.
 
@@ -181,10 +193,11 @@ Parametric sweeps over variables such as packet loss, agent count, or grid size 
 
 1. **Simulation only:** No real hardware integration beyond experimental PX4 SITL scaffold.
 2. **Single-agent SITL:** Multi-agent SITL not yet supported.
-3. **3D pose:** Scenarios support `z` coordinate and altitude-aware sensors, but most missions operate primarily in XY plane.
-4. **Deterministic RNG:** Scenarios use seeded RNG; real-world noise is modeled optionally via `--realism` preset.
-5. **Battery model v2:** Hover/climb/cruise drain rates are configurable but not calibrated against real flight data.
-6. **Regression smoke variance:** Smoke suites use 1 seed; high-variance missions (SAR, emergency-mesh, wildfire) have conservative thresholds. Promote to `Quick` (10 seeds) for tighter coverage.
+3. **SITL coordinate frame:** `sitl_agent` dry-run/mock mode treats `Pose { x, y, z }` as local simulation coordinates; `x/y` are not WGS84 latitude/longitude, and `z` is local altitude.
+4. **3D pose:** Scenarios support `z` coordinate and altitude-aware sensors, but most missions operate primarily in XY plane.
+5. **Deterministic RNG:** Scenarios use seeded RNG; real-world noise is modeled optionally via `--realism` preset.
+6. **Battery model v2:** Hover/climb/cruise drain rates are configurable but not calibrated against real flight data.
+7. **Regression smoke variance:** Smoke suites use 1 seed; high-variance missions (SAR, emergency-mesh, wildfire) have conservative thresholds. Promote to `Quick` (10 seeds) for tighter coverage.
 
 See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known limitations.
 
@@ -284,7 +297,7 @@ See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known l
 | [`docs/BENCHMARK_RESULTS.md`](docs/BENCHMARK_RESULTS.md) | Real benchmark numbers and analysis |
 | [`docs/SCENARIO_DSL.md`](docs/SCENARIO_DSL.md) | Scenario suite format and validation |
 | [`docs/REPLAY.md`](docs/REPLAY.md) | Replay event log schema and CLI usage |
-| [`docs/SITL_SETUP.md`](docs/SITL_SETUP.md) | Mock and real PX4 SITL setup |
+| [`docs/SITL_SETUP.md`](docs/SITL_SETUP.md) | Mock, dry-run, and experimental PX4 SITL setup |
 
 ---
 

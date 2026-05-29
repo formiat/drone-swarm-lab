@@ -55,6 +55,7 @@ swarm-runtime      = { workspace = true }
 swarm-scenarios    = { workspace = true }
 swarm-sim          = { workspace = true }
 swarm-types        = { workspace = true }
+thiserror          = { workspace = true }
 tracing            = { workspace = true }
 tracing-subscriber = { workspace = true }
 

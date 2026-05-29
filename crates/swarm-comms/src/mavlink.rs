@@ -30,7 +30,7 @@ pub fn task_to_waypoint(task: &swarm_types::Task) -> Option<Waypoint> {
     task.pose.map(|pose| Waypoint {
         x: pose.x,
         y: pose.y,
-        z: 0.0,
+        z: pose.z,
         seq: 0,
     })
 }
@@ -260,7 +260,7 @@ mod tests {
             pose: Some(swarm_types::Pose {
                 x: 10.0,
                 y: 20.0,
-                ..Default::default()
+                z: 3.0,
             }),
             grid_cell: None,
             edge_id: None,
@@ -269,6 +269,7 @@ mod tests {
         let wp = task_to_waypoint(&task).unwrap();
         assert!((wp.x - 10.0).abs() < 1e-6);
         assert!((wp.y - 20.0).abs() < 1e-6);
+        assert!((wp.z - 3.0).abs() < 1e-6);
     }
 
     #[test]

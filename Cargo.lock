@@ -940,6 +940,7 @@ dependencies = [
  "swarm-sim",
  "swarm-types",
  "tempfile",
+ "thiserror",
  "tracing",
  "tracing-subscriber",
 ]

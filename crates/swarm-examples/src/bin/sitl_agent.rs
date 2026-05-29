@@ -1,246 +1,184 @@
-use std::path::Path;
-
 #[cfg(feature = "mavlink-transport")]
 use swarm_comms::Transport;
-use swarm_comms::{task_to_waypoint, MockMavlinkTransport};
-use swarm_sim::load_scenario_suite;
+use swarm_comms::{MockMavlinkTransport, Waypoint};
+use swarm_examples::sitl_plan::{
+    format_dry_run_plan, load_sitl_plan, validate_connection_string, SitlError, SitlMode, SitlPlan,
+};
 
 struct CliArgs {
-    mock: bool,
-    connection: Option<String>,
+    mode: SitlMode,
     scenario: String,
     agent_id: String,
 }
 
-fn parse_args() -> CliArgs {
+fn parse_args() -> Result<CliArgs, SitlError> {
     let args: Vec<String> = std::env::args().collect();
-    let mut cli = CliArgs {
-        mock: false,
-        connection: None,
-        scenario: String::new(),
-        agent_id: String::new(),
-    };
+    let mut mode: Option<SitlMode> = None;
+    let mut scenario: Option<String> = None;
+    let mut agent_id: Option<String> = None;
 
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
-            "--mock" => cli.mock = true,
+            "--mock" => {
+                set_mode(&mut mode, SitlMode::Mock)?;
+            }
+            "--dry-run" => {
+                set_mode(&mut mode, SitlMode::DryRun)?;
+            }
             "--connection" => {
                 i += 1;
-                if i < args.len() {
-                    cli.connection = Some(args[i].clone());
-                }
+                let addr = args
+                    .get(i)
+                    .ok_or(SitlError::MissingArgument {
+                        name: "--connection <addr>",
+                    })?
+                    .clone();
+                set_mode(&mut mode, SitlMode::Connection { addr })?;
             }
             "--scenario" => {
                 i += 1;
-                if i < args.len() {
-                    cli.scenario = args[i].clone();
-                }
+                scenario = Some(
+                    args.get(i)
+                        .ok_or(SitlError::MissingArgument { name: "--scenario" })?
+                        .clone(),
+                );
             }
             "--agent-id" => {
                 i += 1;
-                if i < args.len() {
-                    cli.agent_id = args[i].clone();
-                }
+                agent_id = Some(
+                    args.get(i)
+                        .ok_or(SitlError::MissingArgument { name: "--agent-id" })?
+                        .clone(),
+                );
             }
-            _ => {}
+            arg => {
+                return Err(SitlError::UnknownArgument {
+                    arg: arg.to_owned(),
+                });
+            }
         }
         i += 1;
     }
 
-    cli
+    Ok(CliArgs {
+        mode: mode.ok_or(SitlError::MissingMode)?,
+        scenario: scenario.ok_or(SitlError::MissingArgument { name: "--scenario" })?,
+        agent_id: agent_id.ok_or(SitlError::MissingArgument { name: "--agent-id" })?,
+    })
+}
+
+fn set_mode(mode: &mut Option<SitlMode>, next: SitlMode) -> Result<(), SitlError> {
+    if mode.is_some() {
+        return Err(SitlError::ConflictingModes);
+    }
+    *mode = Some(next);
+    Ok(())
 }
 
 fn main() {
-    let cli = parse_args();
-
-    if cli.scenario.is_empty() {
-        eprintln!("Usage: sitl_agent --mock|--connection <addr> --scenario <path> --agent-id <id>");
+    if let Err(error) = run() {
+        eprintln!("error: {error}");
+        eprintln!(
+            "usage: sitl_agent --mock|--dry-run|--connection <addr> --scenario <path> --agent-id <id>"
+        );
         std::process::exit(1);
     }
+}
 
-    let scenario_path = Path::new(&cli.scenario);
-    if !scenario_path.exists() {
-        eprintln!("Scenario file not found: {}", cli.scenario);
-        std::process::exit(1);
-    }
+fn run() -> Result<(), SitlError> {
+    let cli = parse_args()?;
+    let plan = load_sitl_plan(&cli.scenario, cli.agent_id.clone())?;
 
-    let suite = match load_scenario_suite(&cli.scenario) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("Error loading {}: {}", cli.scenario, e);
-            std::process::exit(1);
+    match cli.mode {
+        SitlMode::Mock => run_mock(&plan),
+        SitlMode::DryRun => {
+            print!("{}", format_dry_run_plan(&plan));
+            Ok(())
         }
-    };
-
-    let errors = swarm_sim::validate_scenario_suite(&suite);
-    if !errors.is_empty() {
-        eprintln!("Validation failed for {}:", cli.scenario);
-        for err in &errors {
-            eprintln!("  [{}] {}", err.field, err.message);
-        }
-        std::process::exit(1);
+        SitlMode::Connection { addr } => run_connection(&plan, &addr),
     }
+}
 
-    if suite.scenarios.is_empty() {
-        eprintln!("Scenario suite is empty");
-        std::process::exit(1);
-    }
-
-    let entry = &suite.scenarios[0];
-    let agent_tasks: Vec<_> = entry
-        .scenario
-        .tasks
-        .iter()
-        .filter(|t| t.pose.is_some())
-        .collect();
-
-    if agent_tasks.is_empty() {
-        eprintln!("Warning: no tasks with pose found in scenario. No waypoints to send.");
-        std::process::exit(1);
-    }
-
+fn run_mock(plan: &SitlPlan) -> Result<(), SitlError> {
+    let mut transport = MockMavlinkTransport::new();
     eprintln!(
-        "SITL Agent: {} | {} tasks with pose | mock={}",
-        cli.agent_id,
-        agent_tasks.len(),
-        cli.mock
+        "SITL Agent: {} | {} waypoints | mock=true",
+        plan.agent_id,
+        plan.waypoints.len()
     );
 
-    if cli.mock {
-        // Mock path: always works, no external dependencies
-        let mut transport = MockMavlinkTransport::new();
-        for (idx, task) in agent_tasks.iter().enumerate() {
-            if let Some(wp) = task_to_waypoint(task) {
-                let msg = format!(
-                    "WAYPOINT seq={} x={:.1} y={:.1} z={:.1}",
-                    idx, wp.x, wp.y, wp.z
-                );
-                eprintln!("{msg}");
-                transport.send_waypoint(wp);
-            }
-        }
-        eprintln!("Mock mode: {} waypoints sent.", transport.waypoints().len());
-    } else if let Some(connection_string) = cli.connection {
-        // Real MAVLink path: only with feature "mavlink-transport"
-        #[cfg(feature = "mavlink-transport")]
-        {
-            use swarm_comms::MavlinkTransport;
-            let agent_id = swarm_types::AgentId::from(cli.agent_id.clone());
-            let mut transport =
-                MavlinkTransport::new(&connection_string, agent_id).unwrap_or_else(|e| {
-                    eprintln!("Failed to connect to MAVLink: {}", e);
-                    std::process::exit(1);
-                });
-            for (idx, task) in agent_tasks.iter().enumerate() {
-                if let Some(wp) = task_to_waypoint(task) {
-                    let msg = format!(
-                        "WAYPOINT seq={} x={:.1} y={:.1} z={:.1}",
-                        idx, wp.x, wp.y, wp.z
-                    );
-                    eprintln!("{msg}");
-                    let raw = swarm_comms::RawMessage {
-                        from: swarm_types::AgentId::from(cli.agent_id.clone()),
-                        to: swarm_types::AgentId::from("px4".to_owned()),
-                        payload: msg.into_bytes(),
-                    };
-                    if let Err(e) = transport.send(raw) {
-                        eprintln!("Failed to send waypoint: {}", e);
-                    }
+    for waypoint in &plan.waypoints {
+        let waypoint = Waypoint {
+            x: waypoint.x,
+            y: waypoint.y,
+            z: waypoint.z,
+            seq: waypoint.seq,
+        };
+        eprintln!(
+            "WAYPOINT seq={} x={:.1} y={:.1} z={:.1}",
+            waypoint.seq, waypoint.x, waypoint.y, waypoint.z
+        );
+        transport.send_waypoint(waypoint);
+    }
+    eprintln!("Mock mode: {} waypoints sent.", transport.waypoints().len());
+    Ok(())
+}
+
+fn run_connection(plan: &SitlPlan, connection_string: &str) -> Result<(), SitlError> {
+    validate_connection_string(connection_string)?;
+
+    #[cfg(feature = "mavlink-transport")]
+    {
+        use swarm_comms::MavlinkTransport;
+
+        let agent_id = swarm_types::AgentId::from(plan.agent_id.clone());
+        let mut transport =
+            MavlinkTransport::new(connection_string, agent_id).map_err(|error| {
+                SitlError::ConnectionFailed {
+                    message: error.to_string(),
                 }
+            })?;
+        for waypoint in &plan.waypoints {
+            let msg = format!(
+                "WAYPOINT seq={} x={:.1} y={:.1} z={:.1}",
+                waypoint.seq, waypoint.x, waypoint.y, waypoint.z
+            );
+            eprintln!("{msg}");
+            let raw = swarm_comms::RawMessage {
+                from: swarm_types::AgentId::from(plan.agent_id.clone()),
+                to: swarm_types::AgentId::from("px4".to_owned()),
+                payload: msg.into_bytes(),
+            };
+            if let Err(error) = transport.send(raw) {
+                eprintln!("Failed to send waypoint: {error}");
             }
-            eprintln!("Real MAVLink mode: waypoints sent.");
         }
-        #[cfg(not(feature = "mavlink-transport"))]
-        {
-            let _ = connection_string;
-            eprintln!("Error: --connection requires feature 'mavlink-transport'.");
-            eprintln!("  Build with: cargo build --bin sitl_agent --features mavlink-transport");
-            std::process::exit(1);
-        }
-    } else {
-        eprintln!("Error: specify --mock or --connection <addr>");
-        std::process::exit(1);
+        eprintln!("Real MAVLink mode: waypoints sent.");
+        Ok(())
     }
 
-    std::process::exit(0);
+    #[cfg(not(feature = "mavlink-transport"))]
+    {
+        let _ = plan;
+        Err(SitlError::FeatureMissing {
+            feature: "mavlink-transport",
+        })
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use swarm_types::{Pose, Task, TaskId, TaskStatus};
 
     #[test]
-    fn sitl_agent_mock_sends_all_waypoints() {
-        let tasks = vec![
-            Task {
-                id: TaskId::from("wp-0".to_owned()),
-                status: TaskStatus::Unassigned,
-                assigned_to: None,
-                priority: 1,
-                required_capabilities: vec![],
-                required_role: None,
-                preferred_role: None,
-                expires_at: None,
-                pose: Some(Pose {
-                    x: 10.0,
-                    y: 20.0,
-                    ..Default::default()
-                }),
-                grid_cell: None,
-                edge_id: None,
-                kind: None,
-            },
-            Task {
-                id: TaskId::from("wp-1".to_owned()),
-                status: TaskStatus::Unassigned,
-                assigned_to: None,
-                priority: 1,
-                required_capabilities: vec![],
-                required_role: None,
-                preferred_role: None,
-                expires_at: None,
-                pose: Some(Pose {
-                    x: 30.0,
-                    y: 40.0,
-                    ..Default::default()
-                }),
-                grid_cell: None,
-                edge_id: None,
-                kind: None,
-            },
-        ];
-
-        let mut transport = MockMavlinkTransport::new();
-        for task in &tasks {
-            if let Some(wp) = task_to_waypoint(task) {
-                transport.send_waypoint(wp);
-            }
-        }
-
-        assert_eq!(transport.waypoints().len(), 2);
-        assert!((transport.waypoints()[0].x - 10.0).abs() < 1e-6);
-        assert!((transport.waypoints()[1].y - 40.0).abs() < 1e-6);
+    fn connection_string_validation_accepts_udp() {
+        validate_connection_string("udp:127.0.0.1:14550").unwrap();
     }
 
     #[test]
-    fn sitl_agent_mock_warns_zero_pose_tasks() {
-        let tasks = [Task {
-            id: TaskId::from("t0".to_owned()),
-            status: TaskStatus::Unassigned,
-            assigned_to: None,
-            priority: 1,
-            required_capabilities: vec![],
-            required_role: None,
-            preferred_role: None,
-            expires_at: None,
-            pose: None,
-            grid_cell: None,
-            kind: None,
-            edge_id: None,
-        }];
-        let pose_tasks: Vec<_> = tasks.iter().filter(|t| t.pose.is_some()).collect();
-        assert!(pose_tasks.is_empty());
+    fn connection_string_validation_rejects_unknown_scheme() {
+        let error = validate_connection_string("bad").unwrap_err();
+        assert!(matches!(error, SitlError::BadConnectionString { .. }));
     }
 }
