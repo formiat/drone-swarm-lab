@@ -142,7 +142,7 @@ and error details when available.
 | Wildfire / Flood Mapping | ✅ Stable | M30 | `TaskKind::MappingZone`, `WildfireState`, hazard zones, dynamic threat |
 | Simulation Realism | ✅ Stable | M31 | Battery model v2, altitude sensor penalty, wind drift, pose noise, comms jitter, time-gated no-fly zones, `--realism` preset |
 | Reporting & Metrics | ✅ Stable | M32 | Per-row mission/scenario in exports, mission-scoped profiles, merged `all` benchmark id, wildfire/planner metrics, realism metadata in manifest |
-| Real PX4 | 🧪 Experimental | M48 | Feature-gated single-agent PX4 SITL golden command with pre-upload safety validation, arm/takeoff/start, telemetry-to-task progress mapping, and structured final run report; manual PX4 setup verification is documented separately |
+| Real PX4 | 🧪 Experimental | M48 | Feature-gated single-agent PX4 SITL report plumbing and golden command with pre-upload safety validation, arm/takeoff/start, telemetry-to-task progress mapping, and structured final run report; live PX4 verification remains pending and documented separately |
 
 **Test coverage:** 360+ tests, 10 crates, 18 JSON scenarios.
 

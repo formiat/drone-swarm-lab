@@ -383,35 +383,21 @@ fn run_connection(
                     abort_after: lifecycle.abort_after,
                     takeoff_altitude_m: default_takeoff_altitude(&waypoints),
                 };
-                let execution = execute_mavlink_golden_path(
-                    &mut transport,
-                    &waypoints,
-                    upload_options,
-                    lifecycle_options,
-                    plan,
-                    lifecycle,
-                );
-                match execution {
-                    Ok(success) => {
-                        let report =
-                            success_run_report(plan, connection_string, &success.progress_report);
-                        write_run_report_if_requested(run_report, &report)?;
-                        eprintln!(
-                            "Real MAVLink mode: mission complete; uploaded_count={} completed={} failed={} total={}",
-                            success.uploaded_count,
-                            success.progress_report.completed_count,
-                            success.progress_report.failed_count,
-                            success.progress_report.total_tasks
-                        );
-                    }
-                    Err(failure) => {
-                        let report = failure_run_report(plan, connection_string, &failure);
-                        write_run_report_if_requested(run_report, &report)?;
-                        return Err(SitlError::ConnectionFailed {
-                            message: failure.error,
-                        });
-                    }
-                }
+                let mut driver = MavlinkGoldenPathDriver {
+                    transport: &mut transport,
+                };
+                run_golden_path_with_driver(
+                    &mut driver,
+                    SitlGoldenPathRun {
+                        plan,
+                        waypoints: &waypoints,
+                        connection_string,
+                        upload_options,
+                        lifecycle_options,
+                        lifecycle,
+                        run_report,
+                    },
+                )?;
             }
         }
         Ok(())
@@ -454,27 +440,143 @@ struct SitlExecutionFailure {
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn execute_mavlink_golden_path(
-    transport: &mut swarm_comms::MavlinkTransport,
+#[derive(Debug, Clone, PartialEq)]
+struct SitlMissionStartReport {
+    uploaded_count: usize,
+    armed: bool,
+    took_off: bool,
+    started: bool,
+    post_start_heartbeat: bool,
+    abort_result: Option<swarm_comms::AbortCommandResult>,
+}
+
+#[cfg(feature = "mavlink-transport")]
+trait SitlGoldenPathDriver {
+    fn upload_and_start_mission(
+        &mut self,
+        waypoints: &[Waypoint],
+        upload_options: swarm_comms::MissionUploadOptions,
+        lifecycle_options: swarm_comms::MissionLifecycleOptions,
+    ) -> Result<SitlMissionStartReport, SitlExecutionFailure>;
+
+    fn run_telemetry_progress(
+        &mut self,
+        plan: &SitlPlan,
+        lifecycle: &LifecycleArgs,
+        lifecycle_options: &swarm_comms::MissionLifecycleOptions,
+        mission_item_count: usize,
+    ) -> Result<swarm_examples::sitl_progress::SitlMissionProgressReport, SitlExecutionFailure>;
+}
+
+#[cfg(feature = "mavlink-transport")]
+struct MavlinkGoldenPathDriver<'a> {
+    transport: &'a mut swarm_comms::MavlinkTransport,
+}
+
+#[cfg(feature = "mavlink-transport")]
+impl SitlGoldenPathDriver for MavlinkGoldenPathDriver<'_> {
+    fn upload_and_start_mission(
+        &mut self,
+        waypoints: &[Waypoint],
+        upload_options: swarm_comms::MissionUploadOptions,
+        lifecycle_options: swarm_comms::MissionLifecycleOptions,
+    ) -> Result<SitlMissionStartReport, SitlExecutionFailure> {
+        let report = self
+            .transport
+            .upload_and_execute_mission(waypoints, upload_options, lifecycle_options)
+            .map_err(|error| flight_error_to_execution_failure(waypoints.len(), error))?;
+        Ok(SitlMissionStartReport {
+            uploaded_count: report.upload.uploaded_count,
+            armed: report.lifecycle.armed,
+            took_off: report.lifecycle.took_off,
+            started: report.lifecycle.started,
+            post_start_heartbeat: report.lifecycle.post_start_heartbeat,
+            abort_result: report.lifecycle.abort_result,
+        })
+    }
+
+    fn run_telemetry_progress(
+        &mut self,
+        plan: &SitlPlan,
+        lifecycle: &LifecycleArgs,
+        lifecycle_options: &swarm_comms::MissionLifecycleOptions,
+        mission_item_count: usize,
+    ) -> Result<swarm_examples::sitl_progress::SitlMissionProgressReport, SitlExecutionFailure>
+    {
+        run_telemetry_progress_loop(self.transport, plan, lifecycle, lifecycle_options)
+            .map_err(|error| telemetry_error_to_execution_failure(mission_item_count, error))
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
+struct SitlGoldenPathRun<'a> {
+    plan: &'a SitlPlan,
+    waypoints: &'a [Waypoint],
+    connection_string: &'a str,
+    upload_options: swarm_comms::MissionUploadOptions,
+    lifecycle_options: swarm_comms::MissionLifecycleOptions,
+    lifecycle: &'a LifecycleArgs,
+    run_report: Option<&'a str>,
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn run_golden_path_with_driver<D: SitlGoldenPathDriver>(
+    driver: &mut D,
+    run: SitlGoldenPathRun<'_>,
+) -> Result<(), SitlError> {
+    let execution = execute_sitl_golden_path_with_driver(
+        driver,
+        run.waypoints,
+        run.upload_options,
+        run.lifecycle_options,
+        run.plan,
+        run.lifecycle,
+    );
+    match execution {
+        Ok(success) => {
+            let report =
+                success_run_report(run.plan, run.connection_string, &success.progress_report);
+            write_run_report_if_requested(run.run_report, &report)?;
+            eprintln!(
+                "Real MAVLink mode: mission complete; uploaded_count={} completed={} failed={} total={}",
+                success.uploaded_count,
+                success.progress_report.completed_count,
+                success.progress_report.failed_count,
+                success.progress_report.total_tasks
+            );
+            Ok(())
+        }
+        Err(failure) => {
+            let report = failure_run_report(run.plan, run.connection_string, &failure);
+            write_run_report_if_requested(run.run_report, &report)?;
+            Err(SitlError::ConnectionFailed {
+                message: failure.error,
+            })
+        }
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn execute_sitl_golden_path_with_driver<D: SitlGoldenPathDriver>(
+    driver: &mut D,
     waypoints: &[Waypoint],
     upload_options: swarm_comms::MissionUploadOptions,
     lifecycle_options: swarm_comms::MissionLifecycleOptions,
     plan: &SitlPlan,
     lifecycle: &LifecycleArgs,
 ) -> Result<SitlExecutionSuccess, SitlExecutionFailure> {
-    let report = transport
-        .upload_and_execute_mission(waypoints, upload_options, lifecycle_options.clone())
-        .map_err(|error| flight_error_to_execution_failure(waypoints.len(), error))?;
+    let report =
+        driver.upload_and_start_mission(waypoints, upload_options, lifecycle_options.clone())?;
     eprintln!(
         "Real MAVLink mode: mission started; uploaded_count={} armed={} took_off={} started={} post_start_heartbeat={} abort_result={:?}",
-        report.upload.uploaded_count,
-        report.lifecycle.armed,
-        report.lifecycle.took_off,
-        report.lifecycle.started,
-        report.lifecycle.post_start_heartbeat,
-        report.lifecycle.abort_result
+        report.uploaded_count,
+        report.armed,
+        report.took_off,
+        report.started,
+        report.post_start_heartbeat,
+        report.abort_result
     );
-    if let Some(abort_result) = report.lifecycle.abort_result {
+    if let Some(abort_result) = report.abort_result {
         let error =
             format!("mission aborted before telemetry completion; abort_result={abort_result:?}");
         return Err(SitlExecutionFailure {
@@ -487,10 +589,9 @@ fn execute_mavlink_golden_path(
         });
     }
     let progress_report =
-        run_telemetry_progress_loop(transport, plan, lifecycle, &lifecycle_options)
-            .map_err(|error| telemetry_error_to_execution_failure(waypoints.len(), error))?;
+        driver.run_telemetry_progress(plan, lifecycle, &lifecycle_options, waypoints.len())?;
     Ok(SitlExecutionSuccess {
-        uploaded_count: report.upload.uploaded_count,
+        uploaded_count: report.uploaded_count,
         progress_report,
     })
 }
@@ -506,14 +607,40 @@ fn flight_error_to_execution_failure(
         ) => SitlRunFinalStatus::Rejected,
         _ => SitlRunFinalStatus::Failed,
     };
+    let abort_result = match &error {
+        swarm_comms::MavlinkFlightError::Lifecycle(error) => lifecycle_abort_result(error),
+        _ => None,
+    };
     SitlExecutionFailure {
         final_status,
         mission_item_count,
         completed_count: 0,
         failed_count: 0,
         error: error.to_string(),
-        abort_result: None,
+        abort_result,
     }
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn lifecycle_abort_result(error: &swarm_comms::MavlinkLifecycleError) -> Option<String> {
+    match error {
+        swarm_comms::MavlinkLifecycleError::CommandAckTimeout { abort_result, .. }
+        | swarm_comms::MavlinkLifecycleError::CommandRejected { abort_result, .. } => {
+            abort_result.as_ref().map(format_abort_result)
+        }
+        swarm_comms::MavlinkLifecycleError::PostStartHeartbeatTimeout { abort_result }
+        | swarm_comms::MavlinkLifecycleError::AbortFailed { abort_result } => {
+            Some(format_abort_result(abort_result))
+        }
+        swarm_comms::MavlinkLifecycleError::InvalidTakeoffAltitude { .. }
+        | swarm_comms::MavlinkLifecycleError::WriteFailed(_)
+        | swarm_comms::MavlinkLifecycleError::ReadFailed(_) => None,
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn format_abort_result(abort_result: &swarm_comms::AbortCommandResult) -> String {
+    format!("{abort_result:?}")
 }
 
 #[cfg(feature = "mavlink-transport")]
@@ -892,6 +1019,8 @@ mod tests {
     use super::*;
 
     #[cfg(feature = "mavlink-transport")]
+    use mavlink::dialects::common;
+    #[cfg(feature = "mavlink-transport")]
     use std::collections::VecDeque;
     #[cfg(feature = "mavlink-transport")]
     use std::path::PathBuf;
@@ -1015,6 +1144,239 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "mavlink-transport")]
+    fn test_waypoints() -> Vec<Waypoint> {
+        test_plan()
+            .waypoints
+            .iter()
+            .map(|waypoint| Waypoint {
+                x: waypoint.x,
+                y: waypoint.y,
+                z: waypoint.z,
+                seq: waypoint.seq,
+            })
+            .collect()
+    }
+
+    #[cfg(feature = "mavlink-transport")]
+    fn mission_start_success() -> SitlMissionStartReport {
+        SitlMissionStartReport {
+            uploaded_count: 2,
+            armed: true,
+            took_off: true,
+            started: true,
+            post_start_heartbeat: true,
+            abort_result: None,
+        }
+    }
+
+    #[cfg(feature = "mavlink-transport")]
+    fn fake_execution_failure(
+        final_status: SitlRunFinalStatus,
+        error: &str,
+    ) -> SitlExecutionFailure {
+        SitlExecutionFailure {
+            final_status,
+            mission_item_count: 2,
+            completed_count: 0,
+            failed_count: 2,
+            error: error.to_owned(),
+            abort_result: None,
+        }
+    }
+
+    #[cfg(feature = "mavlink-transport")]
+    struct FakeGoldenPathDriver {
+        start_result: Result<SitlMissionStartReport, SitlExecutionFailure>,
+        telemetry_result:
+            Result<swarm_examples::sitl_progress::SitlMissionProgressReport, SitlExecutionFailure>,
+        upload_calls: usize,
+        telemetry_calls: usize,
+        last_upload_waypoint_count: Option<usize>,
+        last_telemetry_mission_item_count: Option<usize>,
+    }
+
+    #[cfg(feature = "mavlink-transport")]
+    impl FakeGoldenPathDriver {
+        fn new(
+            start_result: Result<SitlMissionStartReport, SitlExecutionFailure>,
+            telemetry_result: Result<
+                swarm_examples::sitl_progress::SitlMissionProgressReport,
+                SitlExecutionFailure,
+            >,
+        ) -> Self {
+            Self {
+                start_result,
+                telemetry_result,
+                upload_calls: 0,
+                telemetry_calls: 0,
+                last_upload_waypoint_count: None,
+                last_telemetry_mission_item_count: None,
+            }
+        }
+    }
+
+    #[cfg(feature = "mavlink-transport")]
+    impl SitlGoldenPathDriver for FakeGoldenPathDriver {
+        fn upload_and_start_mission(
+            &mut self,
+            waypoints: &[Waypoint],
+            _upload_options: swarm_comms::MissionUploadOptions,
+            _lifecycle_options: swarm_comms::MissionLifecycleOptions,
+        ) -> Result<SitlMissionStartReport, SitlExecutionFailure> {
+            self.upload_calls += 1;
+            self.last_upload_waypoint_count = Some(waypoints.len());
+            self.start_result.clone()
+        }
+
+        fn run_telemetry_progress(
+            &mut self,
+            _plan: &SitlPlan,
+            _lifecycle: &LifecycleArgs,
+            _lifecycle_options: &swarm_comms::MissionLifecycleOptions,
+            mission_item_count: usize,
+        ) -> Result<swarm_examples::sitl_progress::SitlMissionProgressReport, SitlExecutionFailure>
+        {
+            self.telemetry_calls += 1;
+            self.last_telemetry_mission_item_count = Some(mission_item_count);
+            self.telemetry_result.clone()
+        }
+    }
+
+    #[cfg(feature = "mavlink-transport")]
+    fn test_golden_path_run<'a>(
+        plan: &'a SitlPlan,
+        waypoints: &'a [Waypoint],
+        lifecycle: &'a LifecycleArgs,
+        run_report: Option<&'a str>,
+    ) -> SitlGoldenPathRun<'a> {
+        SitlGoldenPathRun {
+            plan,
+            waypoints,
+            connection_string: "udp:127.0.0.1:14550",
+            upload_options: swarm_comms::MissionUploadOptions::default(),
+            lifecycle_options: swarm_comms::MissionLifecycleOptions::default(),
+            lifecycle,
+            run_report,
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "mavlink-transport")]
+    fn fake_golden_path_driver_success_writes_completed_report() {
+        let plan = test_plan();
+        let waypoints = test_waypoints();
+        let lifecycle = lifecycle_args(Duration::from_secs(30), Duration::from_secs(30));
+        let report_dir = tempfile::tempdir().unwrap();
+        let report_path = report_dir.path().join("nested").join("report.json");
+        let mut driver =
+            FakeGoldenPathDriver::new(Ok(mission_start_success()), Ok(completed_progress_report()));
+
+        run_golden_path_with_driver(
+            &mut driver,
+            test_golden_path_run(&plan, &waypoints, &lifecycle, report_path.to_str()),
+        )
+        .unwrap();
+
+        assert_eq!(driver.upload_calls, 1);
+        assert_eq!(driver.telemetry_calls, 1);
+        assert_eq!(driver.last_upload_waypoint_count, Some(2));
+        assert_eq!(driver.last_telemetry_mission_item_count, Some(2));
+        let json = std::fs::read_to_string(report_path).unwrap();
+        let report: SitlRunReport = serde_json::from_str(&json).unwrap();
+        assert_eq!(report.final_status, SitlRunFinalStatus::Completed);
+        assert_eq!(report.completed_count, 2);
+        assert_eq!(report.failed_count, 0);
+    }
+
+    #[test]
+    #[cfg(feature = "mavlink-transport")]
+    fn fake_golden_path_driver_upload_failure_writes_error_report() {
+        let plan = test_plan();
+        let waypoints = test_waypoints();
+        let lifecycle = lifecycle_args(Duration::from_secs(30), Duration::from_secs(30));
+        let report_dir = tempfile::tempdir().unwrap();
+        let report_path = report_dir.path().join("report.json");
+        let failure =
+            fake_execution_failure(SitlRunFinalStatus::Rejected, "mission rejected by vehicle");
+        let mut driver = FakeGoldenPathDriver::new(Err(failure), Ok(completed_progress_report()));
+
+        let error = run_golden_path_with_driver(
+            &mut driver,
+            test_golden_path_run(&plan, &waypoints, &lifecycle, report_path.to_str()),
+        )
+        .unwrap_err();
+
+        assert!(matches!(error, SitlError::ConnectionFailed { .. }));
+        assert_eq!(driver.upload_calls, 1);
+        assert_eq!(driver.telemetry_calls, 0);
+        let json = std::fs::read_to_string(report_path).unwrap();
+        let report: SitlRunReport = serde_json::from_str(&json).unwrap();
+        assert_eq!(report.final_status, SitlRunFinalStatus::Rejected);
+        assert_eq!(report.error, Some("mission rejected by vehicle".to_owned()));
+    }
+
+    #[test]
+    #[cfg(feature = "mavlink-transport")]
+    fn fake_golden_path_driver_lifecycle_abort_writes_aborted_report() {
+        let plan = test_plan();
+        let waypoints = test_waypoints();
+        let lifecycle = lifecycle_args(Duration::from_secs(30), Duration::from_secs(30));
+        let report_dir = tempfile::tempdir().unwrap();
+        let report_path = report_dir.path().join("report.json");
+        let mut start = mission_start_success();
+        start.abort_result = Some(swarm_comms::AbortCommandResult::Accepted);
+        let mut driver = FakeGoldenPathDriver::new(Ok(start), Ok(completed_progress_report()));
+
+        let error = run_golden_path_with_driver(
+            &mut driver,
+            test_golden_path_run(&plan, &waypoints, &lifecycle, report_path.to_str()),
+        )
+        .unwrap_err();
+
+        assert!(matches!(error, SitlError::ConnectionFailed { .. }));
+        assert_eq!(driver.upload_calls, 1);
+        assert_eq!(driver.telemetry_calls, 0);
+        let json = std::fs::read_to_string(report_path).unwrap();
+        let report: SitlRunReport = serde_json::from_str(&json).unwrap();
+        assert_eq!(report.final_status, SitlRunFinalStatus::Aborted);
+        assert_eq!(report.abort_result, Some("Accepted".to_owned()));
+    }
+
+    #[test]
+    #[cfg(feature = "mavlink-transport")]
+    fn fake_golden_path_driver_telemetry_failure_writes_error_report() {
+        let plan = test_plan();
+        let waypoints = test_waypoints();
+        let lifecycle = lifecycle_args(Duration::from_secs(30), Duration::from_secs(30));
+        let report_dir = tempfile::tempdir().unwrap();
+        let report_path = report_dir.path().join("report.json");
+        let mut failure = fake_execution_failure(
+            SitlRunFinalStatus::TimedOutNoProgress,
+            "no mission progress before 60s",
+        );
+        failure.completed_count = 1;
+        failure.failed_count = 1;
+        failure.abort_result = Some("Accepted".to_owned());
+        let mut driver = FakeGoldenPathDriver::new(Ok(mission_start_success()), Err(failure));
+
+        let error = run_golden_path_with_driver(
+            &mut driver,
+            test_golden_path_run(&plan, &waypoints, &lifecycle, report_path.to_str()),
+        )
+        .unwrap_err();
+
+        assert!(matches!(error, SitlError::ConnectionFailed { .. }));
+        assert_eq!(driver.upload_calls, 1);
+        assert_eq!(driver.telemetry_calls, 1);
+        let json = std::fs::read_to_string(report_path).unwrap();
+        let report: SitlRunReport = serde_json::from_str(&json).unwrap();
+        assert_eq!(report.final_status, SitlRunFinalStatus::TimedOutNoProgress);
+        assert_eq!(report.completed_count, 1);
+        assert_eq!(report.failed_count, 1);
+        assert_eq!(report.abort_result, Some("Accepted".to_owned()));
+    }
+
     #[test]
     #[cfg(feature = "mavlink-transport")]
     fn fake_golden_path_summary_builds_success_report() {
@@ -1080,6 +1442,74 @@ mod tests {
         assert_eq!(failure.final_status, SitlRunFinalStatus::Failed);
         assert_eq!(failure.mission_item_count, 2);
         assert!(failure.error.contains("mission lifecycle failed"));
+    }
+
+    #[test]
+    #[cfg(feature = "mavlink-transport")]
+    fn lifecycle_command_ack_timeout_keeps_abort_result() {
+        let error = swarm_comms::MavlinkFlightError::Lifecycle(
+            swarm_comms::MavlinkLifecycleError::CommandAckTimeout {
+                command: common::MavCmd::MAV_CMD_NAV_TAKEOFF,
+                abort_result: Some(swarm_comms::AbortCommandResult::Accepted),
+            },
+        );
+
+        let failure = flight_error_to_execution_failure(2, error);
+
+        assert_eq!(failure.final_status, SitlRunFinalStatus::Failed);
+        assert_eq!(failure.abort_result, Some("Accepted".to_owned()));
+    }
+
+    #[test]
+    #[cfg(feature = "mavlink-transport")]
+    fn lifecycle_command_rejected_keeps_abort_failure() {
+        let error = swarm_comms::MavlinkFlightError::Lifecycle(
+            swarm_comms::MavlinkLifecycleError::CommandRejected {
+                command: common::MavCmd::MAV_CMD_MISSION_START,
+                result: common::MavResult::MAV_RESULT_DENIED,
+                abort_result: Some(swarm_comms::AbortCommandResult::Failed(
+                    "rtl write failed".to_owned(),
+                )),
+            },
+        );
+
+        let failure = flight_error_to_execution_failure(2, error);
+
+        assert_eq!(failure.final_status, SitlRunFinalStatus::Failed);
+        assert_eq!(
+            failure.abort_result,
+            Some("Failed(\"rtl write failed\")".to_owned())
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "mavlink-transport")]
+    fn lifecycle_post_start_timeout_keeps_abort_result() {
+        let error = swarm_comms::MavlinkFlightError::Lifecycle(
+            swarm_comms::MavlinkLifecycleError::PostStartHeartbeatTimeout {
+                abort_result: swarm_comms::AbortCommandResult::Accepted,
+            },
+        );
+
+        let failure = flight_error_to_execution_failure(2, error);
+
+        assert_eq!(failure.final_status, SitlRunFinalStatus::Failed);
+        assert_eq!(failure.abort_result, Some("Accepted".to_owned()));
+    }
+
+    #[test]
+    #[cfg(feature = "mavlink-transport")]
+    fn lifecycle_abort_failed_keeps_abort_result() {
+        let error = swarm_comms::MavlinkFlightError::Lifecycle(
+            swarm_comms::MavlinkLifecycleError::AbortFailed {
+                abort_result: swarm_comms::AbortCommandResult::AckTimeout,
+            },
+        );
+
+        let failure = flight_error_to_execution_failure(2, error);
+
+        assert_eq!(failure.final_status, SitlRunFinalStatus::Failed);
+        assert_eq!(failure.abort_result, Some("AckTimeout".to_owned()));
     }
 
     #[test]

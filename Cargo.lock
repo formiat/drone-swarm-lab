@@ -929,6 +929,7 @@ dependencies = [
 name = "swarm-examples"
 version = "0.1.0"
 dependencies = [
+ "mavlink",
  "serde",
  "serde_json",
  "swarm-alloc",
