@@ -10,12 +10,14 @@ use swarm_types::Pose;
 use crate::sitl_plan::SitlError;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct SitlNoFlyZone {
     pub id: String,
     pub bounds: Aabb,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct SitlSafetyConfig {
     #[serde(default = "default_geofence")]
     pub geofence: Option<Aabb>,
@@ -670,5 +672,37 @@ mod tests {
         let error = validate_config(&config).unwrap_err();
 
         assert!(matches!(error, SitlError::SafetyConfigInvalid { .. }));
+    }
+
+    #[test]
+    fn config_rejects_unknown_top_level_field() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(file.path(), r#"{ "max_altitude": 50.0 }"#).unwrap();
+
+        let error = load_sitl_safety_config(Some(file.path())).unwrap_err();
+
+        assert!(matches!(error, SitlError::SafetyConfigParse { .. }));
+    }
+
+    #[test]
+    fn config_rejects_unknown_no_fly_zone_field() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            file.path(),
+            r#"{
+  "no_fly_zones": [
+    {
+      "id": "nfz-0",
+      "bounds": { "min_x": 0.0, "max_x": 1.0, "min_y": 0.0, "max_y": 1.0 },
+      "unexpected": true
+    }
+  ]
+}"#,
+        )
+        .unwrap();
+
+        let error = load_sitl_safety_config(Some(file.path())).unwrap_err();
+
+        assert!(matches!(error, SitlError::SafetyConfigParse { .. }));
     }
 }

@@ -200,6 +200,9 @@ fn connection_accepts_valid_safety_config_then_hits_existing_no_feature_error() 
 fn bad_safety_config_path_is_typed_error() {
     let scenario = write_sitl_scenario();
     let scenario = scenario.path().to_str().unwrap();
+    let missing_dir = tempfile::tempdir().unwrap();
+    let missing_path = missing_dir.path().join("missing-safety-config.json");
+    let missing_path = missing_path.to_str().unwrap();
     let output = run_sitl_agent(&[
         "--connection",
         "udp:127.0.0.1:14550",
@@ -208,7 +211,7 @@ fn bad_safety_config_path_is_typed_error() {
         "--agent-id",
         "agent-0",
         "--safety-config",
-        "/tmp/drone-missing-safety-config.json",
+        missing_path,
     ]);
 
     assert!(!output.status.success());
