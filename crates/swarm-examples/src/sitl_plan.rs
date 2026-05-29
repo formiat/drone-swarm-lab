@@ -1,7 +1,7 @@
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-use swarm_sim::{validate_scenario_suite, ScenarioSuite};
+use swarm_sim::{validate_scenario_suite, ScenarioSuite, ScenarioSuiteEntry};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SitlMode {
@@ -72,6 +72,14 @@ pub enum SitlError {
     UnsupportedCoordinateFrame { frame: String },
     #[error("connection failed: {message}")]
     ConnectionFailed { message: String },
+    #[error("safety config read failed {path:?}: {message}")]
+    SafetyConfigRead { path: PathBuf, message: String },
+    #[error("safety config parse failed {path:?}: {message}")]
+    SafetyConfigParse { path: PathBuf, message: String },
+    #[error("safety config invalid {field}: {message}")]
+    SafetyConfigInvalid { field: String, message: String },
+    #[error("safety validation failed: {message}")]
+    SafetyValidationFailed { message: String },
     #[error("missing SITL mode: specify exactly one of --mock, --dry-run, or --connection <addr>")]
     MissingMode,
     #[error(
@@ -128,6 +136,12 @@ pub fn load_sitl_plan(
     agent_id: impl Into<String>,
 ) -> Result<SitlPlan, SitlError> {
     let scenario_path = scenario_path.as_ref();
+    let suite = load_sitl_suite(scenario_path)?;
+    build_sitl_plan(&suite, scenario_path, agent_id)
+}
+
+pub fn load_sitl_suite(scenario_path: impl AsRef<Path>) -> Result<ScenarioSuite, SitlError> {
+    let scenario_path = scenario_path.as_ref();
     let scenario_path_string =
         scenario_path
             .to_str()
@@ -135,13 +149,25 @@ pub fn load_sitl_plan(
                 path: scenario_path.to_path_buf(),
                 message: "scenario path is not valid UTF-8".to_owned(),
             })?;
-    let suite = swarm_sim::load_scenario_suite(scenario_path_string).map_err(|error| {
+    swarm_sim::load_scenario_suite(scenario_path_string).map_err(|error| {
         SitlError::InvalidScenario {
             path: scenario_path.to_path_buf(),
             message: error.to_string(),
         }
-    })?;
-    build_sitl_plan(&suite, scenario_path, agent_id)
+    })
+}
+
+pub fn first_sitl_entry(
+    suite: &ScenarioSuite,
+    scenario_path: impl AsRef<Path>,
+) -> Result<&ScenarioSuiteEntry, SitlError> {
+    suite
+        .scenarios
+        .first()
+        .ok_or_else(|| SitlError::InvalidScenario {
+            path: scenario_path.as_ref().to_path_buf(),
+            message: "Scenario suite must contain at least one scenario".to_owned(),
+        })
 }
 
 pub fn build_sitl_plan(
@@ -151,13 +177,7 @@ pub fn build_sitl_plan(
 ) -> Result<SitlPlan, SitlError> {
     let scenario_path = scenario_path.as_ref().to_path_buf();
     let validation_errors = validate_scenario_suite(suite);
-    let entry = suite
-        .scenarios
-        .first()
-        .ok_or_else(|| SitlError::InvalidScenario {
-            path: scenario_path.clone(),
-            message: "Scenario suite must contain at least one scenario".to_owned(),
-        })?;
+    let entry = first_sitl_entry(suite, &scenario_path)?;
 
     let waypoints: Vec<SitlWaypointItem> = entry
         .scenario

@@ -79,29 +79,73 @@ cargo build --bin sitl_agent --features mavlink-transport
 cargo run --bin sitl_agent --features mavlink-transport -- \
   --connection udp:127.0.0.1:14550 \
   --scenario scenarios/sitl.waypoints.json \
-  --agent-id agent-0
+  --agent-id agent-0 \
+  --safety-config path/to/sitl-safety.json
 ```
 
 Without the feature, `--connection` returns a stable error with the required
 build instruction. A syntactically bad connection string returns a stable
 `bad connection string` error without attempting a network connection.
+If `--safety-config` is omitted, conservative SITL defaults are used.
 
 The connection path performs a minimal mission upload transaction:
 
-1. Wait for MAVLink `HEARTBEAT`.
-2. Send `MISSION_CLEAR_ALL` by default.
-3. Send `MISSION_COUNT`.
-4. Answer `MISSION_REQUEST_INT` with `MISSION_ITEM_INT`.
-5. Fall back to legacy `MISSION_REQUEST` if the vehicle sends it.
-6. Require final `MISSION_ACK` with `MAV_MISSION_ACCEPTED`.
+1. Validate the mission against pre-upload safety rules.
+2. Wait for MAVLink `HEARTBEAT`.
+3. Send `MISSION_CLEAR_ALL` by default.
+4. Send `MISSION_COUNT`.
+5. Answer `MISSION_REQUEST_INT` with `MISSION_ITEM_INT`.
+6. Fall back to legacy `MISSION_REQUEST` if the vehicle sends it.
+7. Require final `MISSION_ACK` with `MAV_MISSION_ACCEPTED`.
 
 This mode uploads the mission only. It does not arm the vehicle, take off,
 switch modes, start the mission, track execution progress, or perform
-operator/safety checks.
+runtime collision avoidance.
+
+## Pre-Upload Safety Validation
+
+`--connection` validates the scenario before creating a MAVLink transport or
+uploading mission items. The default SITL safety config is intentionally static
+and portable:
+
+- geofence: `x=-1000..=1000`, `y=-1000..=1000`;
+- altitude: `0..=120m`;
+- max waypoint jump: `500m`;
+- max mission radius from home: `1000m`;
+- no no-fly zones by default;
+- home is required and resolved from `--safety-config`, `scenario.base_station`,
+  or the selected agent's initial pose.
+
+Optional JSON config:
+
+```json
+{
+  "geofence": { "min_x": -500.0, "max_x": 500.0, "min_y": -500.0, "max_y": 500.0 },
+  "min_altitude_m": 5.0,
+  "max_altitude_m": 80.0,
+  "max_waypoint_jump_m": 150.0,
+  "max_mission_radius_m": 400.0,
+  "no_fly_zones": [
+    { "id": "nfz-0", "bounds": { "min_x": 20.0, "max_x": 40.0, "min_y": 20.0, "max_y": 40.0 } }
+  ],
+  "home": { "x": 0.0, "y": 0.0, "z": 0.0 },
+  "require_home": true
+}
+```
+
+Validation errors are actionable and include a stable `rule_id`, task id or
+waypoint sequence when available, actual value, and allowed range. Example:
+
+```text
+safety validation failed: rule_id=outside_geofence task_id=wp-1 seq=1 actual=point=(50.000,30.000) allowed=geofence=[x:0.000..=20.000, y:0.000..=25.000]
+```
+
+This is not hardware certification and not runtime collision avoidance. It is a
+pre-upload guard for the experimental SITL connection path.
 
 ## Coordinate Frame Contract
 
-For M44, `sitl_agent` uses a deliberately narrow coordinate contract:
+For M45, `sitl_agent` uses a deliberately narrow coordinate contract:
 
 - `Pose { x, y, z }` means local simulation coordinates.
 - `x` and `y` are not WGS84 latitude/longitude.
@@ -136,6 +180,9 @@ all SITL functionality as simulation/development tooling.
 | `no pose tasks found` | Scenario has no tasks with `pose` | Use or adapt `scenarios/sitl.waypoints.json` |
 | `feature missing` | `--connection` was used without `mavlink-transport` | Build/run with `--features mavlink-transport` |
 | `bad connection string` | Connection address is not a supported form | Use `udp:<host>:<port>` for PX4 SITL |
+| `safety config read failed` | `--safety-config` points to a missing/unreadable file | Fix the path or omit the option to use defaults |
+| `safety config parse failed` | Safety config is not valid JSON | Fix JSON syntax |
+| `safety validation failed` | Mission violates a pre-upload safety rule | Read the `rule_id`, `actual`, and `allowed` fields and adjust scenario/config |
 | No PX4 connection | PX4 SITL is not running or address is wrong | Start PX4 SITL and verify the MAVLink endpoint |
 | Mission upload timeout | PX4 did not send heartbeat, mission request, or final ack | Verify the endpoint, PX4 mode, and that no other GCS owns the mission protocol |
 | Mission rejected | PX4 returned a non-accepted `MISSION_ACK` | Check waypoint coordinates, altitude, frame support, and PX4 logs |

@@ -52,6 +52,7 @@ swarm-comms        = { workspace = true }
 swarm-metrics      = { workspace = true }
 swarm-replay       = { workspace = true }
 swarm-runtime      = { workspace = true }
+swarm-safety       = { workspace = true }
 swarm-scenarios    = { workspace = true }
 swarm-sim          = { workspace = true }
 swarm-types        = { workspace = true }

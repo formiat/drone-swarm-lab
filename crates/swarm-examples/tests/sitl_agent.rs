@@ -75,6 +75,12 @@ fn write_sitl_scenario() -> tempfile::NamedTempFile {
     file
 }
 
+fn write_safety_config(json: &str) -> tempfile::NamedTempFile {
+    let file = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(file.path(), json).unwrap();
+    file
+}
+
 fn run_sitl_agent(args: &[&str]) -> std::process::Output {
     Command::new(sitl_agent_binary())
         .args(args)
@@ -132,6 +138,129 @@ fn cli_validation_connection_without_feature() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("feature missing"));
     assert!(stderr.contains("mavlink-transport"));
+}
+
+#[test]
+fn connection_rejects_unsafe_mission_before_feature_error_or_upload() {
+    let scenario = write_sitl_scenario();
+    let scenario = scenario.path().to_str().unwrap();
+    let safety = write_safety_config(
+        r#"{
+  "geofence": { "min_x": 0.0, "max_x": 20.0, "min_y": 0.0, "max_y": 25.0 }
+}"#,
+    );
+    let safety = safety.path().to_str().unwrap();
+    let output = run_sitl_agent(&[
+        "--connection",
+        "udp:127.0.0.1:14550",
+        "--scenario",
+        scenario,
+        "--agent-id",
+        "agent-0",
+        "--safety-config",
+        safety,
+    ]);
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("safety validation failed"));
+    assert!(stderr.contains("rule_id=outside_geofence"));
+    assert!(stderr.contains("task_id=wp-1"));
+    assert!(!stderr.contains("feature missing"));
+}
+
+#[test]
+#[cfg(not(feature = "mavlink-transport"))]
+fn connection_accepts_valid_safety_config_then_hits_existing_no_feature_error() {
+    let scenario = write_sitl_scenario();
+    let scenario = scenario.path().to_str().unwrap();
+    let safety = write_safety_config("{}");
+    let safety = safety.path().to_str().unwrap();
+    let output = run_sitl_agent(&[
+        "--connection",
+        "udp:127.0.0.1:14550",
+        "--scenario",
+        scenario,
+        "--agent-id",
+        "agent-0",
+        "--safety-config",
+        safety,
+    ]);
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("feature missing"));
+    assert!(stderr.contains("mavlink-transport"));
+    assert!(!stderr.contains("safety validation failed"));
+}
+
+#[test]
+fn bad_safety_config_path_is_typed_error() {
+    let scenario = write_sitl_scenario();
+    let scenario = scenario.path().to_str().unwrap();
+    let output = run_sitl_agent(&[
+        "--connection",
+        "udp:127.0.0.1:14550",
+        "--scenario",
+        scenario,
+        "--agent-id",
+        "agent-0",
+        "--safety-config",
+        "/tmp/drone-missing-safety-config.json",
+    ]);
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("safety config read failed"));
+    assert!(!stderr.contains("feature missing"));
+}
+
+#[test]
+fn bad_safety_config_json_is_typed_error() {
+    let scenario = write_sitl_scenario();
+    let scenario = scenario.path().to_str().unwrap();
+    let safety = write_safety_config("{not-json");
+    let safety = safety.path().to_str().unwrap();
+    let output = run_sitl_agent(&[
+        "--connection",
+        "udp:127.0.0.1:14550",
+        "--scenario",
+        scenario,
+        "--agent-id",
+        "agent-0",
+        "--safety-config",
+        safety,
+    ]);
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("safety config parse failed"));
+    assert!(!stderr.contains("feature missing"));
+}
+
+#[test]
+fn cli_validation_missing_safety_config_value() {
+    let scenario = write_sitl_scenario();
+    let scenario = scenario.path().to_str().unwrap();
+    let output = run_sitl_agent(&[
+        "--connection",
+        "udp:127.0.0.1:14550",
+        "--scenario",
+        scenario,
+        "--agent-id",
+        "agent-0",
+        "--safety-config",
+    ]);
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("missing required argument"));
+    assert!(stderr.contains("--safety-config"));
 }
 
 #[test]

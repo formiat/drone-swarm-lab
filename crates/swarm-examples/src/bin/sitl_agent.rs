@@ -1,12 +1,17 @@
+use std::path::Path;
+
 use swarm_comms::{MockMavlinkTransport, Waypoint};
 use swarm_examples::sitl_plan::{
-    format_dry_run_plan, load_sitl_plan, validate_connection_string, SitlError, SitlMode, SitlPlan,
+    first_sitl_entry, format_dry_run_plan, load_sitl_suite, validate_connection_string, SitlError,
+    SitlMode, SitlPlan,
 };
+use swarm_examples::sitl_safety::{load_sitl_safety_config, validate_pre_upload_safety};
 
 struct CliArgs {
     mode: SitlMode,
     scenario: String,
     agent_id: String,
+    safety_config: Option<String>,
 }
 
 fn parse_args() -> Result<CliArgs, SitlError> {
@@ -14,6 +19,7 @@ fn parse_args() -> Result<CliArgs, SitlError> {
     let mut mode: Option<SitlMode> = None;
     let mut scenario: Option<String> = None;
     let mut agent_id: Option<String> = None;
+    let mut safety_config: Option<String> = None;
 
     let mut i = 1;
     while i < args.len() {
@@ -50,6 +56,16 @@ fn parse_args() -> Result<CliArgs, SitlError> {
                         .clone(),
                 );
             }
+            "--safety-config" => {
+                i += 1;
+                safety_config = Some(
+                    args.get(i)
+                        .ok_or(SitlError::MissingArgument {
+                            name: "--safety-config <path>",
+                        })?
+                        .clone(),
+                );
+            }
             arg => {
                 return Err(SitlError::UnknownArgument {
                     arg: arg.to_owned(),
@@ -63,6 +79,7 @@ fn parse_args() -> Result<CliArgs, SitlError> {
         mode: mode.ok_or(SitlError::MissingMode)?,
         scenario: scenario.ok_or(SitlError::MissingArgument { name: "--scenario" })?,
         agent_id: agent_id.ok_or(SitlError::MissingArgument { name: "--agent-id" })?,
+        safety_config,
     })
 }
 
@@ -78,7 +95,7 @@ fn main() {
     if let Err(error) = run() {
         eprintln!("error: {error}");
         eprintln!(
-            "usage: sitl_agent --mock|--dry-run|--connection <addr> --scenario <path> --agent-id <id>"
+            "usage: sitl_agent --mock|--dry-run|--connection <addr> --scenario <path> --agent-id <id> [--safety-config <path>]"
         );
         std::process::exit(1);
     }
@@ -86,7 +103,16 @@ fn main() {
 
 fn run() -> Result<(), SitlError> {
     let cli = parse_args()?;
-    let plan = load_sitl_plan(&cli.scenario, cli.agent_id.clone())?;
+    let suite = load_sitl_suite(&cli.scenario)?;
+
+    if let SitlMode::Connection { addr } = &cli.mode {
+        validate_connection_string(addr)?;
+        let safety_config = load_sitl_safety_config(cli.safety_config.as_deref().map(Path::new))?;
+        let entry = first_sitl_entry(&suite, &cli.scenario)?;
+        validate_pre_upload_safety(entry, &cli.agent_id, &safety_config)?;
+    }
+
+    let plan = swarm_examples::sitl_plan::build_sitl_plan(&suite, &cli.scenario, cli.agent_id)?;
 
     match cli.mode {
         SitlMode::Mock => run_mock(&plan),

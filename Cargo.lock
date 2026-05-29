@@ -936,6 +936,7 @@ dependencies = [
  "swarm-metrics",
  "swarm-replay",
  "swarm-runtime",
+ "swarm-safety",
  "swarm-scenarios",
  "swarm-sim",
  "swarm-types",
