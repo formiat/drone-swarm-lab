@@ -11,7 +11,7 @@ hardware.
 | Mock | `--mock` | None | Send extracted waypoints to in-memory `MockMavlinkTransport` | Stable and CI-friendly |
 | Dry-run | `--dry-run` | None | Print the mission upload plan without connecting to PX4 | Stable portable contract |
 | PX4 SITL upload-only | `--connection <addr> [--upload-only]` | PX4 SITL + `mavlink-transport` feature | Upload waypoint mission to PX4 SITL without starting flight | Experimental |
-| PX4 SITL execute | `--connection <addr> --execute` | PX4 SITL + `mavlink-transport` feature | Upload, arm/takeoff/start mission, and abort on bounded failures | Experimental; no task completion mapping |
+| PX4 SITL execute | `--connection <addr> --execute` | PX4 SITL + `mavlink-transport` feature | Upload, arm/takeoff/start mission, map telemetry to task progress, and abort on bounded failures | Experimental single-agent progress loop |
 
 ## Quick Start: Dry-Run Mode
 
@@ -106,9 +106,9 @@ runtime collision avoidance.
 
 ## Experimental PX4 Execute Lifecycle
 
-M46 adds an explicit execution mode after successful upload. It is opt-in:
-plain `--connection` remains upload-only for safety and backwards
-compatibility.
+M46 added explicit execution mode after successful upload, and M47 extends it
+with a single-agent telemetry progress loop. It is opt-in: plain
+`--connection` remains upload-only for safety and backwards compatibility.
 
 ```bash
 cargo run --bin sitl_agent --features mavlink-transport -- \
@@ -117,7 +117,9 @@ cargo run --bin sitl_agent --features mavlink-transport -- \
   --agent-id agent-0 \
   --safety-config path/to/sitl-safety.json \
   --execute \
-  --timeout 5
+  --timeout 5 \
+  --telemetry-timeout 10 \
+  --no-progress-timeout 60
 ```
 
 Useful bounded variants:
@@ -128,7 +130,7 @@ cargo run --bin sitl_agent --features mavlink-transport -- \
   --connection udp:127.0.0.1:14550 \
   --scenario scenarios/sitl.waypoints.json \
   --agent-id agent-0 \
-  --execute --no-arm --timeout 5
+  --execute --no-arm --timeout 5 --telemetry-timeout 10 --no-progress-timeout 60
 
 # Start the lifecycle and then request RTL abort immediately after a short delay.
 cargo run --bin sitl_agent --features mavlink-transport -- \
@@ -147,7 +149,13 @@ Execution lifecycle:
 4. Send `MAV_CMD_MISSION_START`.
 5. Require a fresh post-start `HEARTBEAT` before considering the active
    lifecycle healthy.
-6. If `--abort-after <seconds>` is set, send RTL abort after that delay.
+6. Enter the telemetry progress loop and consume:
+   `HEARTBEAT`, `MISSION_CURRENT`, `MISSION_ITEM_REACHED`, and runtime
+   `MISSION_ACK` rejection/completion signals.
+7. Map each mission item `seq` to the `task_id` from the generated `SitlPlan`.
+8. Exit `0` only after all waypoint tasks reach `TaskStatus::Completed`.
+9. If `--abort-after <seconds>` is set, send RTL abort after that delay and do
+   not report the mission as completed.
 
 Failure behavior:
 
@@ -155,12 +163,25 @@ Failure behavior:
 - arm failure: exit non-zero with a clear command error;
 - takeoff/start command failure: send RTL abort and report the abort result;
 - post-start heartbeat timeout: send RTL abort and report the abort result;
+- telemetry heartbeat timeout (`--telemetry-timeout`): mark unfinished tasks as
+  failed, send RTL abort, and exit non-zero;
+- no-progress timeout (`--no-progress-timeout`): mark unfinished tasks as
+  failed, send RTL abort, and exit non-zero;
+- runtime mission rejection: mark unfinished tasks as failed, send RTL abort,
+  and exit non-zero;
 - abort failure is reported, not hidden as success.
 
-The M46 heartbeat guard is deliberately narrow. It proves minimal telemetry
-availability after mission start, but it does not track `MISSION_CURRENT`,
-waypoint reached events, task completion, or mission success. Those are future
-M47 telemetry loop responsibilities.
+Progress output is intentionally compact and immediate:
+
+```text
+progress: current seq=1 task_id=wp-1 completed=1/3
+progress: reached seq=1 task_id=wp-1 completed=2/3
+Real MAVLink mode: mission complete; completed=3 failed=0 total=3
+```
+
+This is still an experimental single-agent SITL path. It does not merge
+multi-agent telemetry, does not provide durable replay logs or UI, and is not a
+hardware failsafe implementation.
 
 ## Pre-Upload Safety Validation
 
@@ -221,9 +242,10 @@ For M45, `sitl_agent` uses a deliberately narrow coordinate contract:
 - Uploaded items use `MISSION_ITEM_INT` with
   `MAV_FRAME_GLOBAL_RELATIVE_ALT_INT`.
 
-M46 adds arm/takeoff/start command acks and a minimal post-start heartbeat
-guard. Full execution tracking, task progress telemetry, waypoint completion,
-and multi-agent SITL remain future milestones.
+M47 adds single-agent telemetry progress mapping after arm/takeoff/start. It
+tracks `MISSION_CURRENT`, waypoint reached telemetry, task completion, runtime
+mission rejection, disconnect timeout, and no-progress timeout. Multi-agent
+SITL telemetry merge and hardware-specific failsafe tuning remain future work.
 
 ## Real Hardware Warning
 
@@ -249,3 +271,5 @@ all SITL functionality as simulation/development tooling.
 | Mission rejected | PX4 returned a non-accepted `MISSION_ACK` | Check waypoint coordinates, altitude, frame support, and PX4 logs |
 | Command rejected | PX4 returned a non-accepted `COMMAND_ACK` for arm/takeoff/start/abort | Check PX4 mode, arming checks, safety state, and command parameters |
 | Post-start heartbeat timeout | `--execute` started the mission but did not observe fresh heartbeat before `--timeout` | Verify PX4 is still connected and inspect PX4/SITL logs; the agent attempts RTL abort |
+| Telemetry heartbeat timeout | `--execute` started progress tracking but did not observe heartbeat before `--telemetry-timeout` | Verify PX4 is still connected and inspect PX4/SITL logs; the agent attempts RTL abort |
+| No mission progress timeout | Heartbeats may continue, but mission seq/completion did not advance before `--no-progress-timeout` | Increase timeout for long legs or inspect PX4 mission execution; the agent attempts RTL abort |

@@ -1,5 +1,7 @@
 use std::path::Path;
 use std::time::Duration;
+#[cfg(feature = "mavlink-transport")]
+use std::time::Instant;
 
 use swarm_comms::{MockMavlinkTransport, Waypoint};
 use swarm_examples::sitl_plan::{
@@ -27,6 +29,8 @@ struct LifecycleArgs {
     no_arm: bool,
     abort_after: Option<Duration>,
     timeout: Duration,
+    telemetry_timeout: Duration,
+    no_progress_timeout: Duration,
 }
 
 fn parse_args() -> Result<CliArgs, SitlError> {
@@ -39,6 +43,10 @@ fn parse_args() -> Result<CliArgs, SitlError> {
     let mut no_arm = false;
     let mut abort_after: Option<Duration> = None;
     let mut timeout = Duration::from_secs(2);
+    let mut telemetry_timeout = Duration::from_secs(10);
+    let mut no_progress_timeout = Duration::from_secs(60);
+    let mut telemetry_timeout_set = false;
+    let mut no_progress_timeout_set = false;
     let mut connection_only_option: Option<&'static str> = None;
 
     let mut i = 1;
@@ -114,6 +122,24 @@ fn parse_args() -> Result<CliArgs, SitlError> {
                 timeout = parse_duration_arg("--timeout", value, false)?;
                 connection_only_option.get_or_insert("--timeout");
             }
+            "--telemetry-timeout" => {
+                i += 1;
+                let value = args.get(i).ok_or(SitlError::MissingArgument {
+                    name: "--telemetry-timeout <seconds>",
+                })?;
+                telemetry_timeout = parse_duration_arg("--telemetry-timeout", value, false)?;
+                telemetry_timeout_set = true;
+                connection_only_option.get_or_insert("--telemetry-timeout");
+            }
+            "--no-progress-timeout" => {
+                i += 1;
+                let value = args.get(i).ok_or(SitlError::MissingArgument {
+                    name: "--no-progress-timeout <seconds>",
+                })?;
+                no_progress_timeout = parse_duration_arg("--no-progress-timeout", value, false)?;
+                no_progress_timeout_set = true;
+                connection_only_option.get_or_insert("--no-progress-timeout");
+            }
             arg => {
                 return Err(SitlError::UnknownArgument {
                     arg: arg.to_owned(),
@@ -138,6 +164,16 @@ fn parse_args() -> Result<CliArgs, SitlError> {
             option: "--abort-after",
         });
     }
+    if telemetry_timeout_set && lifecycle_mode != LifecycleMode::Execute {
+        return Err(SitlError::LifecycleOptionRequiresExecute {
+            option: "--telemetry-timeout",
+        });
+    }
+    if no_progress_timeout_set && lifecycle_mode != LifecycleMode::Execute {
+        return Err(SitlError::LifecycleOptionRequiresExecute {
+            option: "--no-progress-timeout",
+        });
+    }
 
     Ok(CliArgs {
         mode,
@@ -149,6 +185,8 @@ fn parse_args() -> Result<CliArgs, SitlError> {
             no_arm,
             abort_after,
             timeout,
+            telemetry_timeout,
+            no_progress_timeout,
         },
     })
 }
@@ -199,7 +237,7 @@ fn main() {
     if let Err(error) = run() {
         eprintln!("error: {error}");
         eprintln!(
-            "usage: sitl_agent --mock|--dry-run|--connection <addr> --scenario <path> --agent-id <id> [--safety-config <path>] [--upload-only|--execute] [--no-arm] [--abort-after <seconds>] [--timeout <seconds>]"
+            "usage: sitl_agent --mock|--dry-run|--connection <addr> --scenario <path> --agent-id <id> [--safety-config <path>] [--upload-only|--execute] [--no-arm] [--abort-after <seconds>] [--timeout <seconds>] [--telemetry-timeout <seconds>] [--no-progress-timeout <seconds>]"
         );
         std::process::exit(1);
     }
@@ -317,18 +355,44 @@ fn run_connection(
                     takeoff_altitude_m: default_takeoff_altitude(&waypoints),
                 };
                 let report = transport
-                    .upload_and_execute_mission(&waypoints, upload_options, lifecycle_options)
+                    .upload_and_execute_mission(
+                        &waypoints,
+                        upload_options,
+                        lifecycle_options.clone(),
+                    )
                     .map_err(|error| SitlError::ConnectionFailed {
                         message: error.to_string(),
                     })?;
                 eprintln!(
-                    "Real MAVLink mode: mission executed; uploaded_count={} armed={} took_off={} started={} post_start_heartbeat={} abort_result={:?}",
+                    "Real MAVLink mode: mission started; uploaded_count={} armed={} took_off={} started={} post_start_heartbeat={} abort_result={:?}",
                     report.upload.uploaded_count,
                     report.lifecycle.armed,
                     report.lifecycle.took_off,
                     report.lifecycle.started,
                     report.lifecycle.post_start_heartbeat,
                     report.lifecycle.abort_result
+                );
+                if let Some(abort_result) = report.lifecycle.abort_result {
+                    return Err(SitlError::ConnectionFailed {
+                        message: format!(
+                            "mission aborted before telemetry completion; abort_result={abort_result:?}"
+                        ),
+                    });
+                }
+                let progress_report = run_telemetry_progress_loop(
+                    &mut transport,
+                    plan,
+                    lifecycle,
+                    &lifecycle_options,
+                )
+                .map_err(|error| SitlError::ConnectionFailed {
+                    message: error.to_string(),
+                })?;
+                eprintln!(
+                    "Real MAVLink mode: mission complete; completed={} failed={} total={}",
+                    progress_report.completed_count,
+                    progress_report.failed_count,
+                    progress_report.total_tasks
                 );
             }
         }
@@ -343,10 +407,133 @@ fn run_connection(
             lifecycle.no_arm,
             lifecycle.abort_after,
             lifecycle.timeout,
+            lifecycle.telemetry_timeout,
+            lifecycle.no_progress_timeout,
         );
         Err(SitlError::FeatureMissing {
             feature: "mavlink-transport",
         })
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
+#[derive(Debug, thiserror::Error)]
+enum SitlTelemetryLoopError {
+    #[error("SITL progress mapping failed: {0}")]
+    Progress(#[from] swarm_examples::sitl_progress::SitlProgressError),
+    #[error("SITL telemetry failed: {0}")]
+    Telemetry(#[from] swarm_comms::MavlinkTelemetryError),
+    #[error("SITL telemetry failure: report={report:?}; abort_result={abort_result:?}")]
+    Failed {
+        report: swarm_examples::sitl_progress::SitlMissionProgressReport,
+        abort_result: swarm_comms::AbortCommandResult,
+    },
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn run_telemetry_progress_loop(
+    transport: &mut swarm_comms::MavlinkTransport,
+    plan: &SitlPlan,
+    lifecycle: &LifecycleArgs,
+    lifecycle_options: &swarm_comms::MissionLifecycleOptions,
+) -> Result<swarm_examples::sitl_progress::SitlMissionProgressReport, SitlTelemetryLoopError> {
+    use swarm_comms::MavlinkTelemetryEvent;
+    use swarm_examples::sitl_progress::{SitlProgressUpdate, SitlTaskProgress};
+
+    let mut progress = SitlTaskProgress::from_plan(plan)?;
+    let started_at = Instant::now();
+    let mut last_heartbeat_at = Instant::now();
+    let mut last_progress_at = Instant::now();
+
+    loop {
+        if let Some(event) = transport.poll_telemetry_event()? {
+            let now = Instant::now();
+            let elapsed = now.duration_since(started_at);
+            let previous_seq = progress.current_seq();
+
+            if matches!(event, MavlinkTelemetryEvent::Heartbeat) {
+                last_heartbeat_at = now;
+            }
+            if telemetry_event_advances_progress(&event, previous_seq) {
+                last_progress_at = now;
+            }
+
+            let update = progress.apply_event(event, elapsed)?;
+            match update {
+                SitlProgressUpdate::Heartbeat => {
+                    eprintln!("progress: heartbeat");
+                }
+                SitlProgressUpdate::Current {
+                    seq,
+                    task_id,
+                    completed_count,
+                    total_count,
+                } => {
+                    eprintln!(
+                        "progress: current seq={seq} task_id={task_id} completed={completed_count}/{total_count}"
+                    );
+                }
+                SitlProgressUpdate::Reached {
+                    seq,
+                    task_id,
+                    completed_count,
+                    total_count,
+                } => {
+                    eprintln!(
+                        "progress: reached seq={seq} task_id={task_id} completed={completed_count}/{total_count}"
+                    );
+                }
+                SitlProgressUpdate::Completed(report) => return Ok(report),
+                SitlProgressUpdate::Failed(report) => {
+                    return Err(SitlTelemetryLoopError::Failed {
+                        report,
+                        abort_result: transport.abort_mission(lifecycle_options),
+                    });
+                }
+            }
+            continue;
+        }
+
+        let now = Instant::now();
+        if now.duration_since(last_heartbeat_at) >= lifecycle.telemetry_timeout {
+            let update = progress.apply_event(
+                MavlinkTelemetryEvent::Disconnected,
+                now.duration_since(started_at),
+            )?;
+            let SitlProgressUpdate::Failed(report) = update else {
+                unreachable!("disconnected event must fail SITL progress");
+            };
+            return Err(SitlTelemetryLoopError::Failed {
+                report,
+                abort_result: transport.abort_mission(lifecycle_options),
+            });
+        }
+        if now.duration_since(last_progress_at) >= lifecycle.no_progress_timeout {
+            let report = progress.mark_no_progress_timeout(format!(
+                "no mission progress before {:?}",
+                lifecycle.no_progress_timeout
+            ));
+            return Err(SitlTelemetryLoopError::Failed {
+                report,
+                abort_result: transport.abort_mission(lifecycle_options),
+            });
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn telemetry_event_advances_progress(
+    event: &swarm_comms::MavlinkTelemetryEvent,
+    previous_seq: Option<u16>,
+) -> bool {
+    match event {
+        swarm_comms::MavlinkTelemetryEvent::MissionCurrent { seq } => previous_seq != Some(*seq),
+        swarm_comms::MavlinkTelemetryEvent::WaypointReached { .. }
+        | swarm_comms::MavlinkTelemetryEvent::MissionComplete => true,
+        swarm_comms::MavlinkTelemetryEvent::Heartbeat
+        | swarm_comms::MavlinkTelemetryEvent::MissionRejected { .. }
+        | swarm_comms::MavlinkTelemetryEvent::Disconnected => false,
     }
 }
 

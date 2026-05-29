@@ -103,13 +103,15 @@ cargo run -p swarm-examples --bin sitl_agent --features mavlink-transport -- \
   --connection udp:127.0.0.1:14550 \
   --scenario scenarios/sitl.waypoints.json \
   --agent-id agent-0 \
-  --execute --timeout 5
+  --execute --timeout 5 --telemetry-timeout 10 --no-progress-timeout 60
 ```
 
 `--execute` uploads the mission, sends arm/takeoff/start commands, requires
-command acknowledgements, checks for a fresh post-start heartbeat, and attempts
-RTL abort on bounded command/heartbeat failures. It still does not map
-telemetry to task completion.
+command acknowledgements, checks for a fresh post-start heartbeat, then waits
+for typed telemetry progress. It maps `MISSION_CURRENT` and
+`MISSION_ITEM_REACHED` to SITL task ids, exits `0` only after every waypoint
+task is completed, and attempts RTL abort on rejected, disconnected, or stalled
+missions.
 
 ---
 
@@ -137,7 +139,7 @@ telemetry to task completion.
 | Wildfire / Flood Mapping | ✅ Stable | M30 | `TaskKind::MappingZone`, `WildfireState`, hazard zones, dynamic threat |
 | Simulation Realism | ✅ Stable | M31 | Battery model v2, altitude sensor penalty, wind drift, pose noise, comms jitter, time-gated no-fly zones, `--realism` preset |
 | Reporting & Metrics | ✅ Stable | M32 | Per-row mission/scenario in exports, mission-scoped profiles, merged `all` benchmark id, wildfire/planner metrics, realism metadata in manifest |
-| Real PX4 | 🧪 Experimental | M46 | Feature-gated PX4 SITL mission upload with pre-upload safety validation and opt-in single-agent arm/takeoff/start lifecycle; no task completion telemetry mapping |
+| Real PX4 | 🧪 Experimental | M47 | Feature-gated PX4 SITL mission upload with pre-upload safety validation, opt-in single-agent arm/takeoff/start lifecycle, and telemetry-to-task progress mapping |
 
 **Test coverage:** 360+ tests, 10 crates, 18 JSON scenarios.
 
@@ -224,7 +226,7 @@ Parametric sweeps over variables such as packet loss, agent count, or grid size 
 
 ## Known Limitations
 
-1. **Simulation only:** No real hardware workflow; PX4 integration is limited to experimental SITL waypoint upload plus opt-in single-agent lifecycle with static pre-upload safety checks.
+1. **Simulation only:** No real hardware workflow; PX4 integration is limited to experimental SITL waypoint upload plus opt-in single-agent lifecycle/progress tracking with static pre-upload safety checks.
 2. **Single-agent SITL:** Multi-agent SITL not yet supported.
 3. **SITL coordinate frame:** `sitl_agent` dry-run/mock mode treats `Pose { x, y, z }` as local simulation coordinates; `x/y` are not WGS84 latitude/longitude, and `z` is local altitude.
 4. **3D pose:** Scenarios support `z` coordinate and altitude-aware sensors, but most missions operate primarily in XY plane.

@@ -171,6 +171,27 @@ pub struct MavlinkFlightReport {
     pub lifecycle: MissionLifecycleReport,
 }
 
+/// Progress-oriented MAVLink telemetry event consumed by SITL workflows.
+#[cfg(feature = "mavlink-transport")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MavlinkTelemetryEvent {
+    Heartbeat,
+    MissionCurrent { seq: u16 },
+    WaypointReached { seq: u16 },
+    MissionComplete,
+    MissionRejected { reason: String },
+    Disconnected,
+}
+
+#[cfg(feature = "mavlink-transport")]
+#[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
+pub enum MavlinkTelemetryError {
+    #[error("timed out waiting for MAVLink telemetry event after {timeout:?}")]
+    Timeout { timeout: Duration },
+    #[error("mavlink telemetry read failed: {0}")]
+    ReadFailed(String),
+}
+
 #[cfg(feature = "mavlink-transport")]
 #[derive(Debug, Clone, thiserror::Error, PartialEq)]
 pub enum MavlinkLifecycleError {
@@ -357,6 +378,23 @@ impl MavlinkTransport {
             &upload_options,
             &lifecycle_options,
         )
+    }
+
+    pub fn abort_mission(&mut self, options: &MissionLifecycleOptions) -> AbortCommandResult {
+        send_abort_command(&mut self.conn, options)
+    }
+
+    pub fn poll_telemetry_event(
+        &mut self,
+    ) -> Result<Option<MavlinkTelemetryEvent>, MavlinkTelemetryError> {
+        poll_telemetry_event_with_connection(&mut self.conn)
+    }
+
+    pub fn wait_next_telemetry_event(
+        &mut self,
+        timeout: Duration,
+    ) -> Result<MavlinkTelemetryEvent, MavlinkTelemetryError> {
+        wait_next_telemetry_event_with_connection(&mut self.conn, timeout)
     }
 }
 
@@ -586,6 +624,60 @@ fn upload_and_execute_mission_with_connection<C: MavlinkVehicleConnection>(
     let upload = upload_mission_with_connection(conn, waypoints, upload_options)?;
     let lifecycle = execute_uploaded_mission_with_connection(conn, lifecycle_options)?;
     Ok(MavlinkFlightReport { upload, lifecycle })
+}
+
+#[cfg(feature = "mavlink-transport")]
+pub fn mavlink_message_to_telemetry_event(msg: &CommonMessage) -> Option<MavlinkTelemetryEvent> {
+    match msg {
+        CommonMessage::HEARTBEAT(_) => Some(MavlinkTelemetryEvent::Heartbeat),
+        CommonMessage::MISSION_CURRENT(current) => {
+            Some(MavlinkTelemetryEvent::MissionCurrent { seq: current.seq })
+        }
+        CommonMessage::MISSION_ITEM_REACHED(reached) => {
+            Some(MavlinkTelemetryEvent::WaypointReached { seq: reached.seq })
+        }
+        CommonMessage::MISSION_ACK(ack)
+            if ack.mavtype == common::MavMissionResult::MAV_MISSION_ACCEPTED =>
+        {
+            Some(MavlinkTelemetryEvent::MissionComplete)
+        }
+        CommonMessage::MISSION_ACK(ack) => Some(MavlinkTelemetryEvent::MissionRejected {
+            reason: format!("{:?}", ack.mavtype),
+        }),
+        _ => None,
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn poll_telemetry_event_with_connection<C: MavlinkVehicleConnection>(
+    conn: &mut C,
+) -> Result<Option<MavlinkTelemetryEvent>, MavlinkTelemetryError> {
+    while let Some((_header, msg)) = conn
+        .try_recv_message()
+        .map_err(mission_error_to_telemetry_error)?
+    {
+        if let Some(event) = mavlink_message_to_telemetry_event(&msg) {
+            return Ok(Some(event));
+        }
+    }
+    Ok(None)
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn wait_next_telemetry_event_with_connection<C: MavlinkVehicleConnection>(
+    conn: &mut C,
+    timeout: Duration,
+) -> Result<MavlinkTelemetryEvent, MavlinkTelemetryError> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if let Some(event) = poll_telemetry_event_with_connection(conn)? {
+            return Ok(event);
+        }
+        if Instant::now() >= deadline {
+            return Err(MavlinkTelemetryError::Timeout { timeout });
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
 }
 
 #[cfg(feature = "mavlink-transport")]
@@ -877,6 +969,14 @@ fn mission_error_to_lifecycle_error(error: MavlinkMissionError) -> MavlinkLifecy
         MavlinkMissionError::WriteFailed(message) => MavlinkLifecycleError::WriteFailed(message),
         MavlinkMissionError::ReadFailed(message) => MavlinkLifecycleError::ReadFailed(message),
         other => MavlinkLifecycleError::ReadFailed(other.to_string()),
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn mission_error_to_telemetry_error(error: MavlinkMissionError) -> MavlinkTelemetryError {
+    match error {
+        MavlinkMissionError::ReadFailed(message) => MavlinkTelemetryError::ReadFailed(message),
+        other => MavlinkTelemetryError::ReadFailed(other.to_string()),
     }
 }
 
@@ -1283,6 +1383,97 @@ mod mission_upload_tests {
             .iter()
             .filter(|message| matches!(message, CommonMessage::COMMAND_LONG(_)))
             .count()
+    }
+
+    fn mission_current(seq: u16) -> CommonMessage {
+        CommonMessage::MISSION_CURRENT(common::MISSION_CURRENT_DATA { seq })
+    }
+
+    fn waypoint_reached(seq: u16) -> CommonMessage {
+        CommonMessage::MISSION_ITEM_REACHED(common::MISSION_ITEM_REACHED_DATA { seq })
+    }
+
+    fn unrelated_message() -> CommonMessage {
+        CommonMessage::RAW_RPM(common::RAW_RPM_DATA::default())
+    }
+
+    #[test]
+    fn telemetry_parser_maps_heartbeat() {
+        assert_eq!(
+            mavlink_message_to_telemetry_event(&heartbeat()),
+            Some(MavlinkTelemetryEvent::Heartbeat)
+        );
+    }
+
+    #[test]
+    fn telemetry_parser_maps_mission_current() {
+        assert_eq!(
+            mavlink_message_to_telemetry_event(&mission_current(7)),
+            Some(MavlinkTelemetryEvent::MissionCurrent { seq: 7 })
+        );
+    }
+
+    #[test]
+    fn telemetry_parser_maps_waypoint_reached() {
+        assert_eq!(
+            mavlink_message_to_telemetry_event(&waypoint_reached(3)),
+            Some(MavlinkTelemetryEvent::WaypointReached { seq: 3 })
+        );
+    }
+
+    #[test]
+    fn telemetry_parser_maps_mission_ack_results() {
+        assert_eq!(
+            mavlink_message_to_telemetry_event(&ack(
+                common::MavMissionResult::MAV_MISSION_ACCEPTED
+            )),
+            Some(MavlinkTelemetryEvent::MissionComplete)
+        );
+        assert_eq!(
+            mavlink_message_to_telemetry_event(&ack(
+                common::MavMissionResult::MAV_MISSION_INVALID_SEQUENCE
+            )),
+            Some(MavlinkTelemetryEvent::MissionRejected {
+                reason: "MAV_MISSION_INVALID_SEQUENCE".to_owned(),
+            })
+        );
+    }
+
+    #[test]
+    fn telemetry_poll_ignores_unrelated_messages() {
+        let mut conn =
+            FakeMissionConnection::with_incoming([unrelated_message(), mission_current(2)]);
+
+        let event = poll_telemetry_event_with_connection(&mut conn).unwrap();
+
+        assert_eq!(
+            event,
+            Some(MavlinkTelemetryEvent::MissionCurrent { seq: 2 })
+        );
+    }
+
+    #[test]
+    fn telemetry_poll_returns_none_without_event() {
+        let mut conn = FakeMissionConnection::with_incoming([unrelated_message()]);
+
+        let event = poll_telemetry_event_with_connection(&mut conn).unwrap();
+
+        assert_eq!(event, None);
+    }
+
+    #[test]
+    fn telemetry_wait_times_out_without_event() {
+        let mut conn = FakeMissionConnection::default();
+
+        let error = wait_next_telemetry_event_with_connection(&mut conn, Duration::from_millis(1))
+            .unwrap_err();
+
+        assert_eq!(
+            error,
+            MavlinkTelemetryError::Timeout {
+                timeout: Duration::from_millis(1),
+            }
+        );
     }
 
     #[test]

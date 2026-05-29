@@ -365,12 +365,79 @@ fn cli_accepts_execute_lifecycle_option_before_feature_gate() {
         "0",
         "--timeout",
         "0.001",
+        "--telemetry-timeout",
+        "0.001",
+        "--no-progress-timeout",
+        "0.001",
     ]);
 
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("feature missing"));
     assert!(!stderr.contains("lifecycle option"));
+}
+
+#[test]
+fn cli_rejects_missing_telemetry_timeout_value() {
+    let scenario = write_sitl_scenario();
+    let scenario = scenario.path().to_str().unwrap();
+    let output = run_sitl_agent(&[
+        "--connection",
+        "udp:127.0.0.1:14550",
+        "--scenario",
+        scenario,
+        "--agent-id",
+        "agent-0",
+        "--execute",
+        "--telemetry-timeout",
+    ]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("missing required argument"));
+    assert!(stderr.contains("--telemetry-timeout"));
+}
+
+#[test]
+fn cli_rejects_invalid_no_progress_timeout_value() {
+    let scenario = write_sitl_scenario();
+    let scenario = scenario.path().to_str().unwrap();
+    let output = run_sitl_agent(&[
+        "--connection",
+        "udp:127.0.0.1:14550",
+        "--scenario",
+        scenario,
+        "--agent-id",
+        "agent-0",
+        "--execute",
+        "--no-progress-timeout",
+        "0",
+    ]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("invalid duration"));
+    assert!(stderr.contains("--no-progress-timeout"));
+}
+
+#[test]
+fn cli_rejects_telemetry_timeout_without_execute() {
+    let scenario = write_sitl_scenario();
+    let scenario = scenario.path().to_str().unwrap();
+    let output = run_sitl_agent(&[
+        "--connection",
+        "udp:127.0.0.1:14550",
+        "--scenario",
+        scenario,
+        "--agent-id",
+        "agent-0",
+        "--telemetry-timeout",
+        "1",
+    ]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("lifecycle option --telemetry-timeout requires --execute"));
 }
 
 #[test]
