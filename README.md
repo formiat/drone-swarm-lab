@@ -103,7 +103,8 @@ cargo run -p swarm-examples --bin sitl_agent --features mavlink-transport -- \
   --connection udp:127.0.0.1:14550 \
   --scenario scenarios/sitl.waypoints.json \
   --agent-id agent-0 \
-  --execute --timeout 5 --telemetry-timeout 10 --no-progress-timeout 60
+  --execute --timeout 5 --telemetry-timeout 10 --no-progress-timeout 60 \
+  --run-report target/sitl/single-agent-report.json
 ```
 
 `--execute` uploads the mission, sends arm/takeoff/start commands, requires
@@ -111,7 +112,9 @@ command acknowledgements, checks for a fresh post-start heartbeat, then waits
 for typed telemetry progress. It maps `MISSION_CURRENT` and
 `MISSION_ITEM_REACHED` to SITL task ids, exits `0` only after every waypoint
 task is completed, and attempts RTL abort on rejected, disconnected, or stalled
-missions.
+missions. With `--run-report`, it writes a structured JSON final report with
+scenario, agent id, mission item count, completed/failed counts, final status,
+and error details when available.
 
 ---
 
@@ -139,7 +142,7 @@ missions.
 | Wildfire / Flood Mapping | ✅ Stable | M30 | `TaskKind::MappingZone`, `WildfireState`, hazard zones, dynamic threat |
 | Simulation Realism | ✅ Stable | M31 | Battery model v2, altitude sensor penalty, wind drift, pose noise, comms jitter, time-gated no-fly zones, `--realism` preset |
 | Reporting & Metrics | ✅ Stable | M32 | Per-row mission/scenario in exports, mission-scoped profiles, merged `all` benchmark id, wildfire/planner metrics, realism metadata in manifest |
-| Real PX4 | 🧪 Experimental | M47 | Feature-gated PX4 SITL mission upload with pre-upload safety validation, opt-in single-agent arm/takeoff/start lifecycle, and telemetry-to-task progress mapping |
+| Real PX4 | 🧪 Experimental | M48 | Feature-gated single-agent PX4 SITL golden command with pre-upload safety validation, arm/takeoff/start, telemetry-to-task progress mapping, and structured final run report; manual PX4 setup verification is documented separately |
 
 **Test coverage:** 360+ tests, 10 crates, 18 JSON scenarios.
 

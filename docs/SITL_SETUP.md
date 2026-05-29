@@ -11,7 +11,7 @@ hardware.
 | Mock | `--mock` | None | Send extracted waypoints to in-memory `MockMavlinkTransport` | Stable and CI-friendly |
 | Dry-run | `--dry-run` | None | Print the mission upload plan without connecting to PX4 | Stable portable contract |
 | PX4 SITL upload-only | `--connection <addr> [--upload-only]` | PX4 SITL + `mavlink-transport` feature | Upload waypoint mission to PX4 SITL without starting flight | Experimental |
-| PX4 SITL execute | `--connection <addr> --execute` | PX4 SITL + `mavlink-transport` feature | Upload, arm/takeoff/start mission, map telemetry to task progress, and abort on bounded failures | Experimental single-agent progress loop |
+| PX4 SITL execute | `--connection <addr> --execute` | PX4 SITL + `mavlink-transport` feature | Upload, arm/takeoff/start mission, map telemetry to task progress, write optional final report, and abort on bounded failures | Experimental single-agent golden path |
 
 ## Quick Start: Dry-Run Mode
 
@@ -119,7 +119,8 @@ cargo run --bin sitl_agent --features mavlink-transport -- \
   --execute \
   --timeout 5 \
   --telemetry-timeout 10 \
-  --no-progress-timeout 60
+  --no-progress-timeout 60 \
+  --run-report target/sitl/single-agent-report.json
 ```
 
 Useful bounded variants:
@@ -182,6 +183,71 @@ Real MAVLink mode: mission complete; completed=3 failed=0 total=3
 This is still an experimental single-agent SITL path. It does not merge
 multi-agent telemetry, does not provide durable replay logs or UI, and is not a
 hardware failsafe implementation.
+
+## M48 Single-Agent Golden Path Report
+
+M48 adds an optional structured final report for the single-agent execute path:
+
+```bash
+cargo run --bin sitl_agent --features mavlink-transport -- \
+  --connection udp:127.0.0.1:14550 \
+  --scenario scenarios/sitl.waypoints.json \
+  --agent-id agent-0 \
+  --execute \
+  --timeout 5 \
+  --telemetry-timeout 10 \
+  --no-progress-timeout 60 \
+  --run-report target/sitl/single-agent-report.json
+```
+
+The report is pretty JSON. It is written only for `--connection --execute` and
+contains:
+
+```json
+{
+  "schema_version": "sitl_run_report.v1",
+  "scenario_path": "scenarios/sitl.waypoints.json",
+  "scenario_name": "sitl_waypoints_0",
+  "mission": "sitl",
+  "profile": "waypoints",
+  "agent_id": "agent-0",
+  "connection_string": "udp:127.0.0.1:14550",
+  "mode": "connection_execute",
+  "mission_item_count": 3,
+  "completed_count": 3,
+  "failed_count": 0,
+  "final_status": "completed",
+  "error": null,
+  "abort_result": null
+}
+```
+
+Failure reports use the same schema and set `final_status`, `error`, and
+`abort_result` when an abort was attempted. The report is a final summary only;
+durable event logs and replay summaries remain M49 scope.
+
+## M48 Tested PX4 SITL Setup
+
+Manual PX4 SITL verification is required before treating a local environment as
+tested. This repository run did not start a live PX4 simulator, so the verified
+setup fields below are intentionally explicit and should be filled with the
+operator's actual local run:
+
+- PX4 version/commit: pending local PX4 run.
+- Simulator backend: pending local PX4 run, commonly Gazebo / PX4 SITL.
+- Startup command: `make px4_sitl gazebo_iris` or the backend-specific
+  equivalent used locally.
+- `sitl_agent` connection string: commonly `udp:127.0.0.1:14550`.
+- Expected MAVLink endpoint: PX4 should emit heartbeat and mission protocol
+  responses on the configured UDP endpoint.
+- Golden scenario: `scenarios/sitl.waypoints.json`.
+- Expected result: all waypoint tasks completed and final report
+  `final_status=completed`.
+
+Do not copy these pending fields into a release note as a verified result. A
+valid M48 manual result must include the actual PX4 version/backend, exact
+startup command, exact connection string, command output summary, and generated
+report JSON.
 
 ## Pre-Upload Safety Validation
 
@@ -273,3 +339,4 @@ all SITL functionality as simulation/development tooling.
 | Post-start heartbeat timeout | `--execute` started the mission but did not observe fresh heartbeat before `--timeout` | Verify PX4 is still connected and inspect PX4/SITL logs; the agent attempts RTL abort |
 | Telemetry heartbeat timeout | `--execute` started progress tracking but did not observe heartbeat before `--telemetry-timeout` | Verify PX4 is still connected and inspect PX4/SITL logs; the agent attempts RTL abort |
 | No mission progress timeout | Heartbeats may continue, but mission seq/completion did not advance before `--no-progress-timeout` | Increase timeout for long legs or inspect PX4 mission execution; the agent attempts RTL abort |
+| Run report write failed | `--run-report` parent directory cannot be created or the JSON file cannot be written | Fix path permissions or choose a writable path |

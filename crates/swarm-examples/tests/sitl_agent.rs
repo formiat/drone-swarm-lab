@@ -352,6 +352,9 @@ fn cli_accepts_upload_only_lifecycle_option_before_feature_gate() {
 fn cli_accepts_execute_lifecycle_option_before_feature_gate() {
     let scenario = write_sitl_scenario();
     let scenario = scenario.path().to_str().unwrap();
+    let report_dir = tempfile::tempdir().unwrap();
+    let report = report_dir.path().join("sitl-report.json");
+    let report = report.to_str().unwrap();
     let output = run_sitl_agent(&[
         "--connection",
         "udp:127.0.0.1:14550",
@@ -369,12 +372,80 @@ fn cli_accepts_execute_lifecycle_option_before_feature_gate() {
         "0.001",
         "--no-progress-timeout",
         "0.001",
+        "--run-report",
+        report,
     ]);
 
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("feature missing"));
     assert!(!stderr.contains("lifecycle option"));
+}
+
+#[test]
+fn cli_rejects_missing_run_report_value() {
+    let scenario = write_sitl_scenario();
+    let scenario = scenario.path().to_str().unwrap();
+    let output = run_sitl_agent(&[
+        "--connection",
+        "udp:127.0.0.1:14550",
+        "--scenario",
+        scenario,
+        "--agent-id",
+        "agent-0",
+        "--execute",
+        "--run-report",
+    ]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("missing required argument"));
+    assert!(stderr.contains("--run-report"));
+}
+
+#[test]
+fn cli_rejects_run_report_without_execute() {
+    let scenario = write_sitl_scenario();
+    let scenario = scenario.path().to_str().unwrap();
+    let report_dir = tempfile::tempdir().unwrap();
+    let report = report_dir.path().join("sitl-report.json");
+    let report = report.to_str().unwrap();
+    let output = run_sitl_agent(&[
+        "--connection",
+        "udp:127.0.0.1:14550",
+        "--scenario",
+        scenario,
+        "--agent-id",
+        "agent-0",
+        "--run-report",
+        report,
+    ]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("run report option --run-report requires --connection"));
+}
+
+#[test]
+fn cli_rejects_run_report_without_connection() {
+    let scenario = write_sitl_scenario();
+    let scenario = scenario.path().to_str().unwrap();
+    let report_dir = tempfile::tempdir().unwrap();
+    let report = report_dir.path().join("sitl-report.json");
+    let report = report.to_str().unwrap();
+    let output = run_sitl_agent(&[
+        "--dry-run",
+        "--scenario",
+        scenario,
+        "--agent-id",
+        "agent-0",
+        "--run-report",
+        report,
+    ]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("lifecycle option --run-report requires --connection"));
 }
 
 #[test]

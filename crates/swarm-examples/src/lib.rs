@@ -3,4 +3,5 @@ pub mod regression_lib;
 pub mod sitl_plan;
 #[cfg(feature = "mavlink-transport")]
 pub mod sitl_progress;
+pub mod sitl_report;
 pub mod sitl_safety;

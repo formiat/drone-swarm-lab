@@ -98,6 +98,10 @@ pub enum SitlError {
     LifecycleOptionRequiresExecute { option: &'static str },
     #[error("invalid duration for {name}: '{value}'")]
     InvalidDuration { name: &'static str, value: String },
+    #[error("run report option {option} requires --connection <addr> --execute")]
+    RunReportRequiresExecute { option: &'static str },
+    #[error("run report write failed {path:?}: {message}")]
+    RunReportWrite { path: PathBuf, message: String },
 }
 
 pub fn validate_connection_string(addr: &str) -> Result<(), SitlError> {
