@@ -323,3 +323,195 @@ fn cli_validation_conflicting_modes() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("conflicting SITL modes"));
 }
+
+#[test]
+#[cfg(not(feature = "mavlink-transport"))]
+fn cli_accepts_upload_only_lifecycle_option_before_feature_gate() {
+    let scenario = write_sitl_scenario();
+    let scenario = scenario.path().to_str().unwrap();
+    let output = run_sitl_agent(&[
+        "--connection",
+        "udp:127.0.0.1:14550",
+        "--scenario",
+        scenario,
+        "--agent-id",
+        "agent-0",
+        "--upload-only",
+        "--timeout",
+        "0.001",
+    ]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("feature missing"));
+    assert!(!stderr.contains("lifecycle option"));
+}
+
+#[test]
+#[cfg(not(feature = "mavlink-transport"))]
+fn cli_accepts_execute_lifecycle_option_before_feature_gate() {
+    let scenario = write_sitl_scenario();
+    let scenario = scenario.path().to_str().unwrap();
+    let output = run_sitl_agent(&[
+        "--connection",
+        "udp:127.0.0.1:14550",
+        "--scenario",
+        scenario,
+        "--agent-id",
+        "agent-0",
+        "--execute",
+        "--no-arm",
+        "--abort-after",
+        "0",
+        "--timeout",
+        "0.001",
+    ]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("feature missing"));
+    assert!(!stderr.contains("lifecycle option"));
+}
+
+#[test]
+fn cli_rejects_conflicting_lifecycle_modes() {
+    let scenario = write_sitl_scenario();
+    let scenario = scenario.path().to_str().unwrap();
+    let output = run_sitl_agent(&[
+        "--connection",
+        "udp:127.0.0.1:14550",
+        "--scenario",
+        scenario,
+        "--agent-id",
+        "agent-0",
+        "--upload-only",
+        "--execute",
+    ]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("conflicting lifecycle modes"));
+}
+
+#[test]
+fn cli_rejects_no_arm_without_execute() {
+    let scenario = write_sitl_scenario();
+    let scenario = scenario.path().to_str().unwrap();
+    let output = run_sitl_agent(&[
+        "--connection",
+        "udp:127.0.0.1:14550",
+        "--scenario",
+        scenario,
+        "--agent-id",
+        "agent-0",
+        "--no-arm",
+    ]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("lifecycle option --no-arm requires --execute"));
+}
+
+#[test]
+fn cli_rejects_abort_after_without_execute() {
+    let scenario = write_sitl_scenario();
+    let scenario = scenario.path().to_str().unwrap();
+    let output = run_sitl_agent(&[
+        "--connection",
+        "udp:127.0.0.1:14550",
+        "--scenario",
+        scenario,
+        "--agent-id",
+        "agent-0",
+        "--abort-after",
+        "1",
+    ]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("lifecycle option --abort-after requires --execute"));
+}
+
+#[test]
+fn cli_rejects_missing_abort_after_value() {
+    let scenario = write_sitl_scenario();
+    let scenario = scenario.path().to_str().unwrap();
+    let output = run_sitl_agent(&[
+        "--connection",
+        "udp:127.0.0.1:14550",
+        "--scenario",
+        scenario,
+        "--agent-id",
+        "agent-0",
+        "--execute",
+        "--abort-after",
+    ]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("missing required argument"));
+    assert!(stderr.contains("--abort-after"));
+}
+
+#[test]
+fn cli_rejects_invalid_abort_after_value() {
+    let scenario = write_sitl_scenario();
+    let scenario = scenario.path().to_str().unwrap();
+    let output = run_sitl_agent(&[
+        "--connection",
+        "udp:127.0.0.1:14550",
+        "--scenario",
+        scenario,
+        "--agent-id",
+        "agent-0",
+        "--execute",
+        "--abort-after",
+        "nan",
+    ]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("invalid duration"));
+    assert!(stderr.contains("--abort-after"));
+}
+
+#[test]
+fn cli_rejects_missing_timeout_value() {
+    let scenario = write_sitl_scenario();
+    let scenario = scenario.path().to_str().unwrap();
+    let output = run_sitl_agent(&[
+        "--connection",
+        "udp:127.0.0.1:14550",
+        "--scenario",
+        scenario,
+        "--agent-id",
+        "agent-0",
+        "--timeout",
+    ]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("missing required argument"));
+    assert!(stderr.contains("--timeout"));
+}
+
+#[test]
+fn cli_rejects_invalid_timeout_value() {
+    let scenario = write_sitl_scenario();
+    let scenario = scenario.path().to_str().unwrap();
+    let output = run_sitl_agent(&[
+        "--connection",
+        "udp:127.0.0.1:14550",
+        "--scenario",
+        scenario,
+        "--agent-id",
+        "agent-0",
+        "--timeout",
+        "0",
+    ]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("invalid duration"));
+    assert!(stderr.contains("--timeout"));
+}

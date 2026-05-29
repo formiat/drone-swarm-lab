@@ -115,6 +115,99 @@ pub struct MissionUploadReport {
     pub cleared_existing: bool,
 }
 
+/// Options for the controlled post-upload flight lifecycle.
+#[cfg(feature = "mavlink-transport")]
+#[derive(Debug, Clone)]
+pub struct MissionLifecycleOptions {
+    pub target_system: u8,
+    pub target_component: u8,
+    pub timeout: Duration,
+    pub no_arm: bool,
+    pub abort_after: Option<Duration>,
+    pub takeoff_altitude_m: f32,
+}
+
+#[cfg(feature = "mavlink-transport")]
+impl Default for MissionLifecycleOptions {
+    fn default() -> Self {
+        Self {
+            target_system: 1,
+            target_component: 1,
+            timeout: Duration::from_secs(2),
+            no_arm: false,
+            abort_after: None,
+            takeoff_altitude_m: 2.5,
+        }
+    }
+}
+
+/// Result of an attempted abort command during lifecycle execution.
+#[cfg(feature = "mavlink-transport")]
+#[derive(Debug, Clone, PartialEq)]
+pub enum AbortCommandResult {
+    NotAttempted,
+    Accepted,
+    Rejected(common::MavResult),
+    AckTimeout,
+    Failed(String),
+}
+
+/// Summary returned after PX4 accepts lifecycle commands.
+#[cfg(feature = "mavlink-transport")]
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct MissionLifecycleReport {
+    pub armed: bool,
+    pub took_off: bool,
+    pub started: bool,
+    pub post_start_heartbeat: bool,
+    pub abort_result: Option<AbortCommandResult>,
+}
+
+/// Summary returned by the combined upload + execute workflow.
+#[cfg(feature = "mavlink-transport")]
+#[derive(Debug, Clone, PartialEq)]
+pub struct MavlinkFlightReport {
+    pub upload: MissionUploadReport,
+    pub lifecycle: MissionLifecycleReport,
+}
+
+#[cfg(feature = "mavlink-transport")]
+#[derive(Debug, Clone, thiserror::Error, PartialEq)]
+pub enum MavlinkLifecycleError {
+    #[error("invalid takeoff altitude: {altitude_m}")]
+    InvalidTakeoffAltitude { altitude_m: f32 },
+    #[error("timed out waiting for command ack: {command:?}; abort_result={abort_result:?}")]
+    CommandAckTimeout {
+        command: common::MavCmd,
+        abort_result: Option<AbortCommandResult>,
+    },
+    #[error(
+        "command rejected by vehicle: {command:?} result={result:?}; abort_result={abort_result:?}"
+    )]
+    CommandRejected {
+        command: common::MavCmd,
+        result: common::MavResult,
+        abort_result: Option<AbortCommandResult>,
+    },
+    #[error("post-start heartbeat timeout; abort_result={abort_result:?}")]
+    PostStartHeartbeatTimeout { abort_result: AbortCommandResult },
+    #[error("abort command failed: {abort_result:?}")]
+    AbortFailed { abort_result: AbortCommandResult },
+    #[error("mavlink write failed: {0}")]
+    WriteFailed(String),
+    #[error("mavlink read failed: {0}")]
+    ReadFailed(String),
+}
+
+#[cfg(feature = "mavlink-transport")]
+#[derive(Debug, Clone, thiserror::Error, PartialEq)]
+pub enum MavlinkFlightError {
+    #[error("mission upload failed: {0}")]
+    MissionUpload(#[from] MavlinkMissionError),
+    #[error("mission lifecycle failed: {0}")]
+    Lifecycle(#[from] MavlinkLifecycleError),
+}
+
 #[cfg(feature = "mavlink-transport")]
 #[derive(Debug, Clone, thiserror::Error, PartialEq)]
 pub enum MavlinkMissionError {
@@ -244,10 +337,31 @@ impl MavlinkTransport {
     ) -> Result<MissionUploadReport, MavlinkMissionError> {
         upload_mission_with_connection(&mut self.conn, waypoints, &options)
     }
+
+    pub fn execute_uploaded_mission(
+        &mut self,
+        options: MissionLifecycleOptions,
+    ) -> Result<MissionLifecycleReport, MavlinkLifecycleError> {
+        execute_uploaded_mission_with_connection(&mut self.conn, &options)
+    }
+
+    pub fn upload_and_execute_mission(
+        &mut self,
+        waypoints: &[Waypoint],
+        upload_options: MissionUploadOptions,
+        lifecycle_options: MissionLifecycleOptions,
+    ) -> Result<MavlinkFlightReport, MavlinkFlightError> {
+        upload_and_execute_mission_with_connection(
+            &mut self.conn,
+            waypoints,
+            &upload_options,
+            &lifecycle_options,
+        )
+    }
 }
 
 #[cfg(feature = "mavlink-transport")]
-trait MavlinkMissionConnection {
+trait MavlinkVehicleConnection {
     fn send_message(&mut self, msg: CommonMessage) -> Result<(), MavlinkMissionError>;
     fn try_recv_message(
         &mut self,
@@ -255,7 +369,7 @@ trait MavlinkMissionConnection {
 }
 
 #[cfg(feature = "mavlink-transport")]
-impl MavlinkMissionConnection for mavlink::Connection<CommonMessage> {
+impl MavlinkVehicleConnection for mavlink::Connection<CommonMessage> {
     fn send_message(&mut self, msg: CommonMessage) -> Result<(), MavlinkMissionError> {
         use mavlink::MavConnection;
 
@@ -282,7 +396,7 @@ impl MavlinkMissionConnection for mavlink::Connection<CommonMessage> {
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn upload_mission_with_connection<C: MavlinkMissionConnection>(
+fn upload_mission_with_connection<C: MavlinkVehicleConnection>(
     conn: &mut C,
     waypoints: &[Waypoint],
     options: &MissionUploadOptions,
@@ -311,7 +425,7 @@ fn upload_mission_with_connection<C: MavlinkMissionConnection>(
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn upload_mission_attempt<C: MavlinkMissionConnection>(
+fn upload_mission_attempt<C: MavlinkVehicleConnection>(
     conn: &mut C,
     waypoints: &[Waypoint],
     options: &MissionUploadOptions,
@@ -372,7 +486,7 @@ impl MavlinkMissionError {
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn wait_for_heartbeat<C: MavlinkMissionConnection>(
+fn wait_for_heartbeat<C: MavlinkVehicleConnection>(
     conn: &mut C,
     timeout: Duration,
 ) -> Result<(), MavlinkMissionError> {
@@ -386,7 +500,7 @@ fn wait_for_heartbeat<C: MavlinkMissionConnection>(
 
 #[cfg(feature = "mavlink-transport")]
 #[allow(deprecated)]
-fn wait_for_mission_request<C: MavlinkMissionConnection>(
+fn wait_for_mission_request<C: MavlinkVehicleConnection>(
     conn: &mut C,
     expected_seq: u16,
     timeout: Duration,
@@ -420,7 +534,7 @@ fn validate_requested_seq(expected: u16, actual: u16) -> Option<Result<(), Mavli
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn wait_for_mission_ack<C: MavlinkMissionConnection>(
+fn wait_for_mission_ack<C: MavlinkVehicleConnection>(
     conn: &mut C,
     timeout: Duration,
 ) -> Result<common::MavMissionResult, MavlinkMissionError> {
@@ -443,7 +557,7 @@ fn recv_matching<T, C, F, E>(
     on_timeout: E,
 ) -> Result<T, MavlinkMissionError>
 where
-    C: MavlinkMissionConnection,
+    C: MavlinkVehicleConnection,
     F: FnMut(CommonHeader, CommonMessage) -> Option<T>,
     E: Fn() -> MavlinkMissionError,
 {
@@ -453,11 +567,316 @@ where
             if let Some(value) = predicate(header, msg) {
                 return Ok(value);
             }
+            continue;
         }
         if Instant::now() >= deadline {
             return Err(on_timeout());
         }
         std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn upload_and_execute_mission_with_connection<C: MavlinkVehicleConnection>(
+    conn: &mut C,
+    waypoints: &[Waypoint],
+    upload_options: &MissionUploadOptions,
+    lifecycle_options: &MissionLifecycleOptions,
+) -> Result<MavlinkFlightReport, MavlinkFlightError> {
+    let upload = upload_mission_with_connection(conn, waypoints, upload_options)?;
+    let lifecycle = execute_uploaded_mission_with_connection(conn, lifecycle_options)?;
+    Ok(MavlinkFlightReport { upload, lifecycle })
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn execute_uploaded_mission_with_connection<C: MavlinkVehicleConnection>(
+    conn: &mut C,
+    options: &MissionLifecycleOptions,
+) -> Result<MissionLifecycleReport, MavlinkLifecycleError> {
+    if !options.takeoff_altitude_m.is_finite() || options.takeoff_altitude_m < 0.0 {
+        return Err(MavlinkLifecycleError::InvalidTakeoffAltitude {
+            altitude_m: options.takeoff_altitude_m,
+        });
+    }
+
+    let mut report = MissionLifecycleReport::default();
+
+    if !options.no_arm {
+        send_command_and_wait(
+            conn,
+            arm_command(options.target_system, options.target_component),
+            options.timeout,
+        )?;
+        report.armed = true;
+    }
+
+    if let Err(error) = send_command_and_wait(
+        conn,
+        takeoff_command(
+            options.target_system,
+            options.target_component,
+            options.takeoff_altitude_m,
+        ),
+        options.timeout,
+    ) {
+        let abort_result = send_abort_command(conn, options);
+        return Err(attach_abort_result(error, abort_result));
+    }
+    report.took_off = true;
+
+    if let Err(error) = send_command_and_wait(
+        conn,
+        start_mission_command(options.target_system, options.target_component),
+        options.timeout,
+    ) {
+        let abort_result = send_abort_command(conn, options);
+        return Err(attach_abort_result(error, abort_result));
+    }
+    report.started = true;
+
+    match wait_for_post_start_heartbeat(conn, options.timeout) {
+        Ok(()) => {
+            report.post_start_heartbeat = true;
+        }
+        Err(MavlinkLifecycleError::PostStartHeartbeatTimeout { .. }) => {
+            let abort_result = send_abort_command(conn, options);
+            return Err(MavlinkLifecycleError::PostStartHeartbeatTimeout { abort_result });
+        }
+        Err(error) => return Err(error),
+    }
+
+    if let Some(abort_after) = options.abort_after {
+        std::thread::sleep(abort_after);
+        let abort_result = send_abort_command(conn, options);
+        if abort_result != AbortCommandResult::Accepted {
+            return Err(MavlinkLifecycleError::AbortFailed { abort_result });
+        }
+        report.abort_result = Some(AbortCommandResult::Accepted);
+    }
+
+    Ok(report)
+}
+
+#[cfg(feature = "mavlink-transport")]
+pub fn arm_command(target_system: u8, target_component: u8) -> CommonMessage {
+    command_long(
+        common::MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
+        target_system,
+        target_component,
+        [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    )
+}
+
+#[cfg(feature = "mavlink-transport")]
+pub fn disarm_command(target_system: u8, target_component: u8) -> CommonMessage {
+    command_long(
+        common::MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
+        target_system,
+        target_component,
+        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    )
+}
+
+#[cfg(feature = "mavlink-transport")]
+pub fn takeoff_command(target_system: u8, target_component: u8, altitude_m: f32) -> CommonMessage {
+    command_long(
+        common::MavCmd::MAV_CMD_NAV_TAKEOFF,
+        target_system,
+        target_component,
+        [0.0, 0.0, 0.0, f32::NAN, 0.0, 0.0, altitude_m],
+    )
+}
+
+#[cfg(feature = "mavlink-transport")]
+pub fn start_mission_command(target_system: u8, target_component: u8) -> CommonMessage {
+    command_long(
+        common::MavCmd::MAV_CMD_MISSION_START,
+        target_system,
+        target_component,
+        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    )
+}
+
+#[cfg(feature = "mavlink-transport")]
+pub fn abort_command(target_system: u8, target_component: u8) -> CommonMessage {
+    command_long(
+        common::MavCmd::MAV_CMD_NAV_RETURN_TO_LAUNCH,
+        target_system,
+        target_component,
+        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    )
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn command_long(
+    command: common::MavCmd,
+    target_system: u8,
+    target_component: u8,
+    params: [f32; 7],
+) -> CommonMessage {
+    CommonMessage::COMMAND_LONG(common::COMMAND_LONG_DATA {
+        param1: params[0],
+        param2: params[1],
+        param3: params[2],
+        param4: params[3],
+        param5: params[4],
+        param6: params[5],
+        param7: params[6],
+        command,
+        target_system,
+        target_component,
+        confirmation: 0,
+    })
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn send_command_and_wait<C: MavlinkVehicleConnection>(
+    conn: &mut C,
+    msg: CommonMessage,
+    timeout: Duration,
+) -> Result<(), MavlinkLifecycleError> {
+    let command = command_id(&msg).expect("command helper must build COMMAND_LONG");
+    conn.send_message(msg)
+        .map_err(mission_error_to_lifecycle_error)?;
+    wait_command_ack(conn, command, timeout)
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn command_id(msg: &CommonMessage) -> Option<common::MavCmd> {
+    match msg {
+        CommonMessage::COMMAND_LONG(command) => Some(command.command),
+        CommonMessage::COMMAND_INT(command) => Some(command.command),
+        _ => None,
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn wait_command_ack<C: MavlinkVehicleConnection>(
+    conn: &mut C,
+    command: common::MavCmd,
+    timeout: Duration,
+) -> Result<(), MavlinkLifecycleError> {
+    recv_matching_lifecycle(
+        conn,
+        timeout,
+        |_header, msg| match msg {
+            CommonMessage::COMMAND_ACK(ack) if ack.command == command => {
+                if ack.result == common::MavResult::MAV_RESULT_ACCEPTED {
+                    Some(Ok(()))
+                } else {
+                    Some(Err(MavlinkLifecycleError::CommandRejected {
+                        command,
+                        result: ack.result,
+                        abort_result: None,
+                    }))
+                }
+            }
+            _ => None,
+        },
+        || MavlinkLifecycleError::CommandAckTimeout {
+            command,
+            abort_result: None,
+        },
+    )?
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn wait_for_post_start_heartbeat<C: MavlinkVehicleConnection>(
+    conn: &mut C,
+    timeout: Duration,
+) -> Result<(), MavlinkLifecycleError> {
+    recv_matching_lifecycle(
+        conn,
+        timeout,
+        |_header, msg| matches!(msg, CommonMessage::HEARTBEAT(_)).then_some(Ok(())),
+        || MavlinkLifecycleError::PostStartHeartbeatTimeout {
+            abort_result: AbortCommandResult::NotAttempted,
+        },
+    )?
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn recv_matching_lifecycle<T, C, F, E>(
+    conn: &mut C,
+    timeout: Duration,
+    mut predicate: F,
+    on_timeout: E,
+) -> Result<T, MavlinkLifecycleError>
+where
+    C: MavlinkVehicleConnection,
+    F: FnMut(CommonHeader, CommonMessage) -> Option<T>,
+    E: Fn() -> MavlinkLifecycleError,
+{
+    let deadline = Instant::now() + timeout;
+    loop {
+        if let Some((header, msg)) = conn
+            .try_recv_message()
+            .map_err(mission_error_to_lifecycle_error)?
+        {
+            if let Some(value) = predicate(header, msg) {
+                return Ok(value);
+            }
+            continue;
+        }
+        if Instant::now() >= deadline {
+            return Err(on_timeout());
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn send_abort_command<C: MavlinkVehicleConnection>(
+    conn: &mut C,
+    options: &MissionLifecycleOptions,
+) -> AbortCommandResult {
+    let command = common::MavCmd::MAV_CMD_NAV_RETURN_TO_LAUNCH;
+    if let Err(error) = conn.send_message(abort_command(
+        options.target_system,
+        options.target_component,
+    )) {
+        return AbortCommandResult::Failed(error.to_string());
+    }
+
+    match wait_command_ack(conn, command, options.timeout) {
+        Ok(()) => AbortCommandResult::Accepted,
+        Err(MavlinkLifecycleError::CommandRejected { result, .. }) => {
+            AbortCommandResult::Rejected(result)
+        }
+        Err(MavlinkLifecycleError::CommandAckTimeout { .. }) => AbortCommandResult::AckTimeout,
+        Err(error) => AbortCommandResult::Failed(error.to_string()),
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn attach_abort_result(
+    error: MavlinkLifecycleError,
+    abort_result: AbortCommandResult,
+) -> MavlinkLifecycleError {
+    match error {
+        MavlinkLifecycleError::CommandAckTimeout { command, .. } => {
+            MavlinkLifecycleError::CommandAckTimeout {
+                command,
+                abort_result: Some(abort_result),
+            }
+        }
+        MavlinkLifecycleError::CommandRejected {
+            command, result, ..
+        } => MavlinkLifecycleError::CommandRejected {
+            command,
+            result,
+            abort_result: Some(abort_result),
+        },
+        other => other,
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn mission_error_to_lifecycle_error(error: MavlinkMissionError) -> MavlinkLifecycleError {
+    match error {
+        MavlinkMissionError::WriteFailed(message) => MavlinkLifecycleError::WriteFailed(message),
+        MavlinkMissionError::ReadFailed(message) => MavlinkLifecycleError::ReadFailed(message),
+        other => MavlinkLifecycleError::ReadFailed(other.to_string()),
     }
 }
 
@@ -779,7 +1198,7 @@ mod mission_upload_tests {
         }
     }
 
-    impl MavlinkMissionConnection for FakeMissionConnection {
+    impl MavlinkVehicleConnection for FakeMissionConnection {
         fn send_message(&mut self, msg: CommonMessage) -> Result<(), MavlinkMissionError> {
             self.sent.push(msg);
             Ok(())
@@ -835,6 +1254,35 @@ mod mission_upload_tests {
             target_component: 0,
             mavtype: result,
         })
+    }
+
+    fn command_ack(command: common::MavCmd, result: common::MavResult) -> CommonMessage {
+        CommonMessage::COMMAND_ACK(common::COMMAND_ACK_DATA { command, result })
+    }
+
+    fn lifecycle_options() -> MissionLifecycleOptions {
+        MissionLifecycleOptions {
+            timeout: Duration::from_millis(1),
+            ..MissionLifecycleOptions::default()
+        }
+    }
+
+    fn assert_command(
+        message: &CommonMessage,
+        command: common::MavCmd,
+    ) -> &common::COMMAND_LONG_DATA {
+        let CommonMessage::COMMAND_LONG(data) = message else {
+            panic!("expected COMMAND_LONG");
+        };
+        assert_eq!(data.command, command);
+        data
+    }
+
+    fn command_long_count(conn: &FakeMissionConnection) -> usize {
+        conn.sent()
+            .iter()
+            .filter(|message| matches!(message, CommonMessage::COMMAND_LONG(_)))
+            .count()
     }
 
     #[test]
@@ -1040,5 +1488,329 @@ mod mission_upload_tests {
         let error = waypoint_to_mission_item_int(&waypoint(0), &options).unwrap_err();
 
         assert_eq!(error, MavlinkMissionError::UnsupportedFrame);
+    }
+
+    #[test]
+    fn command_helpers_build_expected_command_long_messages() {
+        let arm = arm_command(1, 2);
+        let arm = assert_command(&arm, common::MavCmd::MAV_CMD_COMPONENT_ARM_DISARM);
+        assert_eq!(arm.target_system, 1);
+        assert_eq!(arm.target_component, 2);
+        assert_eq!(arm.param1, 1.0);
+
+        let disarm = disarm_command(1, 2);
+        let disarm = assert_command(&disarm, common::MavCmd::MAV_CMD_COMPONENT_ARM_DISARM);
+        assert_eq!(disarm.param1, 0.0);
+
+        let takeoff = takeoff_command(1, 2, 12.5);
+        let takeoff = assert_command(&takeoff, common::MavCmd::MAV_CMD_NAV_TAKEOFF);
+        assert!((takeoff.param7 - 12.5).abs() < f32::EPSILON);
+
+        let start = start_mission_command(1, 2);
+        assert_command(&start, common::MavCmd::MAV_CMD_MISSION_START);
+
+        let abort = abort_command(1, 2);
+        assert_command(&abort, common::MavCmd::MAV_CMD_NAV_RETURN_TO_LAUNCH);
+    }
+
+    #[test]
+    fn wait_command_ack_accepts_matching_ack_and_ignores_unrelated_messages() {
+        let mut conn = FakeMissionConnection::with_incoming([
+            heartbeat(),
+            command_ack(
+                common::MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
+                common::MavResult::MAV_RESULT_ACCEPTED,
+            ),
+            command_ack(
+                common::MavCmd::MAV_CMD_NAV_TAKEOFF,
+                common::MavResult::MAV_RESULT_ACCEPTED,
+            ),
+        ]);
+
+        wait_command_ack(
+            &mut conn,
+            common::MavCmd::MAV_CMD_NAV_TAKEOFF,
+            Duration::from_millis(1),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn wait_command_ack_reports_rejected_result() {
+        let mut conn = FakeMissionConnection::with_incoming([command_ack(
+            common::MavCmd::MAV_CMD_NAV_TAKEOFF,
+            common::MavResult::MAV_RESULT_DENIED,
+        )]);
+
+        let error = wait_command_ack(
+            &mut conn,
+            common::MavCmd::MAV_CMD_NAV_TAKEOFF,
+            Duration::from_millis(1),
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            MavlinkLifecycleError::CommandRejected {
+                command: common::MavCmd::MAV_CMD_NAV_TAKEOFF,
+                result: common::MavResult::MAV_RESULT_DENIED,
+                abort_result: None,
+            }
+        );
+    }
+
+    #[test]
+    fn wait_command_ack_times_out_without_matching_ack() {
+        let mut conn = FakeMissionConnection::default();
+
+        let error = wait_command_ack(
+            &mut conn,
+            common::MavCmd::MAV_CMD_NAV_TAKEOFF,
+            Duration::from_millis(1),
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            MavlinkLifecycleError::CommandAckTimeout {
+                command: common::MavCmd::MAV_CMD_NAV_TAKEOFF,
+                abort_result: None,
+            }
+        );
+    }
+
+    #[test]
+    fn lifecycle_happy_path_sends_arm_takeoff_start() {
+        let mut conn = FakeMissionConnection::with_incoming([
+            command_ack(
+                common::MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
+                common::MavResult::MAV_RESULT_ACCEPTED,
+            ),
+            command_ack(
+                common::MavCmd::MAV_CMD_NAV_TAKEOFF,
+                common::MavResult::MAV_RESULT_ACCEPTED,
+            ),
+            command_ack(
+                common::MavCmd::MAV_CMD_MISSION_START,
+                common::MavResult::MAV_RESULT_ACCEPTED,
+            ),
+            heartbeat(),
+        ]);
+
+        let report =
+            execute_uploaded_mission_with_connection(&mut conn, &lifecycle_options()).unwrap();
+
+        assert!(report.armed);
+        assert!(report.took_off);
+        assert!(report.started);
+        assert!(report.post_start_heartbeat);
+        assert_eq!(command_long_count(&conn), 3);
+        assert_command(
+            &conn.sent()[0],
+            common::MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
+        );
+        assert_command(&conn.sent()[1], common::MavCmd::MAV_CMD_NAV_TAKEOFF);
+        assert_command(&conn.sent()[2], common::MavCmd::MAV_CMD_MISSION_START);
+    }
+
+    #[test]
+    fn lifecycle_no_arm_skips_arm_command() {
+        let mut options = lifecycle_options();
+        options.no_arm = true;
+        let mut conn = FakeMissionConnection::with_incoming([
+            command_ack(
+                common::MavCmd::MAV_CMD_NAV_TAKEOFF,
+                common::MavResult::MAV_RESULT_ACCEPTED,
+            ),
+            command_ack(
+                common::MavCmd::MAV_CMD_MISSION_START,
+                common::MavResult::MAV_RESULT_ACCEPTED,
+            ),
+            heartbeat(),
+        ]);
+
+        let report = execute_uploaded_mission_with_connection(&mut conn, &options).unwrap();
+
+        assert!(!report.armed);
+        assert!(report.took_off);
+        assert_eq!(command_long_count(&conn), 2);
+        assert_command(&conn.sent()[0], common::MavCmd::MAV_CMD_NAV_TAKEOFF);
+        assert_command(&conn.sent()[1], common::MavCmd::MAV_CMD_MISSION_START);
+    }
+
+    #[test]
+    fn lifecycle_arm_failure_sends_no_takeoff_or_abort() {
+        let mut conn = FakeMissionConnection::with_incoming([command_ack(
+            common::MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
+            common::MavResult::MAV_RESULT_DENIED,
+        )]);
+
+        let error =
+            execute_uploaded_mission_with_connection(&mut conn, &lifecycle_options()).unwrap_err();
+
+        assert!(matches!(
+            error,
+            MavlinkLifecycleError::CommandRejected {
+                command: common::MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
+                result: common::MavResult::MAV_RESULT_DENIED,
+                abort_result: None,
+            }
+        ));
+        assert_eq!(command_long_count(&conn), 1);
+    }
+
+    #[test]
+    fn lifecycle_takeoff_failure_sends_abort() {
+        let mut conn = FakeMissionConnection::with_incoming([
+            command_ack(
+                common::MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
+                common::MavResult::MAV_RESULT_ACCEPTED,
+            ),
+            command_ack(
+                common::MavCmd::MAV_CMD_NAV_TAKEOFF,
+                common::MavResult::MAV_RESULT_DENIED,
+            ),
+        ]);
+
+        let error =
+            execute_uploaded_mission_with_connection(&mut conn, &lifecycle_options()).unwrap_err();
+
+        assert!(matches!(
+            error,
+            MavlinkLifecycleError::CommandRejected {
+                command: common::MavCmd::MAV_CMD_NAV_TAKEOFF,
+                result: common::MavResult::MAV_RESULT_DENIED,
+                abort_result: Some(AbortCommandResult::AckTimeout),
+            }
+        ));
+        assert_eq!(command_long_count(&conn), 3);
+        assert_command(
+            &conn.sent()[2],
+            common::MavCmd::MAV_CMD_NAV_RETURN_TO_LAUNCH,
+        );
+    }
+
+    #[test]
+    fn lifecycle_start_failure_sends_abort() {
+        let mut conn = FakeMissionConnection::with_incoming([
+            command_ack(
+                common::MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
+                common::MavResult::MAV_RESULT_ACCEPTED,
+            ),
+            command_ack(
+                common::MavCmd::MAV_CMD_NAV_TAKEOFF,
+                common::MavResult::MAV_RESULT_ACCEPTED,
+            ),
+            command_ack(
+                common::MavCmd::MAV_CMD_MISSION_START,
+                common::MavResult::MAV_RESULT_FAILED,
+            ),
+        ]);
+
+        let error =
+            execute_uploaded_mission_with_connection(&mut conn, &lifecycle_options()).unwrap_err();
+
+        assert!(matches!(
+            error,
+            MavlinkLifecycleError::CommandRejected {
+                command: common::MavCmd::MAV_CMD_MISSION_START,
+                result: common::MavResult::MAV_RESULT_FAILED,
+                abort_result: Some(AbortCommandResult::AckTimeout),
+            }
+        ));
+        assert_eq!(command_long_count(&conn), 4);
+        assert_command(
+            &conn.sent()[3],
+            common::MavCmd::MAV_CMD_NAV_RETURN_TO_LAUNCH,
+        );
+    }
+
+    #[test]
+    fn lifecycle_abort_after_sends_abort_after_successful_start() {
+        let mut options = lifecycle_options();
+        options.abort_after = Some(Duration::ZERO);
+        let mut conn = FakeMissionConnection::with_incoming([
+            command_ack(
+                common::MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
+                common::MavResult::MAV_RESULT_ACCEPTED,
+            ),
+            command_ack(
+                common::MavCmd::MAV_CMD_NAV_TAKEOFF,
+                common::MavResult::MAV_RESULT_ACCEPTED,
+            ),
+            command_ack(
+                common::MavCmd::MAV_CMD_MISSION_START,
+                common::MavResult::MAV_RESULT_ACCEPTED,
+            ),
+            heartbeat(),
+            command_ack(
+                common::MavCmd::MAV_CMD_NAV_RETURN_TO_LAUNCH,
+                common::MavResult::MAV_RESULT_ACCEPTED,
+            ),
+        ]);
+
+        let report = execute_uploaded_mission_with_connection(&mut conn, &options).unwrap();
+
+        assert_eq!(report.abort_result, Some(AbortCommandResult::Accepted));
+        assert_eq!(command_long_count(&conn), 4);
+        assert_command(
+            &conn.sent()[3],
+            common::MavCmd::MAV_CMD_NAV_RETURN_TO_LAUNCH,
+        );
+    }
+
+    #[test]
+    fn upload_failure_in_execute_workflow_sends_no_lifecycle_commands() {
+        let mut conn = FakeMissionConnection::with_incoming([heartbeat(), request_int(7)]);
+
+        let error = upload_and_execute_mission_with_connection(
+            &mut conn,
+            &[waypoint(0)],
+            &options(),
+            &lifecycle_options(),
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            MavlinkFlightError::MissionUpload(MavlinkMissionError::UnexpectedRequestSeq {
+                expected: 0,
+                actual: 7,
+            })
+        ));
+        assert_eq!(command_long_count(&conn), 0);
+    }
+
+    #[test]
+    fn lifecycle_post_start_heartbeat_timeout_sends_abort() {
+        let mut conn = FakeMissionConnection::with_incoming([
+            command_ack(
+                common::MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
+                common::MavResult::MAV_RESULT_ACCEPTED,
+            ),
+            command_ack(
+                common::MavCmd::MAV_CMD_NAV_TAKEOFF,
+                common::MavResult::MAV_RESULT_ACCEPTED,
+            ),
+            command_ack(
+                common::MavCmd::MAV_CMD_MISSION_START,
+                common::MavResult::MAV_RESULT_ACCEPTED,
+            ),
+        ]);
+
+        let error =
+            execute_uploaded_mission_with_connection(&mut conn, &lifecycle_options()).unwrap_err();
+
+        assert_eq!(
+            error,
+            MavlinkLifecycleError::PostStartHeartbeatTimeout {
+                abort_result: AbortCommandResult::AckTimeout,
+            }
+        );
+        assert_eq!(command_long_count(&conn), 4);
+        assert_command(
+            &conn.sent()[3],
+            common::MavCmd::MAV_CMD_NAV_RETURN_TO_LAUNCH,
+        );
     }
 }

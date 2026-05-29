@@ -90,6 +90,14 @@ pub enum SitlError {
     MissingArgument { name: &'static str },
     #[error("unknown argument: {arg}")]
     UnknownArgument { arg: String },
+    #[error("conflicting lifecycle modes: specify at most one of --upload-only or --execute")]
+    ConflictingLifecycleModes,
+    #[error("lifecycle option {option} requires --connection <addr>")]
+    LifecycleOptionRequiresConnection { option: &'static str },
+    #[error("lifecycle option {option} requires --execute")]
+    LifecycleOptionRequiresExecute { option: &'static str },
+    #[error("invalid duration for {name}: '{value}'")]
+    InvalidDuration { name: &'static str, value: String },
 }
 
 pub fn validate_connection_string(addr: &str) -> Result<(), SitlError> {

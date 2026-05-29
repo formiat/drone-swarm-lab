@@ -14,7 +14,9 @@ pub use udp::{UdpTransport, UdpTransportError};
 
 #[cfg(feature = "mavlink-transport")]
 pub use mavlink::{
-    mavlink_status_to_task_status, task_to_mavlink_waypoint, waypoint_to_mission_item_int,
-    MavlinkMissionError, MavlinkTransport, MissionFrame, MissionHomeOrigin, MissionUploadOptions,
-    MissionUploadReport,
+    abort_command, arm_command, disarm_command, mavlink_status_to_task_status,
+    start_mission_command, takeoff_command, task_to_mavlink_waypoint, waypoint_to_mission_item_int,
+    AbortCommandResult, MavlinkFlightError, MavlinkFlightReport, MavlinkLifecycleError,
+    MavlinkMissionError, MavlinkTransport, MissionFrame, MissionHomeOrigin,
+    MissionLifecycleOptions, MissionLifecycleReport, MissionUploadOptions, MissionUploadReport,
 };

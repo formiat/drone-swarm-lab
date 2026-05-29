@@ -10,7 +10,8 @@ hardware.
 |---|---|---|---|---|
 | Mock | `--mock` | None | Send extracted waypoints to in-memory `MockMavlinkTransport` | Stable and CI-friendly |
 | Dry-run | `--dry-run` | None | Print the mission upload plan without connecting to PX4 | Stable portable contract |
-| PX4 SITL | `--connection <addr>` | PX4 SITL + `mavlink-transport` feature | Upload waypoint mission to PX4 SITL | Experimental; no arm/takeoff/execution supervision |
+| PX4 SITL upload-only | `--connection <addr> [--upload-only]` | PX4 SITL + `mavlink-transport` feature | Upload waypoint mission to PX4 SITL without starting flight | Experimental |
+| PX4 SITL execute | `--connection <addr> --execute` | PX4 SITL + `mavlink-transport` feature | Upload, arm/takeoff/start mission, and abort on bounded failures | Experimental; no task completion mapping |
 
 ## Quick Start: Dry-Run Mode
 
@@ -80,7 +81,8 @@ cargo run --bin sitl_agent --features mavlink-transport -- \
   --connection udp:127.0.0.1:14550 \
   --scenario scenarios/sitl.waypoints.json \
   --agent-id agent-0 \
-  --safety-config path/to/sitl-safety.json
+  --safety-config path/to/sitl-safety.json \
+  --upload-only
 ```
 
 Without the feature, `--connection` returns a stable error with the required
@@ -101,6 +103,64 @@ The connection path performs a minimal mission upload transaction:
 This mode uploads the mission only. It does not arm the vehicle, take off,
 switch modes, start the mission, track execution progress, or perform
 runtime collision avoidance.
+
+## Experimental PX4 Execute Lifecycle
+
+M46 adds an explicit execution mode after successful upload. It is opt-in:
+plain `--connection` remains upload-only for safety and backwards
+compatibility.
+
+```bash
+cargo run --bin sitl_agent --features mavlink-transport -- \
+  --connection udp:127.0.0.1:14550 \
+  --scenario scenarios/sitl.waypoints.json \
+  --agent-id agent-0 \
+  --safety-config path/to/sitl-safety.json \
+  --execute \
+  --timeout 5
+```
+
+Useful bounded variants:
+
+```bash
+# Skip arm for controlled SITL experiments where the vehicle is already armed.
+cargo run --bin sitl_agent --features mavlink-transport -- \
+  --connection udp:127.0.0.1:14550 \
+  --scenario scenarios/sitl.waypoints.json \
+  --agent-id agent-0 \
+  --execute --no-arm --timeout 5
+
+# Start the lifecycle and then request RTL abort immediately after a short delay.
+cargo run --bin sitl_agent --features mavlink-transport -- \
+  --connection udp:127.0.0.1:14550 \
+  --scenario scenarios/sitl.waypoints.json \
+  --agent-id agent-0 \
+  --execute --abort-after 10 --timeout 5
+```
+
+Execution lifecycle:
+
+1. Upload mission using the same safety-gated mission protocol as upload-only.
+2. Send `MAV_CMD_COMPONENT_ARM_DISARM` unless `--no-arm` is set.
+3. Send `MAV_CMD_NAV_TAKEOFF` using the first waypoint altitude with a 2.5m
+   floor.
+4. Send `MAV_CMD_MISSION_START`.
+5. Require a fresh post-start `HEARTBEAT` before considering the active
+   lifecycle healthy.
+6. If `--abort-after <seconds>` is set, send RTL abort after that delay.
+
+Failure behavior:
+
+- upload failure: no arm/takeoff/start command is sent;
+- arm failure: exit non-zero with a clear command error;
+- takeoff/start command failure: send RTL abort and report the abort result;
+- post-start heartbeat timeout: send RTL abort and report the abort result;
+- abort failure is reported, not hidden as success.
+
+The M46 heartbeat guard is deliberately narrow. It proves minimal telemetry
+availability after mission start, but it does not track `MISSION_CURRENT`,
+waypoint reached events, task completion, or mission success. Those are future
+M47 telemetry loop responsibilities.
 
 ## Pre-Upload Safety Validation
 
@@ -161,8 +221,9 @@ For M45, `sitl_agent` uses a deliberately narrow coordinate contract:
 - Uploaded items use `MISSION_ITEM_INT` with
   `MAV_FRAME_GLOBAL_RELATIVE_ALT_INT`.
 
-Arm/takeoff, mission start, execution tracking, telemetry supervision, and
-multi-agent SITL remain future milestones.
+M46 adds arm/takeoff/start command acks and a minimal post-start heartbeat
+guard. Full execution tracking, task progress telemetry, waypoint completion,
+and multi-agent SITL remain future milestones.
 
 ## Real Hardware Warning
 
@@ -186,3 +247,5 @@ all SITL functionality as simulation/development tooling.
 | No PX4 connection | PX4 SITL is not running or address is wrong | Start PX4 SITL and verify the MAVLink endpoint |
 | Mission upload timeout | PX4 did not send heartbeat, mission request, or final ack | Verify the endpoint, PX4 mode, and that no other GCS owns the mission protocol |
 | Mission rejected | PX4 returned a non-accepted `MISSION_ACK` | Check waypoint coordinates, altitude, frame support, and PX4 logs |
+| Command rejected | PX4 returned a non-accepted `COMMAND_ACK` for arm/takeoff/start/abort | Check PX4 mode, arming checks, safety state, and command parameters |
+| Post-start heartbeat timeout | `--execute` started the mission but did not observe fresh heartbeat before `--timeout` | Verify PX4 is still connected and inspect PX4/SITL logs; the agent attempts RTL abort |
