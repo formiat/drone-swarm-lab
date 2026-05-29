@@ -13,4 +13,8 @@ pub use transport::{RawMessage, Transport};
 pub use udp::{UdpTransport, UdpTransportError};
 
 #[cfg(feature = "mavlink-transport")]
-pub use mavlink::{mavlink_status_to_task_status, task_to_mavlink_waypoint, MavlinkTransport};
+pub use mavlink::{
+    mavlink_status_to_task_status, task_to_mavlink_waypoint, waypoint_to_mission_item_int,
+    MavlinkMissionError, MavlinkTransport, MissionFrame, MissionHomeOrigin, MissionUploadOptions,
+    MissionUploadReport,
+};

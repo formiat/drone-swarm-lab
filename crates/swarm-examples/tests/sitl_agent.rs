@@ -114,6 +114,7 @@ fn cli_validation_missing_mode() {
 }
 
 #[test]
+#[cfg(not(feature = "mavlink-transport"))]
 fn cli_validation_connection_without_feature() {
     let scenario = write_sitl_scenario();
     let scenario = scenario.path().to_str().unwrap();

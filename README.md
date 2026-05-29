@@ -78,6 +78,20 @@ cargo run --bin sitl_agent -- \
   --mock --scenario scenarios/sitl.waypoints.json --agent-id agent-0
 ```
 
+### 9. Upload a mission to PX4 SITL
+
+```bash
+cargo run -p swarm-examples --bin sitl_agent --features mavlink-transport -- \
+  --connection udp:127.0.0.1:14550 \
+  --scenario scenarios/sitl.waypoints.json \
+  --agent-id agent-0
+```
+
+This is an experimental waypoint upload path for PX4 SITL. It waits for a
+MAVLink heartbeat, optionally clears the existing mission, sends mission count,
+responds to `MISSION_REQUEST_INT` or legacy `MISSION_REQUEST`, sends
+`MISSION_ITEM_INT` waypoints, and requires an accepted `MISSION_ACK`.
+
 ---
 
 ## Current Status
@@ -104,7 +118,7 @@ cargo run --bin sitl_agent -- \
 | Wildfire / Flood Mapping | ✅ Stable | M30 | `TaskKind::MappingZone`, `WildfireState`, hazard zones, dynamic threat |
 | Simulation Realism | ✅ Stable | M31 | Battery model v2, altitude sensor penalty, wind drift, pose noise, comms jitter, time-gated no-fly zones, `--realism` preset |
 | Reporting & Metrics | ✅ Stable | M32 | Per-row mission/scenario in exports, mission-scoped profiles, merged `all` benchmark id, wildfire/planner metrics, realism metadata in manifest |
-| Real PX4 | 🧪 Experimental | M20 | Feature-gated scaffold; real mission upload is not implemented yet |
+| Real PX4 | 🧪 Experimental | M44 | Feature-gated PX4 SITL mission upload; no arm/takeoff/execution supervision |
 
 **Test coverage:** 360+ tests, 10 crates, 18 JSON scenarios.
 
@@ -191,7 +205,7 @@ Parametric sweeps over variables such as packet loss, agent count, or grid size 
 
 ## Known Limitations
 
-1. **Simulation only:** No real hardware integration beyond experimental PX4 SITL scaffold.
+1. **Simulation only:** No real hardware workflow; PX4 integration is limited to experimental SITL waypoint upload.
 2. **Single-agent SITL:** Multi-agent SITL not yet supported.
 3. **SITL coordinate frame:** `sitl_agent` dry-run/mock mode treats `Pose { x, y, z }` as local simulation coordinates; `x/y` are not WGS84 latitude/longitude, and `z` is local altitude.
 4. **3D pose:** Scenarios support `z` coordinate and altitude-aware sensors, but most missions operate primarily in XY plane.
@@ -227,7 +241,7 @@ See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known l
 
 - **Not a production flight-control system.** This is a research prototype for coordination algorithms.
 - **Not a certified safety layer.** Safety constraints are checked but not formally verified.
-- **Not ready for real-world swarm flights.** Simulation-only with experimental SITL scaffold.
+- **Not ready for real-world swarm flights.** Simulation-only with experimental PX4 SITL mission upload.
 - **Not a MAVLink ground control station.** PX4 integration is experimental and minimal.
 
 ---

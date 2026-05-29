@@ -1,5 +1,3 @@
-#[cfg(feature = "mavlink-transport")]
-use swarm_comms::Transport;
 use swarm_comms::{MockMavlinkTransport, Waypoint};
 use swarm_examples::sitl_plan::{
     format_dry_run_plan, load_sitl_plan, validate_connection_string, SitlError, SitlMode, SitlPlan,
@@ -130,7 +128,7 @@ fn run_connection(plan: &SitlPlan, connection_string: &str) -> Result<(), SitlEr
 
     #[cfg(feature = "mavlink-transport")]
     {
-        use swarm_comms::MavlinkTransport;
+        use swarm_comms::{MavlinkTransport, MissionUploadOptions};
 
         let agent_id = swarm_types::AgentId::from(plan.agent_id.clone());
         let mut transport =
@@ -139,22 +137,35 @@ fn run_connection(plan: &SitlPlan, connection_string: &str) -> Result<(), SitlEr
                     message: error.to_string(),
                 }
             })?;
-        for waypoint in &plan.waypoints {
-            let msg = format!(
+        let waypoints: Vec<Waypoint> = plan
+            .waypoints
+            .iter()
+            .map(|waypoint| Waypoint {
+                x: waypoint.x,
+                y: waypoint.y,
+                z: waypoint.z,
+                seq: waypoint.seq,
+            })
+            .collect();
+        for waypoint in &waypoints {
+            eprintln!(
                 "WAYPOINT seq={} x={:.1} y={:.1} z={:.1}",
                 waypoint.seq, waypoint.x, waypoint.y, waypoint.z
             );
-            eprintln!("{msg}");
-            let raw = swarm_comms::RawMessage {
-                from: swarm_types::AgentId::from(plan.agent_id.clone()),
-                to: swarm_types::AgentId::from("px4".to_owned()),
-                payload: msg.into_bytes(),
-            };
-            if let Err(error) = transport.send(raw) {
-                eprintln!("Failed to send waypoint: {error}");
-            }
         }
-        eprintln!("Real MAVLink mode: waypoints sent.");
+
+        let report = transport
+            .upload_mission(&waypoints, MissionUploadOptions::default())
+            .map_err(|error| SitlError::ConnectionFailed {
+                message: error.to_string(),
+            })?;
+        eprintln!(
+            "Real MAVLink mode: mission accepted; uploaded_count={} target_system={} target_component={} cleared_existing={}",
+            report.uploaded_count,
+            report.target_system,
+            report.target_component,
+            report.cleared_existing
+        );
         Ok(())
     }
 

@@ -10,13 +10,13 @@ hardware.
 |---|---|---|---|---|
 | Mock | `--mock` | None | Send extracted waypoints to in-memory `MockMavlinkTransport` | Stable and CI-friendly |
 | Dry-run | `--dry-run` | None | Print the mission upload plan without connecting to PX4 | Stable portable contract |
-| PX4 SITL | `--connection <addr>` | PX4 SITL + `mavlink-transport` feature | Experimental connection path | Not a full mission upload workflow yet |
+| PX4 SITL | `--connection <addr>` | PX4 SITL + `mavlink-transport` feature | Upload waypoint mission to PX4 SITL | Experimental; no arm/takeoff/execution supervision |
 
 ## Quick Start: Dry-Run Mode
 
 Dry-run is the recommended first check before any PX4 work. It loads the
-scenario, extracts pose tasks, and prints the waypoint plan that would be used
-by a future mission upload flow.
+scenario, extracts pose tasks, and prints the waypoint plan that the connection
+mode uploads as a MAVLink mission.
 
 ```bash
 cargo run --bin sitl_agent -- \
@@ -86,26 +86,44 @@ Without the feature, `--connection` returns a stable error with the required
 build instruction. A syntactically bad connection string returns a stable
 `bad connection string` error without attempting a network connection.
 
+The connection path performs a minimal mission upload transaction:
+
+1. Wait for MAVLink `HEARTBEAT`.
+2. Send `MISSION_CLEAR_ALL` by default.
+3. Send `MISSION_COUNT`.
+4. Answer `MISSION_REQUEST_INT` with `MISSION_ITEM_INT`.
+5. Fall back to legacy `MISSION_REQUEST` if the vehicle sends it.
+6. Require final `MISSION_ACK` with `MAV_MISSION_ACCEPTED`.
+
+This mode uploads the mission only. It does not arm the vehicle, take off,
+switch modes, start the mission, track execution progress, or perform
+operator/safety checks.
+
 ## Coordinate Frame Contract
 
-For M43, `sitl_agent` uses a deliberately narrow coordinate contract:
+For M44, `sitl_agent` uses a deliberately narrow coordinate contract:
 
 - `Pose { x, y, z }` means local simulation coordinates.
 - `x` and `y` are not WGS84 latitude/longitude.
 - `z` is interpreted as altitude relative to the local origin.
 - If `z` is omitted in JSON, serde defaults it to `0.0`.
 - `local_simulation` is the only supported frame in dry-run/mock mode.
-- Global/PX4 coordinate conversion is not implemented in M43.
+- In PX4 SITL mode, local `x` is converted as east meters and local `y` as
+  north meters from the configured home origin.
+- The default home origin is the common PX4 SITL Zurich origin:
+  `lat=47.397742`, `lon=8.545594`, `alt=0.0`.
+- Uploaded items use `MISSION_ITEM_INT` with
+  `MAV_FRAME_GLOBAL_RELATIVE_ALT`.
 
-The real MAVLink mission upload protocol, global frame conversion, arm/takeoff,
-execution and telemetry loop are future milestones.
+Arm/takeoff, mission start, execution tracking, telemetry supervision, and
+multi-agent SITL remain future milestones.
 
 ## Real Hardware Warning
 
 Do not use the current `sitl_agent` against real drones. The repository does not
 provide a certified safety layer, hardware readiness checks, preflight policy,
-operator workflow, emergency handling, or a production MAVLink mission upload
-implementation. Treat all SITL functionality as simulation/development tooling.
+operator workflow, emergency handling, or a production flight workflow. Treat
+all SITL functionality as simulation/development tooling.
 
 ## Troubleshooting
 
@@ -117,3 +135,5 @@ implementation. Treat all SITL functionality as simulation/development tooling.
 | `feature missing` | `--connection` was used without `mavlink-transport` | Build/run with `--features mavlink-transport` |
 | `bad connection string` | Connection address is not a supported form | Use `udp:<host>:<port>` for PX4 SITL |
 | No PX4 connection | PX4 SITL is not running or address is wrong | Start PX4 SITL and verify the MAVLink endpoint |
+| Mission upload timeout | PX4 did not send heartbeat, mission request, or final ack | Verify the endpoint, PX4 mode, and that no other GCS owns the mission protocol |
+| Mission rejected | PX4 returned a non-accepted `MISSION_ACK` | Check waypoint coordinates, altitude, frame support, and PX4 logs |
