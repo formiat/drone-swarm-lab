@@ -67,9 +67,10 @@ pub enum MissionFrame {
 
 #[cfg(feature = "mavlink-transport")]
 impl MissionFrame {
+    #[allow(deprecated)]
     fn to_mav_frame(self) -> Result<common::MavFrame, MavlinkMissionError> {
         match self {
-            Self::GlobalRelativeAlt => Ok(common::MavFrame::MAV_FRAME_GLOBAL_RELATIVE_ALT),
+            Self::GlobalRelativeAlt => Ok(common::MavFrame::MAV_FRAME_GLOBAL_RELATIVE_ALT_INT),
             Self::LocalNed => Err(MavlinkMissionError::UnsupportedFrame),
         }
     }
@@ -511,7 +512,7 @@ pub fn waypoint_to_mission_item_int(
     )?;
     let lat = scaled_coordinate(lat, "latitude")?;
     let lon = scaled_coordinate(lon, "longitude")?;
-    let z = relative_altitude(waypoint.z, options.home_origin.alt_m)?;
+    let z = relative_altitude(waypoint.z)?;
 
     Ok(CommonMessage::MISSION_ITEM_INT(
         common::MISSION_ITEM_INT_DATA {
@@ -573,10 +574,9 @@ fn local_to_lon_deg(
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn relative_altitude(z_m: f64, origin_alt_m: f64) -> Result<f32, MavlinkMissionError> {
+fn relative_altitude(z_m: f64) -> Result<f32, MavlinkMissionError> {
     ensure_finite("z_m", z_m)?;
-    ensure_finite("origin_alt_m", origin_alt_m)?;
-    let altitude = z_m - origin_alt_m;
+    let altitude = z_m;
     if altitude < f32::MIN as f64 || altitude > f32::MAX as f64 {
         return Err(MavlinkMissionError::Conversion(format!(
             "altitude out of f32 range: {altitude}"
@@ -993,6 +993,7 @@ mod mission_upload_tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn waypoint_conversion_uses_home_origin_and_relative_altitude() {
         let options = MissionUploadOptions {
             home_origin: MissionHomeOrigin {
@@ -1020,10 +1021,13 @@ mod mission_upload_tests {
         assert_eq!(item.seq, 3);
         assert_eq!(item.target_system, 1);
         assert_eq!(item.target_component, 1);
-        assert_eq!(item.frame, common::MavFrame::MAV_FRAME_GLOBAL_RELATIVE_ALT);
+        assert_eq!(
+            item.frame,
+            common::MavFrame::MAV_FRAME_GLOBAL_RELATIVE_ALT_INT
+        );
         assert!((f64::from(item.x) / 10_000_000.0 - 47.001).abs() < 0.000_001);
         assert!(f64::from(item.y) / 10_000_000.0 > 8.001);
-        assert!((item.z - 20.0).abs() < f32::EPSILON);
+        assert!((item.z - 25.0).abs() < f32::EPSILON);
     }
 
     #[test]

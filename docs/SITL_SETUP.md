@@ -106,6 +106,8 @@ For M44, `sitl_agent` uses a deliberately narrow coordinate contract:
 - `Pose { x, y, z }` means local simulation coordinates.
 - `x` and `y` are not WGS84 latitude/longitude.
 - `z` is interpreted as altitude relative to the local origin.
+- In PX4 SITL mode, `z` is sent unchanged as relative altitude; `home_origin.alt_m`
+  is not subtracted for the relative-altitude MAVLink frame.
 - If `z` is omitted in JSON, serde defaults it to `0.0`.
 - `local_simulation` is the only supported frame in dry-run/mock mode.
 - In PX4 SITL mode, local `x` is converted as east meters and local `y` as
@@ -113,7 +115,7 @@ For M44, `sitl_agent` uses a deliberately narrow coordinate contract:
 - The default home origin is the common PX4 SITL Zurich origin:
   `lat=47.397742`, `lon=8.545594`, `alt=0.0`.
 - Uploaded items use `MISSION_ITEM_INT` with
-  `MAV_FRAME_GLOBAL_RELATIVE_ALT`.
+  `MAV_FRAME_GLOBAL_RELATIVE_ALT_INT`.
 
 Arm/takeoff, mission start, execution tracking, telemetry supervision, and
 multi-agent SITL remain future milestones.
