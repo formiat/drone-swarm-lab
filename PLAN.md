@@ -75,6 +75,7 @@ Notion/GitLab:
 - `crates/swarm-comms/src/mavlink.rs`
   - command message builders;
   - command ack waiting;
+  - minimal post-start heartbeat/telemetry availability guard;
   - command/lifecycle errors;
   - lifecycle orchestration over the same fake-able MAVLink connection seam.
 - `crates/swarm-comms/src/lib.rs`
@@ -147,14 +148,33 @@ Notion/GitLab:
        result if available;
      - abort failure must be visible in the error/report, not swallowed.
 
-5. `crates/swarm-comms/src/mavlink.rs`: wire lifecycle into `MavlinkTransport`.
+5. `crates/swarm-comms/src/mavlink.rs`: добавить минимальный M46 telemetry/heartbeat guard.
+   - Это не M47 telemetry loop and not task completion mapping.
+   - После успешного start mission выполнить bounded wait for minimal telemetry
+     availability. Минимальный сигнал для M46: fresh `HEARTBEAT` после активного
+     lifecycle step или другой явно выбранный lightweight MAVLink signal, если
+     реализация докажет, что heartbeat недостаточен.
+   - Timeout должен:
+     1. отправить abort command;
+     2. дождаться/зафиксировать abort ack result, если он доступен в рамках
+        timeout;
+     3. вернуть typed `TelemetryTimeout`/`HeartbeatTimeout` lifecycle error;
+     4. включить abort result в error/report, чтобы failure не выглядел как
+        silent success.
+   - Guard должен быть configurable через тот же `--timeout <seconds>` или
+     отдельное поле `MissionLifecycleOptions`, но не должен ждать mission
+     progress, `MISSION_CURRENT`, `MISSION_ITEM_REACHED` или task completion.
+   - M47 позже расширит это до полноценного telemetry loop and `TaskStatus`
+     mapping.
+
+6. `crates/swarm-comms/src/mavlink.rs`: wire lifecycle into `MavlinkTransport`.
    - Add `MavlinkTransport::execute_uploaded_mission(...)` or
      `MavlinkTransport::run_lifecycle(...)`.
    - Keep `upload_mission(...)` unchanged for M44/M45 callers.
    - Re-export public types in `crates/swarm-comms/src/lib.rs` behind
      `mavlink-transport`.
 
-6. `crates/swarm-examples/src/bin/sitl_agent.rs`: add lifecycle CLI options.
+7. `crates/swarm-examples/src/bin/sitl_agent.rs`: add lifecycle CLI options.
    - `--upload-only`: explicit upload-only mode. Should be equivalent to the
      current `--connection` behavior.
    - `--execute`: after upload, run arm/takeoff/start lifecycle.
@@ -167,7 +187,7 @@ Notion/GitLab:
    - Keep default without either flag as upload-only to avoid surprising users
      who currently expect connection mode to upload but not fly.
 
-7. `crates/swarm-examples/src/bin/sitl_agent.rs`: integrate failure behavior.
+8. `crates/swarm-examples/src/bin/sitl_agent.rs`: integrate failure behavior.
    - Current order must remain:
      scenario load -> connection string validation -> safety config load ->
      pre-upload safety validation -> build plan -> mission upload.
@@ -175,15 +195,17 @@ Notion/GitLab:
    - Map lifecycle errors to clear CLI stderr and non-zero exit.
    - Ensure upload failure does not emit arm/takeoff/start commands.
    - Ensure takeoff/start failures attempt abort.
+   - Ensure post-start heartbeat/telemetry timeout attempts abort and exits
+     non-zero with a typed error.
 
-8. `crates/swarm-examples/src/sitl_plan.rs`: keep CLI parsing maintainable.
+9. `crates/swarm-examples/src/sitl_plan.rs`: keep CLI parsing maintainable.
    - If `sitl_agent.rs` parser becomes too large, move lifecycle option structs
      and validation into `sitl_plan.rs`.
    - Add typed `SitlError` variants for invalid lifecycle options:
      conflicting execution mode, missing lifecycle value, invalid timeout,
      invalid abort duration, lifecycle option without `--execute`.
 
-9. `docs/SITL_SETUP.md`: update M46 operator documentation.
+10. `docs/SITL_SETUP.md`: update M46 operator documentation.
    - Mode matrix should say PX4 SITL now supports upload-only and experimental
      execute lifecycle.
    - Add examples:
@@ -194,9 +216,11 @@ Notion/GitLab:
      - short timeout for test/debug.
    - Document exact failure behavior and that M47 telemetry/task completion is
      not yet implemented.
+   - Document the narrow M46 telemetry timeout meaning: minimal post-start
+     heartbeat/telemetry availability guard only, not waypoint progress tracking.
    - Keep real hardware warning explicit.
 
-10. `README.md`: актуализировать публичную сводку.
+11. `README.md`: актуализировать публичную сводку.
     - Quick Start PX4 SITL section should mention upload-only vs execute.
     - Current Status row `Real PX4` should move from "mission upload only" to
       "experimental upload + controlled single-agent lifecycle; no telemetry
@@ -204,7 +228,7 @@ Notion/GitLab:
     - Known limitations should still say no real hardware workflow and no
       multi-agent SITL.
 
-11. Verification commands for the implementation round.
+12. Verification commands for the implementation round.
     - Always run formatter:
       `timeout 300s cargo fmt --all`.
     - Run targeted no-feature tests:
@@ -244,6 +268,12 @@ These should be implemented together with the main M46 code.
   - lifecycle takeoff failure sends abort.
   - lifecycle start failure sends abort.
   - lifecycle `abort_after` sends abort after successful start.
+  - upload failure in upload+execute orchestration sends no arm/takeoff/start
+    commands.
+  - post-start heartbeat/telemetry timeout sends abort and returns visible typed
+    lifecycle error.
+  - post-start heartbeat/telemetry guard succeeds when fake connection provides
+    the minimal expected heartbeat/signal before timeout.
 
 - `crates/swarm-examples/tests/sitl_agent.rs`
   - CLI accepts `--connection ... --upload-only`.
@@ -264,13 +294,17 @@ These are still expected in M46 if the implementation touches the relevant seam.
   `MavlinkVehicleConnection` or equivalent so mission upload and command
   lifecycle can share the fake connection in tests.
 - Extend existing `FakeMissionConnection` in `crates/swarm-comms/src/mavlink.rs`
-  so it can script `COMMAND_ACK` messages and assert sent `COMMAND_LONG`
-  messages.
+  so it can script `COMMAND_ACK`, post-start heartbeat presence/absence and
+  assert sent `COMMAND_LONG` messages.
 - Add a small lifecycle command assertion helper to avoid brittle duplicate
   pattern matching in every test.
+- Add fake upload+execute script helpers for failure semantics:
+  - mission upload rejection/timeout followed by no lifecycle commands;
+  - successful start followed by no post-start heartbeat and expected abort.
 - If CLI execution path needs feature-gated fake integration, add a lightweight
   local fake MAVLink script/helper that returns heartbeat, mission requests,
-  mission ack and command acks. It must be self-contained and not require PX4.
+  mission ack, command acks and optional post-start heartbeat. It must be
+  self-contained and not require PX4.
 - Add a helper for `sitl_agent` CLI option assertions so new lifecycle parsing
   tests do not duplicate scenario fixture setup.
 
@@ -308,9 +342,10 @@ These should be planned/documented but not required as default CI in M46.
 - **Command timeout values affect test speed and live reliability.** Tests should
   use millisecond timeouts through fake connections; docs examples can use
   operator-friendly seconds.
-- **M46 overlaps with M47 telemetry.** M46 should only wait for command acks and
-  bounded abort timing. Task status mapping and mission progress telemetry stay
-  in M47.
+- **M46 overlaps with M47 telemetry.** M46 should include only a minimal
+  post-start heartbeat/telemetry availability guard so timeout can trigger
+  abort. Task status mapping, waypoint reached handling and mission progress
+  telemetry stay in M47.
 
 ## Open questions
 
@@ -325,3 +360,6 @@ These should be planned/documented but not required as default CI in M46.
 - Should abort be RTL-only or mission-stop-then-RTL? Default plan: RTL-only for
   M46 to keep the lifecycle deterministic; expand later if PX4 SITL behavior
   requires a two-command abort sequence.
+- What exact signal should M46 use for the minimal post-start telemetry guard?
+  Default plan: require a fresh `HEARTBEAT` after successful start mission.
+  Do not add `MISSION_CURRENT` or waypoint-reached semantics until M47.
