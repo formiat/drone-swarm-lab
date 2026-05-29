@@ -7,6 +7,7 @@ fn main() {
     let mut summary = false;
     let mut tick: Option<u64> = None;
     let mut follow = false;
+    let mut sitl_summary_path: Option<String> = None;
 
     let mut i = 1;
     while i < args.len() {
@@ -25,15 +26,43 @@ fn main() {
                 }
             }
             "--follow" => follow = true,
+            "--sitl-summary" => {
+                i += 1;
+                if i < args.len() {
+                    sitl_summary_path = Some(args[i].clone());
+                }
+            }
             _ => {}
         }
         i += 1;
     }
 
+    if let Some(path) = sitl_summary_path {
+        if log_path.is_some() || summary || tick.is_some() || follow {
+            eprintln!(
+                "--sitl-summary cannot be combined with --log, --summary, --tick, or --follow"
+            );
+            std::process::exit(1);
+        }
+        let log = match swarm_examples::sitl_observability::read_sitl_event_log(Path::new(&path)) {
+            Ok(log) => log,
+            Err(error) => {
+                eprintln!("Failed to read SITL replay log: {error}");
+                std::process::exit(1);
+            }
+        };
+        let summary = swarm_examples::sitl_observability::summarize_sitl_event_log(&log);
+        println!(
+            "{}",
+            swarm_examples::sitl_observability::format_sitl_summary(&summary)
+        );
+        return;
+    }
+
     let path = match log_path {
         Some(p) => p,
         None => {
-            eprintln!("Usage: replay --log <path> [--summary] [--tick N] [--follow]");
+            eprintln!("Usage: replay --log <path> [--summary] [--tick N] [--follow] | replay --sitl-summary <path>");
             std::process::exit(1);
         }
     };

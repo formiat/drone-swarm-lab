@@ -1,5 +1,6 @@
 pub mod realism;
 pub mod regression_lib;
+pub mod sitl_observability;
 pub mod sitl_plan;
 #[cfg(feature = "mavlink-transport")]
 pub mod sitl_progress;

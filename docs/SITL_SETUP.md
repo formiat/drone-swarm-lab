@@ -181,8 +181,8 @@ Real MAVLink mode: mission complete; completed=3 failed=0 total=3
 ```
 
 This is still an experimental single-agent SITL path. It does not merge
-multi-agent telemetry, does not provide durable replay logs or UI, and is not a
-hardware failsafe implementation.
+multi-agent telemetry, does not provide a UI, and is not a hardware failsafe
+implementation.
 
 ## M48 Single-Agent Golden Path Report
 
@@ -224,7 +224,80 @@ contains:
 
 Failure reports use the same schema and set `final_status`, `error`, and
 `abort_result` when an abort was attempted. The report is a final summary only;
-durable event logs and replay summaries remain M49 scope.
+use the M49 replay log when the ordered protocol/progress trace is needed.
+
+## M49 SITL Replay Log
+
+M49 adds an optional ordered event log for mock, upload-only, and execute SITL
+runs. It complements `--run-report`: the report answers "what was the final
+state?", while the replay log answers "what happened before that state?".
+
+```bash
+cargo run --bin sitl_agent --features mavlink-transport -- \
+  --connection udp:127.0.0.1:14550 \
+  --scenario scenarios/sitl.waypoints.json \
+  --agent-id agent-0 \
+  --execute \
+  --timeout 5 \
+  --telemetry-timeout 10 \
+  --no-progress-timeout 60 \
+  --run-report target/sitl/single-agent-report.json \
+  --replay-log target/sitl/single-agent.sitl-log.json
+```
+
+The event log is pretty JSON with schema version `sitl_event_log.v1`. It uses
+deterministic `step` numbers instead of wall-clock timestamps and records
+semantic SITL events, not every raw MAVLink packet. Event classes include:
+
+- connection opened;
+- heartbeat seen;
+- mission clear/count/request/item/ack;
+- arm/takeoff/start/abort command sent and acknowledged/rejected/timeout;
+- telemetry current sequence changes;
+- waypoint reached and task completed;
+- abort requested, disconnected, failure, and run completed.
+
+Upload-only mode also supports `--replay-log`:
+
+```bash
+cargo run --bin sitl_agent --features mavlink-transport -- \
+  --connection udp:127.0.0.1:14550 \
+  --scenario scenarios/sitl.waypoints.json \
+  --agent-id agent-0 \
+  --upload-only \
+  --replay-log target/sitl/upload-only.sitl-log.json
+```
+
+Mock mode supports the same flag for portable local checks without PX4:
+
+```bash
+cargo run --bin sitl_agent -- \
+  --mock \
+  --scenario scenarios/sitl.waypoints.json \
+  --agent-id agent-0 \
+  --replay-log target/sitl/mock.sitl-log.json
+```
+
+Dry-run rejects `--replay-log`, because dry-run prints a static upload plan and
+does not execute a runtime behavior trace.
+
+To inspect the compact summary:
+
+```bash
+cargo run --bin replay -- --sitl-summary target/sitl/single-agent.sitl-log.json
+```
+
+Example output:
+
+```text
+SITL run: sitl_waypoints_0:agent-0:connection_execute
+Scenario: sitl_waypoints_0 | Agent: agent-0 | Mode: connection_execute
+Events: 18
+Upload: clear=1 count=1 requested=3 sent=3 ack_accepted=1 ack_rejected=0
+Commands: sent=3 ack_accepted=3 ack_rejected=0
+Telemetry: heartbeat=2 current_seq=2 waypoint_reached=3 task_completed=3
+Failures: aborts=0 disconnected=0 failures=0 final_status=completed
+```
 
 ## M48 Tested PX4 SITL Setup
 
@@ -340,3 +413,4 @@ all SITL functionality as simulation/development tooling.
 | Telemetry heartbeat timeout | `--execute` started progress tracking but did not observe heartbeat before `--telemetry-timeout` | Verify PX4 is still connected and inspect PX4/SITL logs; the agent attempts RTL abort |
 | No mission progress timeout | Heartbeats may continue, but mission seq/completion did not advance before `--no-progress-timeout` | Increase timeout for long legs or inspect PX4 mission execution; the agent attempts RTL abort |
 | Run report write failed | `--run-report` parent directory cannot be created or the JSON file cannot be written | Fix path permissions or choose a writable path |
+| Replay log write failed | `--replay-log` parent directory cannot be created or the JSON file cannot be written | Fix path permissions or choose a writable path |

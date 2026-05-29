@@ -4,6 +4,9 @@ use std::time::Duration;
 use std::time::Instant;
 
 use swarm_comms::{MockMavlinkTransport, Waypoint};
+use swarm_examples::sitl_observability::{
+    write_sitl_event_log, SitlEventLogMetadata, SitlEventLogMode, SitlEventRecorder,
+};
 use swarm_examples::sitl_plan::{
     first_sitl_entry, format_dry_run_plan, load_sitl_suite, validate_connection_string, SitlError,
     SitlMode, SitlPlan,
@@ -20,6 +23,7 @@ struct CliArgs {
     agent_id: String,
     safety_config: Option<String>,
     run_report: Option<String>,
+    replay_log: Option<String>,
     lifecycle: LifecycleArgs,
 }
 
@@ -45,6 +49,7 @@ fn parse_args() -> Result<CliArgs, SitlError> {
     let mut agent_id: Option<String> = None;
     let mut safety_config: Option<String> = None;
     let mut run_report: Option<String> = None;
+    let mut replay_log: Option<String> = None;
     let mut lifecycle_mode: Option<LifecycleMode> = None;
     let mut no_arm = false;
     let mut abort_after: Option<Duration> = None;
@@ -110,6 +115,16 @@ fn parse_args() -> Result<CliArgs, SitlError> {
                         .clone(),
                 );
                 connection_only_option.get_or_insert("--run-report");
+            }
+            "--replay-log" => {
+                i += 1;
+                replay_log = Some(
+                    args.get(i)
+                        .ok_or(SitlError::MissingArgument {
+                            name: "--replay-log <path>",
+                        })?
+                        .clone(),
+                );
             }
             "--upload-only" => {
                 set_lifecycle_mode(&mut lifecycle_mode, LifecycleMode::UploadOnly)?;
@@ -199,6 +214,12 @@ fn parse_args() -> Result<CliArgs, SitlError> {
             option: "--run-report",
         });
     }
+    if replay_log.is_some() && matches!(mode, SitlMode::DryRun) {
+        return Err(SitlError::ReplayLogUnsupported {
+            option: "--replay-log",
+            mode: "dry-run",
+        });
+    }
 
     Ok(CliArgs {
         mode,
@@ -206,6 +227,7 @@ fn parse_args() -> Result<CliArgs, SitlError> {
         agent_id: agent_id.ok_or(SitlError::MissingArgument { name: "--agent-id" })?,
         safety_config,
         run_report,
+        replay_log,
         lifecycle: LifecycleArgs {
             mode: lifecycle_mode,
             no_arm,
@@ -263,7 +285,7 @@ fn main() {
     if let Err(error) = run() {
         eprintln!("error: {error}");
         eprintln!(
-            "usage: sitl_agent --mock|--dry-run|--connection <addr> --scenario <path> --agent-id <id> [--safety-config <path>] [--upload-only|--execute] [--no-arm] [--abort-after <seconds>] [--timeout <seconds>] [--telemetry-timeout <seconds>] [--no-progress-timeout <seconds>] [--run-report <path>]"
+            "usage: sitl_agent --mock|--dry-run|--connection <addr> --scenario <path> --agent-id <id> [--safety-config <path>] [--upload-only|--execute] [--no-arm] [--abort-after <seconds>] [--timeout <seconds>] [--telemetry-timeout <seconds>] [--no-progress-timeout <seconds>] [--run-report <path>] [--replay-log <path>]"
         );
         std::process::exit(1);
     }
@@ -283,39 +305,91 @@ fn run() -> Result<(), SitlError> {
     let plan = swarm_examples::sitl_plan::build_sitl_plan(&suite, &cli.scenario, cli.agent_id)?;
 
     match cli.mode {
-        SitlMode::Mock => run_mock(&plan),
+        SitlMode::Mock => run_mock(&plan, cli.replay_log.as_deref()),
         SitlMode::DryRun => {
             print!("{}", format_dry_run_plan(&plan));
             Ok(())
         }
-        SitlMode::Connection { addr } => {
-            run_connection(&plan, &addr, &cli.lifecycle, cli.run_report.as_deref())
-        }
+        SitlMode::Connection { addr } => run_connection(
+            &plan,
+            &addr,
+            &cli.lifecycle,
+            cli.run_report.as_deref(),
+            cli.replay_log.as_deref(),
+        ),
     }
 }
 
-fn run_mock(plan: &SitlPlan) -> Result<(), SitlError> {
+fn run_mock(plan: &SitlPlan, replay_log: Option<&str>) -> Result<(), SitlError> {
     let mut transport = MockMavlinkTransport::new();
+    let mut recorder =
+        replay_log.map(|_| new_sitl_event_recorder(plan, None, SitlEventLogMode::Mock));
+    if let Some(recorder) = recorder.as_mut() {
+        recorder.push_connection_opened();
+        recorder.push_mission_count_sent(plan.waypoints.len());
+    }
     eprintln!(
         "SITL Agent: {} | {} waypoints | mock=true",
         plan.agent_id,
         plan.waypoints.len()
     );
 
-    for waypoint in &plan.waypoints {
+    for waypoint_item in &plan.waypoints {
         let waypoint = Waypoint {
-            x: waypoint.x,
-            y: waypoint.y,
-            z: waypoint.z,
-            seq: waypoint.seq,
+            x: waypoint_item.x,
+            y: waypoint_item.y,
+            z: waypoint_item.z,
+            seq: waypoint_item.seq,
         };
         eprintln!(
             "WAYPOINT seq={} x={:.1} y={:.1} z={:.1}",
             waypoint.seq, waypoint.x, waypoint.y, waypoint.z
         );
+        if let Some(recorder) = recorder.as_mut() {
+            recorder.push_mission_item_sent(waypoint.seq, Some(waypoint_item.task_id.clone()));
+            recorder.push_task_completed(waypoint.seq, waypoint_item.task_id.clone());
+        }
         transport.send_waypoint(waypoint);
     }
     eprintln!("Mock mode: {} waypoints sent.", transport.waypoints().len());
+    if let Some(recorder) = recorder.as_mut() {
+        recorder.push_run_completed("completed");
+        write_replay_log_if_requested(replay_log, recorder)?;
+    }
+    Ok(())
+}
+
+fn new_sitl_event_recorder(
+    plan: &SitlPlan,
+    connection_string: Option<&str>,
+    mode: SitlEventLogMode,
+) -> SitlEventRecorder {
+    let mode_name = mode.as_str();
+    let run_id = format!("{}:{}:{mode_name}", plan.scenario_name, plan.agent_id);
+    SitlEventRecorder::new(SitlEventLogMetadata {
+        run_id,
+        scenario_path: plan.scenario_path.clone(),
+        scenario_name: plan.scenario_name.clone(),
+        mission: plan.mission.clone(),
+        profile: plan.profile.clone(),
+        agent_id: plan.agent_id.clone(),
+        connection_string: connection_string.map(str::to_owned),
+        mode,
+    })
+}
+
+fn write_replay_log_if_requested(
+    path: Option<&str>,
+    recorder: &SitlEventRecorder,
+) -> Result<(), SitlError> {
+    let Some(path) = path else {
+        return Ok(());
+    };
+    write_sitl_event_log(path, recorder.log()).map_err(|error| SitlError::ReplayLogWrite {
+        path: Path::new(path).to_path_buf(),
+        message: error.to_string(),
+    })?;
+    eprintln!("SITL replay log written: {path}");
     Ok(())
 }
 
@@ -324,6 +398,7 @@ fn run_connection(
     connection_string: &str,
     lifecycle: &LifecycleArgs,
     run_report: Option<&str>,
+    replay_log: Option<&str>,
 ) -> Result<(), SitlError> {
     validate_connection_string(connection_string)?;
 
@@ -338,6 +413,15 @@ fn run_connection(
                     message: error.to_string(),
                 }
             })?;
+        let event_mode = match lifecycle.mode {
+            LifecycleMode::UploadOnly => SitlEventLogMode::ConnectionUploadOnly,
+            LifecycleMode::Execute => SitlEventLogMode::ConnectionExecute,
+        };
+        let mut event_recorder =
+            replay_log.map(|_| new_sitl_event_recorder(plan, Some(connection_string), event_mode));
+        if let Some(recorder) = event_recorder.as_mut() {
+            recorder.push_connection_opened();
+        }
         let waypoints: Vec<Waypoint> = plan
             .waypoints
             .iter()
@@ -361,11 +445,24 @@ fn run_connection(
         };
         match lifecycle.mode {
             LifecycleMode::UploadOnly => {
-                let report = transport
-                    .upload_mission(&waypoints, upload_options)
-                    .map_err(|error| SitlError::ConnectionFailed {
-                        message: error.to_string(),
-                    })?;
+                let upload_result = if let Some(recorder) = event_recorder.as_mut() {
+                    let mut observer = SitlMavlinkObserver { recorder };
+                    transport.upload_mission_observed(&waypoints, upload_options, &mut observer)
+                } else {
+                    transport.upload_mission(&waypoints, upload_options)
+                };
+                let report = match upload_result {
+                    Ok(report) => report,
+                    Err(error) => {
+                        if let Some(recorder) = event_recorder.as_mut() {
+                            recorder.push_failure("failed", error.to_string());
+                            write_replay_log_if_requested(replay_log, recorder)?;
+                        }
+                        return Err(SitlError::ConnectionFailed {
+                            message: error.to_string(),
+                        });
+                    }
+                };
                 eprintln!(
                     "Real MAVLink mode: mission accepted; lifecycle=upload-only uploaded_count={} target_system={} target_component={} cleared_existing={}",
                     report.uploaded_count,
@@ -373,6 +470,10 @@ fn run_connection(
                     report.target_component,
                     report.cleared_existing
                 );
+                if let Some(recorder) = event_recorder.as_mut() {
+                    recorder.push_run_completed("upload_accepted");
+                    write_replay_log_if_requested(replay_log, recorder)?;
+                }
             }
             LifecycleMode::Execute => {
                 let lifecycle_options = MissionLifecycleOptions {
@@ -383,21 +484,28 @@ fn run_connection(
                     abort_after: lifecycle.abort_after,
                     takeoff_altitude_m: default_takeoff_altitude(&waypoints),
                 };
-                let mut driver = MavlinkGoldenPathDriver {
-                    transport: &mut transport,
+                let result = {
+                    let mut driver = MavlinkGoldenPathDriver {
+                        transport: &mut transport,
+                        recorder: event_recorder.as_mut(),
+                    };
+                    run_golden_path_with_driver(
+                        &mut driver,
+                        SitlGoldenPathRun {
+                            plan,
+                            waypoints: &waypoints,
+                            connection_string,
+                            upload_options,
+                            lifecycle_options,
+                            lifecycle,
+                            run_report,
+                        },
+                    )
                 };
-                run_golden_path_with_driver(
-                    &mut driver,
-                    SitlGoldenPathRun {
-                        plan,
-                        waypoints: &waypoints,
-                        connection_string,
-                        upload_options,
-                        lifecycle_options,
-                        lifecycle,
-                        run_report,
-                    },
-                )?;
+                if let Some(recorder) = event_recorder.as_ref() {
+                    write_replay_log_if_requested(replay_log, recorder)?;
+                }
+                result?;
             }
         }
         Ok(())
@@ -407,6 +515,7 @@ fn run_connection(
     {
         let _ = plan;
         let _ = run_report;
+        let _ = replay_log;
         let _ = (
             lifecycle.mode,
             lifecycle.no_arm,
@@ -466,11 +575,61 @@ trait SitlGoldenPathDriver {
         lifecycle_options: &swarm_comms::MissionLifecycleOptions,
         mission_item_count: usize,
     ) -> Result<swarm_examples::sitl_progress::SitlMissionProgressReport, SitlExecutionFailure>;
+
+    fn record_run_completed(&mut self, _status: &str) {}
+
+    fn record_failure(&mut self, _status: &str, _error: &str) {}
 }
 
 #[cfg(feature = "mavlink-transport")]
 struct MavlinkGoldenPathDriver<'a> {
     transport: &'a mut swarm_comms::MavlinkTransport,
+    recorder: Option<&'a mut SitlEventRecorder>,
+}
+
+#[cfg(feature = "mavlink-transport")]
+struct SitlMavlinkObserver<'a> {
+    recorder: &'a mut SitlEventRecorder,
+}
+
+#[cfg(feature = "mavlink-transport")]
+impl swarm_comms::MavlinkMissionObserver for SitlMavlinkObserver<'_> {
+    fn on_event(&mut self, event: swarm_comms::MavlinkMissionEvent) {
+        match event {
+            swarm_comms::MavlinkMissionEvent::HeartbeatSeen => {
+                self.recorder.push_heartbeat_seen();
+            }
+            swarm_comms::MavlinkMissionEvent::MissionClearSent => {
+                self.recorder.push_mission_clear_sent();
+            }
+            swarm_comms::MavlinkMissionEvent::MissionCountSent { count } => {
+                self.recorder.push_mission_count_sent(count);
+            }
+            swarm_comms::MavlinkMissionEvent::MissionItemRequested { seq } => {
+                self.recorder.push_mission_item_requested(seq);
+            }
+            swarm_comms::MavlinkMissionEvent::MissionItemSent { seq } => {
+                self.recorder.push_mission_item_sent(seq, None);
+            }
+            swarm_comms::MavlinkMissionEvent::MissionAckReceived { result, accepted } => {
+                self.recorder.push_mission_ack_received(result, accepted);
+            }
+            swarm_comms::MavlinkMissionEvent::CommandSent { command } => {
+                self.recorder.push_command_sent(command);
+            }
+            swarm_comms::MavlinkMissionEvent::CommandAckReceived {
+                command,
+                result,
+                accepted,
+            } => {
+                self.recorder
+                    .push_command_ack_received(command, result, accepted);
+            }
+            swarm_comms::MavlinkMissionEvent::AbortRequested { result } => {
+                self.recorder.push_abort_requested(Some(result));
+            }
+        }
+    }
 }
 
 #[cfg(feature = "mavlink-transport")]
@@ -481,10 +640,19 @@ impl SitlGoldenPathDriver for MavlinkGoldenPathDriver<'_> {
         upload_options: swarm_comms::MissionUploadOptions,
         lifecycle_options: swarm_comms::MissionLifecycleOptions,
     ) -> Result<SitlMissionStartReport, SitlExecutionFailure> {
-        let report = self
-            .transport
-            .upload_and_execute_mission(waypoints, upload_options, lifecycle_options)
-            .map_err(|error| flight_error_to_execution_failure(waypoints.len(), error))?;
+        let report = if let Some(recorder) = self.recorder.as_deref_mut() {
+            let mut observer = SitlMavlinkObserver { recorder };
+            self.transport.upload_and_execute_mission_observed(
+                waypoints,
+                upload_options,
+                lifecycle_options,
+                &mut observer,
+            )
+        } else {
+            self.transport
+                .upload_and_execute_mission(waypoints, upload_options, lifecycle_options)
+        }
+        .map_err(|error| flight_error_to_execution_failure(waypoints.len(), error))?;
         Ok(SitlMissionStartReport {
             uploaded_count: report.upload.uploaded_count,
             armed: report.lifecycle.armed,
@@ -503,8 +671,26 @@ impl SitlGoldenPathDriver for MavlinkGoldenPathDriver<'_> {
         mission_item_count: usize,
     ) -> Result<swarm_examples::sitl_progress::SitlMissionProgressReport, SitlExecutionFailure>
     {
-        run_telemetry_progress_loop(self.transport, plan, lifecycle, lifecycle_options)
-            .map_err(|error| telemetry_error_to_execution_failure(mission_item_count, error))
+        run_telemetry_progress_loop(
+            self.transport,
+            plan,
+            lifecycle,
+            lifecycle_options,
+            self.recorder.as_deref_mut(),
+        )
+        .map_err(|error| telemetry_error_to_execution_failure(mission_item_count, error))
+    }
+
+    fn record_run_completed(&mut self, status: &str) {
+        if let Some(recorder) = self.recorder.as_deref_mut() {
+            recorder.push_run_completed(status);
+        }
+    }
+
+    fn record_failure(&mut self, status: &str, error: &str) {
+        if let Some(recorder) = self.recorder.as_deref_mut() {
+            recorder.push_failure(status, error);
+        }
     }
 }
 
@@ -534,6 +720,7 @@ fn run_golden_path_with_driver<D: SitlGoldenPathDriver>(
     );
     match execution {
         Ok(success) => {
+            driver.record_run_completed("completed");
             let report =
                 success_run_report(run.plan, run.connection_string, &success.progress_report);
             write_run_report_if_requested(run.run_report, &report)?;
@@ -547,6 +734,7 @@ fn run_golden_path_with_driver<D: SitlGoldenPathDriver>(
             Ok(())
         }
         Err(failure) => {
+            driver.record_failure(sitl_run_status_name(&failure.final_status), &failure.error);
             let report = failure_run_report(run.plan, run.connection_string, &failure);
             write_run_report_if_requested(run.run_report, &report)?;
             Err(SitlError::ConnectionFailed {
@@ -743,6 +931,18 @@ fn failure_run_report(
 }
 
 #[cfg(feature = "mavlink-transport")]
+fn sitl_run_status_name(status: &SitlRunFinalStatus) -> &'static str {
+    match status {
+        SitlRunFinalStatus::Completed => "completed",
+        SitlRunFinalStatus::Failed => "failed",
+        SitlRunFinalStatus::Disconnected => "disconnected",
+        SitlRunFinalStatus::Rejected => "rejected",
+        SitlRunFinalStatus::TimedOutNoProgress => "timed_out_no_progress",
+        SitlRunFinalStatus::Aborted => "aborted",
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
 fn write_run_report_if_requested(
     path: Option<&str>,
     report: &SitlRunReport,
@@ -778,12 +978,19 @@ fn run_telemetry_progress_loop(
     plan: &SitlPlan,
     lifecycle: &LifecycleArgs,
     lifecycle_options: &swarm_comms::MissionLifecycleOptions,
+    recorder: Option<&mut SitlEventRecorder>,
 ) -> Result<swarm_examples::sitl_progress::SitlMissionProgressReport, SitlTelemetryLoopError> {
     let mut runtime = MavlinkTelemetryRuntime {
         transport,
         started_at: Instant::now(),
     };
-    run_telemetry_progress_loop_with_runtime(&mut runtime, plan, lifecycle, lifecycle_options)
+    run_telemetry_progress_loop_with_runtime(
+        &mut runtime,
+        plan,
+        lifecycle,
+        lifecycle_options,
+        recorder,
+    )
 }
 
 #[cfg(feature = "mavlink-transport")]
@@ -836,38 +1043,133 @@ fn run_telemetry_progress_loop_with_runtime<R: SitlTelemetryRuntime>(
     plan: &SitlPlan,
     lifecycle: &LifecycleArgs,
     lifecycle_options: &swarm_comms::MissionLifecycleOptions,
+    mut recorder: Option<&mut SitlEventRecorder>,
 ) -> Result<swarm_examples::sitl_progress::SitlMissionProgressReport, SitlTelemetryLoopError> {
     let mut monitor = SitlTelemetryMonitor::from_plan(plan, lifecycle)?;
 
     loop {
         if let Some(report) = monitor.check_timeouts(runtime.elapsed())? {
+            let abort_result = runtime.abort_mission(lifecycle_options);
+            record_telemetry_failure(recorder.as_deref_mut(), &report, &abort_result);
             return Err(SitlTelemetryLoopError::Failed {
                 report,
-                abort_result: runtime.abort_mission(lifecycle_options),
+                abort_result,
             });
         }
 
         if let Some(event) = runtime.poll_telemetry_event()? {
-            match monitor.apply_event(event, runtime.elapsed())? {
+            let step = monitor.apply_event(event.clone(), runtime.elapsed())?;
+            record_telemetry_step(recorder.as_deref_mut(), &event, &step);
+            match step {
                 SitlTelemetryLoopStep::Continue(update) => {
                     print_progress_update(update);
                 }
                 SitlTelemetryLoopStep::Completed(report) => return Ok(report),
                 SitlTelemetryLoopStep::Failed(report) => {
+                    let abort_result = runtime.abort_mission(lifecycle_options);
+                    record_telemetry_failure(recorder.as_deref_mut(), &report, &abort_result);
                     return Err(SitlTelemetryLoopError::Failed {
                         report,
-                        abort_result: runtime.abort_mission(lifecycle_options),
+                        abort_result,
                     });
                 }
             }
             if let Some(report) = monitor.check_timeouts(runtime.elapsed())? {
+                let abort_result = runtime.abort_mission(lifecycle_options);
+                record_telemetry_failure(recorder.as_deref_mut(), &report, &abort_result);
                 return Err(SitlTelemetryLoopError::Failed {
                     report,
-                    abort_result: runtime.abort_mission(lifecycle_options),
+                    abort_result,
                 });
             }
         } else {
             runtime.sleep(Duration::from_millis(10));
+        }
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn record_telemetry_step(
+    recorder: Option<&mut SitlEventRecorder>,
+    event: &swarm_comms::MavlinkTelemetryEvent,
+    step: &SitlTelemetryLoopStep,
+) {
+    let Some(recorder) = recorder else {
+        return;
+    };
+    match event {
+        swarm_comms::MavlinkTelemetryEvent::Heartbeat => {
+            recorder.push_heartbeat_seen();
+        }
+        swarm_comms::MavlinkTelemetryEvent::MissionCurrent { seq } => {
+            let task_id = match step {
+                SitlTelemetryLoopStep::Continue(
+                    swarm_examples::sitl_progress::SitlProgressUpdate::Current { task_id, .. },
+                ) => Some(task_id.clone()),
+                _ => None,
+            };
+            recorder.push_current_seq_changed(*seq, task_id);
+        }
+        swarm_comms::MavlinkTelemetryEvent::WaypointReached { seq } => {
+            let task_id = match step {
+                SitlTelemetryLoopStep::Continue(
+                    swarm_examples::sitl_progress::SitlProgressUpdate::Reached { task_id, .. },
+                ) => Some(task_id.clone()),
+                _ => None,
+            };
+            recorder.push_waypoint_reached(*seq, task_id.clone());
+            if let Some(task_id) = task_id {
+                recorder.push_task_completed(*seq, task_id);
+            }
+        }
+        swarm_comms::MavlinkTelemetryEvent::MissionComplete
+        | swarm_comms::MavlinkTelemetryEvent::MissionRejected { .. }
+        | swarm_comms::MavlinkTelemetryEvent::Disconnected => {}
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn record_telemetry_failure(
+    recorder: Option<&mut SitlEventRecorder>,
+    report: &swarm_examples::sitl_progress::SitlMissionProgressReport,
+    abort_result: &swarm_comms::AbortCommandResult,
+) {
+    let Some(recorder) = recorder else {
+        return;
+    };
+    let status = progress_final_status_name(report.final_status);
+    if matches!(
+        report.final_status,
+        swarm_examples::sitl_progress::SitlMissionFinalStatus::Disconnected
+    ) {
+        recorder.push_disconnected(
+            report
+                .failure_reason
+                .clone()
+                .unwrap_or_else(|| "telemetry disconnected".to_owned()),
+        );
+    }
+    recorder.push_abort_requested(Some(format!("{abort_result:?}")));
+    recorder.push_failure(
+        status,
+        report
+            .failure_reason
+            .clone()
+            .unwrap_or_else(|| "SITL telemetry failure".to_owned()),
+    );
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn progress_final_status_name(
+    status: swarm_examples::sitl_progress::SitlMissionFinalStatus,
+) -> &'static str {
+    match status {
+        swarm_examples::sitl_progress::SitlMissionFinalStatus::Completed => "completed",
+        swarm_examples::sitl_progress::SitlMissionFinalStatus::Failed => "failed",
+        swarm_examples::sitl_progress::SitlMissionFinalStatus::Disconnected => "disconnected",
+        swarm_examples::sitl_progress::SitlMissionFinalStatus::Rejected => "rejected",
+        swarm_examples::sitl_progress::SitlMissionFinalStatus::TimedOutNoProgress => {
+            "timed_out_no_progress"
         }
     }
 }
@@ -1575,6 +1877,7 @@ mod tests {
             &plan,
             &lifecycle,
             &lifecycle_options,
+            None,
         )
         .unwrap_err();
 
@@ -1608,6 +1911,7 @@ mod tests {
             &plan,
             &lifecycle,
             &lifecycle_options,
+            None,
         )
         .unwrap_err();
 

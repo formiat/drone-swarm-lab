@@ -102,6 +102,13 @@ pub enum SitlError {
     RunReportRequiresExecute { option: &'static str },
     #[error("run report write failed {path:?}: {message}")]
     RunReportWrite { path: PathBuf, message: String },
+    #[error("replay log option {option} is not supported for {mode}")]
+    ReplayLogUnsupported {
+        option: &'static str,
+        mode: &'static str,
+    },
+    #[error("replay log write failed {path:?}: {message}")]
+    ReplayLogWrite { path: PathBuf, message: String },
 }
 
 pub fn validate_connection_string(addr: &str) -> Result<(), SitlError> {

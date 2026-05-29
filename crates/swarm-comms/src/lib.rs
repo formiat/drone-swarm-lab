@@ -17,7 +17,8 @@ pub use mavlink::{
     abort_command, arm_command, disarm_command, mavlink_message_to_telemetry_event,
     mavlink_status_to_task_status, start_mission_command, takeoff_command,
     task_to_mavlink_waypoint, waypoint_to_mission_item_int, AbortCommandResult, MavlinkFlightError,
-    MavlinkFlightReport, MavlinkLifecycleError, MavlinkMissionError, MavlinkTelemetryError,
-    MavlinkTelemetryEvent, MavlinkTransport, MissionFrame, MissionHomeOrigin,
-    MissionLifecycleOptions, MissionLifecycleReport, MissionUploadOptions, MissionUploadReport,
+    MavlinkFlightReport, MavlinkLifecycleError, MavlinkMissionError, MavlinkMissionEvent,
+    MavlinkMissionObserver, MavlinkTelemetryError, MavlinkTelemetryEvent, MavlinkTransport,
+    MissionFrame, MissionHomeOrigin, MissionLifecycleOptions, MissionLifecycleReport,
+    MissionUploadOptions, MissionUploadReport,
 };

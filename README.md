@@ -104,7 +104,8 @@ cargo run -p swarm-examples --bin sitl_agent --features mavlink-transport -- \
   --scenario scenarios/sitl.waypoints.json \
   --agent-id agent-0 \
   --execute --timeout 5 --telemetry-timeout 10 --no-progress-timeout 60 \
-  --run-report target/sitl/single-agent-report.json
+  --run-report target/sitl/single-agent-report.json \
+  --replay-log target/sitl/single-agent.sitl-log.json
 ```
 
 `--execute` uploads the mission, sends arm/takeoff/start commands, requires
@@ -114,7 +115,14 @@ for typed telemetry progress. It maps `MISSION_CURRENT` and
 task is completed, and attempts RTL abort on rejected, disconnected, or stalled
 missions. With `--run-report`, it writes a structured JSON final report with
 scenario, agent id, mission item count, completed/failed counts, final status,
-and error details when available.
+and error details when available. With `--replay-log`, it writes an ordered SITL
+event trace covering upload handshake events, lifecycle commands, telemetry
+progress, aborts, and failures.
+
+```bash
+cargo run -p swarm-examples --bin replay -- \
+  --sitl-summary target/sitl/single-agent.sitl-log.json
+```
 
 ---
 
@@ -142,7 +150,7 @@ and error details when available.
 | Wildfire / Flood Mapping | ✅ Stable | M30 | `TaskKind::MappingZone`, `WildfireState`, hazard zones, dynamic threat |
 | Simulation Realism | ✅ Stable | M31 | Battery model v2, altitude sensor penalty, wind drift, pose noise, comms jitter, time-gated no-fly zones, `--realism` preset |
 | Reporting & Metrics | ✅ Stable | M32 | Per-row mission/scenario in exports, mission-scoped profiles, merged `all` benchmark id, wildfire/planner metrics, realism metadata in manifest |
-| Real PX4 | 🧪 Experimental | M48 | Feature-gated single-agent PX4 SITL report plumbing and golden command with pre-upload safety validation, arm/takeoff/start, telemetry-to-task progress mapping, and structured final run report; live PX4 verification remains pending and documented separately |
+| Real PX4 | 🧪 Experimental | M49 | Feature-gated single-agent PX4 SITL report and replay plumbing with pre-upload safety validation, arm/takeoff/start, telemetry-to-task progress mapping, structured final run report, and compact SITL event log summary; live PX4 verification remains pending and documented separately |
 
 **Test coverage:** 360+ tests, 10 crates, 18 JSON scenarios.
 
