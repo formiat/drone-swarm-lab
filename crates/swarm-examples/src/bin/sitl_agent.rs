@@ -1058,8 +1058,24 @@ fn run_telemetry_progress_loop_with_runtime<R: SitlTelemetryRuntime>(
         }
 
         if let Some(event) = runtime.poll_telemetry_event()? {
+            let previous_seq = monitor.current_seq();
+            let previous_completed_count = monitor.completed_count();
             let step = monitor.apply_event(event.clone(), runtime.elapsed())?;
-            record_telemetry_step(recorder.as_deref_mut(), &event, &step);
+            let current_seq_changed = match &event {
+                swarm_comms::MavlinkTelemetryEvent::MissionCurrent { seq } => {
+                    previous_seq != Some(*seq)
+                }
+                _ => false,
+            };
+            let task_completed = monitor.completed_count() > previous_completed_count;
+            record_telemetry_step(
+                recorder.as_deref_mut(),
+                plan,
+                &event,
+                &step,
+                current_seq_changed,
+                task_completed,
+            );
             match step {
                 SitlTelemetryLoopStep::Continue(update) => {
                     print_progress_update(update);
@@ -1091,8 +1107,11 @@ fn run_telemetry_progress_loop_with_runtime<R: SitlTelemetryRuntime>(
 #[cfg(feature = "mavlink-transport")]
 fn record_telemetry_step(
     recorder: Option<&mut SitlEventRecorder>,
+    plan: &SitlPlan,
     event: &swarm_comms::MavlinkTelemetryEvent,
     step: &SitlTelemetryLoopStep,
+    current_seq_changed: bool,
+    task_completed: bool,
 ) {
     let Some(recorder) = recorder else {
         return;
@@ -1102,6 +1121,9 @@ fn record_telemetry_step(
             recorder.push_heartbeat_seen();
         }
         swarm_comms::MavlinkTelemetryEvent::MissionCurrent { seq } => {
+            if !current_seq_changed {
+                return;
+            }
             let task_id = match step {
                 SitlTelemetryLoopStep::Continue(
                     swarm_examples::sitl_progress::SitlProgressUpdate::Current { task_id, .. },
@@ -1111,21 +1133,26 @@ fn record_telemetry_step(
             recorder.push_current_seq_changed(*seq, task_id);
         }
         swarm_comms::MavlinkTelemetryEvent::WaypointReached { seq } => {
-            let task_id = match step {
-                SitlTelemetryLoopStep::Continue(
-                    swarm_examples::sitl_progress::SitlProgressUpdate::Reached { task_id, .. },
-                ) => Some(task_id.clone()),
-                _ => None,
-            };
+            let task_id = sitl_task_id_for_seq(plan, *seq);
             recorder.push_waypoint_reached(*seq, task_id.clone());
-            if let Some(task_id) = task_id {
-                recorder.push_task_completed(*seq, task_id);
+            if task_completed {
+                if let Some(task_id) = task_id {
+                    recorder.push_task_completed(*seq, task_id);
+                }
             }
         }
         swarm_comms::MavlinkTelemetryEvent::MissionComplete
         | swarm_comms::MavlinkTelemetryEvent::MissionRejected { .. }
         | swarm_comms::MavlinkTelemetryEvent::Disconnected => {}
     }
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn sitl_task_id_for_seq(plan: &SitlPlan, seq: u16) -> Option<String> {
+    plan.waypoints
+        .iter()
+        .find(|waypoint| waypoint.seq == seq)
+        .map(|waypoint| waypoint.task_id.clone())
 }
 
 #[cfg(feature = "mavlink-transport")]
@@ -1265,6 +1292,14 @@ impl SitlTelemetryMonitor {
             ))));
         }
         Ok(None)
+    }
+
+    fn current_seq(&self) -> Option<u16> {
+        self.progress.current_seq()
+    }
+
+    fn completed_count(&self) -> usize {
+        self.progress.completed_count()
     }
 }
 
@@ -1855,6 +1890,102 @@ mod tests {
             }
             error => panic!("expected run report write error, got {error:?}"),
         }
+    }
+
+    #[test]
+    #[cfg(feature = "mavlink-transport")]
+    fn telemetry_loop_recorder_tracks_terminal_waypoint_completion() {
+        let plan = test_plan();
+        let lifecycle = lifecycle_args(Duration::from_secs(30), Duration::from_secs(30));
+        let lifecycle_options = swarm_comms::MissionLifecycleOptions::default();
+        let mut runtime = FakeTelemetryRuntime::new([
+            swarm_comms::MavlinkTelemetryEvent::Heartbeat,
+            swarm_comms::MavlinkTelemetryEvent::WaypointReached { seq: 0 },
+            swarm_comms::MavlinkTelemetryEvent::WaypointReached { seq: 1 },
+        ]);
+        let mut recorder = new_sitl_event_recorder(
+            &plan,
+            Some("udp:127.0.0.1:14550"),
+            SitlEventLogMode::ConnectionExecute,
+        );
+
+        let report = run_telemetry_progress_loop_with_runtime(
+            &mut runtime,
+            &plan,
+            &lifecycle,
+            &lifecycle_options,
+            Some(&mut recorder),
+        )
+        .unwrap();
+
+        assert_eq!(report.completed_count, 2);
+        let summary = swarm_examples::sitl_observability::summarize_sitl_event_log(recorder.log());
+        assert_eq!(summary.waypoint_reached, 2);
+        assert_eq!(summary.task_completed, 2);
+        let final_waypoint_task_id =
+            recorder
+                .log()
+                .events
+                .iter()
+                .rev()
+                .find_map(|event| match event {
+                    swarm_examples::sitl_observability::SitlEvent::WaypointReached {
+                        seq,
+                        task_id,
+                        ..
+                    } if *seq == 1 => Some(task_id.clone()),
+                    _ => None,
+                });
+        assert_eq!(final_waypoint_task_id, Some(Some("wp-1".to_owned())));
+    }
+
+    #[test]
+    #[cfg(feature = "mavlink-transport")]
+    fn telemetry_loop_recorder_logs_current_seq_only_on_change() {
+        let plan = test_plan();
+        let lifecycle = lifecycle_args(Duration::from_secs(30), Duration::from_secs(30));
+        let lifecycle_options = swarm_comms::MissionLifecycleOptions::default();
+        let mut runtime = FakeTelemetryRuntime::new([
+            swarm_comms::MavlinkTelemetryEvent::MissionCurrent { seq: 0 },
+            swarm_comms::MavlinkTelemetryEvent::MissionCurrent { seq: 0 },
+            swarm_comms::MavlinkTelemetryEvent::MissionCurrent { seq: 1 },
+            swarm_comms::MavlinkTelemetryEvent::WaypointReached { seq: 0 },
+            swarm_comms::MavlinkTelemetryEvent::WaypointReached { seq: 1 },
+        ]);
+        let mut recorder = new_sitl_event_recorder(
+            &plan,
+            Some("udp:127.0.0.1:14550"),
+            SitlEventLogMode::ConnectionExecute,
+        );
+
+        run_telemetry_progress_loop_with_runtime(
+            &mut runtime,
+            &plan,
+            &lifecycle,
+            &lifecycle_options,
+            Some(&mut recorder),
+        )
+        .unwrap();
+
+        let summary = swarm_examples::sitl_observability::summarize_sitl_event_log(recorder.log());
+        assert_eq!(summary.current_seq_changed, 2);
+        let current_seq_events: Vec<_> = recorder
+            .log()
+            .events
+            .iter()
+            .filter_map(|event| match event {
+                swarm_examples::sitl_observability::SitlEvent::CurrentSeqChanged {
+                    seq,
+                    task_id,
+                    ..
+                } => Some((*seq, task_id.clone())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            current_seq_events,
+            vec![(0, Some("wp-0".to_owned())), (1, Some("wp-1".to_owned()))]
+        );
     }
 
     #[test]
