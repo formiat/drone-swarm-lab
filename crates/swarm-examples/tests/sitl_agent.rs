@@ -153,6 +153,26 @@ fn cli_validation_bad_connection_string() {
 }
 
 #[test]
+fn cli_validation_incomplete_udp_connection_string() {
+    let scenario = write_sitl_scenario();
+    let scenario = scenario.path().to_str().unwrap();
+    let output = run_sitl_agent(&[
+        "--connection",
+        "udp:127.0.0.1",
+        "--scenario",
+        scenario,
+        "--agent-id",
+        "agent-0",
+    ]);
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("bad connection string"));
+    assert!(!stderr.contains("feature missing"));
+}
+
+#[test]
 fn cli_validation_conflicting_modes() {
     let scenario = write_sitl_scenario();
     let scenario = scenario.path().to_str().unwrap();

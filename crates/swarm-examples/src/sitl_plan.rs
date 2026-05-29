@@ -86,18 +86,41 @@ pub enum SitlError {
 
 pub fn validate_connection_string(addr: &str) -> Result<(), SitlError> {
     let addr = addr.trim();
-    if addr.is_empty()
-        || addr == "udp:"
-        || addr == "tcp:"
-        || addr == "serial:"
-        || !(addr.starts_with("udp:") || addr.starts_with("tcp:") || addr.starts_with("serial:"))
-    {
-        return Err(SitlError::BadConnectionString {
-            addr: addr.to_owned(),
-        });
-    }
+    let Some((scheme, rest)) = addr.split_once(':') else {
+        return bad_connection_string(addr);
+    };
 
+    match scheme {
+        "udp" | "tcp" => validate_host_port(addr, rest),
+        "serial" => validate_serial(addr, rest),
+        _ => bad_connection_string(addr),
+    }
+}
+
+fn validate_host_port(addr: &str, rest: &str) -> Result<(), SitlError> {
+    let Some((host, port)) = rest.rsplit_once(':') else {
+        return bad_connection_string(addr);
+    };
+    if host.trim().is_empty() || port.trim().parse::<u16>().is_err() {
+        return bad_connection_string(addr);
+    }
     Ok(())
+}
+
+fn validate_serial(addr: &str, rest: &str) -> Result<(), SitlError> {
+    let Some((path, baud)) = rest.rsplit_once(':') else {
+        return bad_connection_string(addr);
+    };
+    if path.trim().is_empty() || baud.trim().parse::<u32>().is_err() {
+        return bad_connection_string(addr);
+    }
+    Ok(())
+}
+
+fn bad_connection_string<T>(addr: &str) -> Result<T, SitlError> {
+    Err(SitlError::BadConnectionString {
+        addr: addr.to_owned(),
+    })
 }
 
 pub fn load_sitl_plan(
@@ -375,5 +398,51 @@ mod tests {
         let error = validate_connection_string("not-a-connection").unwrap_err();
 
         assert!(matches!(error, SitlError::BadConnectionString { .. }));
+    }
+
+    #[test]
+    fn udp_connection_requires_host_and_port() {
+        for addr in [
+            "udp:",
+            "udp:127.0.0.1",
+            "udp::14550",
+            "udp:127.0.0.1:notaport",
+        ] {
+            let error = validate_connection_string(addr).unwrap_err();
+            assert!(matches!(error, SitlError::BadConnectionString { .. }));
+        }
+    }
+
+    #[test]
+    fn tcp_connection_requires_host_and_port() {
+        for addr in [
+            "tcp:",
+            "tcp:localhost",
+            "tcp::5760",
+            "tcp:localhost:notaport",
+        ] {
+            let error = validate_connection_string(addr).unwrap_err();
+            assert!(matches!(error, SitlError::BadConnectionString { .. }));
+        }
+    }
+
+    #[test]
+    fn serial_connection_requires_path_and_baud() {
+        for addr in [
+            "serial:",
+            "serial:/dev/ttyUSB0",
+            "serial::57600",
+            "serial:/dev/ttyUSB0:fast",
+        ] {
+            let error = validate_connection_string(addr).unwrap_err();
+            assert!(matches!(error, SitlError::BadConnectionString { .. }));
+        }
+    }
+
+    #[test]
+    fn supported_connection_strings_are_valid() {
+        validate_connection_string("udp:127.0.0.1:14550").unwrap();
+        validate_connection_string("tcp:localhost:5760").unwrap();
+        validate_connection_string("serial:/dev/ttyUSB0:57600").unwrap();
     }
 }
