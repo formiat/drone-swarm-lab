@@ -13,6 +13,38 @@ hardware.
 | PX4 SITL upload-only | `--connection <addr> [--upload-only]` | PX4 SITL + `mavlink-transport` feature | Upload waypoint mission to PX4 SITL without starting flight | Experimental |
 | PX4 SITL execute | `--connection <addr> --execute` | PX4 SITL + `mavlink-transport` feature | Upload, arm/takeoff/start mission, map telemetry to task progress, write optional final report, and abort on bounded failures | Experimental single-agent golden path |
 
+## CI / Manual Boundary
+
+M50 makes the portable SITL path regression-safe without requiring PX4. The
+automated boundary is deliberately narrow: tests may load scenarios, extract
+waypoints, validate static safety rules, run dry-run, run mock mode, and inspect
+mock replay logs. These checks use no external PX4, no simulator process, no
+network endpoint, and no real hardware.
+
+Recommended automated checks:
+
+```bash
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  cargo test -p swarm-examples --test sitl_agent portable_sitl_regression_smoke
+
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  cargo test -p swarm-examples --test sitl_docs
+```
+
+Manual/local PX4 checks are separate. They require a running PX4 SITL instance,
+the `mavlink-transport` feature, and an operator-controlled endpoint such as
+`udp:127.0.0.1:14550`. Manual PX4 verification may cover upload-only mode,
+execute lifecycle, telemetry progress, timeout tuning, final reports, and SITL
+replay logs.
+
+Out of scope for automated CI in this repository:
+
+- real PX4 CI orchestration;
+- HIL;
+- real aircraft;
+- production autopilot certification;
+- production safety guarantees.
+
 ## Quick Start: Dry-Run Mode
 
 Dry-run is the recommended first check before any PX4 work. It loads the
@@ -66,6 +98,10 @@ Mock mode: 3 waypoints sent.
 
 This remains the recommended path for CI and tests that should not depend on
 PX4.
+
+For the full portable smoke, run `portable_sitl_regression_smoke`. It verifies
+scenario load, waypoint extraction, safety validation, dry-run output, mock
+transport output, expected mission item count, and mock replay log summary.
 
 ## Experimental PX4 SITL Mode
 
@@ -405,6 +441,8 @@ all SITL functionality as simulation/development tooling.
 | `safety config read failed` | `--safety-config` points to a missing/unreadable file | Fix the path or omit the option to use defaults |
 | `safety config parse failed` | Safety config is not valid JSON | Fix JSON syntax |
 | `safety validation failed` | Mission violates a pre-upload safety rule | Read the `rule_id`, `actual`, and `allowed` fields and adjust scenario/config |
+| Mock works but PX4 fails | Portable waypoint extraction is valid, but the external PX4 endpoint, feature flag, mission protocol, or vehicle state is not ready | Re-run dry-run/mock first, then verify PX4 SITL startup, `mavlink-transport`, endpoint, heartbeat, arming state, and PX4 logs |
+| Unexpected coordinate or altitude behavior | SITL uses the local simulation coordinate frame, not WGS84 input coordinates | Re-read Coordinate Frame Contract and verify `Pose { x, y, z }` values before upload |
 | No PX4 connection | PX4 SITL is not running or address is wrong | Start PX4 SITL and verify the MAVLink endpoint |
 | Mission upload timeout | PX4 did not send heartbeat, mission request, or final ack | Verify the endpoint, PX4 mode, and that no other GCS owns the mission protocol |
 | Mission rejected | PX4 returned a non-accepted `MISSION_ACK` | Check waypoint coordinates, altitude, frame support, and PX4 logs |

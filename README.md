@@ -78,7 +78,24 @@ cargo run --bin sitl_agent -- \
   --mock --scenario scenarios/sitl.waypoints.json --agent-id agent-0
 ```
 
-### 9. Upload or execute a mission in PX4 SITL
+Expected: the same waypoint plan is sent through the in-memory mock transport
+without external PX4, simulator processes, network sockets, or hardware.
+
+### 9. Verify portable SITL checks
+
+```bash
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  cargo test -p swarm-examples --test sitl_agent portable_sitl_regression_smoke
+
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  cargo test -p swarm-examples --test sitl_docs
+```
+
+Expected: reviewers can validate scenario loading, waypoint extraction, safety
+validation, dry-run output, mock replay logging, and documentation anchors
+without running PX4.
+
+### 10. Upload or execute a mission in PX4 SITL
 
 ```bash
 cargo run -p swarm-examples --bin sitl_agent --features mavlink-transport -- \
@@ -138,6 +155,7 @@ cargo run -p swarm-examples --bin replay -- \
 | Infrastructure Inspection | ✅ Stable | M16 | Edge coverage, route efficiency |
 | Mock SITL | ✅ Stable | M20 | `sitl_agent --mock`, no external deps |
 | SITL Dry-Run | ✅ Stable | M43 | `sitl_agent --dry-run`, portable mission upload plan without PX4 |
+| SITL Portable Regression | ✅ Stable | M50 | `portable_sitl_regression_smoke` and `sitl_docs` validate dry-run/mock/safety/docs without external PX4 |
 | Replay / Debuggability | ✅ Stable | M23 | `replay` CLI, ASCII visualization |
 | Mission Semantics | ✅ Stable | M33 | `TaskKind`, 6 concrete adapters, `AdapterRegistry`, adapter-driven completion/scoring in runner and allocator |
 | Planner Quality | ✅ Stable | M34 | `RoutePlanner` trait, 2-opt, battery-aware feasibility v2 (ordered-subset feasibility, battery model v2 integration, meaningful runner metrics) |
@@ -150,7 +168,7 @@ cargo run -p swarm-examples --bin replay -- \
 | Wildfire / Flood Mapping | ✅ Stable | M30 | `TaskKind::MappingZone`, `WildfireState`, hazard zones, dynamic threat |
 | Simulation Realism | ✅ Stable | M31 | Battery model v2, altitude sensor penalty, wind drift, pose noise, comms jitter, time-gated no-fly zones, `--realism` preset |
 | Reporting & Metrics | ✅ Stable | M32 | Per-row mission/scenario in exports, mission-scoped profiles, merged `all` benchmark id, wildfire/planner metrics, realism metadata in manifest |
-| Real PX4 | 🧪 Experimental | M49 | Feature-gated single-agent PX4 SITL report and replay plumbing with pre-upload safety validation, arm/takeoff/start, telemetry-to-task progress mapping, structured final run report, and compact SITL event log summary; live PX4 verification remains pending and documented separately |
+| Real PX4 | 🧪 Experimental | M49 | Feature-gated single-agent PX4 SITL report and replay plumbing with pre-upload safety validation, arm/takeoff/start, telemetry-to-task progress mapping, structured final run report, and compact SITL event log summary; live PX4 verification remains manual and documented separately |
 
 **Test coverage:** 360+ tests, 10 crates, 18 JSON scenarios.
 
@@ -174,6 +192,24 @@ cargo run -p swarm-examples --bin regression_runner -- --compare-baseline result
 ```
 
 Exit code is `0` if all suites pass, `1` if any threshold is violated. Failure output includes metric name, actual value, threshold bound, and delta.
+
+### Portable SITL Checks (M50)
+
+SITL has a separate portable regression path for the CLI boundary. These checks
+are intentionally not part of the benchmark regression runner: they validate
+the dry-run/mock waypoint workflow, not simulation performance metrics.
+
+```bash
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  cargo test -p swarm-examples --test sitl_agent portable_sitl_regression_smoke
+
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  cargo test -p swarm-examples --test sitl_docs
+```
+
+These checks require no external PX4, no simulator, no network endpoint, and no
+real hardware. Live PX4 SITL verification remains a manual/local workflow in
+[`docs/SITL_SETUP.md`](docs/SITL_SETUP.md).
 
 ### Default Suites (M36)
 
