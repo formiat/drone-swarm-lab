@@ -1,0 +1,16 @@
+kind	jobs	run	exit_code	elapsed_sec	output
+regression_runner	1	1	0	1	results/m56_regression_determinism_2026-05-30/regression_runner_jobs1_run1.txt
+regression_runner	1	2	0	2	results/m56_regression_determinism_2026-05-30/regression_runner_jobs1_run2.txt
+regression_runner	1	3	0	1	results/m56_regression_determinism_2026-05-30/regression_runner_jobs1_run3.txt
+regression_runner	4	1	0	2	results/m56_regression_determinism_2026-05-30/regression_runner_jobs4_run1.txt
+regression_runner	4	2	0	1	results/m56_regression_determinism_2026-05-30/regression_runner_jobs4_run2.txt
+regression_runner	4	3	0	2	results/m56_regression_determinism_2026-05-30/regression_runner_jobs4_run3.txt
+regression_runner	14	1	0	1	results/m56_regression_determinism_2026-05-30/regression_runner_jobs14_run1.txt
+regression_runner	14	2	0	1	results/m56_regression_determinism_2026-05-30/regression_runner_jobs14_run2.txt
+regression_runner	14	3	0	2	results/m56_regression_determinism_2026-05-30/regression_runner_jobs14_run3.txt
+strategy_comparison	1	1	0	1	results/m56_regression_determinism_2026-05-30/strategy_comparison_regression_jobs1_run1.txt
+strategy_comparison	1	2	0	2	results/m56_regression_determinism_2026-05-30/strategy_comparison_regression_jobs1_run2.txt
+strategy_comparison	4	1	0	1	results/m56_regression_determinism_2026-05-30/strategy_comparison_regression_jobs4_run1.txt
+strategy_comparison	4	2	0	2	results/m56_regression_determinism_2026-05-30/strategy_comparison_regression_jobs4_run2.txt
+strategy_comparison	14	1	0	1	results/m56_regression_determinism_2026-05-30/strategy_comparison_regression_jobs14_run1.txt
+strategy_comparison	14	2	0	2	results/m56_regression_determinism_2026-05-30/strategy_comparison_regression_jobs14_run2.txt

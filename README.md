@@ -108,7 +108,8 @@ PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
 Expected: heartbeat timeout returns unfinished tasks from a lost agent to the
 pool, surviving agents recover assignable tasks, ownership stays unique, and
 SITL event logs expose agent lost / task released / task reassigned events.
-These checks are mock/fake/runtime-level; they do not run multi-agent PX4 SITL.
+These checks are mock/fake/runtime-level; live PX4 failure/reallocation remains
+future work.
 
 ### 11. Inspect multi-agent SITL manifest
 
@@ -117,6 +118,15 @@ cargo run -p swarm-examples --bin sitl_supervisor -- \
   --dry-run \
   --scenario scenarios/sitl.multi-agent.json \
   --config scenarios/sitl.multi-agent.config.json
+
+cargo run -p swarm-examples --bin sitl_supervisor -- \
+  --mock \
+  --scenario scenarios/sitl.multi-agent.json \
+  --config scenarios/sitl.multi-agent.config.json \
+  --fail-agent agent-0 \
+  --fail-after-ticks 1 \
+  --heartbeat-timeout-ticks 3 \
+  --replay-log target/sitl/multi-supervisor.sitl-log.json
 
 cargo run -p swarm-examples --bin sitl_agent -- \
   --dry-run \
@@ -129,7 +139,8 @@ Expected: a portable `multi_sitl_manifest.v1` JSON manifest with per-agent
 MAVLink system/component ids, connection strings, lifecycle mode, start delays,
 task subsets, waypoint subsets, standalone `sitl_agent` commands, and ownership
 summary. Duplicate ownership is rejected before upload. This is a
-dry-run/mock/config foundation; it does not run real multi-agent PX4.
+dry-run/mock/config foundation. A separate two-instance PX4 SIH upload-only
+check is captured in `results/m55_multi_agent_px4_sih_2026-05-30/`.
 
 ### 12. Upload or execute a mission in PX4 SITL
 
@@ -198,18 +209,18 @@ cargo run -p swarm-examples --bin replay -- \
 | Mock SITL | ✅ Stable | M20 | `sitl_agent --mock`, no external deps |
 | SITL Dry-Run | ✅ Stable | M43 | `sitl_agent --dry-run`, portable mission upload plan without PX4 |
 | SITL Portable Regression | ✅ Stable | M50 | `portable_sitl_regression_smoke` and `sitl_docs` validate dry-run/mock/safety/docs without external PX4 |
-| Dynamic Reallocation | ✅ Stable | M51 | Heartbeat timeout releases unfinished tasks from lost agents, recovers assignable tasks on survivors, exposes runtime metrics and SITL reallocation events; real multi-agent PX4 remains future work |
-| Multi-Agent SITL Foundation | ✅ Stable | M52 | `multi_sitl.v1` config, public `scenarios/sitl.multi-agent.json` / `scenarios/sitl.multi-agent.config.json`, `sitl_supervisor` dry-run/mock manifest, per-agent task subsets, MAVLink system/component mapping, duplicate ownership rejection before upload; real multi-agent PX4 remains manual/future work |
+| Dynamic Reallocation | ✅ Stable | M51 | Heartbeat timeout releases unfinished tasks from lost agents, recovers assignable tasks on survivors, exposes runtime metrics and SITL reallocation events; `sitl_supervisor --mock` now emits the failure/reallocation flow; live PX4 failure/reallocation remains future work |
+| Multi-Agent SITL Foundation | ✅ Stable | M52 | `multi_sitl.v1` config, public fixtures, `sitl_supervisor` dry-run/mock orchestration, per-agent task subsets, MAVLink system/component mapping, duplicate ownership rejection, and a two-instance PX4 SIH upload-only check; real multi-agent execute orchestration remains future work |
 | Hardware Readiness Boundary | ✅ Stable | M53 | `docs/HARDWARE_READINESS.md`, connection classes, and `--allow-hardware-candidate` guard remote/wildcard/serial hardware candidates; this documents the boundary, not hardware readiness |
 | Replay / Debuggability | ✅ Stable | M23 | `replay` CLI, ASCII visualization |
 | Mission Semantics | ✅ Stable | M33 | `TaskKind`, 6 concrete adapters, `AdapterRegistry`, adapter-driven completion/scoring in runner and allocator |
 | Planner Quality | ✅ Stable | M34 | `RoutePlanner` trait, 2-opt, battery-aware feasibility v2 (ordered-subset feasibility, battery model v2 integration, meaningful runner metrics) |
 | Dynamic Mission Correctness | ✅ Stable | M35 | Mission-specific success semantics (SAR=targets-found, inspection=coverage-threshold, wildfire=mapped-ratio), SAR unsupported reasons (cbba=delayed-reconvergence, centralized=static-pre-plan), support matrix tests |
-| Regression Harness v2 | ⚠️ Partial | M36 | Calibrated thresholds, portability fixes, wildfire/realism suites, failure delta output; bounded `jobs=1` diagnostics pass, but repeated determinism sweep is still needed before treating it as a release gate |
+| Regression Harness v2 | ✅ Stable | M36 | Calibrated thresholds, portability fixes, wildfire/realism suites, failure delta output, and repeated release determinism sweep for `jobs=1/4/14` |
 | Realism Scenario Pack | ✅ Stable | M37 | Realism profiles (light/medium/heavy), scenario JSONs, battery model metadata, baseline vs realism comparison |
 | Wildfire v2 | ⚠️ Partial | M38 | Spatial spread, wind influence, zone expansion, high-priority metrics, replay integration, scenario JSONs; flood not implemented as separate mission |
 | Decision / Audit Report | ✅ Stable | M39b | Status audit, README honesty update, benchmark docs marked historical |
-| Regression Repair | ⚠️ Partial | M39a | Unified regression entrypoints and wildfire/realism repair exist; current bounded `jobs=1` checks pass, with broader determinism follow-up still pending |
+| Regression Repair | ✅ Stable | M39a | Unified regression entrypoints, wildfire/realism repair, runtime ordering fixes, SAR scan completion fix, and repeated default regression sweep |
 | Wildfire / Flood Mapping | ✅ Stable | M30 | `TaskKind::MappingZone`, `WildfireState`, hazard zones, dynamic threat |
 | Simulation Realism | ✅ Stable | M31 | Battery model v2, altitude sensor penalty, wind drift, pose noise, comms jitter, time-gated no-fly zones, `--realism` preset |
 | Reporting & Metrics | ✅ Stable | M32 | Per-row mission/scenario in exports, mission-scoped profiles, merged `all` benchmark id, wildfire/planner metrics, realism metadata in manifest |
@@ -238,10 +249,10 @@ cargo run -p swarm-examples --bin regression_runner -- --compare-baseline result
 
 Exit code is `0` if all suites pass, `1` if any threshold is violated. Failure output includes metric name, actual value, threshold bound, and delta.
 
-Current status note: the harness is useful, and bounded `jobs=1` diagnostics pass
-on the current tree. Treat it as a diagnostic signal until repeated
-jobs/seed-count determinism checks are refreshed; portable SITL checks below are
-separate and remain deterministic.
+Current status note: the default regression entrypoints passed the repeated
+release sweep at `jobs=1/4/14`. The captured sweep is in
+`results/m56_regression_determinism_2026-05-30/`. Treat historical benchmark
+tables as historical until a fresh publication run updates them.
 
 ### Portable SITL Checks (M50)
 
@@ -280,8 +291,9 @@ PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
 ```
 
 These checks are deterministic and use in-memory/mock/fake runtime paths. They
-do not start PX4 and do not claim real multi-agent PX4 readiness; real
-multi-agent PX4 orchestration remains later work beyond the M52 foundation.
+do not start PX4 and do not claim live multi-agent PX4 failure handling; real
+multi-agent PX4 execute orchestration remains later work beyond the M52
+foundation.
 
 ### Multi-Agent SITL Foundation Checks (M52)
 
@@ -302,14 +314,14 @@ PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
 ```
 
 These checks remain portable. They exercise JSON config parsing, task subset
-splitting, `sitl_supervisor` dry-run/mock manifests, and pre-upload duplicate
-ownership rejection without starting PX4.
+splitting, `sitl_supervisor` dry-run/mock manifests, mock supervisor
+reallocation, and pre-upload duplicate ownership rejection without starting PX4.
 
 ### Default Suites (M36)
 
 | Suite | Mission | Profile | Strategy | Mode | Key Thresholds |
 |---|---|---|---|---|---|
-| `sar_ideal_greedy` | sar | ideal | greedy | smoke | task_completion_rate ≥ 0.80, belief_entropy_final ≤ 0.5 |
+| `sar_ideal_greedy` | sar | ideal | greedy | smoke | task_completion_rate ≥ 0.80, targets_found ≥ 2, belief_entropy_final ≤ 0.75 |
 | `sar_standard_greedy` | sar | standard | greedy | smoke | task_completion_rate ≥ 0.70, belief_entropy_final ≤ 0.6 |
 | `inspection_linear_all` | inspection | linear | all | smoke | edge_coverage_rate ≥ 0.85, success_rate ≥ 0.90 |
 | `inspection_perimeter_all` | inspection | perimeter | all | smoke | edge_coverage_rate ≥ 0.25 (floor) |
@@ -367,9 +379,9 @@ Parametric sweeps over variables such as packet loss, agent count, or grid size 
 
 ## Known Limitations
 
-1. **Simulation only:** No real hardware workflow; PX4 integration is limited to experimental SITL waypoint upload plus opt-in single-agent lifecycle/progress tracking with static pre-upload safety checks.
+1. **Simulation only:** No real hardware workflow; PX4 integration is limited to experimental SITL waypoint upload, opt-in single-agent lifecycle/progress tracking, and a local two-instance PX4 SIH upload-only check with static pre-upload safety checks.
 2. **Hardware boundary:** Remote UDP, wildcard UDP, TCP, and serial connection strings are hardware candidates and require `--allow-hardware-candidate`; this is only an explicit opt-in guard, not flight certification or proof of hardware readiness. See [`docs/HARDWARE_READINESS.md`](docs/HARDWARE_READINESS.md).
-3. **Multi-agent SITL foundation only:** M52 supports config-driven per-agent task subsets, dry-run/mock manifests, standalone command generation, and duplicate ownership checks. It does not provide robust distributed coordination, automated real multi-agent PX4 orchestration, or hardware safety guarantees.
+3. **Multi-agent SITL foundation only:** M52 supports config-driven per-agent task subsets, dry-run/mock manifests, mock supervisor reallocation, standalone command generation, duplicate ownership checks, and local PX4 SIH upload-only verification. It does not provide robust distributed coordination, automated real multi-agent PX4 execute orchestration, live PX4 failure/reallocation, or hardware safety guarantees.
 4. **SITL coordinate frame:** `sitl_agent` dry-run/mock mode treats `Pose { x, y, z }` as local simulation coordinates; `x/y` are not WGS84 latitude/longitude, and `z` is local altitude.
 5. **3D pose:** Scenarios support `z` coordinate and altitude-aware sensors, but most missions operate primarily in XY plane.
 6. **Deterministic RNG:** Scenarios use seeded RNG; real-world noise is modeled optionally via `--realism` preset.

@@ -81,10 +81,9 @@ SITL event types are serialized in `snake_case`:
 | `reallocation_completed` | Reallocation summary for a failed agent | `step`, `failed_agent_id`, `reassignment_count`, `tasks_recovered`, `latency_ticks` |
 | `run_completed` | Successful terminal status | `step`, `status` |
 
-Reallocation events are currently schema/API/runtime covered. They can be
-produced by mock/runtime tests and summarized by the SITL replay summary, but the
-live multi-agent PX4 supervisor path does not yet inject failures and emit a
-combined real-PX4 reallocation log.
+Reallocation events are schema/API/runtime covered and are produced by the mock
+multi-agent supervisor flow. The live multi-agent PX4 supervisor path does not
+yet inject failures and emit a combined real-PX4 reallocation log.
 
 ## Generating Replay Logs
 
@@ -120,9 +119,25 @@ cargo run --bin sitl_agent -- \
   --replay-log target/sitl/mock.sitl-log.json
 ```
 
+The multi-agent supervisor can generate a common mock/fake run log with
+heartbeat-timeout reallocation:
+
+```bash
+cargo run --bin sitl_supervisor -- \
+  --mock \
+  --scenario scenarios/sitl.multi-agent.json \
+  --config scenarios/sitl.multi-agent.config.json \
+  --fail-agent agent-0 \
+  --fail-after-ticks 1 \
+  --heartbeat-timeout-ticks 3 \
+  --replay-log target/sitl/multi-supervisor.sitl-log.json
+```
+
 The captured M48 PX4 SIH replay is stored at
 `results/m48_px4_sitl_2026-05-30/single-agent.sitl-log.json` with a compact
 summary in `results/m48_px4_sitl_2026-05-30/replay-summary.txt`.
+The captured mock supervisor reallocation replay is stored at
+`results/m54_multi_agent_supervisor_2026-05-30/multi-supervisor.sitl-log.json`.
 
 ## Replay CLI
 

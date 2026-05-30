@@ -1,0 +1,21 @@
+# Regression Report
+overall_pass: true
+
+## sar_ideal_greedy (mission=sar profile=ideal strategy=greedy group=smoke mode=smoke seeds=0..=0) -> PASS
+## sar_standard_greedy (mission=sar profile=standard strategy=greedy group=smoke mode=smoke seeds=0..=0) -> PASS
+## inspection_linear_all (mission=inspection profile=linear strategy=centralized group=smoke mode=smoke seeds=0..=0) -> PASS
+## inspection_linear_all (mission=inspection profile=linear strategy=cbba group=smoke mode=smoke seeds=0..=0) -> PASS
+## inspection_linear_all (mission=inspection profile=linear strategy=auction group=smoke mode=smoke seeds=0..=0) -> PASS
+## inspection_linear_all (mission=inspection profile=linear strategy=greedy group=smoke mode=smoke seeds=0..=0) -> PASS
+## inspection_linear_all (mission=inspection profile=linear strategy=connectivity-aware group=smoke mode=smoke seeds=0..=0) -> PASS
+## inspection_perimeter_all (mission=inspection profile=perimeter strategy=greedy group=smoke mode=smoke seeds=0..=0) -> PASS
+## inspection_perimeter_all (mission=inspection profile=perimeter strategy=centralized group=smoke mode=smoke seeds=0..=0) -> PASS
+## inspection_perimeter_all (mission=inspection profile=perimeter strategy=auction group=smoke mode=smoke seeds=0..=0) -> PASS
+## inspection_perimeter_all (mission=inspection profile=perimeter strategy=connectivity-aware group=smoke mode=smoke seeds=0..=0) -> PASS
+## inspection_perimeter_all (mission=inspection profile=perimeter strategy=cbba group=smoke mode=smoke seeds=0..=0) -> PASS
+## cbba_coverage_ideal_no_failures (mission=coverage profile=ideal-no-failures strategy=cbba group=quick mode=quick seeds=0..=9) -> PASS
+## cbba_coverage_light_loss_no_failures (mission=coverage profile=light-loss-no-failures strategy=cbba group=quick mode=quick seeds=0..=9) -> PASS
+## safety_coverage (mission=coverage profile=ideal-no-failures strategy=greedy group=smoke mode=smoke seeds=0..=0) -> PASS
+## emergency_mesh_ideal (mission=emergency-mesh profile=ideal strategy=greedy group=smoke mode=smoke seeds=0..=0) -> PASS
+## wildfire_small_static_greedy (mission=wildfire profile=small-static strategy=greedy group=smoke mode=smoke seeds=0..=0) -> PASS
+

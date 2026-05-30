@@ -381,7 +381,10 @@ impl<T: Transport> AgentNode<T> {
                 generations,
             } = msg
             {
-                for (task_id, remote_agent_id) in assignments {
+                let mut ordered_assignments: Vec<_> = assignments.iter().collect();
+                ordered_assignments
+                    .sort_by(|(left_id, _), (right_id, _)| left_id.as_ref().cmp(right_id.as_ref()));
+                for (task_id, remote_agent_id) in ordered_assignments {
                     let local_owner = self
                         .coordinator
                         .registry
@@ -438,7 +441,10 @@ impl<T: Transport> AgentNode<T> {
                     }
                 }
 
-                for (agent_id, remote_gen) in generations {
+                let mut ordered_generations: Vec<_> = generations.iter().collect();
+                ordered_generations
+                    .sort_by(|(left_id, _), (right_id, _)| left_id.as_ref().cmp(right_id.as_ref()));
+                for (agent_id, remote_gen) in ordered_generations {
                     let local_gen = self.coordinator.membership.generation_of(agent_id);
                     if *remote_gen > local_gen {
                         self.coordinator

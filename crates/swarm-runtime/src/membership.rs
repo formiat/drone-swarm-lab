@@ -184,23 +184,23 @@ impl MembershipView {
                 continue;
             }
 
-            let task_id = match registry
+            let task = match registry
                 .tasks()
-                .find(|t| t.assigned_to.as_ref() == Some(agent_id))
-            {
-                Some(t) => t.id.clone(),
+                .filter(|task| task.assigned_to.as_ref() == Some(agent_id))
+                .filter(|task| task.pose.is_some())
+                .min_by(|left, right| {
+                    let left_distance = entry.pose.distance_to(&left.pose.expect("pose checked"));
+                    let right_distance = entry.pose.distance_to(&right.pose.expect("pose checked"));
+                    left_distance
+                        .partial_cmp(&right_distance)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                        .then_with(|| left.id.as_ref().cmp(right.id.as_ref()))
+                }) {
+                Some(task) => task,
                 None => continue,
             };
 
-            let task = match registry.tasks().find(|t| t.id == task_id) {
-                Some(t) => t,
-                None => continue,
-            };
-
-            let target_pose = match task.pose {
-                Some(p) => p,
-                None => continue,
-            };
+            let target_pose = task.pose.expect("pose checked");
 
             let dx = target_pose.x - entry.pose.x;
             let dy = target_pose.y - entry.pose.y;

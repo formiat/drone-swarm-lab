@@ -1,6 +1,6 @@
 # Regression Harness
 
-Этот документ описывает текущий `regression_runner` после M42.
+Этот документ описывает текущий `regression_runner` после M56.
 
 ## Default regression
 
@@ -24,6 +24,10 @@ cargo run -p swarm-examples --bin regression_runner -- --suite validation --jobs
 
 `experimental` и `validation` failures показываются в отчете, но не меняют `overall_pass`.
 Baseline обновлять из отчета с threshold violations нельзя.
+
+Текущий default gate прошел release sweep для `regression_runner` и
+`strategy_comparison --regression` на `jobs=1/4/14`; артефакты лежат в
+`results/m56_regression_determinism_2026-05-30/`.
 
 ## CLI
 

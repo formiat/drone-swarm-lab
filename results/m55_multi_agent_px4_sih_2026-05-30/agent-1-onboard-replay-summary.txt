@@ -1,0 +1,8 @@
+SITL run: sitl_multi_agent_0:agent-1:connection_upload_only
+Scenario: sitl_multi_agent_0 | Agent: agent-1 | Mode: connection_upload_only
+Events: 10
+Upload: clear=1 count=1 requested=2 sent=2 ack_accepted=1 ack_rejected=0
+Commands: sent=0 ack_accepted=0 ack_rejected=0
+Telemetry: heartbeat=1 current_seq=0 waypoint_reached=0 task_completed=0
+Failures: aborts=0 disconnected=0 failures=0 final_status=upload_accepted
+Reallocation: agent_lost=0 task_released=0 task_reassigned=0 completed=0 tasks_recovered=0 latency_ticks=none

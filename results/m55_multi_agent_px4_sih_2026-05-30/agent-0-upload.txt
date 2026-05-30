@@ -1,0 +1,14 @@
+   Compiling swarm-comms v0.1.0 (/home/formi/Documents/RustProjects/drone/crates/swarm-comms)
+   Compiling swarm-alloc v0.1.0 (/home/formi/Documents/RustProjects/drone/crates/swarm-alloc)
+   Compiling swarm-runtime v0.1.0 (/home/formi/Documents/RustProjects/drone/crates/swarm-runtime)
+   Compiling swarm-sim v0.1.0 (/home/formi/Documents/RustProjects/drone/crates/swarm-sim)
+   Compiling swarm-scenarios v0.1.0 (/home/formi/Documents/RustProjects/drone/crates/swarm-scenarios)
+   Compiling swarm-examples v0.1.0 (/home/formi/Documents/RustProjects/drone/crates/swarm-examples)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.96s
+     Running `target/debug/sitl_agent --connection 'udpin:0.0.0.0:14550' --scenario scenarios/sitl.multi-agent.json --agent-id agent-0 --multi-agent-config scenarios/sitl.multi-agent.config.json --allow-hardware-candidate --upload-only --timeout 8 --replay-log results/m55_multi_agent_px4_sih_2026-05-30/agent-0.sitl-log.json`
+WARNING: connection 'udpin:0.0.0.0:14550' is classified as hardware_candidate. This may target real hardware or a remote endpoint. This project is not hardware-ready, does not provide a certified safety layer, and requires the operator checklist in docs/HARDWARE_READINESS.md before any hardware experiment.
+WAYPOINT seq=0 x=10.0 y=15.0 z=5.0
+WAYPOINT seq=1 x=20.0 y=20.0 z=6.0
+SITL replay log written: results/m55_multi_agent_px4_sih_2026-05-30/agent-0.sitl-log.json
+error: connection failed: timed out waiting for mission request seq=0
+usage: sitl_agent --mock|--dry-run|--connection <addr> --scenario <path> --agent-id <id> [--multi-agent-config <path>] [--safety-config <path>] [--allow-hardware-candidate] [--upload-only|--execute] [--no-arm] [--abort-after <seconds>] [--timeout <seconds>] [--telemetry-timeout <seconds>] [--no-progress-timeout <seconds>] [--run-report <path>] [--replay-log <path>]

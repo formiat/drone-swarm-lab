@@ -552,6 +552,51 @@ fn multi_agent_sitl_supervisor_mock_runs_two_agents_with_distinct_subsets_test()
 }
 
 #[test]
+fn multi_agent_sitl_supervisor_mock_reallocates_after_agent_loss_test() {
+    let scenario = write_multi_agent_sitl_scenario();
+    let config = write_multi_agent_config(false);
+    let dir = tempfile::tempdir().unwrap();
+    let replay_log = dir.path().join("supervisor.sitl-log.json");
+    let output = run_sitl_supervisor(&[
+        "--mock",
+        "--scenario",
+        scenario.path().to_str().unwrap(),
+        "--config",
+        config.path().to_str().unwrap(),
+        "--fail-agent",
+        "agent-0",
+        "--fail-after-ticks",
+        "0",
+        "--heartbeat-timeout-ticks",
+        "1",
+        "--max-ticks",
+        "6",
+        "--replay-log",
+        replay_log.to_str().unwrap(),
+    ]);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "supervisor failure run failed: {stderr}"
+    );
+    assert!(stderr.contains("SUPERVISOR_METRICS"));
+    assert!(stderr.contains("lost_agents=1"));
+    assert!(stderr.contains("reassignment_count=1"));
+    assert!(stderr.contains("tasks_recovered=wp-0"));
+    assert!(stderr.contains("final_status=completed"));
+
+    let log = swarm_examples::sitl_observability::read_sitl_event_log(&replay_log).unwrap();
+    let summary = swarm_examples::sitl_observability::summarize_sitl_event_log(&log);
+    assert_eq!(summary.agent_lost, 1);
+    assert_eq!(summary.task_released, 1);
+    assert_eq!(summary.task_reassigned, 1);
+    assert_eq!(summary.reallocation_completed, 1);
+    assert_eq!(summary.tasks_recovered, 1);
+    assert_eq!(summary.reallocation_latency_ticks, Some(0));
+}
+
+#[test]
 fn multi_agent_sitl_supervisor_duplicate_ownership_rejected_test() {
     let scenario = write_multi_agent_sitl_scenario();
     let config = write_multi_agent_config(true);

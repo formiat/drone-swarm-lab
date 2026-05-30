@@ -1,0 +1,8 @@
+SITL run: sitl-supervisor-sitl_multi_agent_0
+Scenario: sitl_multi_agent_0 | Agent: supervisor | Mode: mock
+Events: 26
+Upload: clear=0 count=2 requested=0 sent=4 ack_accepted=0 ack_rejected=0
+Commands: sent=0 ack_accepted=0 ack_rejected=0
+Telemetry: heartbeat=6 current_seq=0 waypoint_reached=4 task_completed=4
+Failures: aborts=0 disconnected=0 failures=0 final_status=completed
+Reallocation: agent_lost=1 task_released=1 task_reassigned=1 completed=1 tasks_recovered=1 latency_ticks=0

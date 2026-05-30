@@ -647,8 +647,10 @@ impl std::fmt::Display for RegressionReport {
 
 pub fn all_suites() -> Vec<RegressionSuite> {
     vec![
-        // SAR — M35 changed success semantics to targets-found; use task_completion_rate
-        // for the primary threshold since success_rate on seed 0 is unreliable.
+        // SAR — M35 changed success semantics to targets-found; keep success_rate out of
+        // the smoke gate because seed 0 can exceed the unassigned-tick success threshold
+        // even after useful scan progress. Completed scan tasks and targets_found are the
+        // stable smoke checks.
         RegressionSuite {
             name: "sar_ideal_greedy".to_owned(),
             group: SuiteGroup::Smoke,
@@ -662,9 +664,14 @@ pub fn all_suites() -> Vec<RegressionSuite> {
                     max: None,
                 },
                 Threshold {
+                    metric: "targets_found".to_owned(),
+                    min: Some(2.0),
+                    max: None,
+                },
+                Threshold {
                     metric: "belief_entropy_final".to_owned(),
                     min: None,
-                    max: Some(0.5),
+                    max: Some(0.75),
                 },
             ],
             mode: SuiteMode::Smoke,

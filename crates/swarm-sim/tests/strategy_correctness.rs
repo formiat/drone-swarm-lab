@@ -81,9 +81,8 @@ fn small_sar_config(seed: u64) -> SarScenarioConfig {
 
 /// Documents that SAR+CBBA produces stable, deterministic results.
 ///
-/// Currently shows 0% success because CBBA re-convergence delay after
-/// `release_task()` causes `max_task_unassigned_ticks` to exceed the
-/// configured threshold. Fix scoped to M27.
+/// Currently shows 0% success because CBBA re-convergence delay keeps
+/// `max_task_unassigned_ticks` above the configured threshold. Fix scoped to M27.
 #[test]
 fn sar_cbba_has_documented_status() {
     let config = small_sar_config(42);
@@ -112,9 +111,8 @@ fn sar_cbba_has_documented_status() {
 /// Documents that SAR+Centralized produces stable, deterministic results.
 ///
 /// Currently shows 0% success because the static pre-plan is computed once
-/// at construction; after `release_task()` the planner reassigns agents to
-/// already-scanned cells, creating an infinite revisit cycle until `max_ticks`
-/// is exhausted. Fix scoped to M27.
+/// at construction; after SAR scan progress, the planner can keep agents in an
+/// ineffective revisit cycle until `max_ticks` is exhausted. Fix scoped to M27.
 #[test]
 fn sar_centralized_has_documented_status() {
     let config = small_sar_config(42);

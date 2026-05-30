@@ -847,7 +847,7 @@ impl ScenarioRunner {
                         .filter(|t| t.assigned_to.as_ref() == Some(agent_id))
                         .map(|t| (t.id.clone(), t.grid_cell))
                         .collect();
-                    let mut scanned_task_ids = Vec::new();
+                    let mut scanned_tasks = Vec::new();
                     for (task_id, grid_cell) in assigned_tasks {
                         if let Some((cell_x, cell_y)) = grid_cell {
                             if let Some(entry) = node.coordinator.membership.get(agent_id) {
@@ -882,14 +882,22 @@ impl ScenarioRunner {
                                             });
                                         }
                                     }
-                                    scanned_task_ids.push(task_id);
+                                    scanned_tasks.push((task_id, agent_id.clone()));
                                 }
                             }
                         }
                     }
-                    // Release scanned tasks so agents can be reassigned to new cells
-                    for task_id in scanned_task_ids {
-                        node.coordinator.registry.release_task(&task_id);
+                    // A scanned SAR cell is done; completed tasks are excluded from
+                    // future allocation so agents move on to unvisited cells.
+                    for (task_id, scanned_by) in scanned_tasks {
+                        if let Some(ref mut builder) = log_builder {
+                            builder.push(swarm_replay::Event::TaskCompleted {
+                                task_id: task_id.clone(),
+                                agent_id: scanned_by,
+                                tick: current_tick,
+                            });
+                        }
+                        node.coordinator.registry.complete_assigned_task(&task_id);
                     }
                 }
                 coverage_over_time.push(grid_state.coverage_fraction());

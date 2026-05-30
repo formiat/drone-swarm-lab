@@ -90,7 +90,8 @@ fn sitl_docs_explain_portable_and_manual_boundaries() {
         "task_released",
         "task_reassigned",
         "reallocation_completed",
-        "live multi-agent PX4 supervisor path does not yet inject failures",
+        "live multi-agent PX4 supervisor path",
+        "yet inject failures",
         "scenarios/sitl.px4-golden.json",
     ] {
         assert!(REPLAY.contains(required), "Replay doc missing {required}");
@@ -104,7 +105,8 @@ fn sitl_docs_explain_portable_and_manual_boundaries() {
         "M52 Multi-Agent SITL Foundation",
         "scenarios/sitl.multi-agent.json",
         "scenarios/sitl.multi-agent.config.json",
-        "Prior default regression flake was not reproduced",
+        "Default regression determinism sweep passed after fixes",
+        "results/m56_regression_determinism_2026-05-30",
     ] {
         assert!(STATUS.contains(required), "Status doc missing {required}");
     }

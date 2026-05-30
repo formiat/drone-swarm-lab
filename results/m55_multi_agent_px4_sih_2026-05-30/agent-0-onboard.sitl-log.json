@@ -1,0 +1,65 @@
+{
+  "schema_version": "sitl_event_log.v1",
+  "run_id": "sitl_multi_agent_0:agent-0:connection_upload_only",
+  "scenario_path": "scenarios/sitl.multi-agent.json",
+  "scenario_name": "sitl_multi_agent_0",
+  "mission": "sitl",
+  "profile": "multi-agent",
+  "agent_id": "agent-0",
+  "connection_string": "udpin:0.0.0.0:14540",
+  "mode": "connection_upload_only",
+  "events": [
+    {
+      "type": "connection_opened",
+      "step": 0,
+      "mode": "connection_upload_only",
+      "connection_string": "udpin:0.0.0.0:14540"
+    },
+    {
+      "type": "heartbeat_seen",
+      "step": 1
+    },
+    {
+      "type": "mission_clear_sent",
+      "step": 2
+    },
+    {
+      "type": "mission_count_sent",
+      "step": 3,
+      "count": 2
+    },
+    {
+      "type": "mission_item_requested",
+      "step": 4,
+      "seq": 0
+    },
+    {
+      "type": "mission_item_sent",
+      "step": 5,
+      "seq": 0,
+      "task_id": "wp-0"
+    },
+    {
+      "type": "mission_item_requested",
+      "step": 6,
+      "seq": 1
+    },
+    {
+      "type": "mission_item_sent",
+      "step": 7,
+      "seq": 1,
+      "task_id": "wp-1"
+    },
+    {
+      "type": "mission_ack_received",
+      "step": 8,
+      "result": "MAV_MISSION_ACCEPTED",
+      "accepted": true
+    },
+    {
+      "type": "run_completed",
+      "step": 9,
+      "status": "upload_accepted"
+    }
+  ]
+}

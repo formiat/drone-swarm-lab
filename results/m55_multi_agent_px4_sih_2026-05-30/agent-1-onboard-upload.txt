@@ -1,0 +1,7 @@
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.10s
+     Running `target/debug/sitl_agent --connection 'udpin:0.0.0.0:14541' --scenario scenarios/sitl.multi-agent.json --agent-id agent-1 --multi-agent-config scenarios/sitl.multi-agent.config.json --allow-hardware-candidate --upload-only --timeout 8 --replay-log results/m55_multi_agent_px4_sih_2026-05-30/agent-1-onboard.sitl-log.json`
+WARNING: connection 'udpin:0.0.0.0:14541' is classified as hardware_candidate. This may target real hardware or a remote endpoint. This project is not hardware-ready, does not provide a certified safety layer, and requires the operator checklist in docs/HARDWARE_READINESS.md before any hardware experiment.
+WAYPOINT seq=0 x=35.0 y=10.0 z=5.5
+WAYPOINT seq=1 x=45.0 y=25.0 z=6.5
+Real MAVLink mode: mission accepted; lifecycle=upload-only uploaded_count=2 target_system=2 target_component=1 cleared_existing=true
+SITL replay log written: results/m55_multi_agent_px4_sih_2026-05-30/agent-1-onboard.sitl-log.json

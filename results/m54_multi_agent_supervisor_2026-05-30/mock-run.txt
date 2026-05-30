@@ -1,0 +1,14 @@
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.09s
+     Running `target/debug/sitl_supervisor --mock --scenario scenarios/sitl.multi-agent.json --config scenarios/sitl.multi-agent.config.json --fail-agent agent-0 --fail-after-ticks 1 --heartbeat-timeout-ticks 3 --max-ticks 12 --replay-log results/m54_multi_agent_supervisor_2026-05-30/multi-supervisor.sitl-log.json --manifest results/m54_multi_agent_supervisor_2026-05-30/manifest.json`
+Multi-Agent SITL Foundation: mock agents=2 assigned_tasks=4 unassigned_pose_tasks=0
+SITL Supervisor: agent=agent-0 system_id=1 component_id=1 connection=udpin:127.0.0.1:14550 waypoints=2
+WAYPOINT agent=agent-0 seq=0 task_id=wp-0 x=10.0 y=15.0 z=5.0
+WAYPOINT agent=agent-0 seq=1 task_id=wp-1 x=20.0 y=20.0 z=6.0
+Mock mode: agent=agent-0 waypoints sent=2
+SITL Supervisor: agent=agent-1 system_id=2 component_id=1 connection=udpin:127.0.0.1:14560 waypoints=2
+WAYPOINT agent=agent-1 seq=0 task_id=wp-2 x=35.0 y=10.0 z=5.5
+WAYPOINT agent=agent-1 seq=1 task_id=wp-3 x=45.0 y=25.0 z=6.5
+Mock mode: agent=agent-1 waypoints sent=2
+SUPERVISOR_METRICS agents=2 heartbeats=6 completed_tasks=4 lost_agents=1 reassignment_count=1 tasks_recovered=wp-1 reallocation_latency_ticks=0 final_status=completed
+SITL supervisor replay log written: results/m54_multi_agent_supervisor_2026-05-30/multi-supervisor.sitl-log.json
+Multi-agent SITL manifest written: results/m54_multi_agent_supervisor_2026-05-30/manifest.json

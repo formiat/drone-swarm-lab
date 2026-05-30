@@ -10,7 +10,7 @@ hardware.
 |---|---|---|---|---|
 | Mock | `--mock` | None | Send extracted waypoints to in-memory `MockMavlinkTransport` | Stable and CI-friendly |
 | Dry-run | `--dry-run` | None | Print the mission upload plan without connecting to PX4 | Stable portable contract |
-| Multi-agent dry-run/mock | `sitl_supervisor --dry-run/--mock` or `sitl_agent --multi-agent-config` | None | Split explicit waypoint subsets across multiple agents and produce a manifest | Stable M52 foundation, no real PX4 orchestration |
+| Multi-agent dry-run/mock | `sitl_supervisor --dry-run/--mock` or `sitl_agent --multi-agent-config` | None | Split explicit waypoint subsets, run mock supervisor orchestration, and produce a manifest/replay log | Stable M52 foundation |
 | PX4 SITL upload-only | `--connection <addr> [--upload-only]` | PX4 SITL + `mavlink-transport` feature | Upload waypoint mission to PX4 SITL without starting flight | Experimental |
 | PX4 SITL execute | `--connection <addr> --execute` | PX4 SITL + `mavlink-transport` feature | Upload, arm/takeoff/start mission, map telemetry to task progress, write optional final report, and abort on bounded failures | Experimental single-agent golden path |
 
@@ -19,8 +19,9 @@ hardware.
 M50 makes the portable SITL path regression-safe without requiring PX4. M51 adds
 mock/fake/runtime-level failure and dynamic reallocation checks for the future
 multi-agent SITL path. M52 adds a portable multi-agent foundation: config parse,
-explicit task split, dry-run/mock manifest, generated standalone commands, and
-duplicate ownership rejection before upload. The automated boundary is
+explicit task split, dry-run/mock manifest, mock supervisor orchestration,
+generated standalone commands, and duplicate ownership rejection before upload.
+The automated boundary is
 deliberately narrow: tests may load scenarios, extract waypoints, validate
 static safety rules, run dry-run, run mock mode, inspect mock replay logs,
 detect a lost agent by heartbeat timeout, recover assignable tasks on surviving
@@ -54,22 +55,23 @@ Manual/local PX4 checks are separate. They require a running PX4 SITL instance,
 the `mavlink-transport` feature, and an operator-controlled endpoint such as
 `udpin:127.0.0.1:14550`. Manual PX4 verification may cover upload-only mode,
 execute lifecycle, telemetry progress, timeout tuning, final reports, and SITL
-replay logs.
+replay logs. A two-instance PX4 SIH upload-only check is captured in
+`results/m55_multi_agent_px4_sih_2026-05-30/`.
 
-M51 reallocation events are part of this portable boundary. They can appear in
-SITL event logs as `agent_lost`, `task_released`, `task_reassigned`, and
-`reallocation_completed`. They prove the runtime/mock contract, not live
-multi-agent PX4 readiness.
+M51 reallocation events are part of this portable boundary. `sitl_supervisor
+--mock` can emit `agent_lost`, `task_released`, `task_reassigned`, and
+`reallocation_completed` after a deterministic heartbeat timeout. This proves
+the runtime/mock supervisor contract, not live multi-agent PX4 failure handling.
 
 M52 multi-agent manifests are also part of this portable boundary. They prove
 that ownership and per-agent waypoint subsets are explicit and deterministic;
-they do not prove that multiple real PX4 instances are ready for autonomous
-swarm execution.
+the optional PX4 SIH check proves upload-only mission acceptance for two local
+instances. It does not prove autonomous multi-agent PX4 execute orchestration.
 
 Out of scope for automated CI in this repository:
 
 - real PX4 CI orchestration;
-- real multi-agent PX4 SITL orchestration;
+- real multi-agent PX4 SITL execute/failure orchestration;
 - HIL;
 - real aircraft;
 - production autopilot certification;
@@ -196,6 +198,27 @@ cargo run -p swarm-examples --bin sitl_supervisor -- \
   --manifest target/sitl/multi-agent-manifest.json
 ```
 
+Mock supervisor mode also supports deterministic failure injection and a common
+SITL replay log:
+
+```bash
+cargo run -p swarm-examples --bin sitl_supervisor -- \
+  --mock \
+  --scenario scenarios/sitl.multi-agent.json \
+  --config scenarios/sitl.multi-agent.config.json \
+  --fail-agent agent-0 \
+  --fail-after-ticks 1 \
+  --heartbeat-timeout-ticks 3 \
+  --max-ticks 12 \
+  --replay-log target/sitl/multi-supervisor.sitl-log.json
+```
+
+Expected summary:
+
+```text
+SUPERVISOR_METRICS agents=2 heartbeats=6 completed_tasks=4 lost_agents=1 reassignment_count=1 tasks_recovered=wp-1 reallocation_latency_ticks=0 final_status=completed
+```
+
 The several-process workflow uses the same config from individual `sitl_agent`
 invocations:
 
@@ -222,6 +245,7 @@ Out of scope for M52:
 - robust distributed coordination;
 - automatic task allocation;
 - automated real multi-agent PX4 CI orchestration;
+- live multi-agent PX4 failure/reallocation;
 - real hardware usage;
 - swarm safety certification.
 
@@ -481,8 +505,30 @@ The current repository contains one captured manual M48 verification:
   `final_status=completed`.
 
 This is a real local PX4 SIH/SITL verification of the single-agent golden path.
-It is not Gazebo validation, multi-agent PX4 orchestration, HIL, real hardware
-validation, or a production safety claim.
+It is not Gazebo validation, HIL, real hardware validation, or a production
+safety claim.
+
+## M55 Multi-Agent PX4 SIH Upload-Only Check
+
+The repository also contains a captured two-instance PX4 SIH upload-only check:
+
+- Date: 2026-05-30.
+- PX4 source path: `/home/formi/Documents/RustProjects/PX4-Autopilot`.
+- PX4 commit: `a2be919`.
+- Simulator backend: PX4 SIH, `sihsim_quadx`, headless.
+- PX4 instances: `-i 0` with `MAV_SYS_ID=1`, `-i 1` with `MAV_SYS_ID=2`.
+- Successful upload endpoints:
+  - agent 0: `udpin:0.0.0.0:14540`, target system/component `1/1`;
+  - agent 1: `udpin:0.0.0.0:14541`, target system/component `2/1`.
+- Captured result directory: `results/m55_multi_agent_px4_sih_2026-05-30/`.
+- Result: both agents accepted 2 mission items in upload-only mode.
+
+The shared normal/GCS listener `udpin:0.0.0.0:14550` timed out in this
+multi-instance setup; use per-instance onboard listener ports for this local
+SIH workflow.
+
+This check does not arm, take off, execute, coordinate simultaneous flight, or
+verify live PX4 failure/reallocation.
 
 ## Pre-Upload Safety Validation
 
