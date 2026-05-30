@@ -249,6 +249,8 @@ boundary:
 
 - `AgentController` describes one agent lifecycle/progress/abort boundary;
 - `MockAgentController` preserves the current no-PX4 mock workflow;
+- a test-only fake controller exercises the same supervisor loop without
+  subprocess stderr parsing;
 - `SupervisorMetrics` is returned from the supervisor module and still printed
   as the existing `SUPERVISOR_METRICS` line;
 - CLI negative cases for missing/invalid supervisor arguments are covered by

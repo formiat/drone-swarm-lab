@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::Path;
 use std::thread;
 use std::time::Duration;
@@ -23,6 +24,15 @@ pub struct SupervisorMockConfig {
     pub fail_after_ticks: u64,
     pub heartbeat_timeout_ticks: Option<u64>,
     pub max_ticks: Option<u64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SupervisorLoopConfig<'a> {
+    replay_log: Option<&'a str>,
+    timeout_ticks: u64,
+    max_ticks: u64,
+    own_id: String,
+    mode_label: &'a str,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -171,6 +181,25 @@ pub fn run_mock_supervisor(
             .max(timeout_ticks + config.fail_after_ticks + 3),
     );
     let own_id = supervisor_runtime_agent_id(manifest, config.fail_agent.as_deref())?;
+    let controllers = build_mock_controllers(manifest, config);
+    let loop_config = SupervisorLoopConfig {
+        replay_log: config.replay_log.as_deref(),
+        timeout_ticks,
+        max_ticks,
+        own_id,
+        mode_label: "Mock",
+    };
+    run_supervisor_with_controllers(entry, manifest, controllers, &loop_config)
+}
+
+fn run_supervisor_with_controllers<C: AgentController>(
+    entry: &swarm_sim::ScenarioSuiteEntry,
+    manifest: &MultiAgentSitlManifest,
+    mut controllers: Vec<C>,
+    config: &SupervisorLoopConfig<'_>,
+) -> Result<SupervisorMetrics, SitlError> {
+    validate_controller_set(manifest, &controllers)?;
+    let own_id = config.own_id.clone();
     let own_agent_id = AgentId::from(own_id.clone());
     let peer_ids: Vec<AgentId> = manifest
         .agents
@@ -181,7 +210,7 @@ pub fn run_mock_supervisor(
     let mut coordinator = Coordinator::new(
         entry.scenario.agents.clone(),
         entry.scenario.tasks.clone(),
-        timeout_ticks,
+        config.timeout_ticks,
     );
     assign_manifest_tasks(&mut coordinator, manifest)?;
 
@@ -191,7 +220,7 @@ pub fn run_mock_supervisor(
         coordinator,
         MockMavlinkTransport::new(),
     );
-    node.gossip_interval_ticks = max_ticks.saturating_add(10);
+    node.gossip_interval_ticks = config.max_ticks.saturating_add(10);
     let mut allocator = GreedyAllocator;
     let mut recorder = SitlEventRecorder::new(SitlEventLogMetadata {
         run_id: format!("sitl-supervisor-{}", manifest.scenario_name),
@@ -212,37 +241,10 @@ pub fn run_mock_supervisor(
         manifest.ownership_summary.unassigned_pose_tasks.len()
     );
 
-    let mut controllers = build_mock_controllers(manifest, config);
-    for (agent, controller) in manifest.agents.iter().zip(controllers.iter_mut()) {
-        if agent.start_delay_ms > 0 {
-            thread::sleep(Duration::from_millis(agent.start_delay_ms));
-        }
-        eprintln!(
-            "SITL Supervisor: agent={} system_id={} component_id={} connection={} waypoints={}",
-            agent.agent_id,
-            agent.system_id,
-            agent.component_id,
-            agent.connection_string,
-            agent.waypoint_count
-        );
-        recorder.push_mission_count_sent(agent.waypoint_count);
-        for waypoint in &agent.waypoints {
-            recorder.push_mission_item_sent(waypoint.seq, Some(waypoint.task_id.clone()));
-            eprintln!(
-                "WAYPOINT agent={} seq={} task_id={} x={:.1} y={:.1} z={:.1}",
-                agent.agent_id, waypoint.seq, waypoint.task_id, waypoint.x, waypoint.y, waypoint.z
-            );
-        }
-        let upload = controller.upload(&agent.waypoints)?;
-        controller.start()?;
-        eprintln!(
-            "Mock mode: agent={} waypoints sent={}",
-            agent.agent_id, upload.waypoint_count
-        );
-    }
+    upload_and_start_manifest_agents(manifest, &mut controllers, &mut recorder, config.mode_label)?;
 
     let mut metrics = SupervisorMetrics::default();
-    for tick in 0..=max_ticks {
+    for tick in 0..=config.max_ticks {
         let active_agents = poll_active_agent_ids(&mut controllers, tick)?;
         for agent_id in active_agents.iter().filter(|agent_id| *agent_id != &own_id) {
             node.transport.push_incoming(RawMessage {
@@ -322,10 +324,13 @@ pub fn run_mock_supervisor(
             break;
         }
 
-        if tick == max_ticks {
+        if tick == config.max_ticks {
             recorder.push_failure(
                 "timeout",
-                format!("supervisor did not complete manifest tasks by tick {max_ticks}"),
+                format!(
+                    "supervisor did not complete manifest tasks by tick {}",
+                    config.max_ticks
+                ),
             );
             recorder.push_run_completed("timeout");
         }
@@ -342,7 +347,7 @@ pub fn run_mock_supervisor(
         metrics.format_summary_line(manifest.agents_count, final_status)
     );
 
-    if let Some(path) = config.replay_log.as_deref() {
+    if let Some(path) = config.replay_log {
         write_sitl_event_log(path, recorder.log()).map_err(|error| SitlError::ReplayLogWrite {
             path: Path::new(path).to_path_buf(),
             message: error.to_string(),
@@ -372,8 +377,93 @@ fn build_mock_controllers(
         .collect()
 }
 
-fn poll_active_agent_ids(
-    controllers: &mut [MockAgentController],
+fn upload_and_start_manifest_agents<C: AgentController>(
+    manifest: &MultiAgentSitlManifest,
+    controllers: &mut [C],
+    recorder: &mut SitlEventRecorder,
+    mode_label: &str,
+) -> Result<(), SitlError> {
+    for agent in &manifest.agents {
+        if agent.start_delay_ms > 0 {
+            thread::sleep(Duration::from_millis(agent.start_delay_ms));
+        }
+        eprintln!(
+            "SITL Supervisor: agent={} system_id={} component_id={} connection={} waypoints={}",
+            agent.agent_id,
+            agent.system_id,
+            agent.component_id,
+            agent.connection_string,
+            agent.waypoint_count
+        );
+        recorder.push_mission_count_sent(agent.waypoint_count);
+        for waypoint in &agent.waypoints {
+            recorder.push_mission_item_sent(waypoint.seq, Some(waypoint.task_id.clone()));
+            eprintln!(
+                "WAYPOINT agent={} seq={} task_id={} x={:.1} y={:.1} z={:.1}",
+                agent.agent_id, waypoint.seq, waypoint.task_id, waypoint.x, waypoint.y, waypoint.z
+            );
+        }
+
+        let controller = controller_for_agent_mut(controllers, &agent.agent_id)?;
+        let upload = controller.upload(&agent.waypoints)?;
+        controller.start()?;
+        eprintln!(
+            "{} mode: agent={} waypoints sent={}",
+            mode_label, agent.agent_id, upload.waypoint_count
+        );
+    }
+    Ok(())
+}
+
+fn controller_for_agent_mut<'a, C: AgentController>(
+    controllers: &'a mut [C],
+    agent_id: &str,
+) -> Result<&'a mut C, SitlError> {
+    controllers
+        .iter_mut()
+        .find(|controller| controller.agent_id() == agent_id)
+        .ok_or_else(|| SitlError::MultiAgentConfigInvalid {
+            message: format!("missing controller for manifest agent '{agent_id}'"),
+        })
+}
+
+fn validate_controller_set<C: AgentController>(
+    manifest: &MultiAgentSitlManifest,
+    controllers: &[C],
+) -> Result<(), SitlError> {
+    let expected: HashSet<&str> = manifest
+        .agents
+        .iter()
+        .map(|agent| agent.agent_id.as_str())
+        .collect();
+    let mut seen = HashSet::new();
+
+    for controller in controllers {
+        let agent_id = controller.agent_id();
+        if !expected.contains(agent_id) {
+            return Err(SitlError::MultiAgentConfigInvalid {
+                message: format!("controller '{agent_id}' is not present in manifest"),
+            });
+        }
+        if !seen.insert(agent_id.to_owned()) {
+            return Err(SitlError::MultiAgentConfigInvalid {
+                message: format!("duplicate controller for manifest agent '{agent_id}'"),
+            });
+        }
+    }
+
+    for agent_id in expected {
+        if !seen.contains(agent_id) {
+            return Err(SitlError::MultiAgentConfigInvalid {
+                message: format!("missing controller for manifest agent '{agent_id}'"),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn poll_active_agent_ids<C: AgentController>(
+    controllers: &mut [C],
     tick: u64,
 ) -> Result<Vec<String>, SitlError> {
     let mut active_agents = Vec::new();
@@ -643,6 +733,139 @@ mod tests {
         .unwrap()
     }
 
+    struct FakeAgentController {
+        agent_id: String,
+        lifecycle: MultiAgentLifecycle,
+        fail_upload: bool,
+        fail_start: bool,
+        heartbeat_until_tick: Option<u64>,
+        uploaded: bool,
+        started: bool,
+        waypoint_count: usize,
+        poll_ticks: Vec<u64>,
+    }
+
+    impl FakeAgentController {
+        fn alive(agent_id: impl Into<String>) -> Self {
+            Self {
+                agent_id: agent_id.into(),
+                lifecycle: MultiAgentLifecycle::Execute,
+                fail_upload: false,
+                fail_start: false,
+                heartbeat_until_tick: None,
+                uploaded: false,
+                started: false,
+                waypoint_count: 0,
+                poll_ticks: Vec::new(),
+            }
+        }
+
+        fn stops_at(agent_id: impl Into<String>, tick: u64) -> Self {
+            Self {
+                heartbeat_until_tick: Some(tick),
+                ..Self::alive(agent_id)
+            }
+        }
+
+        fn with_upload_failure(mut self) -> Self {
+            self.fail_upload = true;
+            self
+        }
+
+        fn with_start_failure(mut self) -> Self {
+            self.fail_start = true;
+            self
+        }
+    }
+
+    impl AgentController for FakeAgentController {
+        fn agent_id(&self) -> &str {
+            &self.agent_id
+        }
+
+        fn lifecycle(&self) -> MultiAgentLifecycle {
+            self.lifecycle
+        }
+
+        fn upload(&mut self, waypoints: &[SitlWaypointItem]) -> Result<AgentStep, SitlError> {
+            if self.fail_upload {
+                return Err(SitlError::ConnectionFailed {
+                    message: format!("fake upload failure for {}", self.agent_id),
+                });
+            }
+            self.uploaded = true;
+            self.waypoint_count = waypoints.len();
+            Ok(AgentStep {
+                agent_id: self.agent_id.clone(),
+                waypoint_count: self.waypoint_count,
+            })
+        }
+
+        fn start(&mut self) -> Result<AgentStep, SitlError> {
+            if self.fail_start {
+                return Err(SitlError::ConnectionFailed {
+                    message: format!("fake start failure for {}", self.agent_id),
+                });
+            }
+            self.started = true;
+            Ok(AgentStep {
+                agent_id: self.agent_id.clone(),
+                waypoint_count: self.waypoint_count,
+            })
+        }
+
+        fn poll(&mut self, tick: u64) -> Result<AgentProgress, SitlError> {
+            self.poll_ticks.push(tick);
+            let heartbeat_seen = self
+                .heartbeat_until_tick
+                .is_none_or(|heartbeat_until_tick| tick < heartbeat_until_tick);
+            Ok(AgentProgress {
+                agent_id: self.agent_id.clone(),
+                heartbeat_seen,
+            })
+        }
+
+        fn abort(&mut self, _reason: &str) -> Result<AgentStep, SitlError> {
+            Ok(AgentStep {
+                agent_id: self.agent_id.clone(),
+                waypoint_count: self.waypoint_count,
+            })
+        }
+    }
+
+    fn fake_controllers() -> Vec<FakeAgentController> {
+        vec![
+            FakeAgentController::alive("agent-0"),
+            FakeAgentController::alive("agent-1"),
+        ]
+    }
+
+    fn run_fake_supervisor(
+        controllers: Vec<FakeAgentController>,
+        own_id: &str,
+    ) -> Result<SupervisorMetrics, SitlError> {
+        run_fake_supervisor_with_ticks(controllers, own_id, 1, 6)
+    }
+
+    fn run_fake_supervisor_with_ticks(
+        controllers: Vec<FakeAgentController>,
+        own_id: &str,
+        timeout_ticks: u64,
+        max_ticks: u64,
+    ) -> Result<SupervisorMetrics, SitlError> {
+        let suite = fixture_suite();
+        let manifest = fixture_manifest();
+        let entry = first_sitl_entry(&suite, "inline-scenario.json").unwrap();
+        let loop_config = SupervisorLoopConfig {
+            replay_log: None,
+            timeout_ticks,
+            max_ticks,
+            own_id: own_id.to_owned(),
+            mode_label: "Fake",
+        };
+        run_supervisor_with_controllers(entry, &manifest, controllers, &loop_config)
+    }
+
     #[test]
     fn supervisor_metrics_formats_contract_line() {
         let metrics = SupervisorMetrics {
@@ -658,6 +881,65 @@ mod tests {
             metrics.format_summary_line(2, "completed"),
             "SUPERVISOR_METRICS agents=2 heartbeats=6 completed_tasks=2 lost_agents=1 reassignment_count=1 tasks_recovered=wp-0 reallocation_latency_ticks=0 final_status=completed"
         );
+    }
+
+    #[test]
+    fn fake_supervisor_boundary_completes_happy_path() {
+        let metrics = run_fake_supervisor(fake_controllers(), "agent-0").unwrap();
+
+        assert_eq!(metrics.completed_task_count, 2);
+        assert_eq!(metrics.lost_agent_count, 0);
+        assert_eq!(metrics.reassignment_count, 0);
+        assert!(metrics.tasks_recovered.is_empty());
+        assert_eq!(metrics.reallocation_latency_ticks, None);
+    }
+
+    #[test]
+    fn fake_supervisor_boundary_reallocates_after_progress_loss() {
+        let controllers = vec![
+            FakeAgentController::stops_at("agent-0", 0),
+            FakeAgentController::alive("agent-1"),
+        ];
+
+        let metrics = run_fake_supervisor(controllers, "agent-1").unwrap();
+
+        assert_eq!(metrics.lost_agent_count, 1);
+        assert_eq!(metrics.reassignment_count, 1);
+        assert_eq!(metrics.tasks_recovered, vec!["wp-0"]);
+        assert_eq!(metrics.reallocation_latency_ticks, Some(0));
+        assert_eq!(metrics.completed_task_count, 2);
+    }
+
+    #[test]
+    fn fake_supervisor_boundary_propagates_upload_failure() {
+        let controllers = vec![
+            FakeAgentController::alive("agent-0").with_upload_failure(),
+            FakeAgentController::alive("agent-1"),
+        ];
+
+        let error = run_fake_supervisor(controllers, "agent-0").unwrap_err();
+        assert!(error.to_string().contains("fake upload failure"));
+    }
+
+    #[test]
+    fn fake_supervisor_boundary_propagates_start_failure_after_upload() {
+        let controllers = vec![
+            FakeAgentController::alive("agent-0").with_start_failure(),
+            FakeAgentController::alive("agent-1"),
+        ];
+
+        let error = run_fake_supervisor(controllers, "agent-0").unwrap_err();
+        assert!(error.to_string().contains("fake start failure"));
+    }
+
+    #[test]
+    fn fake_supervisor_boundary_rejects_missing_controller() {
+        let controllers = vec![FakeAgentController::alive("agent-0")];
+
+        let error = run_fake_supervisor(controllers, "agent-0").unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("missing controller for manifest agent 'agent-1'"));
     }
 
     #[test]

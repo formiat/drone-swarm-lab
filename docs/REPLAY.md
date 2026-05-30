@@ -87,7 +87,8 @@ yet inject failures and emit a combined real-PX4 reallocation log.
 
 M57 keeps these replay semantics stable while moving mock supervisor execution
 behind an internal supervisor/controller boundary. `MockAgentController` still
-produces the same mock reallocation events, and `SupervisorMetrics` can now be
+produces the same mock reallocation events, the shared supervisor loop is also
+covered by a test-only fake controller, and `SupervisorMetrics` can now be
 asserted directly in tests instead of only being parsed from stderr.
 
 ## Generating Replay Logs
