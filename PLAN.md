@@ -19,7 +19,7 @@
 
 - `sitl_agent --connection --execute` умеет single-agent PX4/SIH golden path:
   mission upload, arm/takeoff/start, telemetry progress, optional run report and
-  replay log.
+  replay log, with pre-upload mission safety validation.
 - `sitl_agent --multi-agent-config` умеет выбрать task subset and connection
   settings for one agent from `multi_sitl.v1`.
 - `sitl_supervisor --dry-run` / `--mock` уже строит multi-agent manifest,
@@ -39,7 +39,9 @@ final report.
 Ключевое архитектурное требование: **не копировать большую часть
 `sitl_agent.rs` в `sitl_supervisor.rs`**. Сначала нужно вынести reusable
 connection/execute lifecycle из binary в library module, затем подключить его
-через `Px4AgentController`.
+через `Px4AgentController`. Этот reusable path должен сохранить existing
+pre-upload safety gate, включая per-agent task subset validation from
+`sitl_agent --multi-agent-config`.
 
 ## Investigation context
 
@@ -60,6 +62,7 @@ review comments or discussions; `notion_policy` указан как optional.
 - текущий `crates/swarm-examples/src/sitl_supervisor.rs`;
 - `crates/swarm-examples/src/sitl_multi_agent.rs`;
 - `crates/swarm-examples/src/bin/sitl_agent.rs`;
+- `crates/swarm-examples/src/sitl_safety.rs`;
 - `crates/swarm-examples/src/sitl_observability.rs`;
 - `crates/swarm-examples/src/sitl_report.rs`;
 - `README.md`, `docs/STATUS.md`, `docs/SITL_SETUP.md`, `docs/REPLAY.md`,
@@ -76,14 +79,21 @@ review comments or discussions; `notion_policy` указан как optional.
   `crates/swarm-examples/src/sitl_execute.rs`
   - new preferred library module for reusable single-agent connection lifecycle:
     upload-only, execute, telemetry progress, run report mapping, event
-    recording hooks, feature-gated MAVLink driver.
+    recording hooks, pre-upload safety gate wiring, feature-gated MAVLink driver.
+- `crates/swarm-examples/src/sitl_safety.rs`
+  - existing source of `load_sitl_safety_config`,
+    `validate_pre_upload_safety` and
+    `validate_pre_upload_safety_for_task_ids`;
+  - must be reused by live supervisor before any MAVLink upload/start and
+    before feature-gated live connection code.
 - `crates/swarm-examples/src/sitl_supervisor.rs`
   - add `Px4AgentController` behind `mavlink-transport`;
   - add fake live controller tests over M58 lifecycle;
-  - add multi-agent live execute supervisor/report aggregation.
+  - add multi-agent live execute supervisor/report aggregation;
+  - invoke per-agent selected-task safety validation for live mode.
 - `crates/swarm-examples/src/bin/sitl_supervisor.rs`
   - extend CLI with explicit live mode, likely `--connection`;
-  - add `--execute`, `--run-report`, `--timeout`,
+  - add `--execute`, `--safety-config`, `--run-report`, `--timeout`,
     `--telemetry-timeout`, `--no-progress-timeout`;
   - reject conflicting `--mock` / `--dry-run` / `--connection` modes.
 - `crates/swarm-examples/src/sitl_multi_agent.rs`
@@ -144,6 +154,7 @@ review comments or discussions; `notion_policy` указан как optional.
      - `crates/swarm-examples/src/sitl_connection.rs`
    - Move or wrap from `src/bin/sitl_agent.rs`:
      - live connection config;
+     - safety config loading and pre-upload validation call point;
      - upload-only flow;
      - execute flow;
      - `SitlGoldenPathDriver`-style abstraction;
@@ -155,8 +166,12 @@ review comments or discussions; `notion_policy` указан как optional.
      `Px4AgentController`, for example:
      - `SitlConnectionRunConfig`;
      - `SitlConnectionLifecycle`;
+     - `SitlSafetyGate` / `validate_sitl_connection_safety(...)` wrapper;
      - `run_sitl_connection(plan, connection, lifecycle, report/log hooks)`;
      - `MissionExecutor` / `MissionDriver` trait for fake tests.
+   - The extracted path must preserve the current invariant from
+     `sitl_agent`: safety validation happens before any MAVLink upload/start
+     and before the no-feature live connection error.
    - Important: preserve existing `sitl_agent --connection --execute` output,
      reports and replay behavior unless a change is explicitly required.
 
@@ -174,6 +189,7 @@ review comments or discussions; `notion_policy` указан как optional.
        --scenario scenarios/sitl.multi-agent.json \
        --config scenarios/sitl.multi-agent.config.json \
        --execute \
+       --safety-config path/to/sitl-safety.json \
        --replay-log results/m58_multi_agent_px4_sih_execute_YYYY-MM-DD/run.sitl-log.json \
        --run-report results/m58_multi_agent_px4_sih_execute_YYYY-MM-DD/report.json \
        --timeout 120 \
@@ -183,6 +199,8 @@ review comments or discussions; `notion_policy` указан как optional.
    - Validation rules:
      - exactly one of `--dry-run`, `--mock`, `--connection`;
      - `--execute` required for M58 `--connection`;
+     - `--safety-config` valid for live execute mode and loaded before any
+       live controller starts;
      - `--run-report` valid only with `--connection --execute`;
      - `--fail-agent` / `--fail-after-ticks` remain mock-only in M58;
      - `--heartbeat-timeout-ticks` remains mock-only unless reused under an
@@ -207,13 +225,42 @@ review comments or discussions; `notion_policy` указан как optional.
      explicitly documented as out-of-scope for M58 and do not use it in the
      captured artifact.
 
-5. **Implement `Px4AgentController`**
+5. **Preserve/reuse pre-upload mission safety validation**
+   - Paths:
+     - `crates/swarm-examples/src/bin/sitl_agent.rs`;
+     - `crates/swarm-examples/src/bin/sitl_supervisor.rs`;
+     - `crates/swarm-examples/src/sitl_connection.rs`;
+     - `crates/swarm-examples/src/sitl_safety.rs`;
+     - `crates/swarm-examples/src/sitl_supervisor.rs`.
+   - Reuse existing safety logic instead of adding a supervisor-only copy:
+     - `load_sitl_safety_config`;
+     - `validate_pre_upload_safety`;
+     - `validate_pre_upload_safety_for_task_ids`;
+     - or a small shared wrapper that calls those helpers.
+   - Live supervisor must validate each selected per-agent task subset before
+     constructing or starting any MAVLink upload/start path.
+   - Validation must run before `Px4AgentController.upload()` and before the
+     feature-gated live call that can return `FeatureMissing`.
+   - For multi-agent config, validate only the selected task ids for the agent
+     being uploaded/executed. An unsafe task assigned to another agent must not
+     block a safe selected subset, matching existing `sitl_agent` behavior.
+   - Bad/missing safety config errors should remain typed:
+     - `SafetyConfigRead`;
+     - `SafetyConfigParse`;
+     - `SafetyConfigInvalid`;
+     - `SafetyValidationFailed`.
+   - This gate is separate from hardware connection classification: safety
+     validation checks mission geometry/task set, while connection
+     classification checks endpoint class.
+
+6. **Implement `Px4AgentController`**
    - Path:
      - `crates/swarm-examples/src/sitl_supervisor.rs`, or split to
        `crates/swarm-examples/src/sitl_px4_controller.rs` if the module grows.
    - Behind `#[cfg(feature = "mavlink-transport")]`:
      - construct controller from `MultiAgentSitlManifestAgent`;
      - build per-agent `SitlPlan` / waypoint list from manifest data;
+     - receive an already safety-validated task subset / safety gate result;
      - use per-agent connection string, `system_id`, `component_id`;
      - call reusable connection lifecycle extracted in step 2;
      - map lifecycle into supervisor-level states.
@@ -230,7 +277,7 @@ review comments or discussions; `notion_policy` указан как optional.
    - M58 should not implement failure/reallocation. On one agent failure, final
      overall status should be failed/partial, not reallocated.
 
-6. **Define launch policy**
+7. **Define launch policy**
    - Path:
      - `crates/swarm-examples/src/sitl_supervisor.rs`.
    - Default: sequential launch in manifest order.
@@ -242,7 +289,7 @@ review comments or discussions; `notion_policy` указан как optional.
    - Sequential default is chosen because local SIH debugging is easier and
      safer than racing two MAVLink lifecycle starts.
 
-7. **Add per-agent telemetry aggregation**
+8. **Add per-agent telemetry aggregation**
    - Paths:
      - `crates/swarm-examples/src/sitl_supervisor.rs`;
      - `crates/swarm-examples/src/sitl_connection.rs`.
@@ -256,7 +303,7 @@ review comments or discussions; `notion_policy` указан как optional.
      - final status per agent.
    - The report aggregation must not rely on parsing stderr.
 
-8. **Write common multi-agent event log**
+9. **Write common multi-agent event log**
    - Path:
      - `crates/swarm-examples/src/sitl_observability.rs`.
    - Add event variants or equivalent existing-event representation for:
@@ -268,7 +315,7 @@ review comments or discussions; `notion_policy` указан как optional.
      - keep per-agent events attributable via `agent_id` in common log.
    - Add synthetic replay tests before relying on a live PX4 run.
 
-9. **Add final multi-agent report**
+10. **Add final multi-agent report**
    - Path:
      - `crates/swarm-examples/src/sitl_report.rs`.
    - Suggested report fields:
@@ -289,7 +336,7 @@ review comments or discussions; `notion_policy` указан как optional.
    - Add writer helper that creates parent directories like existing
      `write_sitl_run_report`.
 
-10. **Preserve mock/dry-run portability**
+11. **Preserve mock/dry-run portability**
     - Paths:
       - `crates/swarm-examples/src/bin/sitl_supervisor.rs`;
       - `crates/swarm-examples/src/sitl_supervisor.rs`;
@@ -300,7 +347,7 @@ review comments or discussions; `notion_policy` указан как optional.
       not start requiring MAVLink dependencies beyond existing optional feature
       behavior.
 
-11. **Create fake-controller automated coverage for M58 logic**
+12. **Create fake-controller automated coverage for M58 logic**
     - Paths:
       - `crates/swarm-examples/src/sitl_supervisor.rs`, module tests; or
       - `crates/swarm-examples/tests/sitl_supervisor.rs` if public test API is
@@ -314,7 +361,7 @@ review comments or discussions; `notion_policy` указан как optional.
       - report aggregation from two controllers;
       - event log has run started/finished and per-agent attribution.
 
-12. **Add CLI tests**
+13. **Add CLI tests**
     - Path:
       - `crates/swarm-examples/tests/sitl_agent.rs`.
     - Add subprocess tests for:
@@ -327,8 +374,14 @@ review comments or discussions; `notion_policy` указан как optional.
       - invalid numeric values;
       - live mode without `mavlink-transport` returns actionable feature error;
       - hardware-candidate endpoint rejected unless explicitly allowed.
+      - unsafe selected agent task rejected before upload and before feature
+        error;
+      - safe selected subset proceeds to feature-missing/live-controller
+        boundary;
+      - unsafe task assigned to another agent does not block a safe selected
+        agent subset.
 
-13. **Add optional ignored/manual PX4/SIH integration test**
+14. **Add optional ignored/manual PX4/SIH integration test**
     - Path:
       - `crates/swarm-examples/tests/sitl_live_multi_agent.rs` or existing
         `sitl_agent.rs` if keeping all SITL CLI tests together.
@@ -340,7 +393,7 @@ review comments or discussions; `notion_policy` указан как optional.
     - It may take longer than 5 minutes depending on PX4 startup and must be
       documented as a manual/local validation, not an automated gate.
 
-14. **Capture M58 artifact**
+15. **Capture M58 artifact**
     - Path:
       - `results/m58_multi_agent_px4_sih_execute_YYYY-MM-DD/`.
     - Contents:
@@ -358,7 +411,7 @@ review comments or discussions; `notion_policy` указан как optional.
       artifact capture as pending until the user explicitly allows the live
       local run.
 
-15. **Update README and all companion Markdown docs**
+16. **Update README and all companion Markdown docs**
     - Required:
       - `README.md`;
       - `docs/STATUS.md`;
@@ -370,10 +423,12 @@ review comments or discussions; `notion_policy` указан как optional.
       - no real hardware readiness is claimed;
       - mock/dry-run remain portable;
       - failure/reallocation remains M59;
+      - local PX4/SIH execute preserves the existing pre-upload mission safety
+        validation for per-agent task subsets;
       - manual/ignored live runs may exceed 5 minutes and are not default CI.
     - Update `crates/swarm-examples/tests/sitl_docs.rs` with required wording.
 
-16. **Final verification before commit**
+17. **Final verification before commit**
     - Because Rust files will change:
       - `timeout 300s cargo fmt --all`
       - `timeout 300s cargo clippy --workspace --all-targets --all-features -- -D warnings`
@@ -399,6 +454,12 @@ review comments or discussions; `notion_policy` указан как optional.
   - `sitl_supervisor --dry-run` subprocess.
 - Existing standalone command generation tests for per-agent `sitl_agent`
   commands.
+- Existing `sitl_agent` safety tests can be used as baseline for supervisor
+  parity:
+  - unsafe connection mission rejected before feature error/upload;
+  - selected multi-agent unsafe task rejected;
+  - safe selected subset allowed even when another agent owns an unsafe task;
+  - bad/missing `--safety-config` remains typed.
 - Existing `sitl_supervisor --mock` tests:
   - distinct subsets;
   - mock reallocation;
@@ -409,6 +470,8 @@ review comments or discussions; `notion_policy` указан как optional.
   - `--dry-run` / `--connection` conflict;
   - `--connection` without `--execute`;
   - `--run-report` outside live execute mode;
+  - missing `--safety-config` value;
+  - invalid/missing safety config path and parse errors;
   - missing/invalid timeout values;
   - no-feature actionable error for live mode.
 - Synthetic replay roundtrip can be added without PX4 by constructing a
@@ -440,6 +503,14 @@ review comments or discussions; `notion_policy` указан как optional.
 - Hardware boundary tests:
   - local UDP endpoints accepted;
   - remote/wildcard/serial hardware candidates rejected by default.
+- Live supervisor mission safety validation:
+  - unsafe selected agent task rejected before upload and before feature error;
+  - safe selected subset proceeds to feature-missing/live-controller boundary;
+  - unsafe task assigned to another agent does not block a safe selected agent
+    subset;
+  - bad safety config path/JSON produce typed errors;
+  - docs/tests mention that M58 local PX4/SIH execute preserves pre-upload
+    mission safety validation.
 
 ### 3. Tests that need heavy refactoring
 
@@ -469,9 +540,14 @@ review comments or discussions; `notion_policy` указан как optional.
   document it as technical debt.
 - **Feature gating:** live controller code must not make portable tests require
   `mavlink-transport` or PX4.
-- **Hardware safety boundary:** connection strings from multi-agent config can
-  accidentally point at remote/hardware candidates. M58 must reject those by
-  default.
+- **Hardware connection classification:** connection strings from multi-agent
+  config can accidentally point at remote/hardware candidates. This protects
+  against unintended endpoint class, not unsafe mission geometry. M58 must
+  reject hardware candidates by default.
+- **Mission safety validation:** `--safety-config` and pre-upload checks protect
+  against unsafe mission geometry/task sets. This is a separate gate from
+  hardware connection classification and must run per selected agent task subset
+  before any MAVLink upload/start or feature-gated live call.
 - **Timing flakiness:** local SIH execute depends on PX4 process readiness,
   endpoints and arming state. Keep automated tests fake/mock; keep live
   validation manual/ignored.
