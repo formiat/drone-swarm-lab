@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-30
 **HEAD commit:** see `git rev-parse HEAD`
-**Last audit:** M58 Live Multi-Agent PX4/SIH Execute follow-up
+**Last audit:** M59 Live PX4/SIH Failure & Reallocation foundation
 
 This document is the current status summary for the repository. It supersedes
 the older M39b-only audit and should be read together with the README current
@@ -29,11 +29,12 @@ status table.
 | M48 Single-Agent PX4 SITL Golden Path | Complete for local PX4 SIH | Live single-agent PX4 SIH run completed on 2026-05-30 with `scenarios/sitl.px4-golden.json`; report/replay artifacts are in `results/m48_px4_sitl_2026-05-30/`. |
 | M49 SITL Observability & Replay | Complete | SITL event log, replay summary, task id mapping, failure events, and reallocation schema events are implemented. |
 | M50 Mock Regression & Docs Hardening | Complete | Portable dry-run/mock/docs checks exist and require no PX4. |
-| M51 Dynamic Reallocation for Failed Agent | Supervisor mock complete | Runtime reallocation, metrics, SITL event schema, and `sitl_supervisor --mock` heartbeat-timeout/reallocation flow are implemented. Live PX4 failure/reallocation remains future work. |
+| M51 Dynamic Reallocation for Failed Agent | Supervisor mock complete | Runtime reallocation, metrics, SITL event schema, and `sitl_supervisor --mock` heartbeat-timeout/reallocation flow are implemented. M59 reuses this runtime path for controlled live-supervisor mission replacement. |
 | M52 Multi-Agent SITL Foundation | Foundation plus upload-only check complete | `multi_sitl.v1`, public `scenarios/sitl.multi-agent.json` / `scenarios/sitl.multi-agent.config.json`, dry-run/mock manifest, task subsets, duplicate ownership checks, mock supervisor orchestration, and a two-instance PX4 SIH upload-only check exist. |
 | M53 Hardware Readiness Boundary | Complete | `docs/HARDWARE_READINESS.md`, connection classes, and `--allow-hardware-candidate` guard hardware-candidate endpoints. |
 | M57 Supervisor Controller Boundary | Complete | `sitl_supervisor` mock orchestration is extracted into a testable internal supervisor module with `AgentController`, `MockAgentController`, fake-controller tests over the shared supervisor loop, returned `SupervisorMetrics`, and expanded CLI negative tests. M58 builds the live PX4/SIH path beside this boundary. |
-| M58 Live Multi-Agent PX4/SIH Execute Orchestration | Complete as experimental local SITL plumbing | `sitl_supervisor --connection --execute` with `scenarios/sitl.multi-agent.execute.config.json` validates all live agents, rejects non-execute lifecycles, applies per-agent safety and hardware-candidate gates before upload, runs sequential local PX4/SIH controllers, and writes a common SITL event log plus `sitl_multi_agent_run_report.v1`. Portable fake-controller and CLI tests cover the workflow; live PX4 failed-agent reallocation remains future work. |
+| M58 Live Multi-Agent PX4/SIH Execute Orchestration | Complete as experimental local SITL plumbing | `sitl_supervisor --connection --execute` with `scenarios/sitl.multi-agent.execute.config.json` validates all live agents, rejects non-execute lifecycles, applies per-agent safety and hardware-candidate gates before upload, runs sequential local PX4/SIH controllers, and writes a common SITL event log plus `sitl_multi_agent_run_report.v1`. |
+| M59 Live PX4/SIH Failure & Reallocation | Code-complete foundation; manual artifact pending | `--reupload-on-failure` turns a failed live agent into runtime release/reassignment events, survivor mission replacement, report `reallocation` metrics, and replay summary counters. Automated coverage uses portable fake live controllers; a real PX4/SIH failure-injection artifact is still separate manual work. |
 
 ## Current Known Limitations
 
@@ -49,13 +50,15 @@ status table.
   M58 adds `sitl_supervisor --connection --execute` for local endpoints with a
   common report/event log. This still is not PX4 CI, Gazebo/HIL, real hardware,
   or production flight orchestration.
-- **M51 reallocation is live in the mock supervisor, not in PX4.** Reallocation
-  events are emitted by `sitl_supervisor --mock` after heartbeat timeout. They
-  are not yet emitted by a live multi-agent PX4 supervisor failure flow.
+- **M59 reallocation is code-complete for controlled live-supervisor mission
+  replacement, but not manually PX4/SIH proven.** Reallocation events are emitted
+  by `sitl_supervisor --mock` and by the fake live-supervisor M59 path after a
+  failed agent. A captured real PX4/SIH failure-injection artifact is still not
+  present.
 - **M57 was an internal boundary; M58 is the first live supervisor plumbing.**
   The mock supervisor state machine remains testable behind an internal
-  controller boundary, while M58 adds the separate live PX4/SIH execute path.
-  Live PX4 failed-agent reallocation is still not implemented.
+  controller boundary, while M58 adds the separate live PX4/SIH execute path and
+  M59 adds explicit mission replacement after failed-agent reallocation.
 - **Hardware is out of scope.** The project is not flight-certified and is not a
   production safety layer.
 
@@ -85,15 +88,14 @@ status table.
 |---|---|---|
 | Portable SITL verification | Ready | Run `sitl_agent`/`sitl_docs` targeted tests. |
 | M48 live PX4 verification | Complete for local PX4 SIH | Captured in `results/m48_px4_sitl_2026-05-30/`; Gazebo/HIL/hardware remain out of scope. |
-| Real multi-agent PX4/SIH | Experimental local workflow | Upload-only SIH evidence exists and `sitl_supervisor --connection --execute` can orchestrate local execute attempts; PX4 CI, Gazebo/HIL, hardware, and live PX4 failure/reallocation remain future work. |
+| Real multi-agent PX4/SIH | Experimental local workflow | Upload-only SIH evidence exists and `sitl_supervisor --connection --execute --reupload-on-failure` can orchestrate controlled local execute/reallocation attempts; PX4 CI, Gazebo/HIL, hardware, and a captured real failure-injection artifact remain future work. |
 | Large benchmark publication | Not ready | Default regression flake is fixed; benchmark baselines/results still need a fresh publication run. |
 | Hardware experiment | Not product-ready | Requires external safety process; see `docs/HARDWARE_READINESS.md`. |
 
 ## Recommended Next Steps
 
-1. Decide whether the next PX4 milestone should cover live PX4
-   failure/reallocation, Gazebo/HIL validation, or additional non-hardware
-   robustness around the local multi-agent supervisor.
+1. Capture a real local PX4/SIH M59 failure-injection artifact if the project
+   needs evidence beyond portable fake-controller coverage.
 2. Refresh benchmark baselines/results before using them as publication claims.
 3. Keep README, `docs/SITL_SETUP.md`, `docs/REPLAY.md`, and this file in sync
    when M48 live verification changes state.
@@ -123,6 +125,7 @@ PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
 For M48 live verification, inspect `results/m48_px4_sitl_2026-05-30/`. For the
 two-instance PX4 SIH upload-only check, inspect
 `results/m55_multi_agent_px4_sih_2026-05-30/`. M58 adds live execute supervisor
-code and portable fake/CLI coverage, but this audit did not capture a new live
-PX4/SIH execute artifact. Do not extend any existing result to Gazebo, HIL, real
-hardware, or live PX4 failure/reallocation without a new captured run.
+code and portable fake/CLI coverage; M59 adds failed-agent mission replacement
+code and portable fake coverage. Do not extend any existing result to Gazebo,
+HIL, real hardware, or real PX4/SIH failure/reallocation without a new captured
+run.

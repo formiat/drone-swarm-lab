@@ -36,13 +36,14 @@ struct CliArgs {
     no_arm: bool,
     abort_after: Option<Duration>,
     allow_hardware_candidate: bool,
+    reupload_on_failure: bool,
 }
 
 fn main() {
     if let Err(error) = run() {
         eprintln!("error: {error}");
         eprintln!(
-            "usage: sitl_supervisor --dry-run|--mock|--connection --scenario <path> --config <path> [--manifest <path>] [--replay-log <path>] [--fail-agent <id>] [--fail-after-ticks N] [--heartbeat-timeout-ticks N] [--max-ticks N] [--execute] [--run-report <path>] [--safety-config <path>] [--timeout <duration>] [--telemetry-timeout <duration>] [--no-progress-timeout <duration>] [--no-arm] [--abort-after <duration>] [--allow-hardware-candidate]"
+            "usage: sitl_supervisor --dry-run|--mock|--connection --scenario <path> --config <path> [--manifest <path>] [--replay-log <path>] [--fail-agent <id>] [--fail-after-ticks N] [--heartbeat-timeout-ticks N] [--max-ticks N] [--execute] [--run-report <path>] [--safety-config <path>] [--timeout <duration>] [--telemetry-timeout <duration>] [--no-progress-timeout <duration>] [--no-arm] [--abort-after <duration>] [--allow-hardware-candidate] [--reupload-on-failure]"
         );
         std::process::exit(1);
     }
@@ -85,6 +86,7 @@ fn run() -> Result<(), SitlError> {
                     abort_after: cli.abort_after,
                 },
                 allow_hardware_candidate: cli.allow_hardware_candidate,
+                reupload_on_failure: cli.reupload_on_failure,
                 run_id: None,
             };
             let _ = run_live_supervisor(&suite, &live_config, &manifest)?;
@@ -117,6 +119,7 @@ fn parse_args() -> Result<CliArgs, SitlError> {
     let mut no_arm = false;
     let mut abort_after = None;
     let mut allow_hardware_candidate = false;
+    let mut reupload_on_failure = false;
 
     let mut i = 1;
     while i < args.len() {
@@ -256,6 +259,7 @@ fn parse_args() -> Result<CliArgs, SitlError> {
                 )?);
             }
             "--allow-hardware-candidate" => allow_hardware_candidate = true,
+            "--reupload-on-failure" => reupload_on_failure = true,
             arg => {
                 return Err(SitlError::UnknownArgument {
                     arg: arg.to_owned(),
@@ -274,6 +278,7 @@ fn parse_args() -> Result<CliArgs, SitlError> {
         fail_agent: fail_agent.as_deref(),
         heartbeat_timeout_ticks,
         max_ticks,
+        reupload_on_failure,
         live_options: LiveOptionFlags {
             timeout_set,
             telemetry_timeout_set,
@@ -301,6 +306,7 @@ fn parse_args() -> Result<CliArgs, SitlError> {
         no_arm,
         abort_after,
         allow_hardware_candidate,
+        reupload_on_failure,
     })
 }
 
@@ -352,6 +358,11 @@ fn validate_cli_arg_combinations(args: CliValidationArgs<'_>) -> Result<(), Sitl
             message: "--safety-config requires --connection --execute".to_owned(),
         });
     }
+    if args.reupload_on_failure && !(args.mode == SupervisorMode::Connection && args.execute) {
+        return Err(SitlError::MultiAgentConfigInvalid {
+            message: "--reupload-on-failure requires --connection --execute".to_owned(),
+        });
+    }
     if args.mode == SupervisorMode::Connection && !args.execute {
         return Err(SitlError::LifecycleOptionRequiresExecute {
             option: "--connection",
@@ -391,6 +402,7 @@ struct CliValidationArgs<'a> {
     fail_agent: Option<&'a str>,
     heartbeat_timeout_ticks: Option<u64>,
     max_ticks: Option<u64>,
+    reupload_on_failure: bool,
     live_options: LiveOptionFlags,
 }
 

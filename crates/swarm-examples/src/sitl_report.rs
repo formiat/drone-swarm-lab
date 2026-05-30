@@ -54,7 +54,21 @@ pub struct SitlMultiAgentRunReport {
     pub aborted_agents: usize,
     pub overall_status: String,
     pub event_log_path: Option<PathBuf>,
+    #[serde(default)]
+    pub reallocation: SitlMultiAgentReallocationReport,
     pub known_limitations: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SitlMultiAgentReallocationReport {
+    pub lost_agent_count: u64,
+    pub released_tasks: Vec<String>,
+    pub reassigned_tasks: Vec<String>,
+    pub reassignment_count: u64,
+    pub tasks_recovered: Vec<String>,
+    pub reallocation_latency_ticks: Option<u64>,
+    pub survivor_mission_updates: u64,
+    pub final_completed_after_reallocation: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -213,6 +227,7 @@ mod tests {
             aborted_agents: 0,
             overall_status: "completed".to_owned(),
             event_log_path: Some(PathBuf::from("run.sitl-log.json")),
+            reallocation: SitlMultiAgentReallocationReport::default(),
             known_limitations: vec!["local PX4/SIH only".to_owned()],
         };
 
@@ -221,5 +236,71 @@ mod tests {
         assert!(json.contains("sitl_multi_agent_run_report.v1"));
         assert!(json.contains("connection_execute"));
         assert!(json.contains("completed"));
+    }
+
+    #[test]
+    fn multi_agent_report_roundtrips_reallocation_metrics() {
+        let report = SitlMultiAgentRunReport {
+            schema_version: "sitl_multi_agent_run_report.v1".to_owned(),
+            run_id: "run-reallocation".to_owned(),
+            scenario_path: PathBuf::from("scenarios/sitl.multi-agent.json"),
+            scenario_name: "sitl_multi_agent".to_owned(),
+            config_path: PathBuf::from("scenarios/sitl.multi-agent.config.json"),
+            mission: "sitl".to_owned(),
+            profile: "multi-agent".to_owned(),
+            mode: "connection_execute".to_owned(),
+            agents: Vec::new(),
+            total_completed_tasks: 2,
+            failed_agents: 1,
+            aborted_agents: 0,
+            overall_status: "completed_with_reallocation".to_owned(),
+            event_log_path: Some(PathBuf::from("run.sitl-log.json")),
+            reallocation: SitlMultiAgentReallocationReport {
+                lost_agent_count: 1,
+                released_tasks: vec!["wp-0".to_owned()],
+                reassigned_tasks: vec!["wp-0".to_owned()],
+                reassignment_count: 1,
+                tasks_recovered: vec!["wp-0".to_owned()],
+                reallocation_latency_ticks: Some(0),
+                survivor_mission_updates: 1,
+                final_completed_after_reallocation: 2,
+            },
+            known_limitations: vec!["controlled local PX4/SIH only".to_owned()],
+        };
+
+        let json = serde_json::to_string_pretty(&report).unwrap();
+        let roundtrip: SitlMultiAgentRunReport = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(roundtrip, report);
+        assert!(json.contains("completed_with_reallocation"));
+        assert!(json.contains("survivor_mission_updates"));
+    }
+
+    #[test]
+    fn multi_agent_report_defaults_missing_reallocation_section() {
+        let json = r#"{
+          "schema_version": "sitl_multi_agent_run_report.v1",
+          "run_id": "run-old",
+          "scenario_path": "scenario.json",
+          "scenario_name": "s",
+          "config_path": "config.json",
+          "mission": "sitl",
+          "profile": "multi-agent",
+          "mode": "connection_execute",
+          "agents": [],
+          "total_completed_tasks": 0,
+          "failed_agents": 0,
+          "aborted_agents": 0,
+          "overall_status": "completed",
+          "event_log_path": null,
+          "known_limitations": []
+        }"#;
+
+        let report: SitlMultiAgentRunReport = serde_json::from_str(json).unwrap();
+
+        assert_eq!(
+            report.reallocation,
+            SitlMultiAgentReallocationReport::default()
+        );
     }
 }

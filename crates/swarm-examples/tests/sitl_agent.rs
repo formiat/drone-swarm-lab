@@ -924,6 +924,17 @@ fn multi_agent_sitl_supervisor_connection_rejects_invalid_cli_combinations_test(
             ],
             "--fail-agent requires --mock",
         ),
+        (
+            vec![
+                "--mock",
+                "--scenario",
+                &scenario,
+                "--config",
+                &config,
+                "--reupload-on-failure",
+            ],
+            "--reupload-on-failure requires --connection --execute",
+        ),
     ];
 
     for (args, expected) in cases {

@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 #[cfg(any(feature = "mavlink-transport", test))]
 use std::path::PathBuf;
@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use swarm_alloc::GreedyAllocator;
 use swarm_comms::{MockMavlinkTransport, RawMessage, Waypoint};
-use swarm_runtime::{AgentNode, Coordinator, RuntimeMessage};
+use swarm_runtime::{AgentNode, Coordinator, NodeTickOutput, RuntimeMessage};
 use swarm_types::{AgentId, TaskId, TaskStatus};
 
 #[cfg(feature = "mavlink-transport")]
@@ -24,9 +24,9 @@ use crate::sitl_observability::{
 use crate::sitl_plan::{
     classify_connection_string, first_sitl_entry, SitlConnectionClass, SitlError, SitlWaypointItem,
 };
-use crate::sitl_report::SitlMultiAgentRunReport;
 #[cfg(any(feature = "mavlink-transport", test))]
 use crate::sitl_report::{write_sitl_multi_agent_run_report, SitlMultiAgentAgentReport};
+use crate::sitl_report::{SitlMultiAgentReallocationReport, SitlMultiAgentRunReport};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SupervisorMockConfig {
@@ -47,6 +47,7 @@ pub struct SupervisorLiveConfig {
     pub run_report: Option<String>,
     pub lifecycle: SitlConnectionLifecycle,
     pub allow_hardware_candidate: bool,
+    pub reupload_on_failure: bool,
     pub run_id: Option<String>,
 }
 
@@ -64,24 +65,42 @@ pub struct SupervisorMetrics {
     pub heartbeat_count: u64,
     pub completed_task_count: u64,
     pub lost_agent_count: u64,
+    pub released_tasks: Vec<String>,
+    pub reassigned_tasks: Vec<String>,
     pub reassignment_count: u64,
     pub tasks_recovered: Vec<String>,
     pub reallocation_latency_ticks: Option<u64>,
+    pub survivor_mission_updates: u64,
+    pub final_completed_after_reallocation: u64,
 }
 
 impl SupervisorMetrics {
     pub fn finalize(&mut self) {
+        self.released_tasks.sort();
+        self.released_tasks.dedup();
+        self.reassigned_tasks.sort();
+        self.reassigned_tasks.dedup();
         self.tasks_recovered.sort();
         self.tasks_recovered.dedup();
     }
 
     pub fn format_summary_line(&self, agents_count: usize, final_status: &str) -> String {
         format!(
-            "SUPERVISOR_METRICS agents={} heartbeats={} completed_tasks={} lost_agents={} reassignment_count={} tasks_recovered={} reallocation_latency_ticks={} final_status={}",
+            "SUPERVISOR_METRICS agents={} heartbeats={} completed_tasks={} lost_agents={} released_tasks={} reassigned_tasks={} reassignment_count={} tasks_recovered={} reallocation_latency_ticks={} survivor_mission_updates={} final_completed_after_reallocation={} final_status={}",
             agents_count,
             self.heartbeat_count,
             self.completed_task_count,
             self.lost_agent_count,
+            if self.released_tasks.is_empty() {
+                "none".to_owned()
+            } else {
+                self.released_tasks.join(",")
+            },
+            if self.reassigned_tasks.is_empty() {
+                "none".to_owned()
+            } else {
+                self.reassigned_tasks.join(",")
+            },
             self.reassignment_count,
             if self.tasks_recovered.is_empty() {
                 "none".to_owned()
@@ -91,8 +110,41 @@ impl SupervisorMetrics {
             self.reallocation_latency_ticks
                 .map(|ticks| ticks.to_string())
                 .unwrap_or_else(|| "none".to_owned()),
+            self.survivor_mission_updates,
+            self.final_completed_after_reallocation,
             final_status
         )
+    }
+}
+
+impl From<&SupervisorMetrics> for SitlMultiAgentReallocationReport {
+    fn from(metrics: &SupervisorMetrics) -> Self {
+        Self {
+            lost_agent_count: metrics.lost_agent_count,
+            released_tasks: metrics.released_tasks.clone(),
+            reassigned_tasks: metrics.reassigned_tasks.clone(),
+            reassignment_count: metrics.reassignment_count,
+            tasks_recovered: metrics.tasks_recovered.clone(),
+            reallocation_latency_ticks: metrics.reallocation_latency_ticks,
+            survivor_mission_updates: metrics.survivor_mission_updates,
+            final_completed_after_reallocation: metrics.final_completed_after_reallocation,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct MissionReplacementPlan {
+    pub target_agent_id: String,
+    pub failed_agent_id: String,
+    pub policy: String,
+    pub task_ids: Vec<String>,
+    pub waypoints: Vec<SitlWaypointItem>,
+}
+
+impl MissionReplacementPlan {
+    #[cfg(any(feature = "mavlink-transport", test))]
+    fn mission_item_count(&self) -> usize {
+        self.waypoints.len()
     }
 }
 
@@ -145,6 +197,8 @@ impl LiveAgentRun {
 pub trait LiveAgentController {
     fn agent_id(&self) -> &str;
     fn start_delay_ms(&self) -> u64;
+    fn mission_waypoints(&self) -> &[SitlWaypointItem];
+    fn replace_mission(&mut self, plan: &MissionReplacementPlan) -> Result<(), SitlError>;
     fn run(&mut self) -> Result<LiveAgentRun, SitlError>;
 }
 
@@ -183,6 +237,25 @@ impl LiveAgentController for Px4AgentController {
 
     fn start_delay_ms(&self) -> u64 {
         self.agent.start_delay_ms
+    }
+
+    fn mission_waypoints(&self) -> &[SitlWaypointItem] {
+        &self.agent.waypoints
+    }
+
+    fn replace_mission(&mut self, plan: &MissionReplacementPlan) -> Result<(), SitlError> {
+        if plan.target_agent_id != self.agent.agent_id {
+            return Err(SitlError::MultiAgentConfigInvalid {
+                message: format!(
+                    "mission replacement target '{}' does not match controller '{}'",
+                    plan.target_agent_id, self.agent.agent_id
+                ),
+            });
+        }
+        self.agent.task_ids = plan.task_ids.clone();
+        self.agent.waypoint_count = plan.waypoints.len();
+        self.agent.waypoints = plan.waypoints.clone();
+        Ok(())
     }
 
     fn run(&mut self) -> Result<LiveAgentRun, SitlError> {
@@ -409,15 +482,23 @@ fn run_live_supervisor_with_controllers<C: LiveAgentController>(
         manifest.agents_count, manifest.scenario_name, config.config_path
     );
 
+    let safety_gate = SitlSafetyGate::new(config.safety_config_path.clone());
+    let mut live_metrics = SupervisorMetrics::default();
+    let mut reallocation_target_counts: HashMap<String, usize> = HashMap::new();
+    let mut lost_agents = HashSet::new();
     let mut runs = Vec::with_capacity(manifest.agents.len());
     for agent in &manifest.agents {
-        let controller = live_controller_for_agent_mut(&mut controllers, &agent.agent_id)?;
-        let start_delay_ms = controller.start_delay_ms();
+        let start_delay_ms =
+            live_controller_for_agent_mut(&mut controllers, &agent.agent_id)?.start_delay_ms();
         if start_delay_ms > 0 {
             thread::sleep(Duration::from_millis(start_delay_ms));
         }
-        recorder.push_multi_agent_mission_count_sent(agent.agent_id.clone(), agent.waypoint_count);
-        for waypoint in &agent.waypoints {
+        let mission_waypoints = live_controller_for_agent_mut(&mut controllers, &agent.agent_id)?
+            .mission_waypoints()
+            .to_vec();
+        recorder
+            .push_multi_agent_mission_count_sent(agent.agent_id.clone(), mission_waypoints.len());
+        for waypoint in &mission_waypoints {
             recorder.push_multi_agent_mission_item_sent(
                 agent.agent_id.clone(),
                 waypoint.seq,
@@ -430,7 +511,7 @@ fn run_live_supervisor_with_controllers<C: LiveAgentController>(
             agent.system_id,
             agent.component_id,
             agent.connection_string,
-            agent.waypoint_count
+            mission_waypoints.len()
         );
         recorder.push_multi_agent_agent_started(
             agent.agent_id.clone(),
@@ -439,8 +520,14 @@ fn run_live_supervisor_with_controllers<C: LiveAgentController>(
             agent.component_id,
         );
 
-        let run = controller.run()?;
-        record_live_agent_run(&mut recorder, agent, &run);
+        let run = live_controller_for_agent_mut(&mut controllers, &agent.agent_id)?.run()?;
+        record_live_agent_run(&mut recorder, &mission_waypoints, &run);
+        if run.final_status == "completed" {
+            if let Some(expected_count) = reallocation_target_counts.remove(&run.agent_id) {
+                live_metrics.final_completed_after_reallocation +=
+                    run.completed_task_count.min(expected_count) as u64;
+            }
+        }
         recorder.push_multi_agent_agent_finished(
             run.agent_id.clone(),
             run.final_status.clone(),
@@ -456,14 +543,61 @@ fn run_live_supervisor_with_controllers<C: LiveAgentController>(
                 run.agent_id
             );
         }
+        if config.reupload_on_failure
+            && run.final_status != "completed"
+            && lost_agents.insert(run.agent_id.clone())
+        {
+            let plans = live_reallocation_after_failure(
+                entry,
+                manifest,
+                &runs,
+                &run,
+                &mut recorder,
+                &mut live_metrics,
+            )?;
+            for plan in plans {
+                safety_gate.validate_agent_task_subset(
+                    entry,
+                    &plan.target_agent_id,
+                    &plan.task_ids,
+                )?;
+                recorder.push_survivor_mission_update_started(
+                    plan.target_agent_id.clone(),
+                    plan.policy.clone(),
+                    plan.task_ids.clone(),
+                );
+                live_controller_for_agent_mut(&mut controllers, &plan.target_agent_id)?
+                    .replace_mission(&plan)?;
+                recorder.push_survivor_mission_update_completed(
+                    plan.target_agent_id.clone(),
+                    plan.policy.clone(),
+                    plan.task_ids.clone(),
+                    plan.mission_item_count(),
+                );
+                live_metrics.survivor_mission_updates += 1;
+                reallocation_target_counts
+                    .insert(plan.target_agent_id.clone(), plan.mission_item_count());
+            }
+        }
         runs.push(run);
     }
 
-    let overall_status = live_overall_status(&runs);
+    live_metrics.completed_task_count =
+        runs.iter().map(|run| run.completed_task_count as u64).sum();
+    live_metrics.finalize();
+    let overall_status = live_overall_status(&runs, manifest);
     recorder.push_multi_agent_run_finished(overall_status);
     recorder.push_run_completed(overall_status);
 
-    let report = live_run_report(entry, config, manifest, run_id, overall_status, &runs);
+    let report = live_run_report(
+        entry,
+        config,
+        manifest,
+        run_id,
+        overall_status,
+        &runs,
+        &live_metrics,
+    );
     if let Some(path) = &config.replay_log {
         write_sitl_event_log(path, recorder.log()).map_err(|error| SitlError::ReplayLogWrite {
             path: Path::new(path).to_path_buf(),
@@ -557,55 +691,7 @@ fn run_supervisor_with_controllers<C: AgentController>(
                 message: error.to_string(),
             })?;
 
-        for release in &output.failure_releases {
-            metrics.lost_agent_count += 1;
-            let failed_agent_id = release.failed_agent_id.to_string();
-            recorder.push_agent_lost(failed_agent_id.clone());
-            for task_id in &release.released_tasks {
-                recorder.push_task_released(task_id.to_string(), failed_agent_id.clone());
-            }
-        }
-        for assignment in &output.reassigned_tasks {
-            if output
-                .tasks_recovered
-                .iter()
-                .any(|task_id| task_id == &assignment.task_id)
-            {
-                let from_agent_id = output
-                    .failure_releases
-                    .iter()
-                    .find(|release| release.released_tasks.contains(&assignment.task_id))
-                    .map(|release| release.failed_agent_id.to_string())
-                    .unwrap_or_else(|| "unknown".to_owned());
-                recorder.push_task_reassigned(
-                    assignment.task_id.to_string(),
-                    from_agent_id,
-                    assignment.agent_id.to_string(),
-                    output.reallocation_latency_ticks.unwrap_or(0),
-                );
-            }
-        }
-        for release in &output.failure_releases {
-            let recovered: Vec<String> = output
-                .tasks_recovered
-                .iter()
-                .filter(|task_id| release.released_tasks.contains(task_id))
-                .map(ToString::to_string)
-                .collect();
-            if !recovered.is_empty() {
-                recorder.push_reallocation_completed(
-                    release.failed_agent_id.to_string(),
-                    recovered.len(),
-                    recovered.clone(),
-                    output.reallocation_latency_ticks.unwrap_or(0),
-                );
-                metrics.reassignment_count += recovered.len() as u64;
-                metrics.tasks_recovered.extend(recovered);
-                metrics.reallocation_latency_ticks = metrics
-                    .reallocation_latency_ticks
-                    .or(output.reallocation_latency_ticks);
-            }
-        }
+        let _ = record_reallocation_output(&output, &mut recorder, &mut metrics);
 
         metrics.completed_task_count +=
             complete_one_task_per_active_agent(&mut node, manifest, &active_agents, &mut recorder);
@@ -647,6 +733,275 @@ fn run_supervisor_with_controllers<C: AgentController>(
     }
 
     Ok(metrics)
+}
+
+#[cfg(any(feature = "mavlink-transport", test))]
+fn live_reallocation_after_failure(
+    entry: &swarm_sim::ScenarioSuiteEntry,
+    manifest: &MultiAgentSitlManifest,
+    previous_runs: &[LiveAgentRun],
+    failed_run: &LiveAgentRun,
+    recorder: &mut SitlEventRecorder,
+    metrics: &mut SupervisorMetrics,
+) -> Result<Vec<MissionReplacementPlan>, SitlError> {
+    let previous_agent_ids: HashSet<String> = previous_runs
+        .iter()
+        .map(|run| run.agent_id.clone())
+        .collect();
+    let survivor_id = manifest
+        .agents
+        .iter()
+        .find(|agent| {
+            agent.agent_id != failed_run.agent_id && !previous_agent_ids.contains(&agent.agent_id)
+        })
+        .map(|agent| agent.agent_id.clone())
+        .ok_or_else(|| SitlError::MultiAgentConfigInvalid {
+            message: format!(
+                "cannot reallocate failed agent '{}' without a pending survivor",
+                failed_run.agent_id
+            ),
+        })?;
+    let own_agent_id = AgentId::from(survivor_id.clone());
+    let peer_ids: Vec<AgentId> = manifest
+        .agents
+        .iter()
+        .filter(|agent| agent.agent_id != survivor_id)
+        .map(|agent| AgentId::from(agent.agent_id.clone()))
+        .collect();
+    let mut coordinator = Coordinator::new(
+        entry.scenario.agents.clone(),
+        entry.scenario.tasks.clone(),
+        1,
+    );
+    assign_manifest_tasks(&mut coordinator, manifest)?;
+    for agent_id in &previous_agent_ids {
+        coordinator
+            .membership
+            .mark_dead(&AgentId::from(agent_id.clone()));
+    }
+
+    for task_id in completed_live_task_ids(manifest, previous_runs, failed_run) {
+        let task_id = TaskId::from(task_id);
+        let _ = coordinator.registry.complete_assigned_task(&task_id);
+    }
+
+    let mut node = AgentNode::new(
+        own_agent_id.clone(),
+        peer_ids,
+        coordinator,
+        MockMavlinkTransport::new(),
+    );
+    node.gossip_interval_ticks = 10;
+    let tick = 2;
+    for agent in manifest
+        .agents
+        .iter()
+        .filter(|agent| agent.agent_id != failed_run.agent_id && agent.agent_id != survivor_id)
+    {
+        node.transport.push_incoming(RawMessage {
+            from: AgentId::from(agent.agent_id.clone()),
+            to: own_agent_id.clone(),
+            payload: RuntimeMessage::heartbeat(tick, 1),
+        });
+    }
+
+    let mut allocator = GreedyAllocator;
+    let output = node
+        .process_inbox_and_allocate(tick, &mut allocator, Vec::new())
+        .map_err(|error| SitlError::ConnectionFailed {
+            message: error.to_string(),
+        })?;
+    let recovered_by_agent = record_reallocation_output(&output, recorder, metrics);
+    mission_replacement_plans(manifest, previous_runs, failed_run, recovered_by_agent)
+}
+
+#[cfg(any(feature = "mavlink-transport", test))]
+fn completed_live_task_ids(
+    manifest: &MultiAgentSitlManifest,
+    previous_runs: &[LiveAgentRun],
+    failed_run: &LiveAgentRun,
+) -> HashSet<String> {
+    previous_runs
+        .iter()
+        .chain(std::iter::once(failed_run))
+        .flat_map(|run| completed_task_ids_for_run(manifest, run))
+        .collect()
+}
+
+#[cfg(any(feature = "mavlink-transport", test))]
+fn completed_task_ids_for_run(
+    manifest: &MultiAgentSitlManifest,
+    run: &LiveAgentRun,
+) -> Vec<String> {
+    manifest
+        .agents
+        .iter()
+        .find(|agent| agent.agent_id == run.agent_id)
+        .map(|agent| {
+            agent
+                .waypoints
+                .iter()
+                .take(run.completed_task_count)
+                .map(|waypoint| waypoint.task_id.clone())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn record_reallocation_output(
+    output: &NodeTickOutput,
+    recorder: &mut SitlEventRecorder,
+    metrics: &mut SupervisorMetrics,
+) -> HashMap<String, Vec<String>> {
+    let mut recovered_by_agent: HashMap<String, Vec<String>> = HashMap::new();
+    for release in &output.failure_releases {
+        metrics.lost_agent_count += 1;
+        let failed_agent_id = release.failed_agent_id.to_string();
+        recorder.push_agent_lost(failed_agent_id.clone());
+        for task_id in &release.released_tasks {
+            let task_id = task_id.to_string();
+            metrics.released_tasks.push(task_id.clone());
+            recorder.push_task_released(task_id, failed_agent_id.clone());
+        }
+    }
+    for assignment in &output.reassigned_tasks {
+        if output
+            .tasks_recovered
+            .iter()
+            .any(|task_id| task_id == &assignment.task_id)
+        {
+            let from_agent_id = output
+                .failure_releases
+                .iter()
+                .find(|release| release.released_tasks.contains(&assignment.task_id))
+                .map(|release| release.failed_agent_id.to_string())
+                .unwrap_or_else(|| "unknown".to_owned());
+            let task_id = assignment.task_id.to_string();
+            let to_agent_id = assignment.agent_id.to_string();
+            metrics.reassigned_tasks.push(task_id.clone());
+            recorder.push_task_reassigned(
+                task_id.clone(),
+                from_agent_id,
+                to_agent_id.clone(),
+                output.reallocation_latency_ticks.unwrap_or(0),
+            );
+            recovered_by_agent
+                .entry(to_agent_id)
+                .or_default()
+                .push(task_id);
+        }
+    }
+    for release in &output.failure_releases {
+        let recovered: Vec<String> = output
+            .tasks_recovered
+            .iter()
+            .filter(|task_id| release.released_tasks.contains(task_id))
+            .map(ToString::to_string)
+            .collect();
+        if !recovered.is_empty() {
+            recorder.push_reallocation_completed(
+                release.failed_agent_id.to_string(),
+                recovered.len(),
+                recovered.clone(),
+                output.reallocation_latency_ticks.unwrap_or(0),
+            );
+            metrics.reassignment_count += recovered.len() as u64;
+            metrics.tasks_recovered.extend(recovered);
+            metrics.reallocation_latency_ticks = metrics
+                .reallocation_latency_ticks
+                .or(output.reallocation_latency_ticks);
+        }
+    }
+    for recovered in recovered_by_agent.values_mut() {
+        recovered.sort();
+        recovered.dedup();
+    }
+    recovered_by_agent
+}
+
+#[cfg(any(feature = "mavlink-transport", test))]
+fn mission_replacement_plans(
+    manifest: &MultiAgentSitlManifest,
+    previous_runs: &[LiveAgentRun],
+    failed_run: &LiveAgentRun,
+    recovered_by_agent: HashMap<String, Vec<String>>,
+) -> Result<Vec<MissionReplacementPlan>, SitlError> {
+    let completed = completed_live_task_ids(manifest, previous_runs, failed_run);
+    let mut plans = Vec::new();
+    for (target_agent_id, mut recovered_task_ids) in recovered_by_agent {
+        if target_agent_id == failed_run.agent_id {
+            continue;
+        }
+        let target_agent = manifest
+            .agents
+            .iter()
+            .find(|agent| agent.agent_id == target_agent_id)
+            .ok_or_else(|| SitlError::MultiAgentConfigInvalid {
+                message: format!(
+                    "reallocation target '{target_agent_id}' is not present in manifest"
+                ),
+            })?;
+        recovered_task_ids.sort();
+        recovered_task_ids.dedup();
+
+        let mut task_ids = Vec::new();
+        for task_id in &target_agent.task_ids {
+            push_unique_replacement_task(&mut task_ids, task_id, &completed);
+        }
+        for task_id in &recovered_task_ids {
+            push_unique_replacement_task(&mut task_ids, task_id, &completed);
+        }
+        if task_ids.is_empty() {
+            continue;
+        }
+        let waypoints = replacement_waypoints_for_task_ids(manifest, &task_ids)?;
+        plans.push(MissionReplacementPlan {
+            target_agent_id,
+            failed_agent_id: failed_run.agent_id.clone(),
+            policy: "mission_replacement".to_owned(),
+            task_ids,
+            waypoints,
+        });
+    }
+    plans.sort_by(|left, right| left.target_agent_id.cmp(&right.target_agent_id));
+    Ok(plans)
+}
+
+#[cfg(any(feature = "mavlink-transport", test))]
+fn push_unique_replacement_task(
+    task_ids: &mut Vec<String>,
+    task_id: &str,
+    completed: &HashSet<String>,
+) {
+    if !completed.contains(task_id) && !task_ids.iter().any(|existing| existing == task_id) {
+        task_ids.push(task_id.to_owned());
+    }
+}
+
+#[cfg(any(feature = "mavlink-transport", test))]
+fn replacement_waypoints_for_task_ids(
+    manifest: &MultiAgentSitlManifest,
+    task_ids: &[String],
+) -> Result<Vec<SitlWaypointItem>, SitlError> {
+    task_ids
+        .iter()
+        .enumerate()
+        .map(|(seq, task_id)| {
+            let mut waypoint = manifest
+                .agents
+                .iter()
+                .flat_map(|agent| agent.waypoints.iter())
+                .find(|waypoint| waypoint.task_id == *task_id)
+                .cloned()
+                .ok_or_else(|| SitlError::MultiAgentConfigInvalid {
+                    message: format!("replacement task_id '{task_id}' is not present in manifest"),
+                })?;
+            waypoint.seq = u16::try_from(seq).map_err(|_| SitlError::MultiAgentConfigInvalid {
+                message: "replacement mission contains more than u16::MAX waypoints".to_owned(),
+            })?;
+            Ok(waypoint)
+        })
+        .collect()
 }
 
 fn build_mock_controllers(
@@ -833,25 +1188,25 @@ fn live_controller_for_agent_mut<'a, C: LiveAgentController>(
 #[cfg(any(feature = "mavlink-transport", test))]
 fn record_live_agent_run(
     recorder: &mut SitlEventRecorder,
-    agent: &MultiAgentSitlManifestAgent,
+    mission_waypoints: &[SitlWaypointItem],
     run: &LiveAgentRun,
 ) {
-    let completed_count = run.completed_task_count.min(agent.waypoints.len());
-    for waypoint in agent.waypoints.iter().take(completed_count) {
+    let completed_count = run.completed_task_count.min(mission_waypoints.len());
+    for waypoint in mission_waypoints.iter().take(completed_count) {
         recorder.push_multi_agent_waypoint_reached(
-            agent.agent_id.clone(),
+            run.agent_id.clone(),
             waypoint.seq,
             Some(waypoint.task_id.clone()),
         );
         recorder.push_multi_agent_task_completed(
-            agent.agent_id.clone(),
+            run.agent_id.clone(),
             waypoint.seq,
             waypoint.task_id.clone(),
         );
     }
     if run.final_status != "completed" {
         recorder.push_multi_agent_failure(
-            agent.agent_id.clone(),
+            run.agent_id.clone(),
             run.final_status.clone(),
             run.error
                 .clone()
@@ -861,9 +1216,16 @@ fn record_live_agent_run(
 }
 
 #[cfg(any(feature = "mavlink-transport", test))]
-fn live_overall_status(runs: &[LiveAgentRun]) -> &'static str {
+fn live_overall_status(runs: &[LiveAgentRun], manifest: &MultiAgentSitlManifest) -> &'static str {
     if runs.iter().all(|run| run.final_status == "completed") {
         "completed"
+    } else if runs
+        .iter()
+        .map(|run| run.completed_task_count)
+        .sum::<usize>()
+        >= manifest.ownership_summary.assigned_task_count
+    {
+        "completed_with_reallocation"
     } else if runs.iter().any(|run| run.completed_task_count > 0) {
         "partial_failed"
     } else {
@@ -879,6 +1241,7 @@ fn live_run_report(
     run_id: String,
     overall_status: &str,
     runs: &[LiveAgentRun],
+    metrics: &SupervisorMetrics,
 ) -> SitlMultiAgentRunReport {
     SitlMultiAgentRunReport {
         schema_version: "sitl_multi_agent_run_report.v1".to_owned(),
@@ -901,10 +1264,15 @@ fn live_run_report(
             .count(),
         overall_status: overall_status.to_owned(),
         event_log_path: config.replay_log.as_ref().map(PathBuf::from),
+        reallocation: metrics.into(),
         known_limitations: vec![
             "local PX4/SIH endpoints only unless --allow-hardware-candidate is explicit".to_owned(),
             "agents are orchestrated sequentially in one supervisor process".to_owned(),
-            "live failed-agent reallocation remains covered by mock supervisor workflow".to_owned(),
+            if config.reupload_on_failure {
+                "failed-agent reallocation uses controlled local mission replacement; Gazebo, HIL, and hardware are not claimed".to_owned()
+            } else {
+                "live failed-agent reallocation requires explicit --reupload-on-failure".to_owned()
+            },
         ],
     }
 }
@@ -1375,6 +1743,7 @@ mod tests {
             run_report: None,
             lifecycle: SitlConnectionLifecycle::default(),
             allow_hardware_candidate: false,
+            reupload_on_failure: false,
             run_id: Some("unit-live-run".to_owned()),
         }
     }
@@ -1482,6 +1851,7 @@ mod tests {
     struct FakeLiveAgentController {
         run: LiveAgentRun,
         start_delay_ms: u64,
+        mission_waypoints: Vec<SitlWaypointItem>,
     }
 
     impl FakeLiveAgentController {
@@ -1499,6 +1869,7 @@ mod tests {
                     error: None,
                 },
                 start_delay_ms: agent.start_delay_ms,
+                mission_waypoints: agent.waypoints.clone(),
             }
         }
 
@@ -1516,6 +1887,7 @@ mod tests {
                     error: Some("fake live failure".to_owned()),
                 },
                 start_delay_ms: agent.start_delay_ms,
+                mission_waypoints: agent.waypoints.clone(),
             }
         }
     }
@@ -1527,6 +1899,27 @@ mod tests {
 
         fn start_delay_ms(&self) -> u64 {
             self.start_delay_ms
+        }
+
+        fn mission_waypoints(&self) -> &[SitlWaypointItem] {
+            &self.mission_waypoints
+        }
+
+        fn replace_mission(&mut self, plan: &MissionReplacementPlan) -> Result<(), SitlError> {
+            if plan.target_agent_id != self.run.agent_id {
+                return Err(SitlError::MultiAgentConfigInvalid {
+                    message: format!(
+                        "fake live replacement target '{}' does not match '{}'",
+                        plan.target_agent_id, self.run.agent_id
+                    ),
+                });
+            }
+            self.mission_waypoints = plan.waypoints.clone();
+            self.run.mission_item_count = plan.waypoints.len();
+            if self.run.final_status == "completed" {
+                self.run.completed_task_count = plan.waypoints.len();
+            }
+            Ok(())
         }
 
         fn run(&mut self) -> Result<LiveAgentRun, SitlError> {
@@ -1573,14 +1966,18 @@ mod tests {
             heartbeat_count: 6,
             completed_task_count: 2,
             lost_agent_count: 1,
+            released_tasks: vec!["wp-0".to_owned()],
+            reassigned_tasks: vec!["wp-0".to_owned()],
             reassignment_count: 1,
             tasks_recovered: vec!["wp-0".to_owned()],
             reallocation_latency_ticks: Some(0),
+            survivor_mission_updates: 1,
+            final_completed_after_reallocation: 2,
         };
 
         assert_eq!(
             metrics.format_summary_line(2, "completed"),
-            "SUPERVISOR_METRICS agents=2 heartbeats=6 completed_tasks=2 lost_agents=1 reassignment_count=1 tasks_recovered=wp-0 reallocation_latency_ticks=0 final_status=completed"
+            "SUPERVISOR_METRICS agents=2 heartbeats=6 completed_tasks=2 lost_agents=1 released_tasks=wp-0 reassigned_tasks=wp-0 reassignment_count=1 tasks_recovered=wp-0 reallocation_latency_ticks=0 survivor_mission_updates=1 final_completed_after_reallocation=2 final_status=completed"
         );
     }
 
@@ -1743,6 +2140,10 @@ mod tests {
         assert_eq!(report.total_completed_tasks, 2);
         assert_eq!(report.failed_agents, 0);
         assert_eq!(report.agents.len(), 2);
+        assert_eq!(
+            report.reallocation,
+            SitlMultiAgentReallocationReport::default()
+        );
 
         let log = crate::sitl_observability::read_sitl_event_log(&replay_log).unwrap();
         let summary = crate::sitl_observability::summarize_sitl_event_log(&log);
@@ -1758,6 +2159,7 @@ mod tests {
         assert_eq!(summary.mission_item_sent, 2);
         assert_eq!(summary.waypoint_reached, 2);
         assert_eq!(summary.task_completed, 2);
+        assert_eq!(summary.survivor_mission_updates, 0);
         assert_eq!(summary.multi_agent_agent_count, Some(2));
         assert_eq!(summary.final_status.as_deref(), Some("completed"));
         let mission_items: Vec<(String, u16, String)> = log
@@ -1808,6 +2210,82 @@ mod tests {
                 | crate::sitl_observability::SitlEvent::TaskCompleted { .. }
                 | crate::sitl_observability::SitlEvent::Failure { .. }
         )));
+
+        let report_json: SitlMultiAgentRunReport =
+            serde_json::from_str(&std::fs::read_to_string(run_report).unwrap()).unwrap();
+        assert_eq!(report_json, report);
+    }
+
+    #[test]
+    fn fake_live_supervisor_reallocates_failed_agent_to_survivor() {
+        let suite = fixture_suite();
+        let entry = first_sitl_entry(&suite, "inline-scenario.json").unwrap();
+        let manifest = fixture_execute_manifest();
+        let dir = tempfile::tempdir().unwrap();
+        let replay_log = dir.path().join("m59.sitl-log.json");
+        let run_report = dir.path().join("m59.run-report.json");
+        let mut config = fixture_live_config();
+        config.reupload_on_failure = true;
+        config.replay_log = Some(replay_log.to_string_lossy().into_owned());
+        config.run_report = Some(run_report.to_string_lossy().into_owned());
+        let controllers = vec![
+            FakeLiveAgentController::failed(&manifest.agents[0], 0),
+            FakeLiveAgentController::completed(&manifest.agents[1]),
+        ];
+
+        let report =
+            run_live_supervisor_with_controllers(entry, &config, &manifest, controllers).unwrap();
+
+        assert_eq!(report.overall_status, "completed_with_reallocation");
+        assert_eq!(report.total_completed_tasks, 2);
+        assert_eq!(report.failed_agents, 1);
+        assert_eq!(report.reallocation.lost_agent_count, 1);
+        assert_eq!(report.reallocation.released_tasks, vec!["wp-0"]);
+        assert_eq!(report.reallocation.reassigned_tasks, vec!["wp-0"]);
+        assert_eq!(report.reallocation.reassignment_count, 1);
+        assert_eq!(report.reallocation.tasks_recovered, vec!["wp-0"]);
+        assert_eq!(report.reallocation.reallocation_latency_ticks, Some(0));
+        assert_eq!(report.reallocation.survivor_mission_updates, 1);
+        assert_eq!(report.reallocation.final_completed_after_reallocation, 2);
+        assert_eq!(report.agents[1].mission_item_count, 2);
+        assert_eq!(report.agents[1].completed_task_count, 2);
+
+        let log = crate::sitl_observability::read_sitl_event_log(&replay_log).unwrap();
+        let summary = crate::sitl_observability::summarize_sitl_event_log(&log);
+        assert_eq!(summary.agent_lost, 1);
+        assert_eq!(summary.task_released, 1);
+        assert_eq!(summary.task_reassigned, 1);
+        assert_eq!(summary.reallocation_completed, 1);
+        assert_eq!(summary.tasks_recovered, 1);
+        assert_eq!(summary.survivor_mission_update_started, 1);
+        assert_eq!(summary.survivor_mission_update_completed, 1);
+        assert_eq!(summary.survivor_mission_updates, 1);
+        assert_eq!(
+            summary.final_status.as_deref(),
+            Some("completed_with_reallocation")
+        );
+
+        let mission_items: Vec<(String, u16, String)> = log
+            .events
+            .iter()
+            .filter_map(|event| match event {
+                crate::sitl_observability::SitlEvent::MultiAgentMissionItemSent {
+                    agent_id,
+                    seq,
+                    task_id: Some(task_id),
+                    ..
+                } => Some((agent_id.clone(), *seq, task_id.clone())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            mission_items,
+            vec![
+                ("agent-0".to_owned(), 0, "wp-0".to_owned()),
+                ("agent-1".to_owned(), 0, "wp-1".to_owned()),
+                ("agent-1".to_owned(), 1, "wp-0".to_owned())
+            ]
+        );
 
         let report_json: SitlMultiAgentRunReport =
             serde_json::from_str(&std::fs::read_to_string(run_report).unwrap()).unwrap();

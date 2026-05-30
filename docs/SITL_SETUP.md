@@ -13,7 +13,7 @@ hardware.
 | Multi-agent dry-run/mock | `sitl_supervisor --dry-run/--mock` or `sitl_agent --multi-agent-config` | None | Split explicit waypoint subsets, run mock supervisor orchestration, and produce a manifest/replay log | Stable M52 foundation |
 | PX4 SITL upload-only | `--connection <addr> [--upload-only]` | PX4 SITL + `mavlink-transport` feature | Upload waypoint mission to PX4 SITL without starting flight | Experimental |
 | PX4 SITL execute | `--connection <addr> --execute` | PX4 SITL + `mavlink-transport` feature | Upload, arm/takeoff/start mission, map telemetry to task progress, write optional final report, and abort on bounded failures | Experimental single-agent golden path |
-| Multi-agent PX4/SIH execute | `sitl_supervisor --connection --execute` | Local PX4/SIH endpoints + `mavlink-transport` feature | Validate all configured agents, sequentially execute local PX4/SIH missions, and write common event/report artifacts | Experimental M58 local workflow |
+| Multi-agent PX4/SIH execute | `sitl_supervisor --connection --execute` | Local PX4/SIH endpoints + `mavlink-transport` feature | Validate all configured agents, sequentially execute local PX4/SIH missions, optionally replace a survivor mission after failed-agent reallocation, and write common event/report artifacts | Experimental M58/M59 local workflow |
 
 ## CI / Manual Boundary
 
@@ -67,15 +67,16 @@ the runtime/mock supervisor contract, not live multi-agent PX4 failure handling.
 M52 multi-agent manifests are also part of this portable boundary. They prove
 that ownership and per-agent waypoint subsets are explicit and deterministic;
 the optional PX4 SIH check proves upload-only mission acceptance for two local
-instances. M58 adds an experimental local execute supervisor, but this remains a
-manual/operator-controlled workflow and does not prove Gazebo, HIL, hardware, or
-live PX4 failed-agent reallocation.
+instances. M58 adds an experimental local execute supervisor, and M59 adds
+explicit `--reupload-on-failure` mission replacement after a failed live agent.
+This remains a manual/operator-controlled workflow and does not prove Gazebo,
+HIL, hardware, or production-grade live PX4 failover.
 
 Out of scope for automated CI in this repository:
 
 - real PX4 CI orchestration;
 - automated real multi-agent PX4 SITL CI orchestration;
-- live multi-agent PX4 failure/reallocation;
+- automated live multi-agent PX4 failure/reallocation;
 - HIL;
 - real aircraft;
 - production autopilot certification;
@@ -264,7 +265,7 @@ This milestone itself did not add a live PX4 supervisor mode; M58 now builds the
 experimental local PX4/SIH execute path beside this portable controller
 boundary.
 
-### M58 Live Multi-Agent PX4/SIH Execute Supervisor
+### M58/M59 Live Multi-Agent PX4/SIH Execute Supervisor
 
 M58 adds an experimental `sitl_supervisor --connection --execute` mode. It is
 intended for local PX4/SIH endpoints, not real hardware. The supervisor:
@@ -294,6 +295,7 @@ cargo run -p swarm-examples --bin sitl_supervisor --features mavlink-transport -
   --timeout 5 \
   --telemetry-timeout 10 \
   --no-progress-timeout 60 \
+  --reupload-on-failure \
   --run-report target/sitl/multi-agent-report.json \
   --replay-log target/sitl/multi-agent.sitl-log.json
 ```
@@ -305,10 +307,22 @@ gate.
 The structured report contains run/scenario metadata, one row per agent,
 connection/system/component ids, mission item counts, completed task counts,
 per-agent final status, total completed tasks, failed-agent count, and known
-limitations. The common event log adds `multi_agent_run_started`,
+limitations. M59 adds a `reallocation` section with lost-agent count, released
+tasks, reassigned tasks, recovered tasks, reallocation latency ticks, survivor
+mission update count, and tasks completed after reallocation. The common event
+log adds `multi_agent_run_started`,
 `multi_agent_run_finished`, and per-agent mission/progress/task variants such as
 `multi_agent_mission_item_sent` and `multi_agent_task_completed`; these variants
 include `agent_id` so repeated waypoint `seq` values remain unambiguous.
+When `--reupload-on-failure` is enabled, the common log can also include
+`agent_lost`, `task_released`, `task_reassigned`, `reallocation_completed`,
+`survivor_mission_update_started`, and
+`survivor_mission_update_completed`.
+
+M59's mission update policy is `mission_replacement`: the survivor receives a
+deterministic replacement mission containing its still-unfinished task subset
+followed by recovered tasks. This is intentionally not named supplementary
+upload because the implementation clears/replaces the survivor mission plan.
 
 Portable tests cover the controller/report boundary with fake live controllers,
 CLI validation order, safety-before-feature behavior, hardware-candidate
@@ -325,21 +339,21 @@ PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
   cargo test -p swarm-examples --test sitl_agent multi_agent_sitl_supervisor
 ```
 
-Known M58 limits:
+Known M58/M59 limits:
 
 - no automated PX4 CI or simulator startup;
 - no Gazebo/HIL/hardware claim;
-- no live PX4 failed-agent reallocation;
+- real PX4/SIH failed-agent reallocation still needs a captured manual artifact;
 - no concurrent multi-process supervisor yet; agents are executed sequentially
   from one supervisor process;
 - no production-grade operator workflow or safety certification.
 
-Out of scope for M52/M58:
+Out of scope for M52/M58/M59:
 
 - robust distributed coordination;
 - automatic task allocation;
 - automated real multi-agent PX4 CI orchestration;
-- live multi-agent PX4 failure/reallocation;
+- automated live multi-agent PX4 failure/reallocation;
 - real hardware usage;
 - swarm safety certification.
 
@@ -574,7 +588,7 @@ Upload: clear=1 count=1 requested=3 sent=3 ack_accepted=1 ack_rejected=0
 Commands: sent=3 ack_accepted=3 ack_rejected=0
 Telemetry: heartbeat=2 current_seq=2 waypoint_reached=3 task_completed=3
 Failures: aborts=0 disconnected=0 failures=0 final_status=completed
-Reallocation: agent_lost=0 task_released=0 task_reassigned=0 completed=0 tasks_recovered=0 latency_ticks=none
+Reallocation: agent_lost=0 task_released=0 task_reassigned=0 completed=0 tasks_recovered=0 latency_ticks=none survivor_mission_updates=0
 Multi-agent: started=0 finished=0 agents_started=0 agents_finished=0 agent_count=none
 Multi-agent events: mission_count=0 mission_items=0 current_seq=0 waypoint_reached=0 task_completed=0 failures=0
 ```

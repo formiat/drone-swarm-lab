@@ -180,6 +180,19 @@ pub enum SitlEvent {
         to_agent_id: String,
         latency_ticks: u64,
     },
+    SurvivorMissionUpdateStarted {
+        step: u64,
+        agent_id: String,
+        policy: String,
+        task_ids: Vec<String>,
+    },
+    SurvivorMissionUpdateCompleted {
+        step: u64,
+        agent_id: String,
+        policy: String,
+        task_ids: Vec<String>,
+        mission_item_count: usize,
+    },
     ReallocationCompleted {
         step: u64,
         failed_agent_id: String,
@@ -547,6 +560,42 @@ impl SitlEventRecorder {
         });
     }
 
+    pub fn push_survivor_mission_update_started(
+        &mut self,
+        agent_id: impl Into<String>,
+        policy: impl Into<String>,
+        task_ids: Vec<String>,
+    ) {
+        let step = self.next_step();
+        self.log
+            .events
+            .push(SitlEvent::SurvivorMissionUpdateStarted {
+                step,
+                agent_id: agent_id.into(),
+                policy: policy.into(),
+                task_ids,
+            });
+    }
+
+    pub fn push_survivor_mission_update_completed(
+        &mut self,
+        agent_id: impl Into<String>,
+        policy: impl Into<String>,
+        task_ids: Vec<String>,
+        mission_item_count: usize,
+    ) {
+        let step = self.next_step();
+        self.log
+            .events
+            .push(SitlEvent::SurvivorMissionUpdateCompleted {
+                step,
+                agent_id: agent_id.into(),
+                policy: policy.into(),
+                task_ids,
+                mission_item_count,
+            });
+    }
+
     pub fn push_run_completed(&mut self, status: impl Into<String>) {
         let step = self.next_step();
         self.log.events.push(SitlEvent::RunCompleted {
@@ -600,6 +649,9 @@ pub struct SitlEventLogSummary {
     pub reallocation_completed: usize,
     pub tasks_recovered: usize,
     pub reallocation_latency_ticks: Option<u64>,
+    pub survivor_mission_update_started: usize,
+    pub survivor_mission_update_completed: usize,
+    pub survivor_mission_updates: usize,
     pub multi_agent_run_started: usize,
     pub multi_agent_run_finished: usize,
     pub multi_agent_agent_started: usize,
@@ -704,6 +756,13 @@ pub fn summarize_sitl_event_log(log: &SitlEventLog) -> SitlEventLogSummary {
             SitlEvent::AgentLost { .. } => summary.agent_lost += 1,
             SitlEvent::TaskReleased { .. } => summary.task_released += 1,
             SitlEvent::TaskReassigned { .. } => summary.task_reassigned += 1,
+            SitlEvent::SurvivorMissionUpdateStarted { .. } => {
+                summary.survivor_mission_update_started += 1;
+            }
+            SitlEvent::SurvivorMissionUpdateCompleted { .. } => {
+                summary.survivor_mission_update_completed += 1;
+                summary.survivor_mission_updates += 1;
+            }
             SitlEvent::ReallocationCompleted {
                 tasks_recovered,
                 latency_ticks,
@@ -763,7 +822,7 @@ pub fn format_sitl_summary(summary: &SitlEventLogSummary) -> String {
             summary.abort_requested, summary.disconnected, summary.failures, final_status
         ),
         format!(
-            "Reallocation: agent_lost={} task_released={} task_reassigned={} completed={} tasks_recovered={} latency_ticks={}",
+            "Reallocation: agent_lost={} task_released={} task_reassigned={} completed={} tasks_recovered={} latency_ticks={} survivor_mission_updates={}",
             summary.agent_lost,
             summary.task_released,
             summary.task_reassigned,
@@ -772,7 +831,8 @@ pub fn format_sitl_summary(summary: &SitlEventLogSummary) -> String {
             summary
                 .reallocation_latency_ticks
                 .map(|ticks| ticks.to_string())
-                .unwrap_or_else(|| "none".to_owned())
+                .unwrap_or_else(|| "none".to_owned()),
+            summary.survivor_mission_updates
         ),
         format!(
             "Multi-agent: started={} finished={} agents_started={} agents_finished={} agent_count={}",
@@ -954,12 +1014,25 @@ mod tests {
         recorder.push_agent_lost("agent-1");
         recorder.push_task_released("task-0", "agent-1");
         recorder.push_task_reassigned("task-0", "agent-1", "agent-0", 0);
+        recorder.push_survivor_mission_update_started(
+            "agent-0",
+            "mission_replacement",
+            vec!["task-0".to_owned()],
+        );
+        recorder.push_survivor_mission_update_completed(
+            "agent-0",
+            "mission_replacement",
+            vec!["task-0".to_owned()],
+            1,
+        );
         recorder.push_reallocation_completed("agent-1", 1, vec!["task-0".to_owned()], 0);
         let log = recorder.into_log();
 
         let json = serde_json::to_string(&log).unwrap();
         assert!(json.contains(r#""type":"agent_lost""#));
         assert!(json.contains(r#""type":"task_reassigned""#));
+        assert!(json.contains(r#""type":"survivor_mission_update_started""#));
+        assert!(json.contains(r#""policy":"mission_replacement""#));
         assert!(json.contains(r#""type":"reallocation_completed""#));
         let restored: SitlEventLog = serde_json::from_str(&json).unwrap();
         assert_eq!(restored, log);
@@ -971,6 +1044,9 @@ mod tests {
         assert_eq!(summary.reallocation_completed, 1);
         assert_eq!(summary.tasks_recovered, 1);
         assert_eq!(summary.reallocation_latency_ticks, Some(0));
+        assert_eq!(summary.survivor_mission_update_started, 1);
+        assert_eq!(summary.survivor_mission_update_completed, 1);
+        assert_eq!(summary.survivor_mission_updates, 1);
     }
 
     #[test]
@@ -1040,6 +1116,7 @@ mod tests {
         assert!(text.contains("requested=2"));
         assert!(text.contains("waypoint_reached=1"));
         assert!(text.contains("Reallocation: agent_lost=0"));
+        assert!(text.contains("survivor_mission_updates=0"));
         assert!(text.contains("agents_started=0"));
         assert!(text.contains("Multi-agent events: mission_count=0"));
         assert!(text.contains("final_status=completed"));

@@ -108,8 +108,10 @@ PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
 Expected: heartbeat timeout returns unfinished tasks from a lost agent to the
 pool, surviving agents recover assignable tasks, ownership stays unique, and
 SITL event logs expose agent lost / task released / task reassigned events.
-These checks are mock/fake/runtime-level; live PX4 failure/reallocation remains
-future work.
+These checks are mock/fake/runtime-level. M59 adds a controlled local
+`--connection --execute --reupload-on-failure` supervisor path that converts a
+failed live agent into runtime reallocation events and a survivor mission
+replacement plan; this is still not Gazebo, HIL, or hardware validation.
 
 ### 11. Inspect multi-agent SITL manifest
 
@@ -151,6 +153,7 @@ cargo run -p swarm-examples --bin sitl_supervisor --features mavlink-transport -
   --config scenarios/sitl.multi-agent.execute.config.json \
   --safety-config path/to/sitl-safety.json \
   --timeout 5 --telemetry-timeout 10 --no-progress-timeout 60 \
+  --reupload-on-failure \
   --run-report target/sitl/multi-agent-report.json \
   --replay-log target/sitl/multi-agent.sitl-log.json
 ```
@@ -160,7 +163,8 @@ rejects hardware-candidate endpoints unless `--allow-hardware-candidate` is
 explicit, then sequentially drives local PX4/SIH endpoints through upload,
 arm/takeoff/start, telemetry progress, a common event log, and a structured
 multi-agent run report. This is still an experimental local SITL workflow: live
-PX4 failed-agent reallocation and real hardware are not claimed.
+PX4/SIH failed-agent reallocation is available only as explicit controlled
+mission replacement with `--reupload-on-failure`; real hardware is not claimed.
 The common event log uses per-agent mission/task/failure events with `agent_id`,
 so repeated waypoint sequence numbers remain attributable to the correct agent.
 
@@ -231,8 +235,8 @@ cargo run -p swarm-examples --bin replay -- \
 | Mock SITL | ✅ Stable | M20 | `sitl_agent --mock`, no external deps |
 | SITL Dry-Run | ✅ Stable | M43 | `sitl_agent --dry-run`, portable mission upload plan without PX4 |
 | SITL Portable Regression | ✅ Stable | M50 | `portable_sitl_regression_smoke` and `sitl_docs` validate dry-run/mock/safety/docs without external PX4 |
-| Dynamic Reallocation | ✅ Stable | M51 | Heartbeat timeout releases unfinished tasks from lost agents, recovers assignable tasks on survivors, exposes runtime metrics and SITL reallocation events; `sitl_supervisor --mock` now emits the failure/reallocation flow; live PX4 failure/reallocation remains future work |
-| Multi-Agent SITL Foundation | ✅ Stable | M52/M58 | `multi_sitl.v1` config, public fixtures, `sitl_supervisor` dry-run/mock orchestration, per-agent task subsets, MAVLink system/component mapping, duplicate ownership rejection, two-instance PX4 SIH upload-only evidence, and an experimental local multi-agent PX4/SIH execute supervisor with common event/report output; live PX4 failed-agent reallocation remains future work |
+| Dynamic Reallocation | ✅ Stable | M51/M59 | Heartbeat timeout releases unfinished tasks from lost agents, recovers assignable tasks on survivors, exposes runtime metrics and SITL reallocation events; `sitl_supervisor --mock` emits the failure/reallocation flow; M59 adds controlled local live-supervisor reallocation with survivor mission replacement behind `--reupload-on-failure` |
+| Multi-Agent SITL Foundation | ✅ Stable | M52/M58/M59 | `multi_sitl.v1` config, public fixtures, `sitl_supervisor` dry-run/mock orchestration, per-agent task subsets, MAVLink system/component mapping, duplicate ownership rejection, two-instance PX4 SIH upload-only evidence, experimental local multi-agent PX4/SIH execute supervisor output, and controlled failed-agent survivor mission replacement |
 | Hardware Readiness Boundary | ✅ Stable | M53 | `docs/HARDWARE_READINESS.md`, connection classes, and `--allow-hardware-candidate` guard remote/wildcard/serial hardware candidates; this documents the boundary, not hardware readiness |
 | Supervisor Controller Boundary | ✅ Stable | M57 | `sitl_supervisor` mock orchestration is split into a testable internal supervisor module with `AgentController`, `MockAgentController`, fake-controller coverage, and assertable `SupervisorMetrics`; M58 adds the separate live PX4/SIH execute controller path |
 | Replay / Debuggability | ✅ Stable | M23 | `replay` CLI, ASCII visualization |
@@ -247,7 +251,7 @@ cargo run -p swarm-examples --bin replay -- \
 | Wildfire / Flood Mapping | ✅ Stable | M30 | `TaskKind::MappingZone`, `WildfireState`, hazard zones, dynamic threat |
 | Simulation Realism | ✅ Stable | M31 | Battery model v2, altitude sensor penalty, wind drift, pose noise, comms jitter, time-gated no-fly zones, `--realism` preset |
 | Reporting & Metrics | ✅ Stable | M32 | Per-row mission/scenario in exports, mission-scoped profiles, merged `all` benchmark id, wildfire/planner metrics, realism metadata in manifest |
-| Real PX4 | 🧪 Experimental | M49/M58 | Feature-gated single-agent PX4 SITL report/replay plumbing, local multi-agent PX4/SIH execute supervisor plumbing, pre-upload safety validation, arm/takeoff/start, telemetry-to-task progress mapping, structured final reports, compact SITL event summaries, public `scenarios/sitl.px4-golden.json`, `scenarios/sitl.multi-agent.execute.config.json`, and captured single-agent/upload-only SIH evidence; still not hardware-ready |
+| Real PX4 | 🧪 Experimental | M49/M58/M59 | Feature-gated single-agent PX4 SITL report/replay plumbing, local multi-agent PX4/SIH execute supervisor plumbing, pre-upload safety validation, arm/takeoff/start, telemetry-to-task progress mapping, controlled `--reupload-on-failure` mission replacement, structured final reports, compact SITL event summaries, public `scenarios/sitl.px4-golden.json`, `scenarios/sitl.multi-agent.execute.config.json`, and captured single-agent/upload-only SIH evidence; still not hardware-ready |
 
 **Test coverage:** 360+ tests, 10 crates, 18 JSON scenarios.
 
@@ -362,7 +366,7 @@ These checks cover mock controller upload/poll behavior, metrics formatting,
 mock failure/reallocation metrics, CLI negative argument handling, and the
 existing subprocess supervisor contract.
 
-### Live Multi-Agent PX4/SIH Execute Checks (M58)
+### Live Multi-Agent PX4/SIH Execute And Reallocation Checks (M58/M59)
 
 M58 adds an experimental `sitl_supervisor --connection --execute` path for local
 PX4/SIH endpoints. It reuses the same multi-agent manifest, requires
@@ -374,6 +378,16 @@ common SITL event log with explicit per-agent mission/task/failure attribution
 plus a `sitl_multi_agent_run_report.v1` JSON report. `--safety-config` is
 accepted only in `--connection --execute`; dry-run/mock supervisor modes reject
 it instead of silently ignoring it.
+
+M59 adds explicit `--reupload-on-failure` handling. When a live agent returns a
+terminal failure, the supervisor marks it lost, releases its unfinished tasks
+through the runtime reallocation path, records `agent_lost`, `task_released`,
+`task_reassigned`, `reallocation_completed`,
+`survivor_mission_update_started`, and
+`survivor_mission_update_completed`, then replaces the survivor mission with a
+deterministic task list. The report includes a `reallocation` section with
+released/reassigned/recovered tasks, latency ticks, survivor mission update
+count, and tasks completed after reallocation.
 
 ```bash
 PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
@@ -389,9 +403,9 @@ PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
 These automated checks are still portable: fake controllers cover report/event
 aggregation, CLI tests cover validation order, and no external PX4 endpoint is
 required. A real local PX4/SIH execute run remains a manual workflow because it
-needs running PX4 instances and operator-controlled endpoints. Live PX4
-failed-agent reallocation is still future work; the reallocation contract
-remains covered by the mock supervisor.
+needs running PX4 instances and operator-controlled endpoints. M59's automated
+coverage uses fake live controllers; real PX4/SIH failure injection still needs
+a captured manual artifact before it can be used as evidence.
 
 ### Default Suites (M36)
 
@@ -455,9 +469,9 @@ Parametric sweeps over variables such as packet loss, agent count, or grid size 
 
 ## Known Limitations
 
-1. **Simulation/SITL only:** No real hardware workflow; PX4 integration is limited to experimental local SITL waypoint upload, opt-in single-agent lifecycle/progress tracking, local multi-agent PX4/SIH execute supervisor plumbing, and captured SIH evidence with static pre-upload safety checks.
+1. **Simulation/SITL only:** No real hardware workflow; PX4 integration is limited to experimental local SITL waypoint upload, opt-in single-agent lifecycle/progress tracking, local multi-agent PX4/SIH execute supervisor plumbing, controlled mission replacement after failed-agent reallocation, and captured SIH evidence with static pre-upload safety checks.
 2. **Hardware boundary:** Remote UDP, wildcard UDP, TCP, and serial connection strings are hardware candidates and require `--allow-hardware-candidate`; this is only an explicit opt-in guard, not flight certification or proof of hardware readiness. See [`docs/HARDWARE_READINESS.md`](docs/HARDWARE_READINESS.md).
-3. **Multi-agent SITL remains experimental:** M52/M58 support config-driven per-agent task subsets, dry-run/mock manifests, mock supervisor reallocation, standalone command generation, duplicate ownership checks, local PX4 SIH upload-only verification, and a local live execute supervisor path. It does not provide robust distributed coordination, automated PX4 CI, live PX4 failure/reallocation, or hardware safety guarantees.
+3. **Multi-agent SITL remains experimental:** M52/M58/M59 support config-driven per-agent task subsets, dry-run/mock manifests, mock supervisor reallocation, standalone command generation, duplicate ownership checks, local PX4 SIH upload-only verification, a local live execute supervisor path, and controlled failed-agent survivor mission replacement. It does not provide robust distributed coordination, automated PX4 CI, Gazebo/HIL/hardware validation, or hardware safety guarantees.
 4. **SITL coordinate frame:** `sitl_agent` dry-run/mock mode treats `Pose { x, y, z }` as local simulation coordinates; `x/y` are not WGS84 latitude/longitude, and `z` is local altitude.
 5. **3D pose:** Scenarios support `z` coordinate and altitude-aware sensors, but most missions operate primarily in XY plane.
 6. **Deterministic RNG:** Scenarios use seeded RNG; real-world noise is modeled optionally via `--realism` preset.
@@ -554,6 +568,7 @@ See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known l
 | M36 | ✅ | Regression Harness v2: calibrated thresholds, wildfire/realism suites, portable tests (tempdir), failure delta output, refreshed baseline |
 | M57 | ✅ | Supervisor Controller Boundary: `sitl_supervisor` mock state machine extracted behind internal controller boundary, fake-controller transitions covered, metrics made assertable, CLI compatibility tests expanded |
 | M58 | ✅ | Live Multi-Agent PX4/SIH Execute Orchestration: `sitl_supervisor --connection --execute`, per-agent safety/hardware gates, sequential local PX4/SIH agent execution, common event log, structured multi-agent run report, and portable fake-controller/CLI coverage |
+| M59 | ✅ | Live PX4/SIH Failure & Reallocation foundation: explicit `--reupload-on-failure`, runtime release/reassignment events, survivor mission replacement planning, report reallocation metrics, and portable fake live-controller coverage; manual real PX4/SIH failure artifact remains separate |
 
 ---
 
