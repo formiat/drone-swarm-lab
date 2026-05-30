@@ -142,7 +142,27 @@ summary. Duplicate ownership is rejected before upload. This is a
 dry-run/mock/config foundation. A separate two-instance PX4 SIH upload-only
 check is captured in `results/m55_multi_agent_px4_sih_2026-05-30/`.
 
-### 12. Upload or execute a mission in PX4 SITL
+### 12. Run a multi-agent PX4/SIH execute supervisor
+
+```bash
+cargo run -p swarm-examples --bin sitl_supervisor --features mavlink-transport -- \
+  --connection --execute \
+  --scenario scenarios/sitl.multi-agent.json \
+  --config scenarios/sitl.multi-agent.execute.config.json \
+  --safety-config path/to/sitl-safety.json \
+  --timeout 5 --telemetry-timeout 10 --no-progress-timeout 60 \
+  --run-report target/sitl/multi-agent-report.json \
+  --replay-log target/sitl/multi-agent.sitl-log.json
+```
+
+Expected: `sitl_supervisor` validates every configured agent before upload,
+rejects hardware-candidate endpoints unless `--allow-hardware-candidate` is
+explicit, then sequentially drives local PX4/SIH endpoints through upload,
+arm/takeoff/start, telemetry progress, a common event log, and a structured
+multi-agent run report. This is still an experimental local SITL workflow: live
+PX4 failed-agent reallocation and real hardware are not claimed.
+
+### 13. Upload or execute a mission in PX4 SITL
 
 ```bash
 cargo run -p swarm-examples --bin sitl_agent --features mavlink-transport -- \
@@ -210,9 +230,9 @@ cargo run -p swarm-examples --bin replay -- \
 | SITL Dry-Run | ✅ Stable | M43 | `sitl_agent --dry-run`, portable mission upload plan without PX4 |
 | SITL Portable Regression | ✅ Stable | M50 | `portable_sitl_regression_smoke` and `sitl_docs` validate dry-run/mock/safety/docs without external PX4 |
 | Dynamic Reallocation | ✅ Stable | M51 | Heartbeat timeout releases unfinished tasks from lost agents, recovers assignable tasks on survivors, exposes runtime metrics and SITL reallocation events; `sitl_supervisor --mock` now emits the failure/reallocation flow; live PX4 failure/reallocation remains future work |
-| Multi-Agent SITL Foundation | ✅ Stable | M52 | `multi_sitl.v1` config, public fixtures, `sitl_supervisor` dry-run/mock orchestration, per-agent task subsets, MAVLink system/component mapping, duplicate ownership rejection, and a two-instance PX4 SIH upload-only check; real multi-agent execute orchestration remains future work |
+| Multi-Agent SITL Foundation | ✅ Stable | M52/M58 | `multi_sitl.v1` config, public fixtures, `sitl_supervisor` dry-run/mock orchestration, per-agent task subsets, MAVLink system/component mapping, duplicate ownership rejection, two-instance PX4 SIH upload-only evidence, and an experimental local multi-agent PX4/SIH execute supervisor with common event/report output; live PX4 failed-agent reallocation remains future work |
 | Hardware Readiness Boundary | ✅ Stable | M53 | `docs/HARDWARE_READINESS.md`, connection classes, and `--allow-hardware-candidate` guard remote/wildcard/serial hardware candidates; this documents the boundary, not hardware readiness |
-| Supervisor Controller Boundary | ✅ Stable | M57 | `sitl_supervisor` mock orchestration is now split into a testable internal supervisor module with `AgentController`, `MockAgentController`, fake-controller coverage, and assertable `SupervisorMetrics`; CLI behavior remains compatible and no live PX4 controller is added yet |
+| Supervisor Controller Boundary | ✅ Stable | M57 | `sitl_supervisor` mock orchestration is split into a testable internal supervisor module with `AgentController`, `MockAgentController`, fake-controller coverage, and assertable `SupervisorMetrics`; M58 adds the separate live PX4/SIH execute controller path |
 | Replay / Debuggability | ✅ Stable | M23 | `replay` CLI, ASCII visualization |
 | Mission Semantics | ✅ Stable | M33 | `TaskKind`, 6 concrete adapters, `AdapterRegistry`, adapter-driven completion/scoring in runner and allocator |
 | Planner Quality | ✅ Stable | M34 | `RoutePlanner` trait, 2-opt, battery-aware feasibility v2 (ordered-subset feasibility, battery model v2 integration, meaningful runner metrics) |
@@ -225,7 +245,7 @@ cargo run -p swarm-examples --bin replay -- \
 | Wildfire / Flood Mapping | ✅ Stable | M30 | `TaskKind::MappingZone`, `WildfireState`, hazard zones, dynamic threat |
 | Simulation Realism | ✅ Stable | M31 | Battery model v2, altitude sensor penalty, wind drift, pose noise, comms jitter, time-gated no-fly zones, `--realism` preset |
 | Reporting & Metrics | ✅ Stable | M32 | Per-row mission/scenario in exports, mission-scoped profiles, merged `all` benchmark id, wildfire/planner metrics, realism metadata in manifest |
-| Real PX4 | 🧪 Experimental | M49 | Feature-gated single-agent PX4 SITL report and replay plumbing with pre-upload safety validation, arm/takeoff/start, telemetry-to-task progress mapping, structured final run report, compact SITL event log summary, public `scenarios/sitl.px4-golden.json`, and a captured M48 PX4 SIH run in `results/m48_px4_sitl_2026-05-30`; still not hardware-ready |
+| Real PX4 | 🧪 Experimental | M49/M58 | Feature-gated single-agent PX4 SITL report/replay plumbing, local multi-agent PX4/SIH execute supervisor plumbing, pre-upload safety validation, arm/takeoff/start, telemetry-to-task progress mapping, structured final reports, compact SITL event summaries, public `scenarios/sitl.px4-golden.json`, `scenarios/sitl.multi-agent.execute.config.json`, and captured single-agent/upload-only SIH evidence; still not hardware-ready |
 
 **Test coverage:** 360+ tests, 10 crates, 18 JSON scenarios.
 
@@ -340,6 +360,34 @@ These checks cover mock controller upload/poll behavior, metrics formatting,
 mock failure/reallocation metrics, CLI negative argument handling, and the
 existing subprocess supervisor contract.
 
+### Live Multi-Agent PX4/SIH Execute Checks (M58)
+
+M58 adds an experimental `sitl_supervisor --connection --execute` path for local
+PX4/SIH endpoints. It reuses the same multi-agent manifest, requires
+`lifecycle: "execute"` for every live-supervised agent, applies per-agent
+pre-upload safety validation before any feature-gated MAVLink work, rejects
+hardware-candidate connection strings unless explicitly allowed, drives each
+agent through the PX4 upload/execute/telemetry progress path, and writes a
+common SITL event log plus a `sitl_multi_agent_run_report.v1` JSON report.
+
+```bash
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  cargo test -p swarm-examples sitl_connection
+
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  cargo test -p swarm-examples sitl_supervisor
+
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  cargo test -p swarm-examples --test sitl_agent multi_agent_sitl_supervisor
+```
+
+These automated checks are still portable: fake controllers cover report/event
+aggregation, CLI tests cover validation order, and no external PX4 endpoint is
+required. A real local PX4/SIH execute run remains a manual workflow because it
+needs running PX4 instances and operator-controlled endpoints. Live PX4
+failed-agent reallocation is still future work; the reallocation contract
+remains covered by the mock supervisor.
+
 ### Default Suites (M36)
 
 | Suite | Mission | Profile | Strategy | Mode | Key Thresholds |
@@ -402,9 +450,9 @@ Parametric sweeps over variables such as packet loss, agent count, or grid size 
 
 ## Known Limitations
 
-1. **Simulation only:** No real hardware workflow; PX4 integration is limited to experimental SITL waypoint upload, opt-in single-agent lifecycle/progress tracking, and a local two-instance PX4 SIH upload-only check with static pre-upload safety checks.
+1. **Simulation/SITL only:** No real hardware workflow; PX4 integration is limited to experimental local SITL waypoint upload, opt-in single-agent lifecycle/progress tracking, local multi-agent PX4/SIH execute supervisor plumbing, and captured SIH evidence with static pre-upload safety checks.
 2. **Hardware boundary:** Remote UDP, wildcard UDP, TCP, and serial connection strings are hardware candidates and require `--allow-hardware-candidate`; this is only an explicit opt-in guard, not flight certification or proof of hardware readiness. See [`docs/HARDWARE_READINESS.md`](docs/HARDWARE_READINESS.md).
-3. **Multi-agent SITL foundation only:** M52 supports config-driven per-agent task subsets, dry-run/mock manifests, mock supervisor reallocation, standalone command generation, duplicate ownership checks, and local PX4 SIH upload-only verification. It does not provide robust distributed coordination, automated real multi-agent PX4 execute orchestration, live PX4 failure/reallocation, or hardware safety guarantees.
+3. **Multi-agent SITL remains experimental:** M52/M58 support config-driven per-agent task subsets, dry-run/mock manifests, mock supervisor reallocation, standalone command generation, duplicate ownership checks, local PX4 SIH upload-only verification, and a local live execute supervisor path. It does not provide robust distributed coordination, automated PX4 CI, live PX4 failure/reallocation, or hardware safety guarantees.
 4. **SITL coordinate frame:** `sitl_agent` dry-run/mock mode treats `Pose { x, y, z }` as local simulation coordinates; `x/y` are not WGS84 latitude/longitude, and `z` is local altitude.
 5. **3D pose:** Scenarios support `z` coordinate and altitude-aware sensors, but most missions operate primarily in XY plane.
 6. **Deterministic RNG:** Scenarios use seeded RNG; real-world noise is modeled optionally via `--realism` preset.
@@ -500,6 +548,7 @@ See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known l
 | M35 | ✅ | Dynamic Mission Correctness: mission-specific success semantics, SAR unsupported reasons, support matrix tests |
 | M36 | ✅ | Regression Harness v2: calibrated thresholds, wildfire/realism suites, portable tests (tempdir), failure delta output, refreshed baseline |
 | M57 | ✅ | Supervisor Controller Boundary: `sitl_supervisor` mock state machine extracted behind internal controller boundary, fake-controller transitions covered, metrics made assertable, CLI compatibility tests expanded |
+| M58 | ✅ | Live Multi-Agent PX4/SIH Execute Orchestration: `sitl_supervisor --connection --execute`, per-agent safety/hardware gates, sequential local PX4/SIH agent execution, common event log, structured multi-agent run report, and portable fake-controller/CLI coverage |
 
 ---
 

@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-30
 **HEAD commit:** see `git rev-parse HEAD`
-**Last audit:** M43-M53 Real SITL / PX4 follow-up
+**Last audit:** M58 Live Multi-Agent PX4/SIH Execute follow-up
 
 This document is the current status summary for the repository. It supersedes
 the older M39b-only audit and should be read together with the README current
@@ -32,7 +32,8 @@ status table.
 | M51 Dynamic Reallocation for Failed Agent | Supervisor mock complete | Runtime reallocation, metrics, SITL event schema, and `sitl_supervisor --mock` heartbeat-timeout/reallocation flow are implemented. Live PX4 failure/reallocation remains future work. |
 | M52 Multi-Agent SITL Foundation | Foundation plus upload-only check complete | `multi_sitl.v1`, public `scenarios/sitl.multi-agent.json` / `scenarios/sitl.multi-agent.config.json`, dry-run/mock manifest, task subsets, duplicate ownership checks, mock supervisor orchestration, and a two-instance PX4 SIH upload-only check exist. |
 | M53 Hardware Readiness Boundary | Complete | `docs/HARDWARE_READINESS.md`, connection classes, and `--allow-hardware-candidate` guard hardware-candidate endpoints. |
-| M57 Supervisor Controller Boundary | Complete | `sitl_supervisor` mock orchestration is extracted into a testable internal supervisor module with `AgentController`, `MockAgentController`, fake-controller tests over the shared supervisor loop, returned `SupervisorMetrics`, expanded CLI negative tests, and no live PX4 controller yet. |
+| M57 Supervisor Controller Boundary | Complete | `sitl_supervisor` mock orchestration is extracted into a testable internal supervisor module with `AgentController`, `MockAgentController`, fake-controller tests over the shared supervisor loop, returned `SupervisorMetrics`, and expanded CLI negative tests. M58 builds the live PX4/SIH path beside this boundary. |
+| M58 Live Multi-Agent PX4/SIH Execute Orchestration | Complete as experimental local SITL plumbing | `sitl_supervisor --connection --execute` with `scenarios/sitl.multi-agent.execute.config.json` validates all live agents, rejects non-execute lifecycles, applies per-agent safety and hardware-candidate gates before upload, runs sequential local PX4/SIH controllers, and writes a common SITL event log plus `sitl_multi_agent_run_report.v1`. Portable fake-controller and CLI tests cover the workflow; live PX4 failed-agent reallocation remains future work. |
 
 ## Current Known Limitations
 
@@ -42,17 +43,19 @@ status table.
   repository contains a 2026-05-30 PX4 SIH result with version/backend/command,
   report JSON, and replay summary. It does not prove Gazebo behavior, HIL, real
   aircraft, or production safety.
-- **Multi-agent PX4 is upload-only verified, not flight orchestration.** M52
-  proves explicit ownership, per-agent commands, mock supervisor orchestration,
-  and a local two-instance PX4 SIH upload-only check. It does not launch,
-  execute, and coordinate multiple real PX4 missions as a single autonomous
-  flight workflow.
+- **Multi-agent PX4/SIH execute orchestration exists as local experimental
+  plumbing.** M52 proves explicit ownership, per-agent commands, mock
+  supervisor orchestration, and a local two-instance PX4 SIH upload-only check.
+  M58 adds `sitl_supervisor --connection --execute` for local endpoints with a
+  common report/event log. This still is not PX4 CI, Gazebo/HIL, real hardware,
+  or production flight orchestration.
 - **M51 reallocation is live in the mock supervisor, not in PX4.** Reallocation
   events are emitted by `sitl_supervisor --mock` after heartbeat timeout. They
   are not yet emitted by a live multi-agent PX4 supervisor failure flow.
-- **M57 is an internal boundary, not a live PX4 milestone.** The mock supervisor
-  state machine is now testable behind an internal controller boundary, but live
-  multi-agent PX4 execute orchestration remains future work.
+- **M57 was an internal boundary; M58 is the first live supervisor plumbing.**
+  The mock supervisor state machine remains testable behind an internal
+  controller boundary, while M58 adds the separate live PX4/SIH execute path.
+  Live PX4 failed-agent reallocation is still not implemented.
 - **Hardware is out of scope.** The project is not flight-certified and is not a
   production safety layer.
 
@@ -82,14 +85,15 @@ status table.
 |---|---|---|
 | Portable SITL verification | Ready | Run `sitl_agent`/`sitl_docs` targeted tests. |
 | M48 live PX4 verification | Complete for local PX4 SIH | Captured in `results/m48_px4_sitl_2026-05-30/`; Gazebo/HIL/hardware remain out of scope. |
-| Real multi-agent PX4 | Partial | Upload-only local PX4 SIH check exists; live execute orchestration and PX4 failure/reallocation remain future work. |
+| Real multi-agent PX4/SIH | Experimental local workflow | Upload-only SIH evidence exists and `sitl_supervisor --connection --execute` can orchestrate local execute attempts; PX4 CI, Gazebo/HIL, hardware, and live PX4 failure/reallocation remain future work. |
 | Large benchmark publication | Not ready | Default regression flake is fixed; benchmark baselines/results still need a fresh publication run. |
 | Hardware experiment | Not product-ready | Requires external safety process; see `docs/HARDWARE_READINESS.md`. |
 
 ## Recommended Next Steps
 
-1. Decide whether the next PX4 milestone should cover live multi-agent execute
-   orchestration, live PX4 failure/reallocation, or HIL/hardware boundary work.
+1. Decide whether the next PX4 milestone should cover live PX4
+   failure/reallocation, Gazebo/HIL validation, or additional non-hardware
+   robustness around the local multi-agent supervisor.
 2. Refresh benchmark baselines/results before using them as publication claims.
 3. Keep README, `docs/SITL_SETUP.md`, `docs/REPLAY.md`, and this file in sync
    when M48 live verification changes state.
@@ -111,10 +115,14 @@ PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
 
 PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
   /home/formi/.local/bin/runlim cargo test -p swarm-examples sitl_supervisor
+
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  /home/formi/.local/bin/runlim cargo test -p swarm-examples sitl_connection
 ```
 
 For M48 live verification, inspect `results/m48_px4_sitl_2026-05-30/`. For the
 two-instance PX4 SIH upload-only check, inspect
-`results/m55_multi_agent_px4_sih_2026-05-30/`. Do not extend either result to
-Gazebo, HIL, real hardware, multi-agent execute orchestration, or live PX4
-failure/reallocation without a new captured run.
+`results/m55_multi_agent_px4_sih_2026-05-30/`. M58 adds live execute supervisor
+code and portable fake/CLI coverage, but this audit did not capture a new live
+PX4/SIH execute artifact. Do not extend any existing result to Gazebo, HIL, real
+hardware, or live PX4 failure/reallocation without a new captured run.

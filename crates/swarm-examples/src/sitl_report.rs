@@ -38,6 +38,38 @@ pub struct SitlRunReport {
     pub abort_result: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SitlMultiAgentRunReport {
+    pub schema_version: String,
+    pub run_id: String,
+    pub scenario_path: PathBuf,
+    pub scenario_name: String,
+    pub config_path: PathBuf,
+    pub mission: String,
+    pub profile: String,
+    pub mode: String,
+    pub agents: Vec<SitlMultiAgentAgentReport>,
+    pub total_completed_tasks: usize,
+    pub failed_agents: usize,
+    pub aborted_agents: usize,
+    pub overall_status: String,
+    pub event_log_path: Option<PathBuf>,
+    pub known_limitations: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SitlMultiAgentAgentReport {
+    pub agent_id: String,
+    pub connection_string: String,
+    pub system_id: u8,
+    pub component_id: u8,
+    pub lifecycle: String,
+    pub mission_item_count: usize,
+    pub completed_task_count: usize,
+    pub final_status: String,
+    pub error: Option<String>,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum SitlReportError {
     #[error("report directory create failed {path:?}: {message}")]
@@ -51,6 +83,30 @@ pub enum SitlReportError {
 pub fn write_sitl_run_report(
     path: impl AsRef<Path>,
     report: &SitlRunReport,
+) -> Result<(), SitlReportError> {
+    let path = path.as_ref();
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent).map_err(|error| SitlReportError::CreateDir {
+            path: parent.to_path_buf(),
+            message: error.to_string(),
+        })?;
+    }
+    let json =
+        serde_json::to_string_pretty(report).map_err(|error| SitlReportError::Serialize {
+            message: error.to_string(),
+        })?;
+    fs::write(path, json).map_err(|error| SitlReportError::Write {
+        path: path.to_path_buf(),
+        message: error.to_string(),
+    })
+}
+
+pub fn write_sitl_multi_agent_run_report(
+    path: impl AsRef<Path>,
+    report: &SitlMultiAgentRunReport,
 ) -> Result<(), SitlReportError> {
     let path = path.as_ref();
     if let Some(parent) = path
@@ -128,5 +184,42 @@ mod tests {
 
         let json = fs::read_to_string(path).unwrap();
         assert!(json.contains(r#""agent_id": "agent-0""#));
+    }
+
+    #[test]
+    fn multi_agent_report_serializes_statuses() {
+        let report = SitlMultiAgentRunReport {
+            schema_version: "sitl_multi_agent_run_report.v1".to_owned(),
+            run_id: "run-1".to_owned(),
+            scenario_path: PathBuf::from("scenarios/sitl.multi-agent.json"),
+            scenario_name: "sitl_multi_agent".to_owned(),
+            config_path: PathBuf::from("scenarios/sitl.multi-agent.config.json"),
+            mission: "sitl".to_owned(),
+            profile: "multi-agent".to_owned(),
+            mode: "connection_execute".to_owned(),
+            agents: vec![SitlMultiAgentAgentReport {
+                agent_id: "agent-0".to_owned(),
+                connection_string: "udp:127.0.0.1:14550".to_owned(),
+                system_id: 1,
+                component_id: 1,
+                lifecycle: "execute".to_owned(),
+                mission_item_count: 2,
+                completed_task_count: 2,
+                final_status: "completed".to_owned(),
+                error: None,
+            }],
+            total_completed_tasks: 2,
+            failed_agents: 0,
+            aborted_agents: 0,
+            overall_status: "completed".to_owned(),
+            event_log_path: Some(PathBuf::from("run.sitl-log.json")),
+            known_limitations: vec!["local PX4/SIH only".to_owned()],
+        };
+
+        let json = serde_json::to_string(&report).unwrap();
+
+        assert!(json.contains("sitl_multi_agent_run_report.v1"));
+        assert!(json.contains("connection_execute"));
+        assert!(json.contains("completed"));
     }
 }

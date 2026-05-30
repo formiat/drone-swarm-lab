@@ -60,6 +60,10 @@ SITL event types are serialized in `snake_case`:
 
 | Event | Description | Key fields |
 |---|---|---|
+| `multi_agent_run_started` | Common supervisor run started | `step`, `agent_count`, `scenario` |
+| `multi_agent_agent_started` | One supervised agent run started | `step`, `agent_id`, `connection_string`, `system_id`, `component_id` |
+| `multi_agent_agent_finished` | One supervised agent run finished | `step`, `agent_id`, `final_status`, `completed_task_count` |
+| `multi_agent_run_finished` | Common supervisor run finished | `step`, `overall_status` |
 | `connection_opened` | Runtime connection/context opened | `step`, `mode`, `connection_string` |
 | `heartbeat_seen` | MAVLink heartbeat or telemetry heartbeat observed | `step` |
 | `mission_clear_sent` | Existing mission clear command sent | `step` |
@@ -82,8 +86,10 @@ SITL event types are serialized in `snake_case`:
 | `run_completed` | Successful terminal status | `step`, `status` |
 
 Reallocation events are schema/API/runtime covered and are produced by the mock
-multi-agent supervisor flow. The live multi-agent PX4 supervisor path does not
-yet inject failures and emit a combined real-PX4 reallocation log.
+multi-agent supervisor flow. M58 adds a live multi-agent PX4 supervisor path
+that writes common run-start/run-finished events and aggregate per-agent report
+artifacts, but it does not yet inject failures or emit a combined real-PX4
+reallocation log.
 
 M57 keeps these replay semantics stable while moving mock supervisor execution
 behind an internal supervisor/controller boundary. `MockAgentController` still
@@ -138,6 +144,26 @@ cargo run --bin sitl_supervisor -- \
   --heartbeat-timeout-ticks 3 \
   --replay-log target/sitl/multi-supervisor.sitl-log.json
 ```
+
+The experimental live multi-agent PX4/SIH execute supervisor uses the same SITL
+event log schema for a common supervisor log:
+
+```bash
+cargo run --bin sitl_supervisor --features mavlink-transport -- \
+  --connection --execute \
+  --scenario scenarios/sitl.multi-agent.json \
+  --config scenarios/sitl.multi-agent.execute.config.json \
+  --safety-config path/to/sitl-safety.json \
+  --run-report target/sitl/multi-agent-report.json \
+  --replay-log target/sitl/multi-agent.sitl-log.json
+```
+
+The live log contains common `multi_agent_run_started`, per-agent
+`multi_agent_agent_started` / `multi_agent_agent_finished`,
+`mission_item_sent`/`task_completed` summaries, failures, and
+`multi_agent_run_finished`. The detailed per-agent final state is in the
+`sitl_multi_agent_run_report.v1` report. Live PX4 failure/reallocation events
+remain future work.
 
 The captured M48 PX4 SIH replay is stored at
 `results/m48_px4_sitl_2026-05-30/single-agent.sitl-log.json` with a compact
@@ -206,6 +232,8 @@ Upload: clear=1 count=1 requested=3 sent=3 ack_accepted=1 ack_rejected=0
 Commands: sent=3 ack_accepted=3 ack_rejected=0
 Telemetry: heartbeat=2 current_seq=2 waypoint_reached=3 task_completed=3
 Failures: aborts=0 disconnected=0 failures=0 final_status=completed
+Reallocation: agent_lost=0 task_released=0 task_reassigned=0 completed=0 tasks_recovered=0 latency_ticks=none
+Multi-agent: started=0 finished=0 agents_started=0 agents_finished=0 agent_count=none
 ```
 
 `--sitl-summary` is mutually exclusive with `--log`, `--summary`, `--tick`,

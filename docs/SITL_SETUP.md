@@ -13,6 +13,7 @@ hardware.
 | Multi-agent dry-run/mock | `sitl_supervisor --dry-run/--mock` or `sitl_agent --multi-agent-config` | None | Split explicit waypoint subsets, run mock supervisor orchestration, and produce a manifest/replay log | Stable M52 foundation |
 | PX4 SITL upload-only | `--connection <addr> [--upload-only]` | PX4 SITL + `mavlink-transport` feature | Upload waypoint mission to PX4 SITL without starting flight | Experimental |
 | PX4 SITL execute | `--connection <addr> --execute` | PX4 SITL + `mavlink-transport` feature | Upload, arm/takeoff/start mission, map telemetry to task progress, write optional final report, and abort on bounded failures | Experimental single-agent golden path |
+| Multi-agent PX4/SIH execute | `sitl_supervisor --connection --execute` | Local PX4/SIH endpoints + `mavlink-transport` feature | Validate all configured agents, sequentially execute local PX4/SIH missions, and write common event/report artifacts | Experimental M58 local workflow |
 
 ## CI / Manual Boundary
 
@@ -66,12 +67,15 @@ the runtime/mock supervisor contract, not live multi-agent PX4 failure handling.
 M52 multi-agent manifests are also part of this portable boundary. They prove
 that ownership and per-agent waypoint subsets are explicit and deterministic;
 the optional PX4 SIH check proves upload-only mission acceptance for two local
-instances. It does not prove autonomous multi-agent PX4 execute orchestration.
+instances. M58 adds an experimental local execute supervisor, but this remains a
+manual/operator-controlled workflow and does not prove Gazebo, HIL, hardware, or
+live PX4 failed-agent reallocation.
 
 Out of scope for automated CI in this repository:
 
 - real PX4 CI orchestration;
-- real multi-agent PX4 SITL execute/failure orchestration;
+- automated real multi-agent PX4 SITL CI orchestration;
+- live multi-agent PX4 failure/reallocation;
 - HIL;
 - real aircraft;
 - production autopilot certification;
@@ -256,10 +260,74 @@ boundary:
 - CLI negative cases for missing/invalid supervisor arguments are covered by
   subprocess tests.
 
-This does not add a live PX4 supervisor mode. Real multi-agent PX4/SIH execute
-orchestration remains the next milestone after this boundary.
+This milestone itself did not add a live PX4 supervisor mode; M58 now builds the
+experimental local PX4/SIH execute path beside this portable controller
+boundary.
 
-Out of scope for M52:
+### M58 Live Multi-Agent PX4/SIH Execute Supervisor
+
+M58 adds an experimental `sitl_supervisor --connection --execute` mode. It is
+intended for local PX4/SIH endpoints, not real hardware. The supervisor:
+
+- builds the same `multi_sitl_manifest.v1` manifest as dry-run/mock mode;
+- requires every live-supervised config entry to use `lifecycle: "execute"`;
+- validates each agent's assigned task subset with the SITL safety gate before
+  any MAVLink upload attempt;
+- rejects remote, wildcard, TCP, and serial hardware-candidate endpoints unless
+  `--allow-hardware-candidate` is explicitly provided;
+- runs agents sequentially in one process, honoring per-agent `start_delay_ms`;
+- drives each local PX4/SIH endpoint through mission upload, arm/takeoff/start,
+  telemetry progress tracking, and bounded abort-on-failure behavior;
+- writes a common SITL event log and a `sitl_multi_agent_run_report.v1` JSON
+  report when requested.
+
+Use the execute-specific config fixture because the upload-only fixture is
+deliberately rejected by live supervisor execute mode:
+
+```bash
+cargo run -p swarm-examples --bin sitl_supervisor --features mavlink-transport -- \
+  --connection --execute \
+  --scenario scenarios/sitl.multi-agent.json \
+  --config scenarios/sitl.multi-agent.execute.config.json \
+  --safety-config path/to/sitl-safety.json \
+  --timeout 5 \
+  --telemetry-timeout 10 \
+  --no-progress-timeout 60 \
+  --run-report target/sitl/multi-agent-report.json \
+  --replay-log target/sitl/multi-agent.sitl-log.json
+```
+
+The structured report contains run/scenario metadata, one row per agent,
+connection/system/component ids, mission item counts, completed task counts,
+per-agent final status, total completed tasks, failed-agent count, and known
+limitations. The common event log adds `multi_agent_run_started` and
+`multi_agent_run_finished` around the existing SITL event schema.
+
+Portable tests cover the controller/report boundary with fake live controllers,
+CLI validation order, safety-before-feature behavior, hardware-candidate
+rejection, and the helper layer shared with the single-agent connection path:
+
+```bash
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  cargo test -p swarm-examples sitl_connection
+
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  cargo test -p swarm-examples sitl_supervisor
+
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  cargo test -p swarm-examples --test sitl_agent multi_agent_sitl_supervisor
+```
+
+Known M58 limits:
+
+- no automated PX4 CI or simulator startup;
+- no Gazebo/HIL/hardware claim;
+- no live PX4 failed-agent reallocation;
+- no concurrent multi-process supervisor yet; agents are executed sequentially
+  from one supervisor process;
+- no production-grade operator workflow or safety certification.
+
+Out of scope for M52/M58:
 
 - robust distributed coordination;
 - automatic task allocation;

@@ -40,6 +40,28 @@ impl SitlEventLogMode {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "type")]
 pub enum SitlEvent {
+    MultiAgentRunStarted {
+        step: u64,
+        agent_count: usize,
+        scenario: String,
+    },
+    MultiAgentAgentStarted {
+        step: u64,
+        agent_id: String,
+        connection_string: String,
+        system_id: u8,
+        component_id: u8,
+    },
+    MultiAgentAgentFinished {
+        step: u64,
+        agent_id: String,
+        final_status: String,
+        completed_task_count: usize,
+    },
+    MultiAgentRunFinished {
+        step: u64,
+        overall_status: String,
+    },
     ConnectionOpened {
         step: u64,
         mode: SitlEventLogMode,
@@ -171,6 +193,59 @@ impl SitlEventRecorder {
             },
             next_step: 0,
         }
+    }
+
+    pub fn push_multi_agent_run_started(
+        &mut self,
+        agent_count: usize,
+        scenario: impl Into<String>,
+    ) {
+        let step = self.next_step();
+        self.log.events.push(SitlEvent::MultiAgentRunStarted {
+            step,
+            agent_count,
+            scenario: scenario.into(),
+        });
+    }
+
+    pub fn push_multi_agent_agent_started(
+        &mut self,
+        agent_id: impl Into<String>,
+        connection_string: impl Into<String>,
+        system_id: u8,
+        component_id: u8,
+    ) {
+        let step = self.next_step();
+        self.log.events.push(SitlEvent::MultiAgentAgentStarted {
+            step,
+            agent_id: agent_id.into(),
+            connection_string: connection_string.into(),
+            system_id,
+            component_id,
+        });
+    }
+
+    pub fn push_multi_agent_agent_finished(
+        &mut self,
+        agent_id: impl Into<String>,
+        final_status: impl Into<String>,
+        completed_task_count: usize,
+    ) {
+        let step = self.next_step();
+        self.log.events.push(SitlEvent::MultiAgentAgentFinished {
+            step,
+            agent_id: agent_id.into(),
+            final_status: final_status.into(),
+            completed_task_count,
+        });
+    }
+
+    pub fn push_multi_agent_run_finished(&mut self, overall_status: impl Into<String>) {
+        let step = self.next_step();
+        self.log.events.push(SitlEvent::MultiAgentRunFinished {
+            step,
+            overall_status: overall_status.into(),
+        });
     }
 
     pub fn push_connection_opened(&mut self) {
@@ -400,6 +475,11 @@ pub struct SitlEventLogSummary {
     pub reallocation_completed: usize,
     pub tasks_recovered: usize,
     pub reallocation_latency_ticks: Option<u64>,
+    pub multi_agent_run_started: usize,
+    pub multi_agent_run_finished: usize,
+    pub multi_agent_agent_started: usize,
+    pub multi_agent_agent_finished: usize,
+    pub multi_agent_agent_count: Option<usize>,
     pub final_status: Option<String>,
 }
 
@@ -415,6 +495,20 @@ pub fn summarize_sitl_event_log(log: &SitlEventLog) -> SitlEventLogSummary {
 
     for event in &log.events {
         match event {
+            SitlEvent::MultiAgentRunStarted { agent_count, .. } => {
+                summary.multi_agent_run_started += 1;
+                summary.multi_agent_agent_count.get_or_insert(*agent_count);
+            }
+            SitlEvent::MultiAgentAgentStarted { .. } => {
+                summary.multi_agent_agent_started += 1;
+            }
+            SitlEvent::MultiAgentAgentFinished { .. } => {
+                summary.multi_agent_agent_finished += 1;
+            }
+            SitlEvent::MultiAgentRunFinished { overall_status, .. } => {
+                summary.multi_agent_run_finished += 1;
+                summary.final_status = Some(overall_status.clone());
+            }
             SitlEvent::ConnectionOpened { .. } => summary.connection_opened += 1,
             SitlEvent::HeartbeatSeen { .. } => summary.heartbeat_seen += 1,
             SitlEvent::MissionClearSent { .. } => summary.mission_clear_sent += 1,
@@ -522,6 +616,17 @@ pub fn format_sitl_summary(summary: &SitlEventLogSummary) -> String {
             summary
                 .reallocation_latency_ticks
                 .map(|ticks| ticks.to_string())
+                .unwrap_or_else(|| "none".to_owned())
+        ),
+        format!(
+            "Multi-agent: started={} finished={} agents_started={} agents_finished={} agent_count={}",
+            summary.multi_agent_run_started,
+            summary.multi_agent_run_finished,
+            summary.multi_agent_agent_started,
+            summary.multi_agent_agent_finished,
+            summary
+                .multi_agent_agent_count
+                .map(|count| count.to_string())
                 .unwrap_or_else(|| "none".to_owned())
         ),
     ]
@@ -704,6 +809,40 @@ mod tests {
     }
 
     #[test]
+    fn multi_agent_events_roundtrip_and_summarize() {
+        let mut recorder = SitlEventRecorder::new(SitlEventLogMetadata {
+            run_id: "sitl-multi".to_owned(),
+            scenario_path: PathBuf::from("scenario.json"),
+            scenario_name: "multi".to_owned(),
+            mission: "sitl".to_owned(),
+            profile: "waypoints".to_owned(),
+            agent_id: "supervisor".to_owned(),
+            connection_string: None,
+            mode: SitlEventLogMode::ConnectionExecute,
+        });
+        recorder.push_multi_agent_run_started(2, "multi");
+        recorder.push_multi_agent_agent_started("agent-0", "udp:127.0.0.1:14550", 1, 1);
+        recorder.push_multi_agent_agent_finished("agent-0", "completed", 2);
+        recorder.push_multi_agent_run_finished("completed");
+        let log = recorder.into_log();
+
+        let json = serde_json::to_string(&log).unwrap();
+        assert!(json.contains(r#""type":"multi_agent_run_started""#));
+        assert!(json.contains(r#""type":"multi_agent_agent_started""#));
+        assert!(json.contains(r#""type":"multi_agent_agent_finished""#));
+        let restored: SitlEventLog = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored, log);
+
+        let summary = summarize_sitl_event_log(&restored);
+        assert_eq!(summary.multi_agent_run_started, 1);
+        assert_eq!(summary.multi_agent_agent_started, 1);
+        assert_eq!(summary.multi_agent_agent_finished, 1);
+        assert_eq!(summary.multi_agent_run_finished, 1);
+        assert_eq!(summary.multi_agent_agent_count, Some(2));
+        assert_eq!(summary.final_status.as_deref(), Some("completed"));
+    }
+
+    #[test]
     fn formatted_summary_is_compact_and_contains_counts() {
         let summary = summarize_sitl_event_log(&sample_log());
         let text = format_sitl_summary(&summary);
@@ -712,6 +851,7 @@ mod tests {
         assert!(text.contains("requested=2"));
         assert!(text.contains("waypoint_reached=1"));
         assert!(text.contains("Reallocation: agent_lost=0"));
+        assert!(text.contains("agents_started=0"));
         assert!(text.contains("final_status=completed"));
     }
 }

@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 use std::path::Path;
+#[cfg(any(feature = "mavlink-transport", test))]
+use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
 
@@ -8,13 +10,23 @@ use swarm_comms::{MockMavlinkTransport, RawMessage, Waypoint};
 use swarm_runtime::{AgentNode, Coordinator, RuntimeMessage};
 use swarm_types::{AgentId, TaskId, TaskStatus};
 
+#[cfg(feature = "mavlink-transport")]
+use crate::sitl_connection::{
+    default_takeoff_altitude, task_ids_by_seq_from_items, waypoints_from_sitl_items,
+};
+use crate::sitl_connection::{SitlConnectionLifecycle, SitlSafetyGate};
 use crate::sitl_multi_agent::{
     MultiAgentLifecycle, MultiAgentSitlManifest, MultiAgentSitlManifestAgent,
 };
 use crate::sitl_observability::{
     write_sitl_event_log, SitlEventLogMetadata, SitlEventLogMode, SitlEventRecorder,
 };
-use crate::sitl_plan::{first_sitl_entry, SitlError, SitlWaypointItem};
+use crate::sitl_plan::{
+    classify_connection_string, first_sitl_entry, SitlConnectionClass, SitlError, SitlWaypointItem,
+};
+use crate::sitl_report::SitlMultiAgentRunReport;
+#[cfg(any(feature = "mavlink-transport", test))]
+use crate::sitl_report::{write_sitl_multi_agent_run_report, SitlMultiAgentAgentReport};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SupervisorMockConfig {
@@ -24,6 +36,18 @@ pub struct SupervisorMockConfig {
     pub fail_after_ticks: u64,
     pub heartbeat_timeout_ticks: Option<u64>,
     pub max_ticks: Option<u64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SupervisorLiveConfig {
+    pub scenario_path: String,
+    pub config_path: String,
+    pub safety_config_path: Option<String>,
+    pub replay_log: Option<String>,
+    pub run_report: Option<String>,
+    pub lifecycle: SitlConnectionLifecycle,
+    pub allow_hardware_candidate: bool,
+    pub run_id: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -82,6 +106,137 @@ pub struct AgentStep {
 pub struct AgentProgress {
     pub agent_id: String,
     pub heartbeat_seen: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LiveAgentRun {
+    pub agent_id: String,
+    pub connection_string: String,
+    pub system_id: u8,
+    pub component_id: u8,
+    pub lifecycle: MultiAgentLifecycle,
+    pub mission_item_count: usize,
+    pub completed_task_count: usize,
+    pub final_status: String,
+    pub error: Option<String>,
+}
+
+impl LiveAgentRun {
+    #[cfg(any(feature = "mavlink-transport", test))]
+    fn report(&self) -> SitlMultiAgentAgentReport {
+        SitlMultiAgentAgentReport {
+            agent_id: self.agent_id.clone(),
+            connection_string: self.connection_string.clone(),
+            system_id: self.system_id,
+            component_id: self.component_id,
+            lifecycle: match self.lifecycle {
+                MultiAgentLifecycle::UploadOnly => "upload_only",
+                MultiAgentLifecycle::Execute => "execute",
+            }
+            .to_owned(),
+            mission_item_count: self.mission_item_count,
+            completed_task_count: self.completed_task_count,
+            final_status: self.final_status.clone(),
+            error: self.error.clone(),
+        }
+    }
+}
+
+pub trait LiveAgentController {
+    fn agent_id(&self) -> &str;
+    fn start_delay_ms(&self) -> u64;
+    fn run(&mut self) -> Result<LiveAgentRun, SitlError>;
+}
+
+#[cfg(feature = "mavlink-transport")]
+pub struct Px4AgentController {
+    agent: MultiAgentSitlManifestAgent,
+    lifecycle: SitlConnectionLifecycle,
+}
+
+#[cfg(feature = "mavlink-transport")]
+impl Px4AgentController {
+    pub fn new(agent: MultiAgentSitlManifestAgent, lifecycle: SitlConnectionLifecycle) -> Self {
+        Self { agent, lifecycle }
+    }
+
+    fn failed_run(&self, error: impl Into<String>, completed_task_count: usize) -> LiveAgentRun {
+        LiveAgentRun {
+            agent_id: self.agent.agent_id.clone(),
+            connection_string: self.agent.connection_string.clone(),
+            system_id: self.agent.system_id,
+            component_id: self.agent.component_id,
+            lifecycle: self.agent.lifecycle,
+            mission_item_count: self.agent.waypoint_count,
+            completed_task_count,
+            final_status: "failed".to_owned(),
+            error: Some(error.into()),
+        }
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
+impl LiveAgentController for Px4AgentController {
+    fn agent_id(&self) -> &str {
+        &self.agent.agent_id
+    }
+
+    fn start_delay_ms(&self) -> u64 {
+        self.agent.start_delay_ms
+    }
+
+    fn run(&mut self) -> Result<LiveAgentRun, SitlError> {
+        let waypoints = waypoints_from_sitl_items(&self.agent.waypoints);
+        let mut transport = match swarm_comms::MavlinkTransport::new(
+            &self.agent.connection_string,
+            AgentId::from(self.agent.agent_id.clone()),
+        ) {
+            Ok(transport) => transport,
+            Err(error) => return Ok(self.failed_run(error.to_string(), 0)),
+        };
+        let upload_options = swarm_comms::MissionUploadOptions {
+            target_system: self.agent.system_id,
+            target_component: self.agent.component_id,
+            timeout: self.lifecycle.timeout,
+            ..Default::default()
+        };
+        let lifecycle_options = swarm_comms::MissionLifecycleOptions {
+            target_system: self.agent.system_id,
+            target_component: self.agent.component_id,
+            timeout: self.lifecycle.timeout,
+            no_arm: self.lifecycle.no_arm,
+            abort_after: self.lifecycle.abort_after,
+            takeoff_altitude_m: default_takeoff_altitude(&self.agent.waypoints),
+        };
+
+        if let Err(error) = transport.upload_and_execute_mission(
+            &waypoints,
+            upload_options,
+            lifecycle_options.clone(),
+        ) {
+            return Ok(self.failed_run(error.to_string(), 0));
+        }
+
+        match track_live_agent_progress(
+            &mut transport,
+            &self.agent,
+            &self.lifecycle,
+            &lifecycle_options,
+        ) {
+            Ok(report) => Ok(LiveAgentRun {
+                agent_id: self.agent.agent_id.clone(),
+                connection_string: self.agent.connection_string.clone(),
+                system_id: self.agent.system_id,
+                component_id: self.agent.component_id,
+                lifecycle: self.agent.lifecycle,
+                mission_item_count: self.agent.waypoint_count,
+                completed_task_count: report.completed_count,
+                final_status: live_progress_status_name(report.final_status).to_owned(),
+                error: report.failure_reason,
+            }),
+            Err(error) => Ok(self.failed_run(error.to_string(), 0)),
+        }
+    }
 }
 
 pub trait AgentController {
@@ -190,6 +345,138 @@ pub fn run_mock_supervisor(
         mode_label: "Mock",
     };
     run_supervisor_with_controllers(entry, manifest, controllers, &loop_config)
+}
+
+pub fn run_live_supervisor(
+    suite: &swarm_sim::ScenarioSuite,
+    config: &SupervisorLiveConfig,
+    manifest: &MultiAgentSitlManifest,
+) -> Result<SitlMultiAgentRunReport, SitlError> {
+    let entry = first_sitl_entry(suite, &config.scenario_path)?;
+    validate_live_manifest(manifest, config)?;
+
+    let safety_gate = SitlSafetyGate::new(config.safety_config_path.clone());
+    for agent in &manifest.agents {
+        safety_gate.validate_agent_task_subset(entry, &agent.agent_id, &agent.task_ids)?;
+    }
+
+    #[cfg(not(feature = "mavlink-transport"))]
+    {
+        let _ = (entry, config, manifest);
+        Err(SitlError::FeatureMissing {
+            feature: "mavlink-transport",
+        })
+    }
+
+    #[cfg(feature = "mavlink-transport")]
+    {
+        let controllers: Vec<Px4AgentController> = manifest
+            .agents
+            .iter()
+            .cloned()
+            .map(|agent| Px4AgentController::new(agent, config.lifecycle.clone()))
+            .collect();
+        run_live_supervisor_with_controllers(entry, config, manifest, controllers)
+    }
+}
+
+#[cfg(any(feature = "mavlink-transport", test))]
+fn run_live_supervisor_with_controllers<C: LiveAgentController>(
+    entry: &swarm_sim::ScenarioSuiteEntry,
+    config: &SupervisorLiveConfig,
+    manifest: &MultiAgentSitlManifest,
+    mut controllers: Vec<C>,
+) -> Result<SitlMultiAgentRunReport, SitlError> {
+    validate_live_controller_set(manifest, &controllers)?;
+    let run_id = config
+        .run_id
+        .clone()
+        .unwrap_or_else(|| format!("sitl-supervisor-{}", manifest.scenario_name));
+    let mut recorder = SitlEventRecorder::new(SitlEventLogMetadata {
+        run_id: run_id.clone(),
+        scenario_path: manifest.scenario_path.clone(),
+        scenario_name: manifest.scenario_name.clone(),
+        mission: manifest.mission.clone(),
+        profile: manifest.profile.clone(),
+        agent_id: "supervisor".to_owned(),
+        connection_string: None,
+        mode: SitlEventLogMode::ConnectionExecute,
+    });
+    recorder.push_multi_agent_run_started(manifest.agents_count, manifest.scenario_name.clone());
+
+    eprintln!(
+        "Multi-Agent SITL Execute: agents={} scenario={} config={}",
+        manifest.agents_count, manifest.scenario_name, config.config_path
+    );
+
+    let mut runs = Vec::with_capacity(manifest.agents.len());
+    for agent in &manifest.agents {
+        let controller = live_controller_for_agent_mut(&mut controllers, &agent.agent_id)?;
+        let start_delay_ms = controller.start_delay_ms();
+        if start_delay_ms > 0 {
+            thread::sleep(Duration::from_millis(start_delay_ms));
+        }
+        recorder.push_mission_count_sent(agent.waypoint_count);
+        for waypoint in &agent.waypoints {
+            recorder.push_mission_item_sent(waypoint.seq, Some(waypoint.task_id.clone()));
+        }
+        eprintln!(
+            "SITL Supervisor execute: agent={} system_id={} component_id={} connection={} waypoints={}",
+            agent.agent_id,
+            agent.system_id,
+            agent.component_id,
+            agent.connection_string,
+            agent.waypoint_count
+        );
+        recorder.push_multi_agent_agent_started(
+            agent.agent_id.clone(),
+            agent.connection_string.clone(),
+            agent.system_id,
+            agent.component_id,
+        );
+
+        let run = controller.run()?;
+        record_live_agent_run(&mut recorder, agent, &run);
+        recorder.push_multi_agent_agent_finished(
+            run.agent_id.clone(),
+            run.final_status.clone(),
+            run.completed_task_count,
+        );
+        eprintln!(
+            "SITL Supervisor execute result: agent={} status={} completed_tasks={}/{}",
+            run.agent_id, run.final_status, run.completed_task_count, run.mission_item_count
+        );
+        if let Some(error) = &run.error {
+            eprintln!(
+                "SITL Supervisor execute error: agent={} error={error}",
+                run.agent_id
+            );
+        }
+        runs.push(run);
+    }
+
+    let overall_status = live_overall_status(&runs);
+    recorder.push_multi_agent_run_finished(overall_status);
+    recorder.push_run_completed(overall_status);
+
+    let report = live_run_report(entry, config, manifest, run_id, overall_status, &runs);
+    if let Some(path) = &config.replay_log {
+        write_sitl_event_log(path, recorder.log()).map_err(|error| SitlError::ReplayLogWrite {
+            path: Path::new(path).to_path_buf(),
+            message: error.to_string(),
+        })?;
+        eprintln!("SITL supervisor replay log written: {path}");
+    }
+    if let Some(path) = &config.run_report {
+        write_sitl_multi_agent_run_report(path, &report).map_err(|error| {
+            SitlError::RunReportWrite {
+                path: Path::new(path).to_path_buf(),
+                message: error.to_string(),
+            }
+        })?;
+        eprintln!("SITL supervisor run report written: {path}");
+    }
+    Ok(report)
 }
 
 fn run_supervisor_with_controllers<C: AgentController>(
@@ -462,6 +749,149 @@ fn validate_controller_set<C: AgentController>(
     Ok(())
 }
 
+#[cfg(any(feature = "mavlink-transport", test))]
+fn validate_live_controller_set<C: LiveAgentController>(
+    manifest: &MultiAgentSitlManifest,
+    controllers: &[C],
+) -> Result<(), SitlError> {
+    let expected: HashSet<&str> = manifest
+        .agents
+        .iter()
+        .map(|agent| agent.agent_id.as_str())
+        .collect();
+    let mut seen = HashSet::new();
+
+    for controller in controllers {
+        let agent_id = controller.agent_id();
+        if !expected.contains(agent_id) {
+            return Err(SitlError::MultiAgentConfigInvalid {
+                message: format!("controller '{agent_id}' is not present in manifest"),
+            });
+        }
+        if !seen.insert(agent_id.to_owned()) {
+            return Err(SitlError::MultiAgentConfigInvalid {
+                message: format!("duplicate controller for manifest agent '{agent_id}'"),
+            });
+        }
+    }
+
+    for agent_id in expected {
+        if !seen.contains(agent_id) {
+            return Err(SitlError::MultiAgentConfigInvalid {
+                message: format!("missing controller for manifest agent '{agent_id}'"),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn validate_live_manifest(
+    manifest: &MultiAgentSitlManifest,
+    config: &SupervisorLiveConfig,
+) -> Result<(), SitlError> {
+    for agent in &manifest.agents {
+        if agent.lifecycle != MultiAgentLifecycle::Execute {
+            return Err(SitlError::MultiAgentConfigInvalid {
+                message: format!(
+                    "live supervisor execute requires lifecycle=execute for agent '{}'",
+                    agent.agent_id
+                ),
+            });
+        }
+        let class = classify_connection_string(&agent.connection_string)?;
+        if class == SitlConnectionClass::HardwareCandidate && !config.allow_hardware_candidate {
+            return Err(SitlError::HardwareCandidateRequiresExplicitAllow {
+                addr: agent.connection_string.clone(),
+                class: class.name(),
+            });
+        }
+    }
+    Ok(())
+}
+
+#[cfg(any(feature = "mavlink-transport", test))]
+fn live_controller_for_agent_mut<'a, C: LiveAgentController>(
+    controllers: &'a mut [C],
+    agent_id: &str,
+) -> Result<&'a mut C, SitlError> {
+    controllers
+        .iter_mut()
+        .find(|controller| controller.agent_id() == agent_id)
+        .ok_or_else(|| SitlError::MultiAgentConfigInvalid {
+            message: format!("missing controller for manifest agent '{agent_id}'"),
+        })
+}
+
+#[cfg(any(feature = "mavlink-transport", test))]
+fn record_live_agent_run(
+    recorder: &mut SitlEventRecorder,
+    agent: &MultiAgentSitlManifestAgent,
+    run: &LiveAgentRun,
+) {
+    let completed_count = run.completed_task_count.min(agent.waypoints.len());
+    for waypoint in agent.waypoints.iter().take(completed_count) {
+        recorder.push_waypoint_reached(waypoint.seq, Some(waypoint.task_id.clone()));
+        recorder.push_task_completed(waypoint.seq, waypoint.task_id.clone());
+    }
+    if run.final_status != "completed" {
+        recorder.push_failure(
+            run.final_status.clone(),
+            run.error
+                .clone()
+                .unwrap_or_else(|| "agent did not complete mission".to_owned()),
+        );
+    }
+}
+
+#[cfg(any(feature = "mavlink-transport", test))]
+fn live_overall_status(runs: &[LiveAgentRun]) -> &'static str {
+    if runs.iter().all(|run| run.final_status == "completed") {
+        "completed"
+    } else if runs.iter().any(|run| run.completed_task_count > 0) {
+        "partial_failed"
+    } else {
+        "failed"
+    }
+}
+
+#[cfg(any(feature = "mavlink-transport", test))]
+fn live_run_report(
+    entry: &swarm_sim::ScenarioSuiteEntry,
+    config: &SupervisorLiveConfig,
+    manifest: &MultiAgentSitlManifest,
+    run_id: String,
+    overall_status: &str,
+    runs: &[LiveAgentRun],
+) -> SitlMultiAgentRunReport {
+    SitlMultiAgentRunReport {
+        schema_version: "sitl_multi_agent_run_report.v1".to_owned(),
+        run_id,
+        scenario_path: manifest.scenario_path.clone(),
+        scenario_name: entry.scenario.name.clone(),
+        config_path: PathBuf::from(&config.config_path),
+        mission: entry.mission.clone(),
+        profile: entry.profile.clone(),
+        mode: "connection_execute".to_owned(),
+        agents: runs.iter().map(LiveAgentRun::report).collect(),
+        total_completed_tasks: runs.iter().map(|run| run.completed_task_count).sum(),
+        failed_agents: runs
+            .iter()
+            .filter(|run| run.final_status != "completed")
+            .count(),
+        aborted_agents: runs
+            .iter()
+            .filter(|run| run.final_status == "aborted")
+            .count(),
+        overall_status: overall_status.to_owned(),
+        event_log_path: config.replay_log.as_ref().map(PathBuf::from),
+        known_limitations: vec![
+            "local PX4/SIH endpoints only unless --allow-hardware-candidate is explicit".to_owned(),
+            "agents are orchestrated sequentially in one supervisor process".to_owned(),
+            "live failed-agent reallocation remains covered by mock supervisor workflow".to_owned(),
+        ],
+    }
+}
+
 fn poll_active_agent_ids<C: AgentController>(
     controllers: &mut [C],
     tick: u64,
@@ -607,6 +1037,143 @@ fn manifest_tasks_completed(
         .all(|task| task.status == TaskStatus::Completed)
 }
 
+#[cfg(feature = "mavlink-transport")]
+fn track_live_agent_progress(
+    transport: &mut swarm_comms::MavlinkTransport,
+    agent: &MultiAgentSitlManifestAgent,
+    lifecycle: &SitlConnectionLifecycle,
+    lifecycle_options: &swarm_comms::MissionLifecycleOptions,
+) -> Result<crate::sitl_progress::SitlMissionProgressReport, SitlError> {
+    let mut progress = crate::sitl_progress::SitlTaskProgress::from_waypoints(
+        task_ids_by_seq_from_items(&agent.waypoints),
+    )
+    .map_err(|error| SitlError::ConnectionFailed {
+        message: error.to_string(),
+    })?;
+    let started_at = std::time::Instant::now();
+    let mut last_heartbeat_at = Duration::ZERO;
+    let mut last_progress_at = Duration::ZERO;
+
+    loop {
+        let now = started_at.elapsed();
+        if now.saturating_sub(last_heartbeat_at) >= lifecycle.telemetry_timeout {
+            let report = progress
+                .apply_event(swarm_comms::MavlinkTelemetryEvent::Disconnected, now)
+                .map_err(|error| SitlError::ConnectionFailed {
+                    message: error.to_string(),
+                })?;
+            let crate::sitl_progress::SitlProgressUpdate::Failed(report) = report else {
+                unreachable!("disconnected telemetry event must fail live SITL progress");
+            };
+            let abort = transport.abort_mission(lifecycle_options);
+            return Ok(append_abort_to_report(report, abort));
+        }
+        if now.saturating_sub(last_progress_at) >= lifecycle.no_progress_timeout {
+            let report = progress.mark_no_progress_timeout(format!(
+                "no mission progress before {:?}",
+                lifecycle.no_progress_timeout
+            ));
+            let abort = transport.abort_mission(lifecycle_options);
+            return Ok(append_abort_to_report(report, abort));
+        }
+
+        let Some(event) =
+            transport
+                .poll_telemetry_event()
+                .map_err(|error| SitlError::ConnectionFailed {
+                    message: error.to_string(),
+                })?
+        else {
+            thread::sleep(Duration::from_millis(10));
+            continue;
+        };
+
+        let previous_seq = progress.current_seq();
+        let previous_completed_count = progress.completed_count();
+        if matches!(event, swarm_comms::MavlinkTelemetryEvent::Heartbeat) {
+            last_heartbeat_at = now;
+        }
+        let progress_update = progress.apply_event(event.clone(), now).map_err(|error| {
+            SitlError::ConnectionFailed {
+                message: error.to_string(),
+            }
+        })?;
+        if event_advances_progress(
+            &event,
+            previous_seq,
+            previous_completed_count,
+            &progress_update,
+        ) {
+            last_progress_at = now;
+        }
+
+        match progress_update {
+            crate::sitl_progress::SitlProgressUpdate::Completed(report) => return Ok(report),
+            crate::sitl_progress::SitlProgressUpdate::Failed(report) => {
+                let abort = transport.abort_mission(lifecycle_options);
+                return Ok(append_abort_to_report(report, abort));
+            }
+            crate::sitl_progress::SitlProgressUpdate::Heartbeat
+            | crate::sitl_progress::SitlProgressUpdate::Current { .. }
+            | crate::sitl_progress::SitlProgressUpdate::Reached { .. } => {}
+        }
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn event_advances_progress(
+    event: &swarm_comms::MavlinkTelemetryEvent,
+    previous_seq: Option<u16>,
+    previous_completed_count: usize,
+    update: &crate::sitl_progress::SitlProgressUpdate,
+) -> bool {
+    match event {
+        swarm_comms::MavlinkTelemetryEvent::MissionCurrent { seq } => previous_seq != Some(*seq),
+        swarm_comms::MavlinkTelemetryEvent::WaypointReached { .. } => match update {
+            crate::sitl_progress::SitlProgressUpdate::Reached {
+                completed_count, ..
+            }
+            | crate::sitl_progress::SitlProgressUpdate::Completed(
+                crate::sitl_progress::SitlMissionProgressReport {
+                    completed_count, ..
+                },
+            ) => *completed_count > previous_completed_count,
+            _ => false,
+        },
+        swarm_comms::MavlinkTelemetryEvent::MissionComplete => matches!(
+            update,
+            crate::sitl_progress::SitlProgressUpdate::Completed(_)
+        ),
+        swarm_comms::MavlinkTelemetryEvent::Heartbeat
+        | swarm_comms::MavlinkTelemetryEvent::MissionRejected { .. }
+        | swarm_comms::MavlinkTelemetryEvent::Disconnected => false,
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn append_abort_to_report(
+    mut report: crate::sitl_progress::SitlMissionProgressReport,
+    abort: swarm_comms::AbortCommandResult,
+) -> crate::sitl_progress::SitlMissionProgressReport {
+    let abort_message = format!("abort_result={abort:?}");
+    report.failure_reason = Some(match report.failure_reason.take() {
+        Some(reason) => format!("{reason}; {abort_message}"),
+        None => abort_message,
+    });
+    report
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn live_progress_status_name(status: crate::sitl_progress::SitlMissionFinalStatus) -> &'static str {
+    match status {
+        crate::sitl_progress::SitlMissionFinalStatus::Completed => "completed",
+        crate::sitl_progress::SitlMissionFinalStatus::Failed => "failed",
+        crate::sitl_progress::SitlMissionFinalStatus::Disconnected => "disconnected",
+        crate::sitl_progress::SitlMissionFinalStatus::Rejected => "rejected",
+        crate::sitl_progress::SitlMissionFinalStatus::TimedOutNoProgress => "timed_out_no_progress",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -721,6 +1288,35 @@ mod tests {
         .unwrap()
     }
 
+    fn fixture_execute_config() -> MultiAgentSitlConfig {
+        serde_json::from_str(
+            r#"{
+  "schema_version": "multi_sitl.v1",
+  "agents": [
+    {
+      "agent_id": "agent-0",
+      "system_id": 1,
+      "component_id": 1,
+      "connection_string": "udp:127.0.0.1:14550",
+      "start_delay_ms": 0,
+      "lifecycle": "execute",
+      "task_ids": ["wp-0"]
+    },
+    {
+      "agent_id": "agent-1",
+      "system_id": 2,
+      "component_id": 1,
+      "connection_string": "udp:127.0.0.1:14560",
+      "start_delay_ms": 0,
+      "lifecycle": "execute",
+      "task_ids": ["wp-1"]
+    }
+  ]
+}"#,
+        )
+        .unwrap()
+    }
+
     fn fixture_manifest() -> MultiAgentSitlManifest {
         let suite = fixture_suite();
         let config = fixture_config();
@@ -731,6 +1327,31 @@ mod tests {
             &config,
         )
         .unwrap()
+    }
+
+    fn fixture_execute_manifest() -> MultiAgentSitlManifest {
+        let suite = fixture_suite();
+        let config = fixture_execute_config();
+        build_multi_agent_manifest(
+            &suite,
+            "inline-scenario.json",
+            "inline-config.json",
+            &config,
+        )
+        .unwrap()
+    }
+
+    fn fixture_live_config() -> SupervisorLiveConfig {
+        SupervisorLiveConfig {
+            scenario_path: "inline-scenario.json".to_owned(),
+            config_path: "inline-config.json".to_owned(),
+            safety_config_path: None,
+            replay_log: None,
+            run_report: None,
+            lifecycle: SitlConnectionLifecycle::default(),
+            allow_hardware_candidate: false,
+            run_id: Some("unit-live-run".to_owned()),
+        }
     }
 
     struct FakeAgentController {
@@ -830,6 +1451,61 @@ mod tests {
                 agent_id: self.agent_id.clone(),
                 waypoint_count: self.waypoint_count,
             })
+        }
+    }
+
+    struct FakeLiveAgentController {
+        run: LiveAgentRun,
+        start_delay_ms: u64,
+    }
+
+    impl FakeLiveAgentController {
+        fn completed(agent: &MultiAgentSitlManifestAgent) -> Self {
+            Self {
+                run: LiveAgentRun {
+                    agent_id: agent.agent_id.clone(),
+                    connection_string: agent.connection_string.clone(),
+                    system_id: agent.system_id,
+                    component_id: agent.component_id,
+                    lifecycle: agent.lifecycle,
+                    mission_item_count: agent.waypoint_count,
+                    completed_task_count: agent.waypoint_count,
+                    final_status: "completed".to_owned(),
+                    error: None,
+                },
+                start_delay_ms: agent.start_delay_ms,
+            }
+        }
+
+        fn failed(agent: &MultiAgentSitlManifestAgent, completed_task_count: usize) -> Self {
+            Self {
+                run: LiveAgentRun {
+                    agent_id: agent.agent_id.clone(),
+                    connection_string: agent.connection_string.clone(),
+                    system_id: agent.system_id,
+                    component_id: agent.component_id,
+                    lifecycle: agent.lifecycle,
+                    mission_item_count: agent.waypoint_count,
+                    completed_task_count,
+                    final_status: "failed".to_owned(),
+                    error: Some("fake live failure".to_owned()),
+                },
+                start_delay_ms: agent.start_delay_ms,
+            }
+        }
+    }
+
+    impl LiveAgentController for FakeLiveAgentController {
+        fn agent_id(&self) -> &str {
+            &self.run.agent_id
+        }
+
+        fn start_delay_ms(&self) -> u64 {
+            self.start_delay_ms
+        }
+
+        fn run(&mut self) -> Result<LiveAgentRun, SitlError> {
+            Ok(self.run.clone())
         }
     }
 
@@ -991,5 +1667,89 @@ mod tests {
 
         let error = run_mock_supervisor(&suite, &config, &manifest).unwrap_err();
         assert!(error.to_string().contains("--fail-agent 'missing-agent'"));
+    }
+
+    #[test]
+    fn live_supervisor_rejects_upload_only_agent() {
+        let manifest = fixture_manifest();
+        let config = fixture_live_config();
+
+        let error = validate_live_manifest(&manifest, &config).unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("live supervisor execute requires lifecycle=execute"));
+    }
+
+    #[test]
+    fn live_supervisor_rejects_hardware_candidate_without_explicit_allow() {
+        let mut manifest = fixture_execute_manifest();
+        manifest.agents[0].connection_string = "tcpout:192.168.1.10:5760".to_owned();
+        let config = fixture_live_config();
+
+        let error = validate_live_manifest(&manifest, &config).unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("requires --allow-hardware-candidate"));
+    }
+
+    #[test]
+    fn fake_live_supervisor_writes_report_and_replay_log() {
+        let suite = fixture_suite();
+        let entry = first_sitl_entry(&suite, "inline-scenario.json").unwrap();
+        let manifest = fixture_execute_manifest();
+        let dir = tempfile::tempdir().unwrap();
+        let replay_log = dir.path().join("multi.sitl-log.json");
+        let run_report = dir.path().join("multi.run-report.json");
+        let mut config = fixture_live_config();
+        config.replay_log = Some(replay_log.to_string_lossy().into_owned());
+        config.run_report = Some(run_report.to_string_lossy().into_owned());
+        let controllers = manifest
+            .agents
+            .iter()
+            .map(FakeLiveAgentController::completed)
+            .collect();
+
+        let report =
+            run_live_supervisor_with_controllers(entry, &config, &manifest, controllers).unwrap();
+
+        assert_eq!(report.overall_status, "completed");
+        assert_eq!(report.total_completed_tasks, 2);
+        assert_eq!(report.failed_agents, 0);
+        assert_eq!(report.agents.len(), 2);
+
+        let log = crate::sitl_observability::read_sitl_event_log(&replay_log).unwrap();
+        let summary = crate::sitl_observability::summarize_sitl_event_log(&log);
+        assert_eq!(summary.multi_agent_run_started, 1);
+        assert_eq!(summary.multi_agent_run_finished, 1);
+        assert_eq!(summary.multi_agent_agent_started, 2);
+        assert_eq!(summary.multi_agent_agent_finished, 2);
+        assert_eq!(summary.multi_agent_agent_count, Some(2));
+        assert_eq!(summary.final_status.as_deref(), Some("completed"));
+
+        let report_json: SitlMultiAgentRunReport =
+            serde_json::from_str(&std::fs::read_to_string(run_report).unwrap()).unwrap();
+        assert_eq!(report_json, report);
+    }
+
+    #[test]
+    fn fake_live_supervisor_reports_partial_failure() {
+        let suite = fixture_suite();
+        let entry = first_sitl_entry(&suite, "inline-scenario.json").unwrap();
+        let manifest = fixture_execute_manifest();
+        let config = fixture_live_config();
+        let controllers = vec![
+            FakeLiveAgentController::completed(&manifest.agents[0]),
+            FakeLiveAgentController::failed(&manifest.agents[1], 0),
+        ];
+
+        let report =
+            run_live_supervisor_with_controllers(entry, &config, &manifest, controllers).unwrap();
+
+        assert_eq!(report.overall_status, "partial_failed");
+        assert_eq!(report.total_completed_tasks, 1);
+        assert_eq!(report.failed_agents, 1);
+        assert_eq!(report.agents[1].error.as_deref(), Some("fake live failure"));
     }
 }

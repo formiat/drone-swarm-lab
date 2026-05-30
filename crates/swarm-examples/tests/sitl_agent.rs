@@ -211,6 +211,43 @@ fn write_multi_agent_config_with_connections(
     file
 }
 
+fn write_multi_agent_execute_config_with_connections(
+    agent_0_connection: &str,
+    agent_1_connection: &str,
+) -> tempfile::NamedTempFile {
+    let file = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(
+        file.path(),
+        format!(
+            r#"{{
+  "schema_version": "multi_sitl.v1",
+  "agents": [
+    {{
+      "agent_id": "agent-0",
+      "system_id": 1,
+      "component_id": 1,
+      "connection_string": "{agent_0_connection}",
+      "start_delay_ms": 0,
+      "lifecycle": "execute",
+      "task_ids": ["wp-0"]
+    }},
+    {{
+      "agent_id": "agent-1",
+      "system_id": 2,
+      "component_id": 1,
+      "connection_string": "{agent_1_connection}",
+      "start_delay_ms": 0,
+      "lifecycle": "execute",
+      "task_ids": ["wp-1"]
+    }}
+  ]
+}}"#
+        ),
+    )
+    .unwrap();
+    file
+}
+
 fn write_safety_config(json: &str) -> tempfile::NamedTempFile {
     let file = tempfile::NamedTempFile::new().unwrap();
     std::fs::write(file.path(), json).unwrap();
@@ -776,6 +813,189 @@ fn multi_agent_sitl_supervisor_rejects_missing_and_invalid_cli_args_test() {
     for (args, expected) in cases {
         assert_sitl_supervisor_cli_error(&args, expected);
     }
+}
+
+#[test]
+fn multi_agent_sitl_supervisor_connection_rejects_invalid_cli_combinations_test() {
+    let scenario = write_multi_agent_sitl_scenario();
+    let config = write_multi_agent_config(false);
+    let scenario = scenario.path().to_str().unwrap().to_owned();
+    let config = config.path().to_str().unwrap().to_owned();
+
+    let cases: Vec<(Vec<&str>, &str)> = vec![
+        (
+            vec!["--connection", "--scenario", &scenario, "--config", &config],
+            "lifecycle option --connection requires --execute",
+        ),
+        (
+            vec![
+                "--dry-run",
+                "--execute",
+                "--scenario",
+                &scenario,
+                "--config",
+                &config,
+            ],
+            "lifecycle option --execute requires --connection",
+        ),
+        (
+            vec![
+                "--dry-run",
+                "--scenario",
+                &scenario,
+                "--config",
+                &config,
+                "--run-report",
+                "report.json",
+            ],
+            "run report option --run-report requires --connection",
+        ),
+        (
+            vec![
+                "--connection",
+                "--execute",
+                "--scenario",
+                &scenario,
+                "--config",
+                &config,
+                "--safety-config",
+            ],
+            "missing required argument: --safety-config",
+        ),
+        (
+            vec![
+                "--connection",
+                "--execute",
+                "--scenario",
+                &scenario,
+                "--config",
+                &config,
+                "--timeout",
+                "0",
+            ],
+            "invalid duration for --timeout",
+        ),
+        (
+            vec![
+                "--connection",
+                "--execute",
+                "--scenario",
+                &scenario,
+                "--config",
+                &config,
+                "--fail-agent",
+                "agent-0",
+            ],
+            "--fail-agent requires --mock",
+        ),
+    ];
+
+    for (args, expected) in cases {
+        assert_sitl_supervisor_cli_error(&args, expected);
+    }
+}
+
+#[test]
+fn multi_agent_sitl_supervisor_connection_rejects_upload_only_manifest_test() {
+    let scenario = write_multi_agent_sitl_scenario();
+    let config = write_multi_agent_config(false);
+
+    let output = run_sitl_supervisor(&[
+        "--connection",
+        "--execute",
+        "--scenario",
+        scenario.path().to_str().unwrap(),
+        "--config",
+        config.path().to_str().unwrap(),
+    ]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("live supervisor execute requires lifecycle=execute"));
+    assert!(!stderr.contains("feature missing"));
+}
+
+#[test]
+fn multi_agent_sitl_supervisor_connection_rejects_hardware_candidate_before_upload_test() {
+    let scenario = write_multi_agent_sitl_scenario();
+    let config = write_multi_agent_execute_config_with_connections(
+        "tcpout:192.168.1.10:5760",
+        "udp:127.0.0.1:14560",
+    );
+
+    let output = run_sitl_supervisor(&[
+        "--connection",
+        "--execute",
+        "--scenario",
+        scenario.path().to_str().unwrap(),
+        "--config",
+        config.path().to_str().unwrap(),
+    ]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("requires --allow-hardware-candidate"));
+    assert!(!stderr.contains("feature missing"));
+}
+
+#[test]
+fn multi_agent_sitl_supervisor_connection_rejects_unsafe_agent_subset_before_upload_test() {
+    let scenario = write_multi_agent_sitl_scenario();
+    let config = write_multi_agent_execute_config_with_connections(
+        "udp:127.0.0.1:14550",
+        "udp:127.0.0.1:14560",
+    );
+    let safety = write_safety_config(
+        r#"{
+  "geofence": { "min_x": 0.0, "max_x": 20.0, "min_y": 0.0, "max_y": 25.0 }
+}"#,
+    );
+
+    let output = run_sitl_supervisor(&[
+        "--connection",
+        "--execute",
+        "--scenario",
+        scenario.path().to_str().unwrap(),
+        "--config",
+        config.path().to_str().unwrap(),
+        "--safety-config",
+        safety.path().to_str().unwrap(),
+    ]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("safety validation failed"));
+    assert!(stderr.contains("rule_id=outside_geofence"));
+    assert!(stderr.contains("task_id=wp-1"));
+    assert!(!stderr.contains("feature missing"));
+}
+
+#[test]
+#[cfg(not(feature = "mavlink-transport"))]
+fn multi_agent_sitl_supervisor_connection_validates_before_feature_error_test() {
+    let scenario = write_multi_agent_sitl_scenario();
+    let config = write_multi_agent_execute_config_with_connections(
+        "udp:127.0.0.1:14550",
+        "udp:127.0.0.1:14560",
+    );
+    let safety = write_safety_config("{}");
+
+    let output = run_sitl_supervisor(&[
+        "--connection",
+        "--execute",
+        "--scenario",
+        scenario.path().to_str().unwrap(),
+        "--config",
+        config.path().to_str().unwrap(),
+        "--safety-config",
+        safety.path().to_str().unwrap(),
+    ]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("feature missing"));
+    assert!(stderr.contains("mavlink-transport"));
+    assert!(!stderr.contains("safety validation failed"));
 }
 
 #[test]

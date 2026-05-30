@@ -18,7 +18,8 @@ and serial connections as hardware candidates and requires
 | Dry-run SITL | Portable | Scenario loading, waypoint extraction, coordinate-frame reporting, and upload-plan formatting are deterministic. |
 | Portable regression | Portable | `portable_sitl_regression_smoke`, `sitl_docs`, safety validation, mock replay, and multi-agent manifest checks run without external PX4. |
 | Single-agent PX4 SITL | Experimental | Feature-gated mission upload, optional arm/takeoff/start, telemetry progress, run report, replay log plumbing, and public `scenarios/sitl.px4-golden.json` exist for local PX4 SITL. Live simulator verification remains manual/local. |
-| Multi-agent SITL foundation | Experimental foundation | `multi_sitl.v1` config, public `scenarios/sitl.multi-agent.json` / `scenarios/sitl.multi-agent.config.json`, per-agent task subsets, dry-run/mock manifest, mock supervisor reallocation, MAVLink system/component mapping, duplicate ownership rejection, and local two-instance PX4 SIH upload-only mission acceptance are covered. Live execute orchestration and PX4 failure/reallocation are not. |
+| Multi-agent SITL foundation | Experimental foundation | `multi_sitl.v1` config, public `scenarios/sitl.multi-agent.json` / `scenarios/sitl.multi-agent.config.json`, per-agent task subsets, dry-run/mock manifest, mock supervisor reallocation, MAVLink system/component mapping, duplicate ownership rejection, and local two-instance PX4 SIH upload-only mission acceptance are covered. |
+| Live multi-agent PX4/SIH execute | Experimental local SITL | M58 adds `sitl_supervisor --connection --execute`, `scenarios/sitl.multi-agent.execute.config.json`, per-agent safety/hardware gates, sequential local endpoint execution, common event log, and structured multi-agent report. This is not hardware readiness and does not include live PX4 failed-agent reallocation. |
 | Supervisor Controller Boundary | Portable internal boundary | M57 extracts mock `sitl_supervisor` orchestration behind an internal `AgentController` / `MockAgentController` boundary with a shared loop, fake-controller tests, and assertable `SupervisorMetrics`. This is a code-structure and testability milestone, not hardware readiness. |
 
 ## Not Verified On Hardware
@@ -31,7 +32,7 @@ and serial connections as hardware candidates and requires
 - Pilot handoff, operator workload, crew coordination, or emergency procedure reliability.
 - Certified geofence enforcement, flight termination, or remote ID compliance.
 - Hardware-in-the-loop CI.
-- Multi-agent real PX4 flight orchestration.
+- Multi-agent real PX4 flight orchestration on hardware.
 - Any production safety guarantee.
 
 ## Connection Classes
