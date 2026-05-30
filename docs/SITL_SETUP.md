@@ -13,7 +13,7 @@ hardware.
 | Multi-agent dry-run/mock | `sitl_supervisor --dry-run/--mock` or `sitl_agent --multi-agent-config` | None | Split explicit waypoint subsets, run mock supervisor orchestration, and produce a manifest/replay log | Stable M52 foundation |
 | PX4 SITL upload-only | `--connection <addr> [--upload-only]` | PX4 SITL + `mavlink-transport` feature | Upload waypoint mission to PX4 SITL without starting flight | Experimental |
 | PX4 SITL execute | `--connection <addr> --execute` | PX4 SITL + `mavlink-transport` feature | Upload, arm/takeoff/start mission, map telemetry to task progress, write optional final report, and abort on bounded failures | Experimental single-agent golden path |
-| Multi-agent PX4/SIH execute | `sitl_supervisor --connection --execute` | Local PX4/SIH endpoints + `mavlink-transport` feature | Validate all configured agents, sequentially execute local PX4/SIH missions, optionally replace a survivor mission after failed-agent reallocation, and write common event/report artifacts | Experimental M58/M59 local workflow |
+| Multi-agent PX4/SIH execute | `sitl_supervisor --connection --execute` | Local PX4/SIH endpoints + `mavlink-transport` feature | Validate all configured agents, sequentially execute local PX4/SIH missions, optionally replace a pending survivor mission after terminal failed-agent reallocation, and write common event/report artifacts | Experimental M58 workflow with partial M59 foundation |
 
 ## CI / Manual Boundary
 
@@ -67,10 +67,11 @@ the runtime/mock supervisor contract, not live multi-agent PX4 failure handling.
 M52 multi-agent manifests are also part of this portable boundary. They prove
 that ownership and per-agent waypoint subsets are explicit and deterministic;
 the optional PX4 SIH check proves upload-only mission acceptance for two local
-instances. M58 adds an experimental local execute supervisor, and M59 adds
-explicit `--reupload-on-failure` mission replacement after a failed live agent.
-This remains a manual/operator-controlled workflow and does not prove Gazebo,
-HIL, hardware, or production-grade live PX4 failover.
+instances. M58 adds an experimental local execute supervisor, and M59 adds a
+partial `--reupload-on-failure` foundation: terminal failed-agent reallocation
+can update a pending survivor before it starts. This is not a stepwise live
+loop and does not prove Gazebo, HIL, hardware, or production-grade live PX4
+failover.
 
 Out of scope for automated CI in this repository:
 
@@ -307,10 +308,10 @@ gate.
 The structured report contains run/scenario metadata, one row per agent,
 connection/system/component ids, mission item counts, completed task counts,
 per-agent final status, total completed tasks, failed-agent count, and known
-limitations. M59 adds a `reallocation` section with lost-agent count, released
-tasks, reassigned tasks, recovered tasks, reallocation latency ticks, survivor
-mission update count, and tasks completed after reallocation. The common event
-log adds `multi_agent_run_started`,
+limitations. M59 adds a partial `reallocation` foundation section with
+lost-agent count, released tasks, reassigned tasks, recovered tasks,
+reallocation latency ticks, survivor mission update count, and tasks completed
+after reallocation. The common event log adds `multi_agent_run_started`,
 `multi_agent_run_finished`, and per-agent mission/progress/task variants such as
 `multi_agent_mission_item_sent` and `multi_agent_task_completed`; these variants
 include `agent_id` so repeated waypoint `seq` values remain unambiguous.
@@ -319,10 +320,12 @@ When `--reupload-on-failure` is enabled, the common log can also include
 `survivor_mission_update_started`, and
 `survivor_mission_update_completed`.
 
-M59's mission update policy is `mission_replacement`: the survivor receives a
-deterministic replacement mission containing its still-unfinished task subset
-followed by recovered tasks. This is intentionally not named supplementary
-upload because the implementation clears/replaces the survivor mission plan.
+M59's mission update policy is `mission_replacement`: a pending survivor
+receives a deterministic replacement mission containing its still-unfinished
+task subset followed by recovered tasks. This is intentionally not named
+supplementary upload because the current foundation clears/replaces the
+survivor mission plan before that survivor starts; it does not yet
+abort/clear/upload/execute an already-running survivor.
 
 Portable tests cover the controller/report boundary with fake live controllers,
 CLI validation order, safety-before-feature behavior, hardware-candidate
@@ -346,6 +349,8 @@ Known M58/M59 limits:
 - real PX4/SIH failed-agent reallocation still needs a captured manual artifact;
 - no concurrent multi-process supervisor yet; agents are executed sequentially
   from one supervisor process;
+- no stepwise live loop yet: loss during active execution and mission
+  replacement for an already-running survivor remain follow-up work;
 - no production-grade operator workflow or safety certification.
 
 Out of scope for M52/M58/M59:

@@ -913,10 +913,14 @@ fn record_reallocation_output(
         }
     }
     for recovered in recovered_by_agent.values_mut() {
-        recovered.sort();
-        recovered.dedup();
+        dedup_strings_preserve_order(recovered);
     }
     recovered_by_agent
+}
+
+fn dedup_strings_preserve_order(items: &mut Vec<String>) {
+    let mut seen = HashSet::new();
+    items.retain(|item| seen.insert(item.clone()));
 }
 
 #[cfg(any(feature = "mavlink-transport", test))]
@@ -928,7 +932,7 @@ fn mission_replacement_plans(
 ) -> Result<Vec<MissionReplacementPlan>, SitlError> {
     let completed = completed_live_task_ids(manifest, previous_runs, failed_run);
     let mut plans = Vec::new();
-    for (target_agent_id, mut recovered_task_ids) in recovered_by_agent {
+    for (target_agent_id, recovered_task_ids) in recovered_by_agent {
         if target_agent_id == failed_run.agent_id {
             continue;
         }
@@ -941,16 +945,18 @@ fn mission_replacement_plans(
                     "reallocation target '{target_agent_id}' is not present in manifest"
                 ),
             })?;
-        recovered_task_ids.sort();
-        recovered_task_ids.dedup();
+        let recovered_task_ids: HashSet<String> = recovered_task_ids.into_iter().collect();
 
         let mut task_ids = Vec::new();
         for task_id in &target_agent.task_ids {
             push_unique_replacement_task(&mut task_ids, task_id, &completed);
         }
-        for task_id in &recovered_task_ids {
-            push_unique_replacement_task(&mut task_ids, task_id, &completed);
-        }
+        push_recovered_tasks_in_manifest_order(
+            &mut task_ids,
+            manifest,
+            &recovered_task_ids,
+            &completed,
+        );
         if task_ids.is_empty() {
             continue;
         }
@@ -965,6 +971,24 @@ fn mission_replacement_plans(
     }
     plans.sort_by(|left, right| left.target_agent_id.cmp(&right.target_agent_id));
     Ok(plans)
+}
+
+#[cfg(any(feature = "mavlink-transport", test))]
+fn push_recovered_tasks_in_manifest_order(
+    task_ids: &mut Vec<String>,
+    manifest: &MultiAgentSitlManifest,
+    recovered_task_ids: &HashSet<String>,
+    completed: &HashSet<String>,
+) {
+    for waypoint in manifest
+        .agents
+        .iter()
+        .flat_map(|agent| agent.waypoints.iter())
+    {
+        if recovered_task_ids.contains(&waypoint.task_id) {
+            push_unique_replacement_task(task_ids, &waypoint.task_id, completed);
+        }
+    }
 }
 
 #[cfg(any(feature = "mavlink-transport", test))]
@@ -1734,6 +1758,139 @@ mod tests {
         .unwrap()
     }
 
+    fn fixture_nonlexical_suite() -> swarm_sim::ScenarioSuite {
+        serde_json::from_str(
+            r#"{
+  "schema_version": "0.1",
+  "name": "Supervisor Nonlexical Unit Fixture",
+  "description": "in-memory supervisor unit fixture with nonlexical task ids",
+  "scenarios": [
+    {
+      "mission": "sitl",
+      "profile": "unit",
+      "scenario": {
+        "name": "supervisor_nonlexical_unit",
+        "seed": 0,
+        "agents": [
+          {
+            "id": "agent-0",
+            "role": "scout",
+            "health": "alive",
+            "pose": { "x": 0.0, "y": 0.0 },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 1000.0,
+            "generation": 1,
+            "speed": 0.0,
+            "max_range": 1000.0,
+            "battery_drain_rate": 0.0
+          },
+          {
+            "id": "agent-1",
+            "role": "scout",
+            "health": "alive",
+            "pose": { "x": 1.0, "y": 1.0 },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 1000.0,
+            "generation": 1,
+            "speed": 0.0,
+            "max_range": 1000.0,
+            "battery_drain_rate": 0.0
+          }
+        ],
+        "tasks": [
+          {
+            "id": "wp-2",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": { "x": 10.0, "y": 20.0, "z": 3.5 },
+            "grid_cell": null
+          },
+          {
+            "id": "wp-10",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": { "x": 20.0, "y": 30.0, "z": 4.0 },
+            "grid_cell": null
+          },
+          {
+            "id": "wp-1",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": { "x": 30.0, "y": 40.0, "z": 4.5 },
+            "grid_cell": null
+          }
+        ],
+        "ground_nodes": [],
+        "base_station": null
+      },
+      "run_config": { "max_ticks": 10, "timeout_ticks": 1 }
+    }
+  ]
+}"#,
+        )
+        .unwrap()
+    }
+
+    fn fixture_nonlexical_execute_config() -> MultiAgentSitlConfig {
+        serde_json::from_str(
+            r#"{
+  "schema_version": "multi_sitl.v1",
+  "agents": [
+    {
+      "agent_id": "agent-0",
+      "system_id": 1,
+      "component_id": 1,
+      "connection_string": "udp:127.0.0.1:14550",
+      "start_delay_ms": 0,
+      "lifecycle": "execute",
+      "task_ids": ["wp-2", "wp-10"]
+    },
+    {
+      "agent_id": "agent-1",
+      "system_id": 2,
+      "component_id": 1,
+      "connection_string": "udp:127.0.0.1:14560",
+      "start_delay_ms": 0,
+      "lifecycle": "execute",
+      "task_ids": ["wp-1"]
+    }
+  ]
+}"#,
+        )
+        .unwrap()
+    }
+
+    fn fixture_nonlexical_execute_manifest() -> MultiAgentSitlManifest {
+        let suite = fixture_nonlexical_suite();
+        let config = fixture_nonlexical_execute_config();
+        build_multi_agent_manifest(
+            &suite,
+            "nonlexical-scenario.json",
+            "inline-config.json",
+            &config,
+        )
+        .unwrap()
+    }
+
     fn fixture_live_config() -> SupervisorLiveConfig {
         SupervisorLiveConfig {
             scenario_path: "inline-scenario.json".to_owned(),
@@ -2217,7 +2374,7 @@ mod tests {
     }
 
     #[test]
-    fn fake_live_supervisor_reallocates_failed_agent_to_survivor() {
+    fn fake_live_supervisor_reallocates_lost_before_start_to_pending_survivor() {
         let suite = fixture_suite();
         let entry = first_sitl_entry(&suite, "inline-scenario.json").unwrap();
         let manifest = fixture_execute_manifest();
@@ -2293,6 +2450,108 @@ mod tests {
     }
 
     #[test]
+    fn fake_live_supervisor_replacement_appends_recovered_tasks_in_manifest_order() {
+        let suite = fixture_nonlexical_suite();
+        let entry = first_sitl_entry(&suite, "nonlexical-scenario.json").unwrap();
+        let manifest = fixture_nonlexical_execute_manifest();
+        let dir = tempfile::tempdir().unwrap();
+        let replay_log = dir.path().join("m59-nonlexical.sitl-log.json");
+        let mut config = fixture_live_config();
+        config.reupload_on_failure = true;
+        config.scenario_path = "nonlexical-scenario.json".to_owned();
+        config.replay_log = Some(replay_log.to_string_lossy().into_owned());
+        let controllers = vec![
+            FakeLiveAgentController::failed(&manifest.agents[0], 0),
+            FakeLiveAgentController::completed(&manifest.agents[1]),
+        ];
+
+        let report =
+            run_live_supervisor_with_controllers(entry, &config, &manifest, controllers).unwrap();
+
+        assert_eq!(report.overall_status, "completed_with_reallocation");
+        assert_eq!(report.total_completed_tasks, 3);
+        assert_eq!(report.failed_agents, 1);
+        assert_eq!(report.reallocation.survivor_mission_updates, 1);
+        assert_eq!(report.reallocation.final_completed_after_reallocation, 3);
+        assert_eq!(report.agents[1].mission_item_count, 3);
+
+        let log = crate::sitl_observability::read_sitl_event_log(&replay_log).unwrap();
+        let mission_items = multi_agent_mission_items(&log);
+        assert_eq!(
+            mission_items,
+            vec![
+                ("agent-0".to_owned(), 0, "wp-2".to_owned()),
+                ("agent-0".to_owned(), 1, "wp-10".to_owned()),
+                ("agent-1".to_owned(), 0, "wp-1".to_owned()),
+                ("agent-1".to_owned(), 1, "wp-2".to_owned()),
+                ("agent-1".to_owned(), 2, "wp-10".to_owned())
+            ]
+        );
+    }
+
+    #[test]
+    fn fake_live_supervisor_excludes_completed_failed_task_from_replacement() {
+        let suite = fixture_nonlexical_suite();
+        let entry = first_sitl_entry(&suite, "nonlexical-scenario.json").unwrap();
+        let manifest = fixture_nonlexical_execute_manifest();
+        let dir = tempfile::tempdir().unwrap();
+        let replay_log = dir.path().join("m59-after-one.sitl-log.json");
+        let mut config = fixture_live_config();
+        config.reupload_on_failure = true;
+        config.scenario_path = "nonlexical-scenario.json".to_owned();
+        config.replay_log = Some(replay_log.to_string_lossy().into_owned());
+        let controllers = vec![
+            FakeLiveAgentController::failed(&manifest.agents[0], 1),
+            FakeLiveAgentController::completed(&manifest.agents[1]),
+        ];
+
+        let report =
+            run_live_supervisor_with_controllers(entry, &config, &manifest, controllers).unwrap();
+
+        assert_eq!(report.overall_status, "completed_with_reallocation");
+        assert_eq!(report.total_completed_tasks, 3);
+        assert_eq!(report.failed_agents, 1);
+        assert_eq!(report.reallocation.released_tasks, vec!["wp-10"]);
+        assert_eq!(report.reallocation.reassigned_tasks, vec!["wp-10"]);
+        assert_eq!(report.reallocation.tasks_recovered, vec!["wp-10"]);
+        assert_eq!(report.reallocation.survivor_mission_updates, 1);
+        assert_eq!(report.reallocation.final_completed_after_reallocation, 2);
+        assert_eq!(report.agents[1].mission_item_count, 2);
+
+        let log = crate::sitl_observability::read_sitl_event_log(&replay_log).unwrap();
+        let mission_items = multi_agent_mission_items(&log);
+        assert_eq!(
+            mission_items,
+            vec![
+                ("agent-0".to_owned(), 0, "wp-2".to_owned()),
+                ("agent-0".to_owned(), 1, "wp-10".to_owned()),
+                ("agent-1".to_owned(), 0, "wp-1".to_owned()),
+                ("agent-1".to_owned(), 1, "wp-10".to_owned())
+            ]
+        );
+    }
+
+    #[test]
+    fn fake_live_supervisor_rejects_reallocation_without_pending_survivor() {
+        let suite = fixture_suite();
+        let entry = first_sitl_entry(&suite, "inline-scenario.json").unwrap();
+        let manifest = fixture_execute_manifest();
+        let mut config = fixture_live_config();
+        config.reupload_on_failure = true;
+        let controllers = vec![
+            FakeLiveAgentController::completed(&manifest.agents[0]),
+            FakeLiveAgentController::failed(&manifest.agents[1], 0),
+        ];
+
+        let error = run_live_supervisor_with_controllers(entry, &config, &manifest, controllers)
+            .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("cannot reallocate failed agent 'agent-1' without a pending survivor"));
+    }
+
+    #[test]
     fn fake_live_supervisor_reports_partial_failure() {
         let suite = fixture_suite();
         let entry = first_sitl_entry(&suite, "inline-scenario.json").unwrap();
@@ -2310,5 +2569,22 @@ mod tests {
         assert_eq!(report.total_completed_tasks, 1);
         assert_eq!(report.failed_agents, 1);
         assert_eq!(report.agents[1].error.as_deref(), Some("fake live failure"));
+    }
+
+    fn multi_agent_mission_items(
+        log: &crate::sitl_observability::SitlEventLog,
+    ) -> Vec<(String, u16, String)> {
+        log.events
+            .iter()
+            .filter_map(|event| match event {
+                crate::sitl_observability::SitlEvent::MultiAgentMissionItemSent {
+                    agent_id,
+                    seq,
+                    task_id: Some(task_id),
+                    ..
+                } => Some((agent_id.clone(), *seq, task_id.clone())),
+                _ => None,
+            })
+            .collect()
     }
 }
