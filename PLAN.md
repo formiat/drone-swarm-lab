@@ -168,10 +168,28 @@ GitLab MR, review comments or discussions; `notion_policy` указан как o
      - metrics aggregation independent of stderr parsing;
      - deterministic failure timing around `fail_after_ticks`.
 
-7. **Keep existing subprocess regression tests**
+7. **Keep existing subprocess regression tests and add CLI negative coverage**
    - Path: `crates/swarm-examples/tests/sitl_agent.rs`.
    - Existing subprocess tests remain valuable because they verify CLI behavior
      and stderr/stdout contract.
+   - Add explicit missing/invalid `sitl_supervisor` CLI args coverage before or
+     together with the refactor:
+     - missing mode;
+     - missing `--scenario`;
+     - missing `--config`;
+     - missing value for `--manifest`;
+     - missing value for `--replay-log`;
+     - missing value for `--fail-agent`;
+     - missing value for numeric flags:
+       - `--fail-after-ticks`;
+       - `--heartbeat-timeout-ticks`;
+       - `--max-ticks`;
+     - invalid numeric values for those numeric flags;
+     - conflicting `--dry-run` + `--mock`;
+     - unknown argument.
+   - These can be implemented as subprocess tests with existing helper coverage
+     first. If the parser is later extracted into a testable module, duplicate
+     only the fast parser-level cases that add value.
    - Update assertions only if refactor intentionally changes formatting; avoid
      unnecessary output churn.
 
@@ -205,6 +223,10 @@ GitLab MR, review comments or discussions; `notion_policy` указан как o
      - `PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 /home/formi/.local/bin/runlim cargo test -p swarm-runtime reallocation`
    - If new module tests are in crate unit tests:
      - `PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 /home/formi/.local/bin/runlim cargo test -p swarm-examples sitl_supervisor`
+   - If CLI negative tests are added as named subprocess tests, also run their
+     exact filters or the full `sitl_agent` test file before commit. The final
+     implementation outbox should explicitly list the CLI negative cases that
+     passed.
 
 10. **Commit implementation**
     - Include all changed tracked files.
@@ -220,6 +242,19 @@ GitLab MR, review comments or discussions; `notion_policy` указан как o
   - two agents with distinct subsets;
   - deterministic reallocation after `--fail-agent`;
   - duplicate ownership rejection.
+- Missing/invalid `sitl_supervisor` CLI args subprocess tests:
+  - missing mode;
+  - missing `--scenario`;
+  - missing `--config`;
+  - missing value for `--manifest`;
+  - missing value for `--replay-log`;
+  - missing value for `--fail-agent`;
+  - missing values for `--fail-after-ticks`, `--heartbeat-timeout-ticks` and
+    `--max-ticks`;
+  - invalid numeric values for `--fail-after-ticks`, `--heartbeat-timeout-ticks`
+    and `--max-ticks`;
+  - conflicting `--dry-run` + `--mock`;
+  - unknown argument.
 - Existing docs test:
   - `cargo test -p swarm-examples --test sitl_docs`.
 - Existing runtime reallocation tests:
@@ -259,8 +294,9 @@ GitLab MR, review comments or discussions; `notion_policy` указан как o
 
 - **CLI behavior / scripts**: moving code out of `sitl_supervisor.rs` could change
   error messages, usage text, stdout/stderr ordering or exit codes.
-  - Проверка: existing subprocess tests and manual `--dry-run`/`--mock` smoke if
-    needed.
+  - Проверка: existing subprocess tests, explicit missing/invalid CLI args tests,
+    and manual `--dry-run`/`--mock` smoke only if an automated case cannot cover
+    a specific shell behavior.
 - **Mock supervisor semantics**: refactor could accidentally change heartbeat
   count, task completion order, recovered task id ordering or timeout behavior.
   - Проверка: deterministic reallocation test plus direct metrics assertions.
