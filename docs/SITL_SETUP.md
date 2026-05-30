@@ -177,7 +177,9 @@ Use `sitl_supervisor` to inspect the full dry-run manifest:
 
 ```bash
 cargo run -p swarm-examples --bin sitl_supervisor -- \
-  --dry-run --scenario scenarios/sitl.waypoints.json --config path/to/multi-sitl.json
+  --dry-run \
+  --scenario scenarios/sitl.multi-agent.json \
+  --config scenarios/sitl.multi-agent.config.json
 ```
 
 The output is a `multi_sitl_manifest.v1` JSON document with scenario metadata,
@@ -188,7 +190,9 @@ Mock supervisor mode exercises the same split without PX4:
 
 ```bash
 cargo run -p swarm-examples --bin sitl_supervisor -- \
-  --mock --scenario scenarios/sitl.waypoints.json --config path/to/multi-sitl.json \
+  --mock \
+  --scenario scenarios/sitl.multi-agent.json \
+  --config scenarios/sitl.multi-agent.config.json \
   --manifest target/sitl/multi-agent-manifest.json
 ```
 
@@ -197,9 +201,9 @@ invocations:
 
 ```bash
 cargo run -p swarm-examples --bin sitl_agent --features mavlink-transport -- \
-  --scenario scenarios/sitl.waypoints.json \
+  --scenario scenarios/sitl.multi-agent.json \
   --agent-id agent-0 \
-  --multi-agent-config path/to/multi-sitl.json \
+  --multi-agent-config scenarios/sitl.multi-agent.config.json \
   --connection udp:127.0.0.1:14550 \
   --upload-only
 ```
@@ -233,7 +237,7 @@ Prerequisites:
 cargo build --bin sitl_agent --features mavlink-transport
 cargo run --bin sitl_agent --features mavlink-transport -- \
   --connection udp:127.0.0.1:14550 \
-  --scenario scenarios/sitl.waypoints.json \
+  --scenario scenarios/sitl.px4-golden.json \
   --agent-id agent-0 \
   --safety-config path/to/sitl-safety.json \
   --upload-only
@@ -267,7 +271,7 @@ with a single-agent telemetry progress loop. It is opt-in: plain
 ```bash
 cargo run --bin sitl_agent --features mavlink-transport -- \
   --connection udp:127.0.0.1:14550 \
-  --scenario scenarios/sitl.waypoints.json \
+  --scenario scenarios/sitl.px4-golden.json \
   --agent-id agent-0 \
   --safety-config path/to/sitl-safety.json \
   --execute \
@@ -283,14 +287,14 @@ Useful bounded variants:
 # Skip arm for controlled SITL experiments where the vehicle is already armed.
 cargo run --bin sitl_agent --features mavlink-transport -- \
   --connection udp:127.0.0.1:14550 \
-  --scenario scenarios/sitl.waypoints.json \
+  --scenario scenarios/sitl.px4-golden.json \
   --agent-id agent-0 \
   --execute --no-arm --timeout 5 --telemetry-timeout 10 --no-progress-timeout 60
 
 # Start the lifecycle and then request RTL abort immediately after a short delay.
 cargo run --bin sitl_agent --features mavlink-transport -- \
   --connection udp:127.0.0.1:14550 \
-  --scenario scenarios/sitl.waypoints.json \
+  --scenario scenarios/sitl.px4-golden.json \
   --agent-id agent-0 \
   --execute --abort-after 10 --timeout 5
 ```
@@ -345,7 +349,7 @@ M48 adds an optional structured final report for the single-agent execute path:
 ```bash
 cargo run --bin sitl_agent --features mavlink-transport -- \
   --connection udp:127.0.0.1:14550 \
-  --scenario scenarios/sitl.waypoints.json \
+  --scenario scenarios/sitl.px4-golden.json \
   --agent-id agent-0 \
   --execute \
   --timeout 5 \
@@ -360,10 +364,10 @@ contains:
 ```json
 {
   "schema_version": "sitl_run_report.v1",
-  "scenario_path": "scenarios/sitl.waypoints.json",
-  "scenario_name": "sitl_waypoints_0",
+  "scenario_path": "scenarios/sitl.px4-golden.json",
+  "scenario_name": "sitl_px4_golden_0",
   "mission": "sitl",
-  "profile": "waypoints",
+  "profile": "px4-golden",
   "agent_id": "agent-0",
   "connection_string": "udp:127.0.0.1:14550",
   "mode": "connection_execute",
@@ -389,7 +393,7 @@ state?", while the replay log answers "what happened before that state?".
 ```bash
 cargo run --bin sitl_agent --features mavlink-transport -- \
   --connection udp:127.0.0.1:14550 \
-  --scenario scenarios/sitl.waypoints.json \
+  --scenario scenarios/sitl.px4-golden.json \
   --agent-id agent-0 \
   --execute \
   --timeout 5 \
@@ -416,7 +420,7 @@ Upload-only mode also supports `--replay-log`:
 ```bash
 cargo run --bin sitl_agent --features mavlink-transport -- \
   --connection udp:127.0.0.1:14550 \
-  --scenario scenarios/sitl.waypoints.json \
+  --scenario scenarios/sitl.px4-golden.json \
   --agent-id agent-0 \
   --upload-only \
   --replay-log target/sitl/upload-only.sitl-log.json
@@ -467,7 +471,7 @@ operator's actual local run:
 - `sitl_agent` connection string: commonly `udp:127.0.0.1:14550`.
 - Expected MAVLink endpoint: PX4 should emit heartbeat and mission protocol
   responses on the configured UDP endpoint.
-- Golden scenario: `scenarios/sitl.waypoints.json`.
+- Golden scenario: `scenarios/sitl.px4-golden.json`.
 - Expected result: all waypoint tasks completed and final report
   `final_status=completed`.
 

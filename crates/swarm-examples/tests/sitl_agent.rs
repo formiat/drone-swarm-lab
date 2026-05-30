@@ -239,6 +239,14 @@ fn run_sitl_supervisor_in_dir(args: &[&str], dir: &std::path::Path) -> std::proc
         .expect("failed to execute sitl_supervisor")
 }
 
+fn public_scenario(path: &str) -> String {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join(path)
+        .to_string_lossy()
+        .into_owned()
+}
+
 #[test]
 fn dry_run_outputs_mission_upload_plan() {
     let scenario = write_sitl_scenario();
@@ -256,6 +264,60 @@ fn dry_run_outputs_mission_upload_plan() {
     assert!(stdout.contains("altitude_source: pose.z"));
     assert!(stdout.contains("seq=0 task_id=wp-0 x=10.000 y=20.000 z=3.500"));
     assert!(stdout.contains("seq=1 task_id=wp-1 x=30.000 y=40.000 z=0.000"));
+}
+
+#[test]
+fn public_px4_golden_fixture_has_explicit_altitudes() {
+    let scenario = public_scenario("scenarios/sitl.px4-golden.json");
+    let output = run_sitl_agent(&[
+        "--dry-run",
+        "--scenario",
+        &scenario,
+        "--agent-id",
+        "agent-0",
+    ]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "dry-run failed: {stderr}");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("scenario_name: sitl_px4_golden_0"));
+    assert!(stdout.contains("seq=0 task_id=wp-0 x=10.000 y=15.000 z=5.000"));
+    assert!(stdout.contains("seq=1 task_id=wp-1 x=25.000 y=25.000 z=6.000"));
+    assert!(stdout.contains("seq=2 task_id=wp-2 x=40.000 y=10.000 z=5.000"));
+}
+
+#[test]
+fn public_multi_agent_fixture_builds_manifest() {
+    let scenario = public_scenario("scenarios/sitl.multi-agent.json");
+    let config = public_scenario("scenarios/sitl.multi-agent.config.json");
+    let output = run_sitl_supervisor(&["--dry-run", "--scenario", &scenario, "--config", &config]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "supervisor dry-run failed: {stderr}"
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains(r#""schema_version": "multi_sitl_manifest.v1""#));
+    assert!(stdout.contains(r#""agents_count": 2"#));
+    assert!(stdout.contains(r#""agent_id": "agent-0""#));
+    assert!(stdout.contains(r#""agent_id": "agent-1""#));
+    assert!(stdout.contains(r#""task_ids": ["#));
+    assert!(stdout.contains(r#""wp-0""#));
+    assert!(stdout.contains(r#""wp-3""#));
+    assert!(stdout.contains(r#""unassigned_pose_tasks": []"#));
+}
+
+#[test]
+fn public_multi_agent_fixture_can_run_mock_supervisor() {
+    let scenario = public_scenario("scenarios/sitl.multi-agent.json");
+    let config = public_scenario("scenarios/sitl.multi-agent.config.json");
+    let output = run_sitl_supervisor(&["--mock", "--scenario", &scenario, "--config", &config]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "supervisor mock failed: {stderr}");
+    assert!(stderr.contains("agent=agent-0"));
+    assert!(stderr.contains("agent=agent-1"));
+    assert!(stderr.contains("waypoints sent=2"));
 }
 
 #[test]

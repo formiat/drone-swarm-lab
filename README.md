@@ -114,11 +114,15 @@ These checks are mock/fake/runtime-level; they do not run multi-agent PX4 SITL.
 
 ```bash
 cargo run -p swarm-examples --bin sitl_supervisor -- \
-  --dry-run --scenario scenarios/sitl.waypoints.json --config path/to/multi-sitl.json
+  --dry-run \
+  --scenario scenarios/sitl.multi-agent.json \
+  --config scenarios/sitl.multi-agent.config.json
 
 cargo run -p swarm-examples --bin sitl_agent -- \
-  --dry-run --scenario scenarios/sitl.waypoints.json \
-  --agent-id agent-0 --multi-agent-config path/to/multi-sitl.json
+  --dry-run \
+  --scenario scenarios/sitl.multi-agent.json \
+  --agent-id agent-0 \
+  --multi-agent-config scenarios/sitl.multi-agent.config.json
 ```
 
 Expected: a portable `multi_sitl_manifest.v1` JSON manifest with per-agent
@@ -132,7 +136,7 @@ dry-run/mock/config foundation; it does not run real multi-agent PX4.
 ```bash
 cargo run -p swarm-examples --bin sitl_agent --features mavlink-transport -- \
   --connection udp:127.0.0.1:14550 \
-  --scenario scenarios/sitl.waypoints.json \
+  --scenario scenarios/sitl.px4-golden.json \
   --agent-id agent-0 \
   --safety-config path/to/sitl-safety.json \
   --upload-only
@@ -155,7 +159,7 @@ Execution is opt-in:
 ```bash
 cargo run -p swarm-examples --bin sitl_agent --features mavlink-transport -- \
   --connection udp:127.0.0.1:14550 \
-  --scenario scenarios/sitl.waypoints.json \
+  --scenario scenarios/sitl.px4-golden.json \
   --agent-id agent-0 \
   --execute --timeout 5 --telemetry-timeout 10 --no-progress-timeout 60 \
   --run-report target/sitl/single-agent-report.json \
@@ -194,21 +198,21 @@ cargo run -p swarm-examples --bin replay -- \
 | SITL Dry-Run | ✅ Stable | M43 | `sitl_agent --dry-run`, portable mission upload plan without PX4 |
 | SITL Portable Regression | ✅ Stable | M50 | `portable_sitl_regression_smoke` and `sitl_docs` validate dry-run/mock/safety/docs without external PX4 |
 | Dynamic Reallocation | ✅ Stable | M51 | Heartbeat timeout releases unfinished tasks from lost agents, recovers assignable tasks on survivors, exposes runtime metrics and SITL reallocation events; real multi-agent PX4 remains future work |
-| Multi-Agent SITL Foundation | ✅ Stable | M52 | `multi_sitl.v1` config, `sitl_supervisor` dry-run/mock manifest, per-agent task subsets, MAVLink system/component mapping, duplicate ownership rejection before upload; real multi-agent PX4 remains manual/future work |
+| Multi-Agent SITL Foundation | ✅ Stable | M52 | `multi_sitl.v1` config, public `scenarios/sitl.multi-agent.json` / `scenarios/sitl.multi-agent.config.json`, `sitl_supervisor` dry-run/mock manifest, per-agent task subsets, MAVLink system/component mapping, duplicate ownership rejection before upload; real multi-agent PX4 remains manual/future work |
 | Hardware Readiness Boundary | ✅ Stable | M53 | `docs/HARDWARE_READINESS.md`, connection classes, and `--allow-hardware-candidate` guard remote/serial hardware candidates; this documents the boundary, not hardware readiness |
 | Replay / Debuggability | ✅ Stable | M23 | `replay` CLI, ASCII visualization |
 | Mission Semantics | ✅ Stable | M33 | `TaskKind`, 6 concrete adapters, `AdapterRegistry`, adapter-driven completion/scoring in runner and allocator |
 | Planner Quality | ✅ Stable | M34 | `RoutePlanner` trait, 2-opt, battery-aware feasibility v2 (ordered-subset feasibility, battery model v2 integration, meaningful runner metrics) |
 | Dynamic Mission Correctness | ✅ Stable | M35 | Mission-specific success semantics (SAR=targets-found, inspection=coverage-threshold, wildfire=mapped-ratio), SAR unsupported reasons (cbba=delayed-reconvergence, centralized=static-pre-plan), support matrix tests |
-| Regression Harness v2 | ✅ Stable | M36 | Calibrated thresholds, portability fixes, wildfire/realism suites, failure delta output; fully stable after M39a repair |
+| Regression Harness v2 | ⚠️ Partial | M36 | Calibrated thresholds, portability fixes, wildfire/realism suites, failure delta output; bounded `jobs=1` diagnostics pass, but repeated determinism sweep is still needed before treating it as a release gate |
 | Realism Scenario Pack | ✅ Stable | M37 | Realism profiles (light/medium/heavy), scenario JSONs, battery model metadata, baseline vs realism comparison |
 | Wildfire v2 | ⚠️ Partial | M38 | Spatial spread, wind influence, zone expansion, high-priority metrics, replay integration, scenario JSONs; flood not implemented as separate mission |
 | Decision / Audit Report | ✅ Stable | M39b | Status audit, README honesty update, benchmark docs marked historical |
-| Regression Repair | ✅ Stable | M39a | Unified regression entrypoints, fixed wildfire/realism in `strategy_comparison --regression`, removed duplication between binaries |
+| Regression Repair | ⚠️ Partial | M39a | Unified regression entrypoints and wildfire/realism repair exist; current bounded `jobs=1` checks pass, with broader determinism follow-up still pending |
 | Wildfire / Flood Mapping | ✅ Stable | M30 | `TaskKind::MappingZone`, `WildfireState`, hazard zones, dynamic threat |
 | Simulation Realism | ✅ Stable | M31 | Battery model v2, altitude sensor penalty, wind drift, pose noise, comms jitter, time-gated no-fly zones, `--realism` preset |
 | Reporting & Metrics | ✅ Stable | M32 | Per-row mission/scenario in exports, mission-scoped profiles, merged `all` benchmark id, wildfire/planner metrics, realism metadata in manifest |
-| Real PX4 | 🧪 Experimental | M49 | Feature-gated single-agent PX4 SITL report and replay plumbing with pre-upload safety validation, arm/takeoff/start, telemetry-to-task progress mapping, structured final run report, and compact SITL event log summary; live PX4 verification remains manual and documented separately |
+| Real PX4 | 🧪 Experimental | M49 | Feature-gated single-agent PX4 SITL report and replay plumbing with pre-upload safety validation, arm/takeoff/start, telemetry-to-task progress mapping, structured final run report, compact SITL event log summary, and public `scenarios/sitl.px4-golden.json`; live PX4 verification remains manual and documented separately |
 
 **Test coverage:** 360+ tests, 10 crates, 18 JSON scenarios.
 
@@ -232,6 +236,11 @@ cargo run -p swarm-examples --bin regression_runner -- --compare-baseline result
 ```
 
 Exit code is `0` if all suites pass, `1` if any threshold is violated. Failure output includes metric name, actual value, threshold bound, and delta.
+
+Current status note: the harness is useful, and bounded `jobs=1` diagnostics pass
+on the current tree. Treat it as a diagnostic signal until repeated
+jobs/seed-count determinism checks are refreshed; portable SITL checks below are
+separate and remain deterministic.
 
 ### Portable SITL Checks (M50)
 

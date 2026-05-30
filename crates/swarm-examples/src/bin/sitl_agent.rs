@@ -1,3 +1,5 @@
+#[cfg(feature = "mavlink-transport")]
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::thread;
 use std::time::Duration;
@@ -604,6 +606,7 @@ fn run_connection(
                 waypoint.seq, waypoint.x, waypoint.y, waypoint.z
             );
         }
+        let task_id_by_seq = sitl_task_ids_by_seq(plan);
 
         let upload_options = MissionUploadOptions {
             target_system: runtime_options.target_system,
@@ -614,7 +617,10 @@ fn run_connection(
         match lifecycle.mode {
             LifecycleMode::UploadOnly => {
                 let upload_result = if let Some(recorder) = event_recorder.as_mut() {
-                    let mut observer = SitlMavlinkObserver { recorder };
+                    let mut observer = SitlMavlinkObserver {
+                        recorder,
+                        task_id_by_seq: &task_id_by_seq,
+                    };
                     transport.upload_mission_observed(&waypoints, upload_options, &mut observer)
                 } else {
                     transport.upload_mission(&waypoints, upload_options)
@@ -656,6 +662,7 @@ fn run_connection(
                     let mut driver = MavlinkGoldenPathDriver {
                         transport: &mut transport,
                         recorder: event_recorder.as_mut(),
+                        task_id_by_seq,
                     };
                     run_golden_path_with_driver(
                         &mut driver,
@@ -754,11 +761,13 @@ trait SitlGoldenPathDriver {
 struct MavlinkGoldenPathDriver<'a> {
     transport: &'a mut swarm_comms::MavlinkTransport,
     recorder: Option<&'a mut SitlEventRecorder>,
+    task_id_by_seq: BTreeMap<u16, String>,
 }
 
 #[cfg(feature = "mavlink-transport")]
 struct SitlMavlinkObserver<'a> {
     recorder: &'a mut SitlEventRecorder,
+    task_id_by_seq: &'a BTreeMap<u16, String>,
 }
 
 #[cfg(feature = "mavlink-transport")]
@@ -778,7 +787,8 @@ impl swarm_comms::MavlinkMissionObserver for SitlMavlinkObserver<'_> {
                 self.recorder.push_mission_item_requested(seq);
             }
             swarm_comms::MavlinkMissionEvent::MissionItemSent { seq } => {
-                self.recorder.push_mission_item_sent(seq, None);
+                self.recorder
+                    .push_mission_item_sent(seq, self.task_id_by_seq.get(&seq).cloned());
             }
             swarm_comms::MavlinkMissionEvent::MissionAckReceived { result, accepted } => {
                 self.recorder.push_mission_ack_received(result, accepted);
@@ -810,7 +820,10 @@ impl SitlGoldenPathDriver for MavlinkGoldenPathDriver<'_> {
         lifecycle_options: swarm_comms::MissionLifecycleOptions,
     ) -> Result<SitlMissionStartReport, SitlExecutionFailure> {
         let report = if let Some(recorder) = self.recorder.as_deref_mut() {
-            let mut observer = SitlMavlinkObserver { recorder };
+            let mut observer = SitlMavlinkObserver {
+                recorder,
+                task_id_by_seq: &self.task_id_by_seq,
+            };
             self.transport.upload_and_execute_mission_observed(
                 waypoints,
                 upload_options,
@@ -1325,6 +1338,14 @@ fn sitl_task_id_for_seq(plan: &SitlPlan, seq: u16) -> Option<String> {
 }
 
 #[cfg(feature = "mavlink-transport")]
+fn sitl_task_ids_by_seq(plan: &SitlPlan) -> BTreeMap<u16, String> {
+    plan.waypoints
+        .iter()
+        .map(|waypoint| (waypoint.seq, waypoint.task_id.clone()))
+        .collect()
+}
+
+#[cfg(feature = "mavlink-transport")]
 fn record_telemetry_failure(
     recorder: Option<&mut SitlEventRecorder>,
     report: &swarm_examples::sitl_progress::SitlMissionProgressReport,
@@ -1662,6 +1683,49 @@ mod tests {
                 seq: waypoint.seq,
             })
             .collect()
+    }
+
+    #[test]
+    #[cfg(feature = "mavlink-transport")]
+    fn sitl_mavlink_observer_records_task_id_for_mission_item_sent() {
+        let plan = test_plan();
+        let task_id_by_seq = sitl_task_ids_by_seq(&plan);
+        let mut recorder = new_sitl_event_recorder(
+            &plan,
+            Some("udp:127.0.0.1:14550"),
+            SitlEventLogMode::ConnectionUploadOnly,
+        );
+        let mut observer = SitlMavlinkObserver {
+            recorder: &mut recorder,
+            task_id_by_seq: &task_id_by_seq,
+        };
+
+        swarm_comms::MavlinkMissionObserver::on_event(
+            &mut observer,
+            swarm_comms::MavlinkMissionEvent::MissionItemSent { seq: 1 },
+        );
+        swarm_comms::MavlinkMissionObserver::on_event(
+            &mut observer,
+            swarm_comms::MavlinkMissionEvent::MissionItemSent { seq: 99 },
+        );
+
+        let mission_item_events: Vec<_> = recorder
+            .log()
+            .events
+            .iter()
+            .filter_map(|event| match event {
+                swarm_examples::sitl_observability::SitlEvent::MissionItemSent {
+                    seq,
+                    task_id,
+                    ..
+                } => Some((*seq, task_id.clone())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            mission_item_events,
+            vec![(1, Some("wp-1".to_owned())), (99, None)]
+        );
     }
 
     #[cfg(feature = "mavlink-transport")]

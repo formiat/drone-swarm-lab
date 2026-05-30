@@ -1,95 +1,108 @@
 # Project Status
 
-**Date:** 2026-05-28
+**Date:** 2026-05-30
 **HEAD commit:** see `git rev-parse HEAD`
-**Last audit:** M39b
+**Last audit:** M43-M53 Real SITL / PX4 follow-up
 
-This document provides an honest audit of the project state after M32-M39a. It complements the README Current Status table with nuance that does not fit in a single-line summary.
-
----
+This document is the current status summary for the repository. It supersedes
+the older M39b-only audit and should be read together with the README current
+status table.
 
 ## Milestone Status
 
 | Milestone | Status | Notes |
 |---|---|---|
-| M32 Reporting & Metrics Hardening | ✅ Complete | Mixed-mission report identity fixed; JSON/CSV/Markdown exports correct; `--mission all` produces valid benchmark packs |
-| M33 Mission Semantics Integration | ✅ Complete | 6 concrete adapters, `AdapterRegistry`, adapter-driven completion/scoring in runner and allocator; DSL kind validation |
-| M34 Planner Correctness v2 | ✅ Complete | `RoutePlanner` trait, 2-opt, battery-aware feasibility; unit tests present; impact is real but narrow (primarily CBBA) |
-| M35 Dynamic Mission Correctness | ⚠️ Partial | Mission-specific success semantics implemented (SAR=targets-found, inspection=coverage, wildfire=mapped-ratio); SAR CBBA/centralized remain unsupported with explicit reasons; not all algorithmic gaps fixed |
-| M36 Regression Harness v2 | ✅ Complete | Suites, thresholds, baseline committed; **became fully stable after M39a repair**; both CLI entrypoints now consistent |
-| M37 Realism Scenario Pack | ✅ Complete | Light/medium/heavy profiles, 4 scenario JSONs, battery model metadata in manifest; **not yet a calibrated research study** |
-| M38 Wildfire v2 | ⚠️ Partial | Wildfire profiles, dynamic threat, spatial spread, metrics, replay integration complete; **Flood is not implemented as a separate mission** |
-| M39a Regression Repair | ✅ Complete | Unified entrypoints, fixed wildfire/realism in `strategy_comparison --regression`, eliminated duplication, fixed flaky tests |
-| M39b Decision / Audit Report | ✅ Complete | This document; README updated; benchmark docs marked historical |
+| M32 Reporting & Metrics Hardening | Complete | Mixed-mission report identity, JSON/CSV/Markdown exports, and merged `all` benchmark id are implemented. |
+| M33 Mission Semantics Integration | Complete | `TaskKind`, concrete adapters, `AdapterRegistry`, adapter-driven completion/scoring in runner and allocator. |
+| M34 Planner Correctness v2 | Complete | `RoutePlanner`, 2-opt, battery-aware ordered-subset feasibility, and planner metrics are present. |
+| M35 Dynamic Mission Correctness | Partial | Mission-specific success semantics are implemented; SAR CBBA and SAR centralized remain explicitly unsupported. |
+| M36 Regression Harness v2 | Partial | Regression infrastructure exists, and bounded `jobs=1` diagnostics pass on the current tree. A repeated jobs/seed-count determinism sweep is still pending before using it as a release gate. |
+| M37 Realism Scenario Pack | Complete | Light/medium/heavy profiles and scenario metadata exist; this is not a calibrated research study. |
+| M38 Wildfire v2 | Partial | Wildfire dynamic threat work exists; flood is still not a separate mission. |
+| M39a Regression Repair | Partial | Earlier entrypoint repair exists; current bounded `jobs=1` entrypoint checks pass, but broader determinism work remains pending. |
+| M39b Decision / Audit Report | Complete | Historical audit and README honesty pass. |
+| M43 SITL Contract & Dry-Run Foundation | Complete | `--mock`, `--dry-run`, `--connection`, typed errors, connection classes, and waypoint extraction are implemented. |
+| M44 MAVLink Mission Upload Protocol | Complete with debt removed | Mission upload handshake is implemented; generic `MavlinkTransport::send()` is explicitly unsupported instead of sending a fake `RAW_RPM`. |
+| M45 Pre-upload Safety Validation | Complete | Safety config, default rules, subset validation, and actionable violations are implemented. |
+| M46 Flight Sequence | Complete | Upload-only/execute lifecycle, arm/takeoff/start/abort command handling, and bounded failures are implemented. |
+| M47 Telemetry Loop & TaskStatus Mapping | Complete | `MISSION_CURRENT`, `MISSION_ITEM_REACHED`, completion/rejection/disconnect/no-progress mapping are implemented. |
+| M48 Single-Agent PX4 SITL Golden Path | Code complete, live verification pending | Report/replay/golden fake path exists. Public `scenarios/sitl.px4-golden.json` has explicit altitudes for the manual live PX4 run. |
+| M49 SITL Observability & Replay | Complete | SITL event log, replay summary, task id mapping, failure events, and reallocation schema events are implemented. |
+| M50 Mock Regression & Docs Hardening | Complete | Portable dry-run/mock/docs checks exist and require no PX4. |
+| M51 Dynamic Reallocation for Failed Agent | Runtime/mock boundary complete | Runtime reallocation and metrics exist; SITL log has reallocation event schema. Live multi-agent PX4 supervisor reallocation flow is not wired. |
+| M52 Multi-Agent SITL Foundation | Foundation complete | `multi_sitl.v1`, public `scenarios/sitl.multi-agent.json` / `scenarios/sitl.multi-agent.config.json`, dry-run/mock manifest, task subsets, and duplicate ownership checks exist. |
+| M53 Hardware Readiness Boundary | Complete | `docs/HARDWARE_READINESS.md`, connection classes, and `--allow-hardware-candidate` guard hardware-candidate endpoints. |
 
----
+## Current Known Limitations
 
-## Known Limitations
+### SITL / PX4
+
+- **Live M48 PX4 result is pending.** The code path is present, but the
+  repository does not yet contain a verified PX4 version/backend/command/report.
+- **Multi-agent PX4 is a foundation, not orchestration.** M52 proves explicit
+  ownership and per-agent commands; it does not launch and coordinate multiple
+  real PX4 instances automatically.
+- **M51 reallocation events are schema/API/runtime covered.** They are not yet
+  emitted by a live multi-agent PX4 supervisor failure flow.
+- **Hardware is out of scope.** The project is not flight-certified and is not a
+  production safety layer.
+
+### Regression / Benchmarks
+
+- **Prior default regression flake was not reproduced in bounded checks.**
+  `regression_runner --jobs 1` and `strategy_comparison --regression --jobs 1`
+  passed on the current tree. A repeated jobs/seed-count determinism sweep is
+  still required before using default regression status as a release gate.
+- **1000-seed benchmark is not an M48 substitute.** It can evaluate simulation
+  behavior, but live PX4 SITL requires the M48 manual run.
+- **Historical benchmark docs may be stale.** Treat `docs/BENCHMARK_RESULTS.md`
+  as historical unless refreshed for the current HEAD.
 
 ### Algorithmic
 
-- **SAR CBBA**: Near-zero success due to delayed re-convergence after `release_task()`; documented as `unsupported_reason: delayed_reconvergence`
-- **SAR Centralized**: Static pre-plan incompatible with dynamic belief search; documented as `unsupported_reason: static_pre_plan`
-- **Inspection Perimeter**: Battery/time constraints limit coverage; success rate ~0-0.4 for some strategies
-- **Emergency Mesh**: Centralized much stronger than distributed strategies
-- **Wildfire CBBA**: Weaker on dynamic fire spread scenarios
+- **SAR CBBA**: unsupported due to delayed reconvergence after task release.
+- **SAR Centralized**: unsupported because static pre-planning is incompatible
+  with dynamic belief search.
+- **Inspection perimeter**: constrained by battery/time and intentionally
+  experimental for some strategies.
+- **Flood mission**: not implemented as a separate mission.
 
-### Infrastructure
+## Readiness
 
-- **Benchmark docs**: `docs/BENCHMARK_RESULTS.md` reflects commit `8fb5ab1` (pre-M33); not refreshed for current HEAD
-- **Determinism**: `jobs=1` vs `jobs=4` mostly stable, but some suites show variance that should be investigated before a 1000-seed run
-- **Realism**: Profiles exist but impact is not quantified across missions
-
-### Not Implemented
-
-- **Flood mission**: M38 is named "Wildfire / Flood v2" in historical docs, but flood has no separate scenario, adapter, or profile
-- **Multi-agent SITL**: M52 foundation exists for explicit config, dry-run/mock manifests, manual several-process command generation, and duplicate ownership checks; automated real multi-agent PX4 orchestration is still not implemented
-- **Visualization product**: Replay CLI only; no web/dashboard
-
----
-
-## Readiness for 1000-Seed Run
-
-| Criterion | Status | Blocker |
+| Goal | Status | Blocker |
 |---|---|---|
-| Green workspace tests | ✅ | — |
-| Stable regression | ✅ | — |
-| Deterministic benchmark output | ⚠️ | Needs verification `jobs=1` vs `jobs=4` vs `jobs=14` |
-| Fresh baseline on HEAD | ❌ | Baseline reflects pre-M33 state |
-| Known gaps classified | ✅ | Documented in this file and support matrix |
+| Portable SITL verification | Ready | Run `sitl_agent`/`sitl_docs` targeted tests. |
+| M48 live PX4 verification | Ready for manual attempt | Requires local PX4 SITL environment and result capture. |
+| Real multi-agent PX4 | Not ready | Needs supervisor orchestration and live failure/reallocation design. |
+| Large benchmark publication | Not ready | Regression flake and baseline freshness must be resolved first. |
+| Hardware experiment | Not product-ready | Requires external safety process; see `docs/HARDWARE_READINESS.md`. |
 
-**Verdict:** A 1000-seed run is technically possible now, but its interpretability would be limited without:
-1. A fresh baseline committed;
-2. Confirmation that `jobs` count does not affect aggregate metrics;
-3. Updated benchmark docs.
+## Recommended Next Steps
 
-Recommended: complete M40 (Benchmark Determinism) first.
-
----
-
-## Next Steps
-
-Per `DRONE_A.15.linear.md`:
-
-1. **M40 — Benchmark Determinism**: Verify `jobs=1` vs `jobs=4` vs `jobs=14`; eliminate nondeterministic sources; commit fresh baseline
-2. **M41 — Algorithmic Gap Triage**: Classify every known large failure; fix high-confidence bugs
-3. **M42 — Regression Harness v3**: Separate smoke/quick/benchmark/experimental suites; action-oriented failure output
-4. **M43 — Realism Calibration**: Quantify ideal vs light/medium/heavy impact
-5. **M44 — Flood Decision**: Rename M38 or implement minimal flood variant
-6. **M45 — Big Direction Decision**: Choose next major track (research benchmark / visualization / public API / SITL)
-
----
+1. Run the M48 live PX4 SITL check with `scenarios/sitl.px4-golden.json`, then
+   record PX4 version/backend/command/report/replay summary.
+2. Run a repeated regression determinism sweep across jobs/seed-count variants
+   before relying on benchmark gates or long seed runs.
+3. Decide whether M51 should stay at "runtime/mock/schema covered" or become a
+   separate live multi-agent supervisor reallocation milestone.
+4. Keep README, `docs/SITL_SETUP.md`, `docs/REPLAY.md`, and this file in sync
+   when M48 live verification changes state.
 
 ## How to Verify This Status
 
 ```bash
-# Green tests
-cargo test --workspace
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  /home/formi/.local/bin/runlim cargo test -p swarm-examples --test sitl_agent
 
-# Stable regression (both entrypoints)
-cargo run -p swarm-examples --bin regression_runner -- --jobs 4
-cargo run -p swarm-examples --bin strategy_comparison -- --regression --jobs 4
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  /home/formi/.local/bin/runlim cargo test -p swarm-examples --test sitl_docs
 
-# Clippy clean
-cargo clippy --all-targets -- -D warnings
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  /home/formi/.local/bin/runlim cargo test -p swarm-comms --features mavlink-transport
+
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  /home/formi/.local/bin/runlim cargo test -p swarm-runtime reallocation
 ```
+
+For M48 live verification, use the command in `docs/SITL_SETUP.md` and record the
+actual PX4 setup details. Do not mark M48 live-verified from mock/fake tests.

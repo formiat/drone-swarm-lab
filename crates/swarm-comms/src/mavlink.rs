@@ -26,6 +26,10 @@ pub enum MavlinkError {
     NotConnected,
     #[error("no pose on task")]
     NoPose,
+    #[error(
+        "generic MAVLink Transport::send is unsupported; use mission upload/lifecycle APIs for PX4 SITL"
+    )]
+    UnsupportedRawTransportSend,
 }
 
 /// A waypoint in local coordinate space (no MAVLink dependency).
@@ -1209,16 +1213,7 @@ impl Transport for MavlinkTransport {
     type Error = MavlinkError;
 
     fn send(&mut self, msg: RawMessage) -> Result<(), Self::Error> {
-        use mavlink::MavConnection;
-        let _bytes = serde_json::to_vec(&msg)?;
-        self.conn
-            .send_default(&mavlink::dialects::common::MavMessage::RAW_RPM(
-                mavlink::dialects::common::RAW_RPM_DATA::default(),
-            ))
-            .map_err(|e: mavlink::error::MessageWriteError| {
-                MavlinkError::Connection(e.to_string())
-            })?;
-        Ok(())
+        reject_raw_transport_send(msg)
     }
 
     fn poll(&mut self) -> Result<Option<RawMessage>, Self::Error> {
@@ -1239,6 +1234,11 @@ impl Transport for MavlinkTransport {
             Err(e) => Err(MavlinkError::Connection(e.to_string())),
         }
     }
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn reject_raw_transport_send(_msg: RawMessage) -> Result<(), MavlinkError> {
+    Err(MavlinkError::UnsupportedRawTransportSend)
 }
 
 /// Convert a local waypoint to a MAVLink global mission item.
@@ -1425,6 +1425,21 @@ mod tests {
     fn mock_mavlink_poll_empty_returns_none() {
         let mut transport = MockMavlinkTransport::new();
         assert!(transport.poll().unwrap().is_none());
+    }
+
+    #[test]
+    #[cfg(feature = "mavlink-transport")]
+    fn raw_mavlink_transport_send_is_explicitly_unsupported() {
+        let msg = RawMessage {
+            from: AgentId::from("agent-0".to_owned()),
+            to: AgentId::from("sitl".to_owned()),
+            payload: b"not-a-mission-upload".to_vec(),
+        };
+
+        let error = reject_raw_transport_send(msg).unwrap_err();
+
+        assert!(matches!(error, MavlinkError::UnsupportedRawTransportSend));
+        assert!(error.to_string().contains("mission upload/lifecycle APIs"));
     }
 
     #[test]
