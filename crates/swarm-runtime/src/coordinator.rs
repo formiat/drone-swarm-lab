@@ -2,9 +2,17 @@ use swarm_types::{Agent, AgentId, Task, TaskId};
 
 use crate::{FailureDetector, MembershipView, TaskRegistry};
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FailureRelease {
+    pub failed_agent_id: AgentId,
+    pub released_tasks: Vec<TaskId>,
+    pub detected_at_tick: u64,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct CoordinatorOutput {
     pub newly_failed: Vec<AgentId>,
+    pub failure_releases: Vec<FailureRelease>,
     pub released_tasks: Vec<TaskId>,
     pub expired_task_ids: Vec<TaskId>,
 }
@@ -46,16 +54,24 @@ impl Coordinator {
 
         let newly_failed = self.detector.detect(&self.membership, current_tick);
         let mut released_tasks = Vec::new();
+        let mut failure_releases = Vec::new();
 
         for agent_id in &newly_failed {
             self.membership.mark_dead(agent_id);
-            released_tasks.extend(self.registry.release_agent_tasks(agent_id));
+            let released = self.registry.release_agent_tasks(agent_id);
+            released_tasks.extend(released.iter().cloned());
+            failure_releases.push(FailureRelease {
+                failed_agent_id: agent_id.clone(),
+                released_tasks: released,
+                detected_at_tick: current_tick,
+            });
         }
 
         let expired_task_ids = self.registry.expire_tasks(current_tick);
 
         CoordinatorOutput {
             newly_failed,
+            failure_releases,
             released_tasks,
             expired_task_ids,
         }
@@ -127,5 +143,28 @@ mod tests {
         let mut coord = Coordinator::new(vec![agent("a0")], vec![t], 5);
         let out = coord.process_tick(vec![], 1, vec![]);
         assert_eq!(out.expired_task_ids, vec![TaskId::from("t0".to_owned())]);
+    }
+
+    #[test]
+    fn coordinator_output_links_failed_agent_to_released_tasks() {
+        let survivor = AgentId::from("a0".to_owned());
+        let failed = AgentId::from("a1".to_owned());
+        let task_id = TaskId::from("t0".to_owned());
+        let mut coord = Coordinator::new(vec![agent("a0"), agent("a1")], vec![task("t0")], 3);
+        coord.membership.record_heartbeat(&survivor, 4, 1);
+        coord.registry.assign(&task_id, failed.clone()).unwrap();
+
+        let out = coord.process_tick(vec![survivor], 4, vec![]);
+
+        assert_eq!(out.newly_failed, vec![failed.clone()]);
+        assert_eq!(out.released_tasks, vec![task_id.clone()]);
+        assert_eq!(
+            out.failure_releases,
+            vec![FailureRelease {
+                failed_agent_id: failed,
+                released_tasks: vec![task_id],
+                detected_at_tick: 4,
+            }]
+        );
     }
 }

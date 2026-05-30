@@ -61,6 +61,10 @@ fn create_test_sitl_log(path: &std::path::Path) {
     recorder.push_mission_item_sent(0, Some("wp-0".to_owned()));
     recorder.push_waypoint_reached(0, Some("wp-0".to_owned()));
     recorder.push_task_completed(0, "wp-0");
+    recorder.push_agent_lost("agent-1");
+    recorder.push_task_released("wp-1", "agent-1");
+    recorder.push_task_reassigned("wp-1", "agent-1", "agent-0", 0);
+    recorder.push_reallocation_completed("agent-1", 1, vec!["wp-1".to_owned()], 0);
     recorder.push_abort_requested(Some("Accepted".to_owned()));
     recorder.push_failure("failed", "test failure");
     if let Some(parent) = path.parent() {
@@ -121,6 +125,8 @@ fn replay_cli_sitl_summary_outputs_counts() {
     assert!(stdout.contains("Scenario: sitl_waypoints_test"));
     assert!(stdout.contains("requested=1"));
     assert!(stdout.contains("waypoint_reached=1"));
+    assert!(stdout.contains("agent_lost=1"));
+    assert!(stdout.contains("tasks_recovered=1"));
     assert!(stdout.contains("aborts=1"));
     assert!(stdout.contains("final_status=failed"));
 }

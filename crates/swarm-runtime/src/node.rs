@@ -7,9 +7,20 @@ use swarm_types::{AgentId, Health, Task, TaskId};
 use crate::message::RuntimeMessage;
 use crate::Coordinator;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AssignmentChange {
+    pub task_id: TaskId,
+    pub agent_id: AgentId,
+}
+
 pub struct NodeTickOutput {
     pub newly_failed: Vec<AgentId>,
+    pub failure_releases: Vec<crate::coordinator::FailureRelease>,
     pub released_tasks: Vec<TaskId>,
+    pub reassigned_tasks: Vec<AssignmentChange>,
+    pub tasks_recovered: Vec<TaskId>,
+    pub reassignment_count: u64,
+    pub reallocation_latency_ticks: Option<u64>,
     pub expired_task_ids: Vec<TaskId>,
     pub conflicting_assignments: u64,
     pub discarded_messages: u64,
@@ -180,6 +191,7 @@ impl<T: Transport> AgentNode<T> {
             .process_tick(heartbeat_senders, current_tick, injected);
 
         let mut conflicting_assignments: u64 = 0;
+        let mut reassigned_tasks = Vec::new();
 
         if !gossip_buffer.is_empty() {
             let (merged, _stale) = self.apply_gossip_buffer(&gossip_buffer);
@@ -200,9 +212,25 @@ impl<T: Transport> AgentNode<T> {
         {
             // Skip centralized allocation when CBBA is active (distributed path)
             if self.cbba.is_none() {
-                conflicting_assignments += allocate_unassigned(&mut self.coordinator, allocator);
+                let allocation = allocate_unassigned(&mut self.coordinator, allocator);
+                conflicting_assignments += allocation.conflicting_assignments;
+                reassigned_tasks.extend(allocation.assignments);
             }
         }
+
+        let released_task_ids: HashSet<TaskId> = output.released_tasks.iter().cloned().collect();
+        let mut tasks_recovered: Vec<TaskId> = reassigned_tasks
+            .iter()
+            .filter(|assignment| released_task_ids.contains(&assignment.task_id))
+            .map(|assignment| assignment.task_id.clone())
+            .collect();
+        tasks_recovered.sort_by(|a, b| a.as_ref().cmp(b.as_ref()));
+        let reassignment_count = tasks_recovered.len() as u64;
+        let reallocation_latency_ticks = if tasks_recovered.is_empty() {
+            None
+        } else {
+            Some(0)
+        };
 
         // CBBA Phase 1: Bundle building (local)
         if let Some(ref mut cbba) = self.cbba {
@@ -255,7 +283,12 @@ impl<T: Transport> AgentNode<T> {
 
         Ok(NodeTickOutput {
             newly_failed: output.newly_failed,
+            failure_releases: output.failure_releases,
             released_tasks: output.released_tasks,
+            reassigned_tasks,
+            tasks_recovered,
+            reassignment_count,
+            reallocation_latency_ticks,
             expired_task_ids: output.expired_task_ids,
             conflicting_assignments,
             discarded_messages: self.discarded_this_tick,
@@ -420,7 +453,16 @@ impl<T: Transport> AgentNode<T> {
     }
 }
 
-fn allocate_unassigned<A: Allocator>(coordinator: &mut Coordinator, allocator: &mut A) -> u64 {
+#[derive(Default)]
+struct AllocationOutcome {
+    assignments: Vec<AssignmentChange>,
+    conflicting_assignments: u64,
+}
+
+fn allocate_unassigned<A: Allocator>(
+    coordinator: &mut Coordinator,
+    allocator: &mut A,
+) -> AllocationOutcome {
     let mut tasks: Vec<Task> = coordinator
         .registry
         .unassigned()
@@ -476,17 +518,25 @@ fn allocate_unassigned<A: Allocator>(coordinator: &mut Coordinator, allocator: &
     let decisions = allocator.allocate_with_connectivity(&allocation_tasks, &agents, &connectivity);
 
     let mut seen = HashSet::new();
-    let mut conflicts: u64 = 0;
+    let mut outcome = AllocationOutcome::default();
     for (task_id, agent_id) in decisions {
         if !seen.insert(task_id.clone()) {
-            conflicts += 1;
+            outcome.conflicting_assignments += 1;
             continue;
         }
-        if coordinator.registry.assign(&task_id, agent_id).is_err() {
-            conflicts += 1;
+        if coordinator
+            .registry
+            .assign(&task_id, agent_id.clone())
+            .is_err()
+        {
+            outcome.conflicting_assignments += 1;
+        } else {
+            outcome
+                .assignments
+                .push(AssignmentChange { task_id, agent_id });
         }
     }
-    conflicts
+    outcome
 }
 
 #[cfg(test)]
@@ -497,7 +547,7 @@ mod tests {
 
     use swarm_alloc::GreedyAllocator;
     use swarm_comms::{InMemAgentTransport, InMemNetwork, NetworkConfig};
-    use swarm_types::{Agent, Health, Pose, Role, TaskStatus};
+    use swarm_types::{Agent, Capability, Health, Pose, Role, TaskStatus};
 
     fn agent_entry(id: &str) -> Agent {
         Agent {
@@ -535,6 +585,23 @@ mod tests {
             grid_cell: None,
             edge_id: None,
             kind: None,
+        }
+    }
+
+    fn task_owner(node: &AgentNode<InMemAgentTransport>, task_id: &str) -> Option<AgentId> {
+        node.coordinator
+            .registry
+            .tasks()
+            .find(|task| task.id == TaskId::from(task_id.to_owned()))
+            .and_then(|task| task.assigned_to.clone())
+    }
+
+    fn assert_unique_task_ownership(node: &AgentNode<InMemAgentTransport>) {
+        let mut seen = HashSet::new();
+        for task in node.coordinator.registry.tasks() {
+            if task.assigned_to.is_some() {
+                assert!(seen.insert(task.id.clone()), "duplicate task {}", task.id);
+            }
         }
     }
 
@@ -945,6 +1012,86 @@ mod tests {
             .registry
             .assign(&task_id, AgentId::from("agent-1".to_owned()));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn reallocation_recovers_failed_agent_tasks_by_survivor() {
+        let lost_agent = AgentId::from("agent-1".to_owned());
+        let survivor = AgentId::from("agent-2".to_owned());
+        let task_0 = TaskId::from("task-0".to_owned());
+        let task_1 = TaskId::from("task-1".to_owned());
+        let mut coord = Coordinator::new(
+            vec![
+                agent_entry("agent-0"),
+                agent_entry("agent-1"),
+                agent_entry("agent-2"),
+            ],
+            vec![
+                task_entry("task-0"),
+                task_entry("task-1"),
+                task_entry("task-2"),
+            ],
+            3,
+        );
+        coord.registry.assign(&task_0, lost_agent.clone()).unwrap();
+        coord.registry.assign(&task_1, lost_agent.clone()).unwrap();
+        coord.membership.record_heartbeat(&survivor, 4, 1);
+
+        let mut node = AgentNode::new(
+            AgentId::from("agent-0".to_owned()),
+            vec![lost_agent.clone(), survivor],
+            coord,
+            InMemAgentTransport::new(make_bus(), AgentId::from("agent-0".to_owned())),
+        );
+        node.gossip_interval_ticks = 999;
+
+        let mut allocator = GreedyAllocator;
+        let out = node
+            .process_inbox_and_allocate(4, &mut allocator, vec![])
+            .unwrap();
+
+        assert_eq!(out.newly_failed, vec![lost_agent.clone()]);
+        assert_eq!(out.released_tasks.len(), 2);
+        assert_eq!(out.reassignment_count, 2);
+        assert_eq!(out.tasks_recovered, vec![task_0.clone(), task_1.clone()]);
+        assert_eq!(out.reallocation_latency_ticks, Some(0));
+        assert_eq!(out.failure_releases[0].failed_agent_id, lost_agent);
+        assert!(task_owner(&node, "task-0").is_some());
+        assert!(task_owner(&node, "task-1").is_some());
+        assert_unique_task_ownership(&node);
+    }
+
+    #[test]
+    fn reallocation_unassignable_released_task_is_not_counted_as_recovered() {
+        let lost_agent = AgentId::from("agent-1".to_owned());
+        let task_id = TaskId::from("task-0".to_owned());
+        let mut task = task_entry("task-0");
+        task.required_capabilities = vec![Capability::from("thermal".to_owned())];
+        let mut coord = Coordinator::new(
+            vec![agent_entry("agent-0"), agent_entry("agent-1")],
+            vec![task],
+            3,
+        );
+        coord.registry.assign(&task_id, lost_agent.clone()).unwrap();
+
+        let mut node = AgentNode::new(
+            AgentId::from("agent-0".to_owned()),
+            vec![lost_agent],
+            coord,
+            InMemAgentTransport::new(make_bus(), AgentId::from("agent-0".to_owned())),
+        );
+        node.gossip_interval_ticks = 999;
+
+        let mut allocator = GreedyAllocator;
+        let out = node
+            .process_inbox_and_allocate(4, &mut allocator, vec![])
+            .unwrap();
+
+        assert_eq!(out.released_tasks, vec![task_id.clone()]);
+        assert!(out.tasks_recovered.is_empty());
+        assert_eq!(out.reassignment_count, 0);
+        assert_eq!(out.reallocation_latency_ticks, None);
+        assert_eq!(task_owner(&node, "task-0"), None);
     }
 
     #[test]

@@ -22,6 +22,8 @@ fn sitl_docs_explain_portable_and_manual_boundaries() {
         "Real Hardware Warning",
         "Troubleshooting",
         "portable_sitl_regression_smoke",
+        "task_reassigned",
+        "reallocation_completed",
         "no external PX4",
     ] {
         assert!(
@@ -32,7 +34,9 @@ fn sitl_docs_explain_portable_and_manual_boundaries() {
 
     for required in [
         "Portable SITL Checks",
+        "Dynamic Reallocation Checks",
         "portable_sitl_regression_smoke",
+        "sitl_observability",
         "sitl_docs",
         "external PX4",
     ] {

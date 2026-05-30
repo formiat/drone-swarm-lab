@@ -29,7 +29,19 @@ struct AgentMetrics {
     detected_failures: Vec<AgentId>,
     local_task_ids: Vec<TaskId>,
     global_assignment_map: HashMap<TaskId, AgentId>,
+    reassignment_count: u64,
+    tasks_recovered: Vec<TaskId>,
+    reallocation_latency_ticks: Option<u64>,
+    reassigned_tasks: HashMap<TaskId, AgentId>,
     reallocation_count: u64,
+}
+
+#[derive(Debug, Default)]
+struct ReallocationMetrics {
+    reassignment_count: u64,
+    tasks_recovered: Vec<TaskId>,
+    reallocation_latency_ticks: Option<u64>,
+    reassigned_tasks: HashMap<TaskId, AgentId>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -67,7 +79,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut allocator = GreedyAllocator;
     let mut detected_failures: Vec<AgentId> = Vec::new();
-    let mut reallocation_count: u64 = 0;
+    let mut reallocation_metrics = ReallocationMetrics::default();
 
     // Ensure metrics directory exists
     if let Some(parent) = std::path::Path::new(&config.metrics_path).parent() {
@@ -88,18 +100,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 detected_failures.push(failed.clone());
             }
         }
-        reallocation_count += output.released_tasks.len() as u64;
+        reallocation_metrics.reassignment_count += output.reassignment_count;
+        for task_id in &output.tasks_recovered {
+            if !reallocation_metrics.tasks_recovered.contains(task_id) {
+                reallocation_metrics.tasks_recovered.push(task_id.clone());
+            }
+        }
+        reallocation_metrics.reallocation_latency_ticks = reallocation_metrics
+            .reallocation_latency_ticks
+            .or(output.reallocation_latency_ticks);
+        for assignment in &output.reassigned_tasks {
+            reallocation_metrics
+                .reassigned_tasks
+                .insert(assignment.task_id.clone(), assignment.agent_id.clone());
+        }
 
         tracing::info!(
             tick,
             agent = %config.agent_id,
             newly_failed = ?output.newly_failed,
+            reassignment_count = output.reassignment_count,
             "tick processed"
         );
 
         // Write metrics every 10 ticks
         if tick % 10 == 0 && tick > 0 {
-            write_metrics(&config, &node, tick, &detected_failures, reallocation_count);
+            write_metrics(
+                &config,
+                &node,
+                tick,
+                &detected_failures,
+                &reallocation_metrics,
+            );
         }
 
         thread::sleep(Duration::from_millis(config.tick_ms));
@@ -111,7 +143,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &node,
         config.max_ticks,
         &detected_failures,
-        reallocation_count,
+        &reallocation_metrics,
     );
 
     tracing::info!(agent = %config.agent_id, "agent process finished");
@@ -123,7 +155,7 @@ fn write_metrics(
     node: &AgentNode<UdpTransport>,
     total_ticks: u64,
     detected_failures: &[AgentId],
-    reallocation_count: u64,
+    reallocation_metrics: &ReallocationMetrics,
 ) {
     let local_task_ids: Vec<TaskId> = node
         .coordinator
@@ -150,7 +182,11 @@ fn write_metrics(
         detected_failures: detected_failures.to_vec(),
         local_task_ids,
         global_assignment_map,
-        reallocation_count,
+        reassignment_count: reallocation_metrics.reassignment_count,
+        tasks_recovered: reallocation_metrics.tasks_recovered.clone(),
+        reallocation_latency_ticks: reallocation_metrics.reallocation_latency_ticks,
+        reassigned_tasks: reallocation_metrics.reassigned_tasks.clone(),
+        reallocation_count: reallocation_metrics.reassignment_count,
     };
 
     let json = serde_json::to_string_pretty(&metrics).unwrap_or_else(|e| {

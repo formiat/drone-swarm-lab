@@ -18,6 +18,14 @@ struct AgentMetrics {
     local_task_ids: Vec<TaskId>,
     global_assignment_map: HashMap<TaskId, AgentId>,
     #[allow(dead_code)]
+    reassignment_count: u64,
+    #[allow(dead_code)]
+    tasks_recovered: Vec<TaskId>,
+    #[allow(dead_code)]
+    reallocation_latency_ticks: Option<u64>,
+    #[allow(dead_code)]
+    reassigned_tasks: HashMap<TaskId, AgentId>,
+    #[allow(dead_code)]
     reallocation_count: u64,
 }
 
@@ -245,6 +253,15 @@ fn main() {
                 ));
             }
         }
+    }
+
+    // 5. At least one survivor observed concrete reassignment/recovery metrics
+    if !all_survivors_metrics.iter().any(|metrics| {
+        metrics.reassignment_count > 0
+            && !metrics.tasks_recovered.is_empty()
+            && metrics.reallocation_latency_ticks.is_some()
+    }) {
+        errors.push("no survivor reported recovered tasks and reallocation latency".to_owned());
     }
 
     if errors.is_empty() {

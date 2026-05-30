@@ -245,6 +245,39 @@ mod tests {
     }
 
     #[test]
+    fn registry_release_agent_tasks_only_releases_unfinished_work() {
+        let agent_id = AgentId::from("agent-0".to_owned());
+        let assigned = TaskId::from("assigned".to_owned());
+        let in_progress = TaskId::from("in-progress".to_owned());
+        let completed = TaskId::from("completed".to_owned());
+        let failed = TaskId::from("failed".to_owned());
+        let mut registry = TaskRegistry::new(vec![
+            task("assigned"),
+            task("in-progress"),
+            task("completed"),
+            task("failed"),
+        ]);
+        for task_id in [&assigned, &in_progress, &completed, &failed] {
+            registry.assign(task_id, agent_id.clone()).unwrap();
+        }
+        registry.start(&in_progress).unwrap();
+        registry.start(&completed).unwrap();
+        registry.complete(&completed).unwrap();
+        registry.fail_task(&failed).unwrap();
+
+        let mut released = registry.release_agent_tasks(&agent_id);
+        released.sort_by(|a, b| a.as_ref().cmp(b.as_ref()));
+
+        assert_eq!(released, vec![assigned.clone(), in_progress.clone()]);
+        let assigned_task = registry.tasks().find(|task| task.id == assigned).unwrap();
+        assert_eq!(assigned_task.status, TaskStatus::Unassigned);
+        assert_eq!(assigned_task.assigned_to, None);
+        let completed_task = registry.tasks().find(|task| task.id == completed).unwrap();
+        assert_eq!(completed_task.status, TaskStatus::Completed);
+        assert_eq!(completed_task.assigned_to, Some(agent_id));
+    }
+
+    #[test]
     fn registry_all_assigned_or_completed() {
         let task_id = TaskId::from("task-0".to_owned());
         let mut registry = TaskRegistry::new(vec![task("task-0")]);

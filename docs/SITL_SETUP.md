@@ -15,10 +15,13 @@ hardware.
 
 ## CI / Manual Boundary
 
-M50 makes the portable SITL path regression-safe without requiring PX4. The
-automated boundary is deliberately narrow: tests may load scenarios, extract
-waypoints, validate static safety rules, run dry-run, run mock mode, and inspect
-mock replay logs. These checks use no external PX4, no simulator process, no
+M50 makes the portable SITL path regression-safe without requiring PX4. M51 adds
+mock/fake/runtime-level failure and dynamic reallocation checks for the future
+multi-agent SITL path. The automated boundary is deliberately narrow: tests may
+load scenarios, extract waypoints, validate static safety rules, run dry-run,
+run mock mode, inspect mock replay logs, detect a lost agent by heartbeat
+timeout, recover assignable tasks on surviving agents, and summarize
+reallocation events. These checks use no external PX4, no simulator process, no
 network endpoint, and no real hardware.
 
 Recommended automated checks:
@@ -29,6 +32,12 @@ PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
 
 PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
   cargo test -p swarm-examples --test sitl_docs
+
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  cargo test -p swarm-runtime reallocation
+
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  cargo test -p swarm-examples sitl_observability
 ```
 
 Manual/local PX4 checks are separate. They require a running PX4 SITL instance,
@@ -37,9 +46,15 @@ the `mavlink-transport` feature, and an operator-controlled endpoint such as
 execute lifecycle, telemetry progress, timeout tuning, final reports, and SITL
 replay logs.
 
+M51 reallocation events are part of this portable boundary. They can appear in
+SITL event logs as `agent_lost`, `task_released`, `task_reassigned`, and
+`reallocation_completed`. They prove the runtime/mock contract, not live
+multi-agent PX4 readiness.
+
 Out of scope for automated CI in this repository:
 
 - real PX4 CI orchestration;
+- real multi-agent PX4 SITL orchestration;
 - HIL;
 - real aircraft;
 - production autopilot certification;

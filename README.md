@@ -95,7 +95,22 @@ Expected: reviewers can validate scenario loading, waypoint extraction, safety
 validation, dry-run output, mock replay logging, and documentation anchors
 without running PX4.
 
-### 10. Upload or execute a mission in PX4 SITL
+### 10. Verify dynamic reallocation checks
+
+```bash
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  cargo test -p swarm-runtime reallocation
+
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  cargo test -p swarm-examples sitl_observability
+```
+
+Expected: heartbeat timeout returns unfinished tasks from a lost agent to the
+pool, surviving agents recover assignable tasks, ownership stays unique, and
+SITL event logs expose agent lost / task released / task reassigned events.
+These checks are mock/fake/runtime-level; they do not run multi-agent PX4 SITL.
+
+### 11. Upload or execute a mission in PX4 SITL
 
 ```bash
 cargo run -p swarm-examples --bin sitl_agent --features mavlink-transport -- \
@@ -156,6 +171,7 @@ cargo run -p swarm-examples --bin replay -- \
 | Mock SITL | ✅ Stable | M20 | `sitl_agent --mock`, no external deps |
 | SITL Dry-Run | ✅ Stable | M43 | `sitl_agent --dry-run`, portable mission upload plan without PX4 |
 | SITL Portable Regression | ✅ Stable | M50 | `portable_sitl_regression_smoke` and `sitl_docs` validate dry-run/mock/safety/docs without external PX4 |
+| Dynamic Reallocation | ✅ Stable | M51 | Heartbeat timeout releases unfinished tasks from lost agents, recovers assignable tasks on survivors, exposes runtime metrics and SITL reallocation events; real multi-agent PX4 remains future work |
 | Replay / Debuggability | ✅ Stable | M23 | `replay` CLI, ASCII visualization |
 | Mission Semantics | ✅ Stable | M33 | `TaskKind`, 6 concrete adapters, `AdapterRegistry`, adapter-driven completion/scoring in runner and allocator |
 | Planner Quality | ✅ Stable | M34 | `RoutePlanner` trait, 2-opt, battery-aware feasibility v2 (ordered-subset feasibility, battery model v2 integration, meaningful runner metrics) |
@@ -210,6 +226,28 @@ PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
 These checks require no external PX4, no simulator, no network endpoint, and no
 real hardware. Live PX4 SITL verification remains a manual/local workflow in
 [`docs/SITL_SETUP.md`](docs/SITL_SETUP.md).
+
+### Dynamic Reallocation Checks (M51)
+
+M51 adds the minimal runtime contract needed before multi-agent SITL: a lost
+agent releases unfinished tasks, assignable tasks are recovered by surviving
+agents, and the SITL event log can show agent lost / task released / task
+reassigned / reallocation completed events.
+
+```bash
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  cargo test -p swarm-runtime reallocation
+
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  cargo test -p swarm-runtime failure
+
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  cargo test -p swarm-examples sitl_observability
+```
+
+These checks are deterministic and use in-memory/mock/fake runtime paths. They
+do not start PX4 and do not claim real multi-agent PX4 readiness; that remains
+future M52+ work.
 
 ### Default Suites (M36)
 

@@ -107,6 +107,29 @@ pub enum SitlEvent {
         status: String,
         error: String,
     },
+    AgentLost {
+        step: u64,
+        agent_id: String,
+    },
+    TaskReleased {
+        step: u64,
+        task_id: String,
+        previous_agent_id: String,
+    },
+    TaskReassigned {
+        step: u64,
+        task_id: String,
+        from_agent_id: String,
+        to_agent_id: String,
+        latency_ticks: u64,
+    },
+    ReallocationCompleted {
+        step: u64,
+        failed_agent_id: String,
+        reassignment_count: usize,
+        tasks_recovered: Vec<String>,
+        latency_ticks: u64,
+    },
     RunCompleted {
         step: u64,
         status: String,
@@ -269,6 +292,61 @@ impl SitlEventRecorder {
         });
     }
 
+    pub fn push_agent_lost(&mut self, agent_id: impl Into<String>) {
+        let step = self.next_step();
+        self.log.events.push(SitlEvent::AgentLost {
+            step,
+            agent_id: agent_id.into(),
+        });
+    }
+
+    pub fn push_task_released(
+        &mut self,
+        task_id: impl Into<String>,
+        previous_agent_id: impl Into<String>,
+    ) {
+        let step = self.next_step();
+        self.log.events.push(SitlEvent::TaskReleased {
+            step,
+            task_id: task_id.into(),
+            previous_agent_id: previous_agent_id.into(),
+        });
+    }
+
+    pub fn push_task_reassigned(
+        &mut self,
+        task_id: impl Into<String>,
+        from_agent_id: impl Into<String>,
+        to_agent_id: impl Into<String>,
+        latency_ticks: u64,
+    ) {
+        let step = self.next_step();
+        self.log.events.push(SitlEvent::TaskReassigned {
+            step,
+            task_id: task_id.into(),
+            from_agent_id: from_agent_id.into(),
+            to_agent_id: to_agent_id.into(),
+            latency_ticks,
+        });
+    }
+
+    pub fn push_reallocation_completed(
+        &mut self,
+        failed_agent_id: impl Into<String>,
+        reassignment_count: usize,
+        tasks_recovered: Vec<String>,
+        latency_ticks: u64,
+    ) {
+        let step = self.next_step();
+        self.log.events.push(SitlEvent::ReallocationCompleted {
+            step,
+            failed_agent_id: failed_agent_id.into(),
+            reassignment_count,
+            tasks_recovered,
+            latency_ticks,
+        });
+    }
+
     pub fn push_run_completed(&mut self, status: impl Into<String>) {
         let step = self.next_step();
         self.log.events.push(SitlEvent::RunCompleted {
@@ -316,6 +394,12 @@ pub struct SitlEventLogSummary {
     pub abort_requested: usize,
     pub disconnected: usize,
     pub failures: usize,
+    pub agent_lost: usize,
+    pub task_released: usize,
+    pub task_reassigned: usize,
+    pub reallocation_completed: usize,
+    pub tasks_recovered: usize,
+    pub reallocation_latency_ticks: Option<u64>,
     pub final_status: Option<String>,
 }
 
@@ -367,6 +451,20 @@ pub fn summarize_sitl_event_log(log: &SitlEventLog) -> SitlEventLogSummary {
                 summary.failures += 1;
                 summary.final_status = Some(status.clone());
             }
+            SitlEvent::AgentLost { .. } => summary.agent_lost += 1,
+            SitlEvent::TaskReleased { .. } => summary.task_released += 1,
+            SitlEvent::TaskReassigned { .. } => summary.task_reassigned += 1,
+            SitlEvent::ReallocationCompleted {
+                tasks_recovered,
+                latency_ticks,
+                ..
+            } => {
+                summary.reallocation_completed += 1;
+                summary.tasks_recovered += tasks_recovered.len();
+                summary
+                    .reallocation_latency_ticks
+                    .get_or_insert(*latency_ticks);
+            }
             SitlEvent::RunCompleted { status, .. } => {
                 summary.final_status = Some(status.clone());
             }
@@ -413,6 +511,18 @@ pub fn format_sitl_summary(summary: &SitlEventLogSummary) -> String {
         format!(
             "Failures: aborts={} disconnected={} failures={} final_status={}",
             summary.abort_requested, summary.disconnected, summary.failures, final_status
+        ),
+        format!(
+            "Reallocation: agent_lost={} task_released={} task_reassigned={} completed={} tasks_recovered={} latency_ticks={}",
+            summary.agent_lost,
+            summary.task_released,
+            summary.task_reassigned,
+            summary.reallocation_completed,
+            summary.tasks_recovered,
+            summary
+                .reallocation_latency_ticks
+                .map(|ticks| ticks.to_string())
+                .unwrap_or_else(|| "none".to_owned())
         ),
     ]
     .join("\n")
@@ -560,6 +670,40 @@ mod tests {
     }
 
     #[test]
+    fn reallocation_events_roundtrip_and_summarize() {
+        let mut recorder = SitlEventRecorder::new(SitlEventLogMetadata {
+            run_id: "sitl-reallocation".to_owned(),
+            scenario_path: PathBuf::from("scenario.json"),
+            scenario_name: "s".to_owned(),
+            mission: "sitl".to_owned(),
+            profile: "waypoints".to_owned(),
+            agent_id: "agent-0".to_owned(),
+            connection_string: None,
+            mode: SitlEventLogMode::Mock,
+        });
+        recorder.push_agent_lost("agent-1");
+        recorder.push_task_released("task-0", "agent-1");
+        recorder.push_task_reassigned("task-0", "agent-1", "agent-0", 0);
+        recorder.push_reallocation_completed("agent-1", 1, vec!["task-0".to_owned()], 0);
+        let log = recorder.into_log();
+
+        let json = serde_json::to_string(&log).unwrap();
+        assert!(json.contains(r#""type":"agent_lost""#));
+        assert!(json.contains(r#""type":"task_reassigned""#));
+        assert!(json.contains(r#""type":"reallocation_completed""#));
+        let restored: SitlEventLog = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored, log);
+
+        let summary = summarize_sitl_event_log(&restored);
+        assert_eq!(summary.agent_lost, 1);
+        assert_eq!(summary.task_released, 1);
+        assert_eq!(summary.task_reassigned, 1);
+        assert_eq!(summary.reallocation_completed, 1);
+        assert_eq!(summary.tasks_recovered, 1);
+        assert_eq!(summary.reallocation_latency_ticks, Some(0));
+    }
+
+    #[test]
     fn formatted_summary_is_compact_and_contains_counts() {
         let summary = summarize_sitl_event_log(&sample_log());
         let text = format_sitl_summary(&summary);
@@ -567,6 +711,7 @@ mod tests {
         assert!(text.contains("SITL run: sitl-agent-0"));
         assert!(text.contains("requested=2"));
         assert!(text.contains("waypoint_reached=1"));
+        assert!(text.contains("Reallocation: agent_lost=0"));
         assert!(text.contains("final_status=completed"));
     }
 }
