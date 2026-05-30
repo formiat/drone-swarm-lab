@@ -28,6 +28,9 @@ fn sitl_docs_explain_portable_and_manual_boundaries() {
         "task_reassigned",
         "reallocation_completed",
         "Multi-Agent SITL Foundation",
+        "Supervisor Controller Boundary",
+        "MockAgentController",
+        "SupervisorMetrics",
         "scenarios/sitl.px4-golden.json",
         "scenarios/sitl.multi-agent.json",
         "scenarios/sitl.multi-agent.config.json",
@@ -49,6 +52,9 @@ fn sitl_docs_explain_portable_and_manual_boundaries() {
         "Portable SITL Checks",
         "Dynamic Reallocation Checks",
         "Multi-Agent SITL Foundation",
+        "Supervisor Controller Boundary",
+        "AgentController",
+        "SupervisorMetrics",
         "scenarios/sitl.px4-golden.json",
         "scenarios/sitl.multi-agent.json",
         "scenarios/sitl.multi-agent.config.json",
@@ -68,6 +74,7 @@ fn sitl_docs_explain_portable_and_manual_boundaries() {
 
     for required in [
         "Hardware Readiness Boundary",
+        "Supervisor Controller Boundary",
         "operator checklist",
         "Physical kill switch",
         "Manual pilot override",
@@ -92,6 +99,8 @@ fn sitl_docs_explain_portable_and_manual_boundaries() {
         "reallocation_completed",
         "live multi-agent PX4 supervisor path",
         "yet inject failures",
+        "MockAgentController",
+        "SupervisorMetrics",
         "scenarios/sitl.px4-golden.json",
     ] {
         assert!(REPLAY.contains(required), "Replay doc missing {required}");
@@ -103,6 +112,7 @@ fn sitl_docs_explain_portable_and_manual_boundaries() {
         "scenarios/sitl.px4-golden.json",
         "results/m48_px4_sitl_2026-05-30",
         "M52 Multi-Agent SITL Foundation",
+        "M57 Supervisor Controller Boundary",
         "scenarios/sitl.multi-agent.json",
         "scenarios/sitl.multi-agent.config.json",
         "Default regression determinism sweep passed after fixes",

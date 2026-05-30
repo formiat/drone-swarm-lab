@@ -231,6 +231,23 @@ fn run_sitl_supervisor(args: &[&str]) -> std::process::Output {
         .expect("failed to execute sitl_supervisor")
 }
 
+fn assert_sitl_supervisor_cli_error(args: &[&str], expected: &str) {
+    let output = run_sitl_supervisor(args);
+    assert!(
+        !output.status.success(),
+        "sitl_supervisor unexpectedly succeeded for args: {args:?}"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(expected),
+        "expected stderr to contain '{expected}' for args {args:?}, got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("usage: sitl_supervisor"),
+        "expected usage text for args {args:?}, got:\n{stderr}"
+    );
+}
+
 fn run_sitl_supervisor_in_dir(args: &[&str], dir: &std::path::Path) -> std::process::Output {
     Command::new(sitl_supervisor_binary())
         .current_dir(dir)
@@ -611,6 +628,154 @@ fn multi_agent_sitl_supervisor_duplicate_ownership_rejected_test() {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("duplicate ownership"));
+}
+
+#[test]
+fn multi_agent_sitl_supervisor_rejects_missing_and_invalid_cli_args_test() {
+    let scenario = write_multi_agent_sitl_scenario();
+    let config = write_multi_agent_config(false);
+    let scenario = scenario.path().to_str().unwrap().to_owned();
+    let config = config.path().to_str().unwrap().to_owned();
+
+    let cases: Vec<(Vec<&str>, &str)> = vec![
+        (vec![], "missing SITL mode"),
+        (
+            vec!["--mock", "--config", &config],
+            "missing required argument: --scenario",
+        ),
+        (
+            vec!["--mock", "--scenario", &scenario],
+            "missing required argument: --config",
+        ),
+        (
+            vec![
+                "--mock",
+                "--scenario",
+                &scenario,
+                "--config",
+                &config,
+                "--manifest",
+            ],
+            "missing required argument: --manifest",
+        ),
+        (
+            vec![
+                "--mock",
+                "--scenario",
+                &scenario,
+                "--config",
+                &config,
+                "--replay-log",
+            ],
+            "missing required argument: --replay-log",
+        ),
+        (
+            vec![
+                "--mock",
+                "--scenario",
+                &scenario,
+                "--config",
+                &config,
+                "--fail-agent",
+            ],
+            "missing required argument: --fail-agent",
+        ),
+        (
+            vec![
+                "--mock",
+                "--scenario",
+                &scenario,
+                "--config",
+                &config,
+                "--fail-after-ticks",
+            ],
+            "missing required argument: --fail-after-ticks",
+        ),
+        (
+            vec![
+                "--mock",
+                "--scenario",
+                &scenario,
+                "--config",
+                &config,
+                "--heartbeat-timeout-ticks",
+            ],
+            "missing required argument: --heartbeat-timeout-ticks",
+        ),
+        (
+            vec![
+                "--mock",
+                "--scenario",
+                &scenario,
+                "--config",
+                &config,
+                "--max-ticks",
+            ],
+            "missing required argument: --max-ticks",
+        ),
+        (
+            vec![
+                "--mock",
+                "--scenario",
+                &scenario,
+                "--config",
+                &config,
+                "--fail-after-ticks",
+                "abc",
+            ],
+            "invalid --fail-after-ticks value 'abc'",
+        ),
+        (
+            vec![
+                "--mock",
+                "--scenario",
+                &scenario,
+                "--config",
+                &config,
+                "--heartbeat-timeout-ticks",
+                "abc",
+            ],
+            "invalid --heartbeat-timeout-ticks value 'abc'",
+        ),
+        (
+            vec![
+                "--mock",
+                "--scenario",
+                &scenario,
+                "--config",
+                &config,
+                "--max-ticks",
+                "abc",
+            ],
+            "invalid --max-ticks value 'abc'",
+        ),
+        (
+            vec![
+                "--dry-run",
+                "--mock",
+                "--scenario",
+                &scenario,
+                "--config",
+                &config,
+            ],
+            "conflicting SITL modes",
+        ),
+        (
+            vec![
+                "--mock",
+                "--scenario",
+                &scenario,
+                "--config",
+                &config,
+                "--unknown",
+            ],
+            "unknown argument: --unknown",
+        ),
+    ];
+
+    for (args, expected) in cases {
+        assert_sitl_supervisor_cli_error(&args, expected);
+    }
 }
 
 #[test]

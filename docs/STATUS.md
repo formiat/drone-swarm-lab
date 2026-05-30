@@ -32,6 +32,7 @@ status table.
 | M51 Dynamic Reallocation for Failed Agent | Supervisor mock complete | Runtime reallocation, metrics, SITL event schema, and `sitl_supervisor --mock` heartbeat-timeout/reallocation flow are implemented. Live PX4 failure/reallocation remains future work. |
 | M52 Multi-Agent SITL Foundation | Foundation plus upload-only check complete | `multi_sitl.v1`, public `scenarios/sitl.multi-agent.json` / `scenarios/sitl.multi-agent.config.json`, dry-run/mock manifest, task subsets, duplicate ownership checks, mock supervisor orchestration, and a two-instance PX4 SIH upload-only check exist. |
 | M53 Hardware Readiness Boundary | Complete | `docs/HARDWARE_READINESS.md`, connection classes, and `--allow-hardware-candidate` guard hardware-candidate endpoints. |
+| M57 Supervisor Controller Boundary | Complete | `sitl_supervisor` mock orchestration is extracted into a testable internal supervisor module with `AgentController`, `MockAgentController`, returned `SupervisorMetrics`, expanded CLI negative tests, and no live PX4 controller yet. |
 
 ## Current Known Limitations
 
@@ -49,6 +50,9 @@ status table.
 - **M51 reallocation is live in the mock supervisor, not in PX4.** Reallocation
   events are emitted by `sitl_supervisor --mock` after heartbeat timeout. They
   are not yet emitted by a live multi-agent PX4 supervisor failure flow.
+- **M57 is an internal boundary, not a live PX4 milestone.** The mock supervisor
+  state machine is now testable behind an internal controller boundary, but live
+  multi-agent PX4 execute orchestration remains future work.
 - **Hardware is out of scope.** The project is not flight-certified and is not a
   production safety layer.
 
@@ -104,6 +108,9 @@ PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
 
 PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
   /home/formi/.local/bin/runlim cargo test -p swarm-runtime reallocation
+
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  /home/formi/.local/bin/runlim cargo test -p swarm-examples sitl_supervisor
 ```
 
 For M48 live verification, inspect `results/m48_px4_sitl_2026-05-30/`. For the

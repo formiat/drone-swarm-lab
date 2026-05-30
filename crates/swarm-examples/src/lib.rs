@@ -7,3 +7,4 @@ pub mod sitl_plan;
 pub mod sitl_progress;
 pub mod sitl_report;
 pub mod sitl_safety;
+pub mod sitl_supervisor;

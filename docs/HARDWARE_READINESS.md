@@ -19,6 +19,7 @@ and serial connections as hardware candidates and requires
 | Portable regression | Portable | `portable_sitl_regression_smoke`, `sitl_docs`, safety validation, mock replay, and multi-agent manifest checks run without external PX4. |
 | Single-agent PX4 SITL | Experimental | Feature-gated mission upload, optional arm/takeoff/start, telemetry progress, run report, replay log plumbing, and public `scenarios/sitl.px4-golden.json` exist for local PX4 SITL. Live simulator verification remains manual/local. |
 | Multi-agent SITL foundation | Experimental foundation | `multi_sitl.v1` config, public `scenarios/sitl.multi-agent.json` / `scenarios/sitl.multi-agent.config.json`, per-agent task subsets, dry-run/mock manifest, mock supervisor reallocation, MAVLink system/component mapping, duplicate ownership rejection, and local two-instance PX4 SIH upload-only mission acceptance are covered. Live execute orchestration and PX4 failure/reallocation are not. |
+| Supervisor Controller Boundary | Portable internal boundary | M57 extracts mock `sitl_supervisor` orchestration behind an internal `AgentController` / `MockAgentController` boundary with assertable `SupervisorMetrics`. This is a code-structure and testability milestone, not hardware readiness. |
 
 ## Not Verified On Hardware
 

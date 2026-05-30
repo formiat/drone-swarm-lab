@@ -240,6 +240,23 @@ Duplicate ownership is a hard pre-upload error: the same task id cannot appear
 under two agents. Unassigned pose tasks are allowed for partial experiments and
 are reported in the manifest ownership summary.
 
+### M57 Supervisor Controller Boundary
+
+M57 is an internal refactor of the portable supervisor path. The external
+`sitl_supervisor --dry-run` and `sitl_supervisor --mock` commands remain the
+same, but mock orchestration now runs through a testable supervisor/controller
+boundary:
+
+- `AgentController` describes one agent lifecycle/progress/abort boundary;
+- `MockAgentController` preserves the current no-PX4 mock workflow;
+- `SupervisorMetrics` is returned from the supervisor module and still printed
+  as the existing `SUPERVISOR_METRICS` line;
+- CLI negative cases for missing/invalid supervisor arguments are covered by
+  subprocess tests.
+
+This does not add a live PX4 supervisor mode. Real multi-agent PX4/SIH execute
+orchestration remains the next milestone after this boundary.
+
 Out of scope for M52:
 
 - robust distributed coordination;

@@ -212,6 +212,7 @@ cargo run -p swarm-examples --bin replay -- \
 | Dynamic Reallocation | ✅ Stable | M51 | Heartbeat timeout releases unfinished tasks from lost agents, recovers assignable tasks on survivors, exposes runtime metrics and SITL reallocation events; `sitl_supervisor --mock` now emits the failure/reallocation flow; live PX4 failure/reallocation remains future work |
 | Multi-Agent SITL Foundation | ✅ Stable | M52 | `multi_sitl.v1` config, public fixtures, `sitl_supervisor` dry-run/mock orchestration, per-agent task subsets, MAVLink system/component mapping, duplicate ownership rejection, and a two-instance PX4 SIH upload-only check; real multi-agent execute orchestration remains future work |
 | Hardware Readiness Boundary | ✅ Stable | M53 | `docs/HARDWARE_READINESS.md`, connection classes, and `--allow-hardware-candidate` guard remote/wildcard/serial hardware candidates; this documents the boundary, not hardware readiness |
+| Supervisor Controller Boundary | ✅ Stable | M57 | `sitl_supervisor` mock orchestration is now split into a testable internal supervisor module with `AgentController`, `MockAgentController`, and assertable `SupervisorMetrics`; CLI behavior remains compatible and no live PX4 controller is added yet |
 | Replay / Debuggability | ✅ Stable | M23 | `replay` CLI, ASCII visualization |
 | Mission Semantics | ✅ Stable | M33 | `TaskKind`, 6 concrete adapters, `AdapterRegistry`, adapter-driven completion/scoring in runner and allocator |
 | Planner Quality | ✅ Stable | M34 | `RoutePlanner` trait, 2-opt, battery-aware feasibility v2 (ordered-subset feasibility, battery model v2 integration, meaningful runner metrics) |
@@ -316,6 +317,25 @@ PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
 These checks remain portable. They exercise JSON config parsing, task subset
 splitting, `sitl_supervisor` dry-run/mock manifests, mock supervisor
 reallocation, and pre-upload duplicate ownership rejection without starting PX4.
+
+### Supervisor Controller Boundary Checks (M57)
+
+M57 keeps the external `sitl_supervisor --dry-run` / `--mock` CLI stable while
+moving the mock supervisor state machine into a reusable internal module. The
+new boundary introduces an internal `AgentController` trait, `MockAgentController`
+and assertable `SupervisorMetrics`; it does not add a live PX4 supervisor mode.
+
+```bash
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  cargo test -p swarm-examples sitl_supervisor
+
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  cargo test -p swarm-examples --test sitl_agent multi_agent_sitl_supervisor
+```
+
+These checks cover mock controller upload/poll behavior, metrics formatting,
+mock failure/reallocation metrics, CLI negative argument handling, and the
+existing subprocess supervisor contract.
 
 ### Default Suites (M36)
 
@@ -476,6 +496,7 @@ See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known l
 | M34 | ✅ | Planner Correctness v2: `RoutePlanner` trait, 2-opt, battery-aware feasibility (ordered-subset), meaningful route metrics |
 | M35 | ✅ | Dynamic Mission Correctness: mission-specific success semantics, SAR unsupported reasons, support matrix tests |
 | M36 | ✅ | Regression Harness v2: calibrated thresholds, wildfire/realism suites, portable tests (tempdir), failure delta output, refreshed baseline |
+| M57 | ✅ | Supervisor Controller Boundary: `sitl_supervisor` mock state machine extracted behind internal controller boundary, metrics made assertable, CLI compatibility tests expanded |
 
 ---
 
