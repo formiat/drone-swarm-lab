@@ -161,14 +161,59 @@ pub fn validate_pre_upload_safety(
     }
 }
 
+pub fn validate_pre_upload_safety_for_task_ids(
+    entry: &ScenarioSuiteEntry,
+    agent_id: &str,
+    config: &SitlSafetyConfig,
+    task_ids: &[String],
+) -> Result<(), SitlError> {
+    let violations =
+        collect_pre_upload_safety_violations_for_task_ids(entry, agent_id, config, task_ids);
+    if violations.is_empty() {
+        Ok(())
+    } else {
+        Err(SitlError::SafetyValidationFailed {
+            message: format_violations(&violations),
+        })
+    }
+}
+
 pub fn collect_pre_upload_safety_violations(
     entry: &ScenarioSuiteEntry,
     agent_id: &str,
     config: &SitlSafetyConfig,
 ) -> Vec<SitlSafetyViolation> {
-    let mut violations = Vec::new();
+    collect_pre_upload_safety_violations_impl(entry, agent_id, config, None)
+}
 
-    if entry.scenario.tasks.is_empty() {
+pub fn collect_pre_upload_safety_violations_for_task_ids(
+    entry: &ScenarioSuiteEntry,
+    agent_id: &str,
+    config: &SitlSafetyConfig,
+    task_ids: &[String],
+) -> Vec<SitlSafetyViolation> {
+    let task_ids: HashSet<&str> = task_ids.iter().map(String::as_str).collect();
+    collect_pre_upload_safety_violations_impl(entry, agent_id, config, Some(&task_ids))
+}
+
+fn collect_pre_upload_safety_violations_impl(
+    entry: &ScenarioSuiteEntry,
+    agent_id: &str,
+    config: &SitlSafetyConfig,
+    allowed_task_ids: Option<&HashSet<&str>>,
+) -> Vec<SitlSafetyViolation> {
+    let mut violations = Vec::new();
+    let selected_tasks: Vec<_> = entry
+        .scenario
+        .tasks
+        .iter()
+        .filter(|task| {
+            let task_id = task.id.to_string();
+            allowed_task_ids.is_none_or(|ids| ids.contains(task_id.as_str()))
+        })
+        .collect();
+
+    if selected_tasks.is_empty() {
         violations.push(SitlSafetyViolation::new(
             SitlSafetyRuleId::EmptyMission,
             None,
@@ -179,7 +224,7 @@ pub fn collect_pre_upload_safety_violations(
         return violations;
     }
 
-    collect_duplicate_ids(entry, &mut violations);
+    collect_duplicate_ids(&selected_tasks, &mut violations);
     let home = resolve_home(entry, agent_id, config);
     if config.require_home && home.is_none() {
         violations.push(SitlSafetyViolation::new(
@@ -192,7 +237,7 @@ pub fn collect_pre_upload_safety_violations(
     }
 
     let mut pose_waypoints = Vec::new();
-    for task in &entry.scenario.tasks {
+    for task in selected_tasks {
         let task_id = task.id.to_string();
         let Some(pose) = task.pose else {
             violations.push(SitlSafetyViolation::new(
@@ -326,9 +371,9 @@ fn validate_pose_waypoint(
     }
 }
 
-fn collect_duplicate_ids(entry: &ScenarioSuiteEntry, violations: &mut Vec<SitlSafetyViolation>) {
+fn collect_duplicate_ids(tasks: &[&swarm_types::Task], violations: &mut Vec<SitlSafetyViolation>) {
     let mut seen = HashSet::new();
-    for task in &entry.scenario.tasks {
+    for task in tasks {
         let task_id = task.id.to_string();
         if !seen.insert(task_id.clone()) {
             violations.push(SitlSafetyViolation::new(
@@ -557,6 +602,53 @@ mod tests {
         assert!(message.contains("task_id=wp-1"));
         assert!(message.contains("actual=point="));
         assert!(message.contains("allowed=geofence="));
+    }
+
+    #[test]
+    fn subset_safety_ignores_unselected_unsafe_task() {
+        let config = SitlSafetyConfig {
+            geofence: Some(Aabb {
+                min_x: 0.0,
+                max_x: 20.0,
+                min_y: 0.0,
+                max_y: 25.0,
+            }),
+            ..SitlSafetyConfig::default()
+        };
+        let task_ids = vec!["wp-0".to_owned()];
+
+        let violations = collect_pre_upload_safety_violations_for_task_ids(
+            &default_entry(),
+            "agent-0",
+            &config,
+            &task_ids,
+        );
+
+        assert!(violations.is_empty(), "{violations:?}");
+    }
+
+    #[test]
+    fn subset_safety_rejects_selected_unsafe_task() {
+        let config = SitlSafetyConfig {
+            geofence: Some(Aabb {
+                min_x: 0.0,
+                max_x: 20.0,
+                min_y: 0.0,
+                max_y: 25.0,
+            }),
+            ..SitlSafetyConfig::default()
+        };
+        let task_ids = vec!["wp-1".to_owned()];
+
+        let violations = collect_pre_upload_safety_violations_for_task_ids(
+            &default_entry(),
+            "agent-0",
+            &config,
+            &task_ids,
+        );
+
+        assert_rule(&violations, SitlSafetyRuleId::OutsideGeofence);
+        assert!(format_violations(&violations).contains("task_id=wp-1"));
     }
 
     #[test]

@@ -219,6 +219,14 @@ fn run_sitl_supervisor(args: &[&str]) -> std::process::Output {
         .expect("failed to execute sitl_supervisor")
 }
 
+fn run_sitl_supervisor_in_dir(args: &[&str], dir: &std::path::Path) -> std::process::Output {
+    Command::new(sitl_supervisor_binary())
+        .current_dir(dir)
+        .args(args)
+        .output()
+        .expect("failed to execute sitl_supervisor")
+}
+
 #[test]
 fn dry_run_outputs_mission_upload_plan() {
     let scenario = write_sitl_scenario();
@@ -281,6 +289,66 @@ fn multi_agent_duplicate_ownership_rejected_before_upload_test() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("duplicate ownership"));
     assert!(stderr.contains("task_id=wp-0"));
+    assert!(!stderr.contains("feature missing"));
+}
+
+#[test]
+#[cfg(not(feature = "mavlink-transport"))]
+fn multi_agent_safety_subset_allows_safe_agent_when_other_agent_is_unsafe() {
+    let scenario = write_multi_agent_sitl_scenario();
+    let config = write_multi_agent_config(false);
+    let safety = write_safety_config(
+        r#"{
+  "geofence": { "min_x": 0.0, "max_x": 20.0, "min_y": 0.0, "max_y": 25.0 }
+}"#,
+    );
+    let output = run_sitl_agent(&[
+        "--connection",
+        "udp:127.0.0.1:14550",
+        "--scenario",
+        scenario.path().to_str().unwrap(),
+        "--agent-id",
+        "agent-0",
+        "--multi-agent-config",
+        config.path().to_str().unwrap(),
+        "--safety-config",
+        safety.path().to_str().unwrap(),
+    ]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("feature missing"));
+    assert!(!stderr.contains("safety validation failed"));
+    assert!(!stderr.contains("task_id=wp-1"));
+}
+
+#[test]
+fn multi_agent_safety_subset_rejects_selected_agent_unsafe_task() {
+    let scenario = write_multi_agent_sitl_scenario();
+    let config = write_multi_agent_config(false);
+    let safety = write_safety_config(
+        r#"{
+  "geofence": { "min_x": 0.0, "max_x": 20.0, "min_y": 0.0, "max_y": 25.0 }
+}"#,
+    );
+    let output = run_sitl_agent(&[
+        "--connection",
+        "udp:127.0.0.1:14560",
+        "--scenario",
+        scenario.path().to_str().unwrap(),
+        "--agent-id",
+        "agent-1",
+        "--multi-agent-config",
+        config.path().to_str().unwrap(),
+        "--safety-config",
+        safety.path().to_str().unwrap(),
+    ]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("safety validation failed"));
+    assert!(stderr.contains("rule_id=outside_geofence"));
+    assert!(stderr.contains("task_id=wp-1"));
     assert!(!stderr.contains("feature missing"));
 }
 
@@ -365,6 +433,28 @@ fn multi_agent_sitl_supervisor_dry_run_manifest_file_test() {
     let manifest: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(manifest_path).unwrap()).unwrap();
     assert_eq!(manifest["ownership_summary"]["assigned_task_count"], 2);
+}
+
+#[test]
+fn multi_agent_sitl_supervisor_manifest_file_without_parent_test() {
+    let scenario = write_multi_agent_sitl_scenario();
+    let config = write_multi_agent_config(false);
+    let dir = tempfile::tempdir().unwrap();
+    let output = run_sitl_supervisor_in_dir(
+        &[
+            "--dry-run",
+            "--scenario",
+            scenario.path().to_str().unwrap(),
+            "--config",
+            config.path().to_str().unwrap(),
+            "--manifest",
+            "manifest.json",
+        ],
+        dir.path(),
+    );
+
+    assert!(output.status.success());
+    assert!(dir.path().join("manifest.json").exists());
 }
 
 #[test]

@@ -20,7 +20,9 @@ use swarm_examples::sitl_plan::{
 use swarm_examples::sitl_report::{
     write_sitl_run_report, SitlRunFinalStatus, SitlRunMode, SitlRunReport,
 };
-use swarm_examples::sitl_safety::{load_sitl_safety_config, validate_pre_upload_safety};
+use swarm_examples::sitl_safety::{
+    load_sitl_safety_config, validate_pre_upload_safety, validate_pre_upload_safety_for_task_ids,
+};
 
 struct CliArgs {
     mode: Option<SitlMode>,
@@ -344,6 +346,7 @@ fn run() -> Result<(), SitlError> {
     let mut lifecycle = cli.lifecycle;
     let mut runtime_options = AgentRuntimeOptions::default();
     let mut mode = cli.mode.clone();
+    let mut safety_task_ids: Option<Vec<String>> = None;
     let plan = if let Some(config) = multi_agent_config.as_ref() {
         let config_path = cli.multi_agent_config.as_ref().expect("config path exists");
         let manifest = build_multi_agent_manifest(&suite, &cli.scenario, config_path, config)?;
@@ -357,6 +360,7 @@ fn run() -> Result<(), SitlError> {
                 addr: agent.connection_string.clone(),
             });
         }
+        safety_task_ids = Some(agent.task_ids.clone());
         if matches!(mode, Some(SitlMode::DryRun)) {
             let agent_manifest = manifest
                 .agents
@@ -390,7 +394,16 @@ fn run() -> Result<(), SitlError> {
         validate_connection_string(addr)?;
         let safety_config = load_sitl_safety_config(cli.safety_config.as_deref().map(Path::new))?;
         let entry = first_sitl_entry(&suite, &cli.scenario)?;
-        validate_pre_upload_safety(entry, &plan.agent_id, &safety_config)?;
+        if let Some(task_ids) = safety_task_ids.as_ref() {
+            validate_pre_upload_safety_for_task_ids(
+                entry,
+                &plan.agent_id,
+                &safety_config,
+                task_ids,
+            )?;
+        } else {
+            validate_pre_upload_safety(entry, &plan.agent_id, &safety_config)?;
+        }
     }
 
     match mode {

@@ -124,7 +124,10 @@ fn write_or_print_manifest(
         return Ok(());
     };
     let path = Path::new(path);
-    if let Some(parent) = path.parent() {
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
         std::fs::create_dir_all(parent).map_err(|error| SitlError::MultiAgentManifestWrite {
             path: parent.to_path_buf(),
             message: error.to_string(),
