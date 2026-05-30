@@ -542,10 +542,38 @@ SITL telemetry merge and hardware-specific failsafe tuning remain future work.
 
 ## Real Hardware Warning
 
-Do not use the current `sitl_agent` against real drones. The repository does not
-provide a certified safety layer, hardware readiness checks, preflight policy,
-operator workflow, emergency handling, or a production flight workflow. Treat
-all SITL functionality as simulation/development tooling.
+Do not use the current `sitl_agent` against real drones as if it were a
+production flight workflow. The repository does not provide a certified safety
+layer, hardware-specific failsafe tuning, preflight policy, operator workflow,
+emergency handling, or flight certification. Treat all SITL functionality as
+simulation/development tooling.
+
+The canonical boundary document is
+[`docs/HARDWARE_READINESS.md`](HARDWARE_READINESS.md). Read it before any
+hardware experiment.
+
+### Connection Classes
+
+`sitl_agent` separates connection classes so real hardware paths are not enabled
+accidentally:
+
+- `mock`: `--mock`, in-memory transport, no PX4 and no hardware path.
+- `dry-run`: `--dry-run`, prints the mission upload plan and does not open a
+  transport.
+- `local_px4_sitl_udp`: loopback UDP connections such as
+  `udp:127.0.0.1:14550`, `udp:localhost:14550`, or `udp:[::1]:14550`.
+- `hardware_candidate`: `serial:*`, `tcp:*`, or `udp:*` with a non-loopback
+  host. These may target real hardware or a remote endpoint and require
+  `--allow-hardware-candidate`.
+
+Example guarded failure:
+
+```text
+hardware candidate connection 'udp:192.168.1.10:14550' classified as hardware_candidate; this path may target real hardware or a remote endpoint and requires --allow-hardware-candidate. Read docs/HARDWARE_READINESS.md before any hardware experiment
+```
+
+With `--allow-hardware-candidate`, the CLI prints an explicit warning before it
+continues. The flag is an opt-in acknowledgement, not a safety guarantee.
 
 ## Troubleshooting
 
@@ -556,6 +584,7 @@ all SITL functionality as simulation/development tooling.
 | `no pose tasks found` | Scenario has no tasks with `pose` | Use or adapt `scenarios/sitl.waypoints.json` |
 | `feature missing` | `--connection` was used without `mavlink-transport` | Build/run with `--features mavlink-transport` |
 | `bad connection string` | Connection address is not a supported form | Use `udp:<host>:<port>` for PX4 SITL |
+| `hardware candidate connection` | Connection may target real hardware or a remote endpoint | Use local loopback PX4 SITL UDP, or read `docs/HARDWARE_READINESS.md` and pass `--allow-hardware-candidate` only for a controlled hardware experiment |
 | `safety config read failed` | `--safety-config` points to a missing/unreadable file | Fix the path or omit the option to use defaults |
 | `safety config parse failed` | Safety config is not valid JSON | Fix JSON syntax |
 | `safety validation failed` | Mission violates a pre-upload safety rule | Read the `rule_id`, `actual`, and `allowed` fields and adjust scenario/config |

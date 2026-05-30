@@ -13,8 +13,9 @@ use swarm_examples::sitl_observability::{
     write_sitl_event_log, SitlEventLogMetadata, SitlEventLogMode, SitlEventRecorder,
 };
 use swarm_examples::sitl_plan::{
-    build_sitl_plan_for_task_ids, first_sitl_entry, format_dry_run_plan, load_sitl_suite,
-    validate_connection_string, SitlError, SitlMode, SitlPlan,
+    build_sitl_plan_for_task_ids, classify_connection_string, first_sitl_entry,
+    format_dry_run_plan, load_sitl_suite, validate_connection_string, SitlConnectionClass,
+    SitlError, SitlMode, SitlPlan,
 };
 #[cfg(feature = "mavlink-transport")]
 use swarm_examples::sitl_report::{
@@ -32,6 +33,7 @@ struct CliArgs {
     safety_config: Option<String>,
     run_report: Option<String>,
     replay_log: Option<String>,
+    allow_hardware_candidate: bool,
     lifecycle: LifecycleArgs,
     lifecycle_from_cli: bool,
 }
@@ -77,6 +79,7 @@ fn parse_args() -> Result<CliArgs, SitlError> {
     let mut safety_config: Option<String> = None;
     let mut run_report: Option<String> = None;
     let mut replay_log: Option<String> = None;
+    let mut allow_hardware_candidate = false;
     let mut lifecycle_mode: Option<LifecycleMode> = None;
     let mut no_arm = false;
     let mut abort_after: Option<Duration> = None;
@@ -163,6 +166,9 @@ fn parse_args() -> Result<CliArgs, SitlError> {
                         .clone(),
                 );
             }
+            "--allow-hardware-candidate" => {
+                allow_hardware_candidate = true;
+            }
             "--upload-only" => {
                 set_lifecycle_mode(&mut lifecycle_mode, LifecycleMode::UploadOnly)?;
                 connection_only_option.get_or_insert("--upload-only");
@@ -225,6 +231,11 @@ fn parse_args() -> Result<CliArgs, SitlError> {
     let lifecycle_mode = lifecycle_mode.unwrap_or(LifecycleMode::UploadOnly);
     let config_implies_connection = mode.is_none() && multi_agent_config.is_some();
     let explicit_connection_mode = matches!(mode, Some(SitlMode::Connection { .. }));
+    if allow_hardware_candidate && !explicit_connection_mode && !config_implies_connection {
+        return Err(SitlError::ConnectionOptionRequiresConnection {
+            option: "--allow-hardware-candidate",
+        });
+    }
     if !explicit_connection_mode && !config_implies_connection {
         if let Some(option) = connection_only_option {
             return Err(SitlError::LifecycleOptionRequiresConnection { option });
@@ -270,6 +281,7 @@ fn parse_args() -> Result<CliArgs, SitlError> {
         safety_config,
         run_report,
         replay_log,
+        allow_hardware_candidate,
         lifecycle: LifecycleArgs {
             mode: lifecycle_mode,
             no_arm,
@@ -328,7 +340,7 @@ fn main() {
     if let Err(error) = run() {
         eprintln!("error: {error}");
         eprintln!(
-            "usage: sitl_agent --mock|--dry-run|--connection <addr> --scenario <path> --agent-id <id> [--multi-agent-config <path>] [--safety-config <path>] [--upload-only|--execute] [--no-arm] [--abort-after <seconds>] [--timeout <seconds>] [--telemetry-timeout <seconds>] [--no-progress-timeout <seconds>] [--run-report <path>] [--replay-log <path>]"
+            "usage: sitl_agent --mock|--dry-run|--connection <addr> --scenario <path> --agent-id <id> [--multi-agent-config <path>] [--safety-config <path>] [--allow-hardware-candidate] [--upload-only|--execute] [--no-arm] [--abort-after <seconds>] [--timeout <seconds>] [--telemetry-timeout <seconds>] [--no-progress-timeout <seconds>] [--run-report <path>] [--replay-log <path>]"
         );
         std::process::exit(1);
     }
@@ -391,7 +403,7 @@ fn run() -> Result<(), SitlError> {
     }
 
     if let SitlMode::Connection { addr } = &mode {
-        validate_connection_string(addr)?;
+        enforce_hardware_candidate_boundary(addr, cli.allow_hardware_candidate)?;
         let safety_config = load_sitl_safety_config(cli.safety_config.as_deref().map(Path::new))?;
         let entry = first_sitl_entry(&suite, &cli.scenario)?;
         if let Some(task_ids) = safety_task_ids.as_ref() {
@@ -424,6 +436,31 @@ fn run() -> Result<(), SitlError> {
             cli.replay_log.as_deref(),
         ),
     }
+}
+
+fn enforce_hardware_candidate_boundary(
+    addr: &str,
+    allow_hardware_candidate: bool,
+) -> Result<(), SitlError> {
+    let class = classify_connection_string(addr)?;
+    if matches!(class, SitlConnectionClass::HardwareCandidate) {
+        if allow_hardware_candidate {
+            print_hardware_candidate_warning(addr, class);
+        } else {
+            return Err(SitlError::HardwareCandidateRequiresExplicitAllow {
+                addr: addr.to_owned(),
+                class: class.name(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn print_hardware_candidate_warning(addr: &str, class: SitlConnectionClass) {
+    eprintln!(
+        "WARNING: connection '{addr}' is classified as {}. This may target real hardware or a remote endpoint. This project is not hardware-ready, does not provide a certified safety layer, and requires the operator checklist in docs/HARDWARE_READINESS.md before any hardware experiment.",
+        class.name()
+    );
 }
 
 fn lifecycle_mode_from_config(lifecycle: MultiAgentLifecycle) -> LifecycleMode {

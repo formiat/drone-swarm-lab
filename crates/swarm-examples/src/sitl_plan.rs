@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::fmt::Write as _;
+use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -10,6 +11,28 @@ pub enum SitlMode {
     Mock,
     DryRun,
     Connection { addr: String },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SitlConnectionClass {
+    LocalPx4SitlUdp,
+    HardwareCandidate,
+}
+
+impl SitlConnectionClass {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::LocalPx4SitlUdp => "local_px4_sitl_udp",
+            Self::HardwareCandidate => "hardware_candidate",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ParsedSitlConnection<'a> {
+    Udp { host: &'a str },
+    Tcp,
+    Serial,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -76,6 +99,14 @@ pub enum SitlError {
         "bad connection string '{addr}': expected udp:<host>:<port>, tcp:<host>:<port>, or serial:<path>:<baud>"
     )]
     BadConnectionString { addr: String },
+    #[error(
+        "hardware candidate connection '{addr}' classified as {class}; this path may target real hardware or a remote endpoint and requires --allow-hardware-candidate. Read docs/HARDWARE_READINESS.md before any hardware experiment"
+    )]
+    HardwareCandidateRequiresExplicitAllow { addr: String, class: &'static str },
+    #[error(
+        "connection option {option} requires --connection <addr> or --multi-agent-config <path>"
+    )]
+    ConnectionOptionRequiresConnection { option: &'static str },
     #[error("unsupported coordinate frame '{frame}'")]
     UnsupportedCoordinateFrame { frame: String },
     #[error("connection failed: {message}")]
@@ -128,26 +159,43 @@ pub enum SitlError {
 }
 
 pub fn validate_connection_string(addr: &str) -> Result<(), SitlError> {
+    parse_sitl_connection(addr).map(|_| ())
+}
+
+pub fn classify_connection_string(addr: &str) -> Result<SitlConnectionClass, SitlError> {
+    let connection = parse_sitl_connection(addr)?;
+    Ok(match connection {
+        ParsedSitlConnection::Udp { host } if is_loopback_host(host) => {
+            SitlConnectionClass::LocalPx4SitlUdp
+        }
+        ParsedSitlConnection::Udp { .. }
+        | ParsedSitlConnection::Tcp
+        | ParsedSitlConnection::Serial => SitlConnectionClass::HardwareCandidate,
+    })
+}
+
+fn parse_sitl_connection(addr: &str) -> Result<ParsedSitlConnection<'_>, SitlError> {
     let addr = addr.trim();
     let Some((scheme, rest)) = addr.split_once(':') else {
         return bad_connection_string(addr);
     };
 
     match scheme {
-        "udp" | "tcp" => validate_host_port(addr, rest),
-        "serial" => validate_serial(addr, rest),
+        "udp" => parse_host_port(addr, rest).map(|host| ParsedSitlConnection::Udp { host }),
+        "tcp" => parse_host_port(addr, rest).map(|_| ParsedSitlConnection::Tcp),
+        "serial" => validate_serial(addr, rest).map(|_| ParsedSitlConnection::Serial),
         _ => bad_connection_string(addr),
     }
 }
 
-fn validate_host_port(addr: &str, rest: &str) -> Result<(), SitlError> {
+fn parse_host_port<'a>(addr: &str, rest: &'a str) -> Result<&'a str, SitlError> {
     let Some((host, port)) = rest.rsplit_once(':') else {
         return bad_connection_string(addr);
     };
     if host.trim().is_empty() || port.trim().parse::<u16>().is_err() {
         return bad_connection_string(addr);
     }
-    Ok(())
+    Ok(host)
 }
 
 fn validate_serial(addr: &str, rest: &str) -> Result<(), SitlError> {
@@ -164,6 +212,20 @@ fn bad_connection_string<T>(addr: &str) -> Result<T, SitlError> {
     Err(SitlError::BadConnectionString {
         addr: addr.to_owned(),
     })
+}
+
+fn is_loopback_host(host: &str) -> bool {
+    let host = host.trim();
+    if host.eq_ignore_ascii_case("localhost") {
+        return true;
+    }
+    let host = host
+        .strip_prefix('[')
+        .and_then(|host| host.strip_suffix(']'))
+        .unwrap_or(host);
+    host.parse::<IpAddr>()
+        .map(|addr| addr.is_loopback())
+        .unwrap_or(false)
 }
 
 pub fn load_sitl_plan(
@@ -654,5 +716,55 @@ mod tests {
         validate_connection_string("udp:127.0.0.1:14550").unwrap();
         validate_connection_string("tcp:localhost:5760").unwrap();
         validate_connection_string("serial:/dev/ttyUSB0:57600").unwrap();
+    }
+
+    #[test]
+    fn sitl_connection_class_loopback_udp_is_local_px4_sitl() {
+        for addr in [
+            "udp:127.0.0.1:14550",
+            "udp:localhost:14550",
+            "udp:[::1]:14550",
+        ] {
+            assert_eq!(
+                classify_connection_string(addr).unwrap(),
+                SitlConnectionClass::LocalPx4SitlUdp
+            );
+        }
+    }
+
+    #[test]
+    fn sitl_connection_class_remote_udp_is_hardware_candidate() {
+        for addr in ["udp:192.168.1.10:14550", "udp:10.0.0.5:14550"] {
+            assert_eq!(
+                classify_connection_string(addr).unwrap(),
+                SitlConnectionClass::HardwareCandidate
+            );
+        }
+    }
+
+    #[test]
+    fn sitl_connection_class_tcp_is_hardware_candidate() {
+        for addr in ["tcp:localhost:5760", "tcp:192.168.1.10:5760"] {
+            assert_eq!(
+                classify_connection_string(addr).unwrap(),
+                SitlConnectionClass::HardwareCandidate
+            );
+        }
+    }
+
+    #[test]
+    fn sitl_connection_class_serial_is_hardware_candidate() {
+        assert_eq!(
+            classify_connection_string("serial:/dev/ttyUSB0:57600").unwrap(),
+            SitlConnectionClass::HardwareCandidate
+        );
+    }
+
+    #[test]
+    fn sitl_connection_class_rejects_malformed_connection_strings() {
+        for addr in ["not-a-connection", "udp:127.0.0.1", "serial:/dev/ttyUSB0"] {
+            let error = classify_connection_string(addr).unwrap_err();
+            assert!(matches!(error, SitlError::BadConnectionString { .. }));
+        }
     }
 }

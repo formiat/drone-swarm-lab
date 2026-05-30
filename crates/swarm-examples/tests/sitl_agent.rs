@@ -165,6 +165,18 @@ fn write_multi_agent_sitl_scenario() -> tempfile::NamedTempFile {
 }
 
 fn write_multi_agent_config(duplicate: bool) -> tempfile::NamedTempFile {
+    write_multi_agent_config_with_connections(
+        duplicate,
+        "udp:127.0.0.1:14550",
+        "udp:127.0.0.1:14560",
+    )
+}
+
+fn write_multi_agent_config_with_connections(
+    duplicate: bool,
+    agent_0_connection: &str,
+    agent_1_connection: &str,
+) -> tempfile::NamedTempFile {
     let file = tempfile::NamedTempFile::new().unwrap();
     let agent_1_task = if duplicate { "wp-0" } else { "wp-1" };
     std::fs::write(
@@ -177,7 +189,7 @@ fn write_multi_agent_config(duplicate: bool) -> tempfile::NamedTempFile {
       "agent_id": "agent-0",
       "system_id": 1,
       "component_id": 1,
-      "connection_string": "udp:127.0.0.1:14550",
+      "connection_string": "{agent_0_connection}",
       "start_delay_ms": 0,
       "lifecycle": "upload_only",
       "task_ids": ["wp-0"]
@@ -186,7 +198,7 @@ fn write_multi_agent_config(duplicate: bool) -> tempfile::NamedTempFile {
       "agent_id": "agent-1",
       "system_id": 2,
       "component_id": 1,
-      "connection_string": "udp:127.0.0.1:14560",
+      "connection_string": "{agent_1_connection}",
       "start_delay_ms": 0,
       "lifecycle": "execute",
       "task_ids": ["{agent_1_task}"]
@@ -602,6 +614,7 @@ fn cli_validation_connection_without_feature() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("feature missing"));
     assert!(stderr.contains("mavlink-transport"));
+    assert!(!stderr.contains("hardware candidate"));
 }
 
 #[test]
@@ -767,6 +780,142 @@ fn cli_validation_incomplete_udp_connection_string() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("bad connection string"));
     assert!(!stderr.contains("feature missing"));
+}
+
+#[test]
+fn hardware_candidate_remote_udp_requires_explicit_allow() {
+    let scenario = write_sitl_scenario();
+    let scenario = scenario.path().to_str().unwrap();
+    let output = run_sitl_agent(&[
+        "--connection",
+        "udp:192.168.1.10:14550",
+        "--scenario",
+        scenario,
+        "--agent-id",
+        "agent-0",
+    ]);
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("hardware candidate connection"));
+    assert!(stderr.contains("--allow-hardware-candidate"));
+    assert!(!stderr.contains("feature missing"));
+}
+
+#[test]
+fn hardware_candidate_serial_requires_explicit_allow() {
+    let scenario = write_sitl_scenario();
+    let scenario = scenario.path().to_str().unwrap();
+    let output = run_sitl_agent(&[
+        "--connection",
+        "serial:/dev/ttyUSB0:57600",
+        "--scenario",
+        scenario,
+        "--agent-id",
+        "agent-0",
+    ]);
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("hardware candidate connection"));
+    assert!(stderr.contains("--allow-hardware-candidate"));
+    assert!(!stderr.contains("feature missing"));
+}
+
+#[test]
+#[cfg(not(feature = "mavlink-transport"))]
+fn hardware_candidate_opt_in_warns_then_reaches_feature_error() {
+    let scenario = write_sitl_scenario();
+    let scenario = scenario.path().to_str().unwrap();
+    let output = run_sitl_agent(&[
+        "--connection",
+        "udp:192.168.1.10:14550",
+        "--scenario",
+        scenario,
+        "--agent-id",
+        "agent-0",
+        "--allow-hardware-candidate",
+    ]);
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("WARNING"));
+    assert!(stderr.contains("hardware_candidate"));
+    assert!(stderr.contains("docs/HARDWARE_READINESS.md"));
+    assert!(stderr.contains("feature missing"));
+}
+
+#[test]
+fn hardware_candidate_flag_requires_connection_mode() {
+    let scenario = write_sitl_scenario();
+    let scenario = scenario.path().to_str().unwrap();
+    let output = run_sitl_agent(&[
+        "--dry-run",
+        "--scenario",
+        scenario,
+        "--agent-id",
+        "agent-0",
+        "--allow-hardware-candidate",
+    ]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("connection option --allow-hardware-candidate requires"));
+}
+
+#[test]
+fn multi_agent_config_implied_hardware_candidate_requires_explicit_allow() {
+    let scenario = write_multi_agent_sitl_scenario();
+    let config = write_multi_agent_config_with_connections(
+        false,
+        "udp:192.168.1.10:14550",
+        "udp:127.0.0.1:14560",
+    );
+    let output = run_sitl_agent(&[
+        "--scenario",
+        scenario.path().to_str().unwrap(),
+        "--agent-id",
+        "agent-0",
+        "--multi-agent-config",
+        config.path().to_str().unwrap(),
+    ]);
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("hardware candidate connection"));
+    assert!(stderr.contains("--allow-hardware-candidate"));
+    assert!(!stderr.contains("feature missing"));
+}
+
+#[test]
+#[cfg(not(feature = "mavlink-transport"))]
+fn multi_agent_config_implied_hardware_candidate_opt_in_warns() {
+    let scenario = write_multi_agent_sitl_scenario();
+    let config = write_multi_agent_config_with_connections(
+        false,
+        "udp:192.168.1.10:14550",
+        "udp:127.0.0.1:14560",
+    );
+    let output = run_sitl_agent(&[
+        "--scenario",
+        scenario.path().to_str().unwrap(),
+        "--agent-id",
+        "agent-0",
+        "--multi-agent-config",
+        config.path().to_str().unwrap(),
+        "--allow-hardware-candidate",
+    ]);
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("WARNING"));
+    assert!(stderr.contains("hardware_candidate"));
+    assert!(stderr.contains("feature missing"));
 }
 
 #[test]

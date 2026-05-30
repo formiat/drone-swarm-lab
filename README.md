@@ -145,6 +145,11 @@ legacy `MISSION_REQUEST`, sends `MISSION_ITEM_INT` waypoints, and requires an
 accepted `MISSION_ACK`. If `--safety-config` is omitted, conservative SITL
 defaults are used.
 
+Remote, TCP, and serial connections are treated as hardware candidates and are
+guarded by `--allow-hardware-candidate`. This opt-in does not make the project
+hardware-ready. Read [`docs/HARDWARE_READINESS.md`](docs/HARDWARE_READINESS.md)
+before any hardware experiment.
+
 Execution is opt-in:
 
 ```bash
@@ -190,6 +195,7 @@ cargo run -p swarm-examples --bin replay -- \
 | SITL Portable Regression | ✅ Stable | M50 | `portable_sitl_regression_smoke` and `sitl_docs` validate dry-run/mock/safety/docs without external PX4 |
 | Dynamic Reallocation | ✅ Stable | M51 | Heartbeat timeout releases unfinished tasks from lost agents, recovers assignable tasks on survivors, exposes runtime metrics and SITL reallocation events; real multi-agent PX4 remains future work |
 | Multi-Agent SITL Foundation | ✅ Stable | M52 | `multi_sitl.v1` config, `sitl_supervisor` dry-run/mock manifest, per-agent task subsets, MAVLink system/component mapping, duplicate ownership rejection before upload; real multi-agent PX4 remains manual/future work |
+| Hardware Readiness Boundary | ✅ Stable | M53 | `docs/HARDWARE_READINESS.md`, connection classes, and `--allow-hardware-candidate` guard remote/serial hardware candidates; this documents the boundary, not hardware readiness |
 | Replay / Debuggability | ✅ Stable | M23 | `replay` CLI, ASCII visualization |
 | Mission Semantics | ✅ Stable | M33 | `TaskKind`, 6 concrete adapters, `AdapterRegistry`, adapter-driven completion/scoring in runner and allocator |
 | Planner Quality | ✅ Stable | M34 | `RoutePlanner` trait, 2-opt, battery-aware feasibility v2 (ordered-subset feasibility, battery model v2 integration, meaningful runner metrics) |
@@ -352,12 +358,13 @@ Parametric sweeps over variables such as packet loss, agent count, or grid size 
 ## Known Limitations
 
 1. **Simulation only:** No real hardware workflow; PX4 integration is limited to experimental SITL waypoint upload plus opt-in single-agent lifecycle/progress tracking with static pre-upload safety checks.
-2. **Multi-agent SITL foundation only:** M52 supports config-driven per-agent task subsets, dry-run/mock manifests, standalone command generation, and duplicate ownership checks. It does not provide robust distributed coordination, automated real multi-agent PX4 orchestration, or hardware safety guarantees.
-3. **SITL coordinate frame:** `sitl_agent` dry-run/mock mode treats `Pose { x, y, z }` as local simulation coordinates; `x/y` are not WGS84 latitude/longitude, and `z` is local altitude.
-4. **3D pose:** Scenarios support `z` coordinate and altitude-aware sensors, but most missions operate primarily in XY plane.
-5. **Deterministic RNG:** Scenarios use seeded RNG; real-world noise is modeled optionally via `--realism` preset.
-6. **Battery model v2:** Hover/climb/cruise drain rates are configurable but not calibrated against real flight data.
-7. **Regression smoke variance:** Smoke suites use 1 seed; high-variance missions (SAR, emergency-mesh, wildfire) have conservative thresholds. Promote to `Quick` (10 seeds) for tighter coverage.
+2. **Hardware boundary:** Remote UDP, TCP, and serial connection strings are hardware candidates and require `--allow-hardware-candidate`; this is only an explicit opt-in guard, not flight certification or proof of hardware readiness. See [`docs/HARDWARE_READINESS.md`](docs/HARDWARE_READINESS.md).
+3. **Multi-agent SITL foundation only:** M52 supports config-driven per-agent task subsets, dry-run/mock manifests, standalone command generation, and duplicate ownership checks. It does not provide robust distributed coordination, automated real multi-agent PX4 orchestration, or hardware safety guarantees.
+4. **SITL coordinate frame:** `sitl_agent` dry-run/mock mode treats `Pose { x, y, z }` as local simulation coordinates; `x/y` are not WGS84 latitude/longitude, and `z` is local altitude.
+5. **3D pose:** Scenarios support `z` coordinate and altitude-aware sensors, but most missions operate primarily in XY plane.
+6. **Deterministic RNG:** Scenarios use seeded RNG; real-world noise is modeled optionally via `--realism` preset.
+7. **Battery model v2:** Hover/climb/cruise drain rates are configurable but not calibrated against real flight data.
+8. **Regression smoke variance:** Smoke suites use 1 seed; high-variance missions (SAR, emergency-mesh, wildfire) have conservative thresholds. Promote to `Quick` (10 seeds) for tighter coverage.
 
 See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known limitations.
 
