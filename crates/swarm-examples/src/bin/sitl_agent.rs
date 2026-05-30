@@ -1,15 +1,20 @@
 use std::path::Path;
+use std::thread;
 use std::time::Duration;
 #[cfg(feature = "mavlink-transport")]
 use std::time::Instant;
 
 use swarm_comms::{MockMavlinkTransport, Waypoint};
+use swarm_examples::sitl_multi_agent::{
+    agent_config, build_multi_agent_manifest, load_multi_agent_config, MultiAgentLifecycle,
+    MultiAgentSitlAgentConfig,
+};
 use swarm_examples::sitl_observability::{
     write_sitl_event_log, SitlEventLogMetadata, SitlEventLogMode, SitlEventRecorder,
 };
 use swarm_examples::sitl_plan::{
-    first_sitl_entry, format_dry_run_plan, load_sitl_suite, validate_connection_string, SitlError,
-    SitlMode, SitlPlan,
+    build_sitl_plan_for_task_ids, first_sitl_entry, format_dry_run_plan, load_sitl_suite,
+    validate_connection_string, SitlError, SitlMode, SitlPlan,
 };
 #[cfg(feature = "mavlink-transport")]
 use swarm_examples::sitl_report::{
@@ -18,13 +23,15 @@ use swarm_examples::sitl_report::{
 use swarm_examples::sitl_safety::{load_sitl_safety_config, validate_pre_upload_safety};
 
 struct CliArgs {
-    mode: SitlMode,
+    mode: Option<SitlMode>,
     scenario: String,
     agent_id: String,
+    multi_agent_config: Option<String>,
     safety_config: Option<String>,
     run_report: Option<String>,
     replay_log: Option<String>,
     lifecycle: LifecycleArgs,
+    lifecycle_from_cli: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -42,11 +49,29 @@ struct LifecycleArgs {
     no_progress_timeout: Duration,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct AgentRuntimeOptions {
+    start_delay_ms: u64,
+    target_system: u8,
+    target_component: u8,
+}
+
+impl Default for AgentRuntimeOptions {
+    fn default() -> Self {
+        Self {
+            start_delay_ms: 0,
+            target_system: 1,
+            target_component: 1,
+        }
+    }
+}
+
 fn parse_args() -> Result<CliArgs, SitlError> {
     let args: Vec<String> = std::env::args().collect();
     let mut mode: Option<SitlMode> = None;
     let mut scenario: Option<String> = None;
     let mut agent_id: Option<String> = None;
+    let mut multi_agent_config: Option<String> = None;
     let mut safety_config: Option<String> = None;
     let mut run_report: Option<String> = None;
     let mut replay_log: Option<String> = None;
@@ -92,6 +117,16 @@ fn parse_args() -> Result<CliArgs, SitlError> {
                 agent_id = Some(
                     args.get(i)
                         .ok_or(SitlError::MissingArgument { name: "--agent-id" })?
+                        .clone(),
+                );
+            }
+            "--multi-agent-config" => {
+                i += 1;
+                multi_agent_config = Some(
+                    args.get(i)
+                        .ok_or(SitlError::MissingArgument {
+                            name: "--multi-agent-config <path>",
+                        })?
                         .clone(),
                 );
             }
@@ -181,9 +216,14 @@ fn parse_args() -> Result<CliArgs, SitlError> {
         i += 1;
     }
 
-    let mode = mode.ok_or(SitlError::MissingMode)?;
+    if mode.is_none() && multi_agent_config.is_none() {
+        return Err(SitlError::MissingMode);
+    }
+    let lifecycle_from_cli = lifecycle_mode.is_some();
     let lifecycle_mode = lifecycle_mode.unwrap_or(LifecycleMode::UploadOnly);
-    if !matches!(mode, SitlMode::Connection { .. }) {
+    let config_implies_connection = mode.is_none() && multi_agent_config.is_some();
+    let explicit_connection_mode = matches!(mode, Some(SitlMode::Connection { .. }));
+    if !explicit_connection_mode && !config_implies_connection {
         if let Some(option) = connection_only_option {
             return Err(SitlError::LifecycleOptionRequiresConnection { option });
         }
@@ -206,15 +246,14 @@ fn parse_args() -> Result<CliArgs, SitlError> {
             option: "--no-progress-timeout",
         });
     }
-    if run_report.is_some()
-        && (!matches!(mode, SitlMode::Connection { .. })
-            || lifecycle_mode != LifecycleMode::Execute)
-    {
+    let run_report_may_be_valid = config_implies_connection
+        || (explicit_connection_mode && lifecycle_mode == LifecycleMode::Execute);
+    if run_report.is_some() && !run_report_may_be_valid {
         return Err(SitlError::RunReportRequiresExecute {
             option: "--run-report",
         });
     }
-    if replay_log.is_some() && matches!(mode, SitlMode::DryRun) {
+    if replay_log.is_some() && matches!(mode, Some(SitlMode::DryRun)) {
         return Err(SitlError::ReplayLogUnsupported {
             option: "--replay-log",
             mode: "dry-run",
@@ -225,6 +264,7 @@ fn parse_args() -> Result<CliArgs, SitlError> {
         mode,
         scenario: scenario.ok_or(SitlError::MissingArgument { name: "--scenario" })?,
         agent_id: agent_id.ok_or(SitlError::MissingArgument { name: "--agent-id" })?,
+        multi_agent_config,
         safety_config,
         run_report,
         replay_log,
@@ -236,6 +276,7 @@ fn parse_args() -> Result<CliArgs, SitlError> {
             telemetry_timeout,
             no_progress_timeout,
         },
+        lifecycle_from_cli,
     })
 }
 
@@ -285,7 +326,7 @@ fn main() {
     if let Err(error) = run() {
         eprintln!("error: {error}");
         eprintln!(
-            "usage: sitl_agent --mock|--dry-run|--connection <addr> --scenario <path> --agent-id <id> [--safety-config <path>] [--upload-only|--execute] [--no-arm] [--abort-after <seconds>] [--timeout <seconds>] [--telemetry-timeout <seconds>] [--no-progress-timeout <seconds>] [--run-report <path>] [--replay-log <path>]"
+            "usage: sitl_agent --mock|--dry-run|--connection <addr> --scenario <path> --agent-id <id> [--multi-agent-config <path>] [--safety-config <path>] [--upload-only|--execute] [--no-arm] [--abort-after <seconds>] [--timeout <seconds>] [--telemetry-timeout <seconds>] [--no-progress-timeout <seconds>] [--run-report <path>] [--replay-log <path>]"
         );
         std::process::exit(1);
     }
@@ -294,18 +335,69 @@ fn main() {
 fn run() -> Result<(), SitlError> {
     let cli = parse_args()?;
     let suite = load_sitl_suite(&cli.scenario)?;
+    let multi_agent_config = cli
+        .multi_agent_config
+        .as_deref()
+        .map(load_multi_agent_config)
+        .transpose()?;
 
-    if let SitlMode::Connection { addr } = &cli.mode {
+    let mut lifecycle = cli.lifecycle;
+    let mut runtime_options = AgentRuntimeOptions::default();
+    let mut mode = cli.mode.clone();
+    let plan = if let Some(config) = multi_agent_config.as_ref() {
+        let config_path = cli.multi_agent_config.as_ref().expect("config path exists");
+        let manifest = build_multi_agent_manifest(&suite, &cli.scenario, config_path, config)?;
+        let agent = agent_config(config, &cli.agent_id)?;
+        if !cli.lifecycle_from_cli {
+            lifecycle.mode = lifecycle_mode_from_config(agent.lifecycle);
+        }
+        runtime_options = runtime_options_from_config(agent);
+        if mode.is_none() {
+            mode = Some(SitlMode::Connection {
+                addr: agent.connection_string.clone(),
+            });
+        }
+        if matches!(mode, Some(SitlMode::DryRun)) {
+            let agent_manifest = manifest
+                .agents
+                .iter()
+                .find(|item| item.agent_id == cli.agent_id)
+                .expect("validated manifest contains agent");
+            eprintln!(
+                "Multi-agent SITL: agent={} system_id={} component_id={} connection={} lifecycle={:?} start_delay_ms={} task_ids={}",
+                agent_manifest.agent_id,
+                agent_manifest.system_id,
+                agent_manifest.component_id,
+                agent_manifest.connection_string,
+                agent_manifest.lifecycle,
+                agent_manifest.start_delay_ms,
+                agent_manifest.task_ids.join(",")
+            );
+        }
+        build_sitl_plan_for_task_ids(&suite, &cli.scenario, &cli.agent_id, &agent.task_ids)?
+    } else {
+        swarm_examples::sitl_plan::build_sitl_plan(&suite, &cli.scenario, cli.agent_id.clone())?
+    };
+
+    let mode = mode.ok_or(SitlError::MissingMode)?;
+    if cli.run_report.is_some() && lifecycle.mode != LifecycleMode::Execute {
+        return Err(SitlError::RunReportRequiresExecute {
+            option: "--run-report",
+        });
+    }
+
+    if let SitlMode::Connection { addr } = &mode {
         validate_connection_string(addr)?;
         let safety_config = load_sitl_safety_config(cli.safety_config.as_deref().map(Path::new))?;
         let entry = first_sitl_entry(&suite, &cli.scenario)?;
-        validate_pre_upload_safety(entry, &cli.agent_id, &safety_config)?;
+        validate_pre_upload_safety(entry, &plan.agent_id, &safety_config)?;
     }
 
-    let plan = swarm_examples::sitl_plan::build_sitl_plan(&suite, &cli.scenario, cli.agent_id)?;
-
-    match cli.mode {
-        SitlMode::Mock => run_mock(&plan, cli.replay_log.as_deref()),
+    match mode {
+        SitlMode::Mock => {
+            apply_start_delay(runtime_options.start_delay_ms);
+            run_mock(&plan, cli.replay_log.as_deref())
+        }
         SitlMode::DryRun => {
             print!("{}", format_dry_run_plan(&plan));
             Ok(())
@@ -313,10 +405,32 @@ fn run() -> Result<(), SitlError> {
         SitlMode::Connection { addr } => run_connection(
             &plan,
             &addr,
-            &cli.lifecycle,
+            &lifecycle,
+            runtime_options,
             cli.run_report.as_deref(),
             cli.replay_log.as_deref(),
         ),
+    }
+}
+
+fn lifecycle_mode_from_config(lifecycle: MultiAgentLifecycle) -> LifecycleMode {
+    match lifecycle {
+        MultiAgentLifecycle::UploadOnly => LifecycleMode::UploadOnly,
+        MultiAgentLifecycle::Execute => LifecycleMode::Execute,
+    }
+}
+
+fn runtime_options_from_config(config: &MultiAgentSitlAgentConfig) -> AgentRuntimeOptions {
+    AgentRuntimeOptions {
+        start_delay_ms: config.start_delay_ms,
+        target_system: config.system_id,
+        target_component: config.component_id,
+    }
+}
+
+fn apply_start_delay(start_delay_ms: u64) {
+    if start_delay_ms > 0 {
+        thread::sleep(Duration::from_millis(start_delay_ms));
     }
 }
 
@@ -397,10 +511,12 @@ fn run_connection(
     plan: &SitlPlan,
     connection_string: &str,
     lifecycle: &LifecycleArgs,
+    runtime_options: AgentRuntimeOptions,
     run_report: Option<&str>,
     replay_log: Option<&str>,
 ) -> Result<(), SitlError> {
     validate_connection_string(connection_string)?;
+    apply_start_delay(runtime_options.start_delay_ms);
 
     #[cfg(feature = "mavlink-transport")]
     {
@@ -440,6 +556,8 @@ fn run_connection(
         }
 
         let upload_options = MissionUploadOptions {
+            target_system: runtime_options.target_system,
+            target_component: runtime_options.target_component,
             timeout: lifecycle.timeout,
             ..MissionUploadOptions::default()
         };
@@ -516,6 +634,7 @@ fn run_connection(
         let _ = plan;
         let _ = run_report;
         let _ = replay_log;
+        let _ = runtime_options;
         let _ = (
             lifecycle.mode,
             lifecycle.no_arm,

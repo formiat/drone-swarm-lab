@@ -24,6 +24,10 @@ fn sitl_docs_explain_portable_and_manual_boundaries() {
         "portable_sitl_regression_smoke",
         "task_reassigned",
         "reallocation_completed",
+        "Multi-Agent SITL Foundation",
+        "sitl_supervisor",
+        "--multi-agent-config",
+        "Duplicate ownership",
         "no external PX4",
     ] {
         assert!(
@@ -35,6 +39,10 @@ fn sitl_docs_explain_portable_and_manual_boundaries() {
     for required in [
         "Portable SITL Checks",
         "Dynamic Reallocation Checks",
+        "Multi-Agent SITL Foundation",
+        "sitl_supervisor",
+        "--multi-agent-config",
+        "duplicate ownership",
         "portable_sitl_regression_smoke",
         "sitl_observability",
         "sitl_docs",

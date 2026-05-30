@@ -43,7 +43,7 @@ This document provides an honest audit of the project state after M32-M39a. It c
 ### Not Implemented
 
 - **Flood mission**: M38 is named "Wildfire / Flood v2" in historical docs, but flood has no separate scenario, adapter, or profile
-- **Multi-agent SITL**: Only single-agent mock SITL exists
+- **Multi-agent SITL**: M52 foundation exists for explicit config, dry-run/mock manifests, manual several-process command generation, and duplicate ownership checks; automated real multi-agent PX4 orchestration is still not implemented
 - **Visualization product**: Replay CLI only; no web/dashboard
 
 ---

@@ -110,7 +110,24 @@ pool, surviving agents recover assignable tasks, ownership stays unique, and
 SITL event logs expose agent lost / task released / task reassigned events.
 These checks are mock/fake/runtime-level; they do not run multi-agent PX4 SITL.
 
-### 11. Upload or execute a mission in PX4 SITL
+### 11. Inspect multi-agent SITL manifest
+
+```bash
+cargo run -p swarm-examples --bin sitl_supervisor -- \
+  --dry-run --scenario scenarios/sitl.waypoints.json --config path/to/multi-sitl.json
+
+cargo run -p swarm-examples --bin sitl_agent -- \
+  --dry-run --scenario scenarios/sitl.waypoints.json \
+  --agent-id agent-0 --multi-agent-config path/to/multi-sitl.json
+```
+
+Expected: a portable `multi_sitl_manifest.v1` JSON manifest with per-agent
+MAVLink system/component ids, connection strings, lifecycle mode, start delays,
+task subsets, waypoint subsets, standalone `sitl_agent` commands, and ownership
+summary. Duplicate ownership is rejected before upload. This is a
+dry-run/mock/config foundation; it does not run real multi-agent PX4.
+
+### 12. Upload or execute a mission in PX4 SITL
 
 ```bash
 cargo run -p swarm-examples --bin sitl_agent --features mavlink-transport -- \
@@ -172,6 +189,7 @@ cargo run -p swarm-examples --bin replay -- \
 | SITL Dry-Run | ✅ Stable | M43 | `sitl_agent --dry-run`, portable mission upload plan without PX4 |
 | SITL Portable Regression | ✅ Stable | M50 | `portable_sitl_regression_smoke` and `sitl_docs` validate dry-run/mock/safety/docs without external PX4 |
 | Dynamic Reallocation | ✅ Stable | M51 | Heartbeat timeout releases unfinished tasks from lost agents, recovers assignable tasks on survivors, exposes runtime metrics and SITL reallocation events; real multi-agent PX4 remains future work |
+| Multi-Agent SITL Foundation | ✅ Stable | M52 | `multi_sitl.v1` config, `sitl_supervisor` dry-run/mock manifest, per-agent task subsets, MAVLink system/component mapping, duplicate ownership rejection before upload; real multi-agent PX4 remains manual/future work |
 | Replay / Debuggability | ✅ Stable | M23 | `replay` CLI, ASCII visualization |
 | Mission Semantics | ✅ Stable | M33 | `TaskKind`, 6 concrete adapters, `AdapterRegistry`, adapter-driven completion/scoring in runner and allocator |
 | Planner Quality | ✅ Stable | M34 | `RoutePlanner` trait, 2-opt, battery-aware feasibility v2 (ordered-subset feasibility, battery model v2 integration, meaningful runner metrics) |
@@ -246,8 +264,30 @@ PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
 ```
 
 These checks are deterministic and use in-memory/mock/fake runtime paths. They
-do not start PX4 and do not claim real multi-agent PX4 readiness; that remains
-future M52+ work.
+do not start PX4 and do not claim real multi-agent PX4 readiness; real
+multi-agent PX4 orchestration remains later work beyond the M52 foundation.
+
+### Multi-Agent SITL Foundation Checks (M52)
+
+M52 adds the config and manifest foundation for multi-agent SITL. It maps each
+`agent_id` to MAVLink system/component ids, connection string, lifecycle mode,
+start delay, and explicit task subset. It also validates duplicate ownership
+before any upload path.
+
+```bash
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  cargo test -p swarm-examples sitl_multi_agent
+
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  cargo test -p swarm-examples --test sitl_agent multi_agent
+
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  cargo test -p swarm-examples --test sitl_docs
+```
+
+These checks remain portable. They exercise JSON config parsing, task subset
+splitting, `sitl_supervisor` dry-run/mock manifests, and pre-upload duplicate
+ownership rejection without starting PX4.
 
 ### Default Suites (M36)
 
@@ -312,7 +352,7 @@ Parametric sweeps over variables such as packet loss, agent count, or grid size 
 ## Known Limitations
 
 1. **Simulation only:** No real hardware workflow; PX4 integration is limited to experimental SITL waypoint upload plus opt-in single-agent lifecycle/progress tracking with static pre-upload safety checks.
-2. **Single-agent SITL:** Multi-agent SITL not yet supported.
+2. **Multi-agent SITL foundation only:** M52 supports config-driven per-agent task subsets, dry-run/mock manifests, standalone command generation, and duplicate ownership checks. It does not provide robust distributed coordination, automated real multi-agent PX4 orchestration, or hardware safety guarantees.
 3. **SITL coordinate frame:** `sitl_agent` dry-run/mock mode treats `Pose { x, y, z }` as local simulation coordinates; `x/y` are not WGS84 latitude/longitude, and `z` is local altitude.
 4. **3D pose:** Scenarios support `z` coordinate and altitude-aware sensors, but most missions operate primarily in XY plane.
 5. **Deterministic RNG:** Scenarios use seeded RNG; real-world noise is modeled optionally via `--realism` preset.

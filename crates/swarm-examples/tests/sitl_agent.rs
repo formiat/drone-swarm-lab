@@ -4,6 +4,10 @@ fn sitl_agent_binary() -> &'static str {
     env!("CARGO_BIN_EXE_sitl_agent")
 }
 
+fn sitl_supervisor_binary() -> &'static str {
+    env!("CARGO_BIN_EXE_sitl_supervisor")
+}
+
 fn write_sitl_scenario() -> tempfile::NamedTempFile {
     let file = tempfile::NamedTempFile::new().unwrap();
     std::fs::write(
@@ -75,6 +79,126 @@ fn write_sitl_scenario() -> tempfile::NamedTempFile {
     file
 }
 
+fn write_multi_agent_sitl_scenario() -> tempfile::NamedTempFile {
+    let file = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(
+        file.path(),
+        r#"{
+  "schema_version": "0.1",
+  "name": "Multi SITL Waypoints",
+  "description": "portable multi-agent sitl_agent test fixture",
+  "scenarios": [
+    {
+      "mission": "sitl",
+      "profile": "waypoints",
+      "scenario": {
+        "name": "multi_sitl_waypoints_test",
+        "seed": 0,
+        "agents": [
+          {
+            "id": "agent-0",
+            "role": "scout",
+            "health": "alive",
+            "pose": { "x": 0.0, "y": 0.0 },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 1000.0,
+            "generation": 1,
+            "speed": 0.0,
+            "max_range": 1000.0,
+            "battery_drain_rate": 0.0
+          },
+          {
+            "id": "agent-1",
+            "role": "scout",
+            "health": "alive",
+            "pose": { "x": 1.0, "y": 1.0 },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 1000.0,
+            "generation": 1,
+            "speed": 0.0,
+            "max_range": 1000.0,
+            "battery_drain_rate": 0.0
+          }
+        ],
+        "tasks": [
+          {
+            "id": "wp-0",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": { "x": 10.0, "y": 20.0, "z": 3.5 },
+            "grid_cell": null
+          },
+          {
+            "id": "wp-1",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": { "x": 30.0, "y": 40.0, "z": 4.5 },
+            "grid_cell": null
+          }
+        ],
+        "ground_nodes": [],
+        "base_station": null
+      },
+      "run_config": {
+        "max_ticks": 50
+      }
+    }
+  ]
+}"#,
+    )
+    .unwrap();
+    file
+}
+
+fn write_multi_agent_config(duplicate: bool) -> tempfile::NamedTempFile {
+    let file = tempfile::NamedTempFile::new().unwrap();
+    let agent_1_task = if duplicate { "wp-0" } else { "wp-1" };
+    std::fs::write(
+        file.path(),
+        format!(
+            r#"{{
+  "schema_version": "multi_sitl.v1",
+  "agents": [
+    {{
+      "agent_id": "agent-0",
+      "system_id": 1,
+      "component_id": 1,
+      "connection_string": "udp:127.0.0.1:14550",
+      "start_delay_ms": 0,
+      "lifecycle": "upload_only",
+      "task_ids": ["wp-0"]
+    }},
+    {{
+      "agent_id": "agent-1",
+      "system_id": 2,
+      "component_id": 1,
+      "connection_string": "udp:127.0.0.1:14560",
+      "start_delay_ms": 0,
+      "lifecycle": "execute",
+      "task_ids": ["{agent_1_task}"]
+    }}
+  ]
+}}"#
+        ),
+    )
+    .unwrap();
+    file
+}
+
 fn write_safety_config(json: &str) -> tempfile::NamedTempFile {
     let file = tempfile::NamedTempFile::new().unwrap();
     std::fs::write(file.path(), json).unwrap();
@@ -86,6 +210,13 @@ fn run_sitl_agent(args: &[&str]) -> std::process::Output {
         .args(args)
         .output()
         .expect("failed to execute sitl_agent")
+}
+
+fn run_sitl_supervisor(args: &[&str]) -> std::process::Output {
+    Command::new(sitl_supervisor_binary())
+        .args(args)
+        .output()
+        .expect("failed to execute sitl_supervisor")
 }
 
 #[test]
@@ -105,6 +236,172 @@ fn dry_run_outputs_mission_upload_plan() {
     assert!(stdout.contains("altitude_source: pose.z"));
     assert!(stdout.contains("seq=0 task_id=wp-0 x=10.000 y=20.000 z=3.500"));
     assert!(stdout.contains("seq=1 task_id=wp-1 x=30.000 y=40.000 z=0.000"));
+}
+
+#[test]
+fn multi_agent_dry_run_output_test() {
+    let scenario = write_multi_agent_sitl_scenario();
+    let config = write_multi_agent_config(false);
+    let output = run_sitl_agent(&[
+        "--dry-run",
+        "--scenario",
+        scenario.path().to_str().unwrap(),
+        "--agent-id",
+        "agent-0",
+        "--multi-agent-config",
+        config.path().to_str().unwrap(),
+    ]);
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stdout.contains("agent_id: agent-0"));
+    assert!(stdout.contains("seq=0 task_id=wp-0"));
+    assert!(!stdout.contains("task_id=wp-1"));
+    assert!(stderr.contains("Multi-agent SITL"));
+    assert!(stderr.contains("connection=udp:127.0.0.1:14550"));
+}
+
+#[test]
+fn multi_agent_duplicate_ownership_rejected_before_upload_test() {
+    let scenario = write_multi_agent_sitl_scenario();
+    let config = write_multi_agent_config(true);
+    let output = run_sitl_agent(&[
+        "--connection",
+        "udp:127.0.0.1:14550",
+        "--scenario",
+        scenario.path().to_str().unwrap(),
+        "--agent-id",
+        "agent-0",
+        "--multi-agent-config",
+        config.path().to_str().unwrap(),
+    ]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("duplicate ownership"));
+    assert!(stderr.contains("task_id=wp-0"));
+    assert!(!stderr.contains("feature missing"));
+}
+
+#[test]
+fn multi_agent_config_connection_used_when_cli_connection_missing_test() {
+    let scenario = write_multi_agent_sitl_scenario();
+    let config = write_multi_agent_config(false);
+    let output = run_sitl_agent(&[
+        "--dry-run",
+        "--scenario",
+        scenario.path().to_str().unwrap(),
+        "--agent-id",
+        "agent-1",
+        "--multi-agent-config",
+        config.path().to_str().unwrap(),
+    ]);
+
+    assert!(output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("connection=udp:127.0.0.1:14560"));
+    assert!(stderr.contains("lifecycle=Execute"));
+}
+
+#[test]
+fn multi_agent_config_cli_connection_override_test() {
+    let scenario = write_multi_agent_sitl_scenario();
+    let config = write_multi_agent_config(false);
+    let output = run_sitl_agent(&[
+        "--connection",
+        "bad",
+        "--scenario",
+        scenario.path().to_str().unwrap(),
+        "--agent-id",
+        "agent-0",
+        "--multi-agent-config",
+        config.path().to_str().unwrap(),
+    ]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("bad connection string 'bad'"));
+    assert!(!stderr.contains("feature missing"));
+}
+
+#[test]
+fn multi_agent_sitl_supervisor_dry_run_manifest_stdout_test() {
+    let scenario = write_multi_agent_sitl_scenario();
+    let config = write_multi_agent_config(false);
+    let output = run_sitl_supervisor(&[
+        "--dry-run",
+        "--scenario",
+        scenario.path().to_str().unwrap(),
+        "--config",
+        config.path().to_str().unwrap(),
+    ]);
+
+    assert!(output.status.success());
+    let manifest: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(manifest["schema_version"], "multi_sitl_manifest.v1");
+    assert_eq!(manifest["agents_count"], 2);
+    assert_eq!(manifest["agents"][0]["task_ids"][0], "wp-0");
+    assert_eq!(manifest["agents"][1]["task_ids"][0], "wp-1");
+}
+
+#[test]
+fn multi_agent_sitl_supervisor_dry_run_manifest_file_test() {
+    let scenario = write_multi_agent_sitl_scenario();
+    let config = write_multi_agent_config(false);
+    let dir = tempfile::tempdir().unwrap();
+    let manifest_path = dir.path().join("multi").join("manifest.json");
+    let output = run_sitl_supervisor(&[
+        "--dry-run",
+        "--scenario",
+        scenario.path().to_str().unwrap(),
+        "--config",
+        config.path().to_str().unwrap(),
+        "--manifest",
+        manifest_path.to_str().unwrap(),
+    ]);
+
+    assert!(output.status.success());
+    let manifest: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(manifest_path).unwrap()).unwrap();
+    assert_eq!(manifest["ownership_summary"]["assigned_task_count"], 2);
+}
+
+#[test]
+fn multi_agent_sitl_supervisor_mock_runs_two_agents_with_distinct_subsets_test() {
+    let scenario = write_multi_agent_sitl_scenario();
+    let config = write_multi_agent_config(false);
+    let output = run_sitl_supervisor(&[
+        "--mock",
+        "--scenario",
+        scenario.path().to_str().unwrap(),
+        "--config",
+        config.path().to_str().unwrap(),
+    ]);
+
+    assert!(output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("agent=agent-0"));
+    assert!(stderr.contains("agent=agent-1"));
+    assert!(stderr.contains("task_id=wp-0"));
+    assert!(stderr.contains("task_id=wp-1"));
+}
+
+#[test]
+fn multi_agent_sitl_supervisor_duplicate_ownership_rejected_test() {
+    let scenario = write_multi_agent_sitl_scenario();
+    let config = write_multi_agent_config(true);
+    let output = run_sitl_supervisor(&[
+        "--dry-run",
+        "--scenario",
+        scenario.path().to_str().unwrap(),
+        "--config",
+        config.path().to_str().unwrap(),
+    ]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("duplicate ownership"));
 }
 
 #[test]

@@ -1,6 +1,8 @@
+use std::collections::HashSet;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
 use swarm_sim::{validate_scenario_suite, ScenarioSuite, ScenarioSuiteEntry};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -32,7 +34,7 @@ impl SitlCoordinateFrame {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SitlWaypointItem {
     pub seq: u16,
     pub task_id: String,
@@ -60,6 +62,12 @@ pub enum SitlError {
     InvalidScenario { path: PathBuf, message: String },
     #[error("no pose tasks found in scenario '{scenario_name}'")]
     NoPoseTasks { scenario_name: String },
+    #[error("SITL task subset for agent '{agent_id}' is empty")]
+    EmptyTaskSubset { agent_id: String },
+    #[error("SITL task '{task_id}' was not found for agent '{agent_id}'")]
+    TaskNotFound { task_id: String, agent_id: String },
+    #[error("SITL task '{task_id}' is missing pose for agent '{agent_id}'")]
+    TaskMissingPose { task_id: String, agent_id: String },
     #[error(
         "feature missing: --connection requires feature '{feature}'. Build with: cargo build --bin sitl_agent --features {feature}"
     )]
@@ -109,6 +117,14 @@ pub enum SitlError {
     },
     #[error("replay log write failed {path:?}: {message}")]
     ReplayLogWrite { path: PathBuf, message: String },
+    #[error("multi-agent config read failed {path:?}: {message}")]
+    MultiAgentConfigRead { path: PathBuf, message: String },
+    #[error("multi-agent config parse failed {path:?}: {message}")]
+    MultiAgentConfigParse { path: PathBuf, message: String },
+    #[error("multi-agent config invalid: {message}")]
+    MultiAgentConfigInvalid { message: String },
+    #[error("multi-agent manifest write failed {path:?}: {message}")]
+    MultiAgentManifestWrite { path: PathBuf, message: String },
 }
 
 pub fn validate_connection_string(addr: &str) -> Result<(), SitlError> {
@@ -194,14 +210,41 @@ pub fn build_sitl_plan(
     scenario_path: impl AsRef<Path>,
     agent_id: impl Into<String>,
 ) -> Result<SitlPlan, SitlError> {
+    build_sitl_plan_with_task_filter(suite, scenario_path, agent_id, None)
+}
+
+pub fn build_sitl_plan_for_task_ids(
+    suite: &ScenarioSuite,
+    scenario_path: impl AsRef<Path>,
+    agent_id: impl Into<String>,
+    task_ids: &[String],
+) -> Result<SitlPlan, SitlError> {
+    build_sitl_plan_with_task_filter(suite, scenario_path, agent_id, Some(task_ids))
+}
+
+fn build_sitl_plan_with_task_filter(
+    suite: &ScenarioSuite,
+    scenario_path: impl AsRef<Path>,
+    agent_id: impl Into<String>,
+    task_ids: Option<&[String]>,
+) -> Result<SitlPlan, SitlError> {
     let scenario_path = scenario_path.as_ref().to_path_buf();
     let validation_errors = validate_scenario_suite(suite);
     let entry = first_sitl_entry(suite, &scenario_path)?;
+    let agent_id = agent_id.into();
+    let task_ids: Option<HashSet<&str>> =
+        task_ids.map(|ids| ids.iter().map(String::as_str).collect());
 
     let waypoints: Vec<SitlWaypointItem> = entry
         .scenario
         .tasks
         .iter()
+        .filter(|task| {
+            let task_id = task.id.to_string();
+            task_ids
+                .as_ref()
+                .is_none_or(|ids| ids.contains(task_id.as_str()))
+        })
         .filter_map(|task| {
             let pose = task.pose?;
             Some((task, pose))
@@ -215,6 +258,33 @@ pub fn build_sitl_plan(
             z: pose.z,
         })
         .collect();
+
+    if let Some(task_ids) = task_ids.as_ref() {
+        if task_ids.is_empty() {
+            return Err(SitlError::EmptyTaskSubset {
+                agent_id: agent_id.clone(),
+            });
+        }
+        for task_id in task_ids {
+            let Some(task) = entry
+                .scenario
+                .tasks
+                .iter()
+                .find(|task| task.id.to_string() == *task_id)
+            else {
+                return Err(SitlError::TaskNotFound {
+                    task_id: (*task_id).to_owned(),
+                    agent_id: agent_id.clone(),
+                });
+            };
+            if task.pose.is_none() {
+                return Err(SitlError::TaskMissingPose {
+                    task_id: (*task_id).to_owned(),
+                    agent_id: agent_id.clone(),
+                });
+            }
+        }
+    }
 
     if waypoints.is_empty() {
         return Err(SitlError::NoPoseTasks {
@@ -239,7 +309,7 @@ pub fn build_sitl_plan(
     }
 
     Ok(SitlPlan {
-        agent_id: agent_id.into(),
+        agent_id,
         scenario_path,
         suite_name: suite.name.clone(),
         scenario_name: entry.scenario.name.clone(),
@@ -374,6 +444,107 @@ mod tests {
         assert_eq!(plan.waypoints[1].seq, 1);
         assert_eq!(plan.waypoints[1].task_id, "wp-1");
         assert_eq!(plan.waypoints[1].x, 30.0);
+    }
+
+    #[test]
+    fn build_sitl_plan_for_task_ids_filters_subset() {
+        let suite = suite(vec![
+            task(
+                "wp-0",
+                Some(Pose {
+                    x: 10.0,
+                    y: 20.0,
+                    z: 3.0,
+                }),
+            ),
+            task(
+                "wp-1",
+                Some(Pose {
+                    x: 30.0,
+                    y: 40.0,
+                    z: 5.0,
+                }),
+            ),
+        ]);
+        let task_ids = vec!["wp-1".to_owned()];
+        let plan =
+            build_sitl_plan_for_task_ids(&suite, "scenario.json", "agent-0", &task_ids).unwrap();
+
+        assert_eq!(plan.waypoints.len(), 1);
+        assert_eq!(plan.waypoints[0].seq, 0);
+        assert_eq!(plan.waypoints[0].task_id, "wp-1");
+    }
+
+    #[test]
+    fn build_sitl_plan_for_task_ids_preserves_scenario_order() {
+        let suite = suite(vec![
+            task(
+                "wp-0",
+                Some(Pose {
+                    x: 10.0,
+                    y: 20.0,
+                    z: 3.0,
+                }),
+            ),
+            task(
+                "wp-1",
+                Some(Pose {
+                    x: 30.0,
+                    y: 40.0,
+                    z: 5.0,
+                }),
+            ),
+        ]);
+        let task_ids = vec!["wp-1".to_owned(), "wp-0".to_owned()];
+        let plan =
+            build_sitl_plan_for_task_ids(&suite, "scenario.json", "agent-0", &task_ids).unwrap();
+
+        assert_eq!(plan.waypoints[0].task_id, "wp-0");
+        assert_eq!(plan.waypoints[1].task_id, "wp-1");
+    }
+
+    #[test]
+    fn build_sitl_plan_for_task_ids_rejects_empty_subset() {
+        let suite = suite(vec![task(
+            "wp-0",
+            Some(Pose {
+                x: 10.0,
+                y: 20.0,
+                z: 0.0,
+            }),
+        )]);
+        let task_ids = Vec::new();
+        let error = build_sitl_plan_for_task_ids(&suite, "scenario.json", "agent-0", &task_ids)
+            .unwrap_err();
+
+        assert!(matches!(error, SitlError::EmptyTaskSubset { .. }));
+    }
+
+    #[test]
+    fn build_sitl_plan_legacy_path_still_returns_all_pose_tasks() {
+        let suite = suite(vec![
+            task(
+                "wp-0",
+                Some(Pose {
+                    x: 10.0,
+                    y: 20.0,
+                    z: 3.0,
+                }),
+            ),
+            task(
+                "wp-1",
+                Some(Pose {
+                    x: 30.0,
+                    y: 40.0,
+                    z: 5.0,
+                }),
+            ),
+        ]);
+        let plan = build_sitl_plan(&suite, "scenario.json", "agent-0").unwrap();
+
+        assert_eq!(plan.waypoints.len(), 2);
+        assert_eq!(plan.waypoints[0].task_id, "wp-0");
+        assert_eq!(plan.waypoints[1].task_id, "wp-1");
     }
 
     #[test]

@@ -10,6 +10,7 @@ hardware.
 |---|---|---|---|---|
 | Mock | `--mock` | None | Send extracted waypoints to in-memory `MockMavlinkTransport` | Stable and CI-friendly |
 | Dry-run | `--dry-run` | None | Print the mission upload plan without connecting to PX4 | Stable portable contract |
+| Multi-agent dry-run/mock | `sitl_supervisor --dry-run/--mock` or `sitl_agent --multi-agent-config` | None | Split explicit waypoint subsets across multiple agents and produce a manifest | Stable M52 foundation, no real PX4 orchestration |
 | PX4 SITL upload-only | `--connection <addr> [--upload-only]` | PX4 SITL + `mavlink-transport` feature | Upload waypoint mission to PX4 SITL without starting flight | Experimental |
 | PX4 SITL execute | `--connection <addr> --execute` | PX4 SITL + `mavlink-transport` feature | Upload, arm/takeoff/start mission, map telemetry to task progress, write optional final report, and abort on bounded failures | Experimental single-agent golden path |
 
@@ -17,12 +18,15 @@ hardware.
 
 M50 makes the portable SITL path regression-safe without requiring PX4. M51 adds
 mock/fake/runtime-level failure and dynamic reallocation checks for the future
-multi-agent SITL path. The automated boundary is deliberately narrow: tests may
-load scenarios, extract waypoints, validate static safety rules, run dry-run,
-run mock mode, inspect mock replay logs, detect a lost agent by heartbeat
-timeout, recover assignable tasks on surviving agents, and summarize
-reallocation events. These checks use no external PX4, no simulator process, no
-network endpoint, and no real hardware.
+multi-agent SITL path. M52 adds a portable multi-agent foundation: config parse,
+explicit task split, dry-run/mock manifest, generated standalone commands, and
+duplicate ownership rejection before upload. The automated boundary is
+deliberately narrow: tests may load scenarios, extract waypoints, validate
+static safety rules, run dry-run, run mock mode, inspect mock replay logs,
+detect a lost agent by heartbeat timeout, recover assignable tasks on surviving
+agents, summarize reallocation events, and validate multi-agent manifests.
+These checks use no external PX4, no simulator process, no network endpoint,
+and no real hardware.
 
 Recommended automated checks:
 
@@ -38,6 +42,12 @@ PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
 
 PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
   cargo test -p swarm-examples sitl_observability
+
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  cargo test -p swarm-examples sitl_multi_agent
+
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  cargo test -p swarm-examples --test sitl_agent multi_agent
 ```
 
 Manual/local PX4 checks are separate. They require a running PX4 SITL instance,
@@ -50,6 +60,11 @@ M51 reallocation events are part of this portable boundary. They can appear in
 SITL event logs as `agent_lost`, `task_released`, `task_reassigned`, and
 `reallocation_completed`. They prove the runtime/mock contract, not live
 multi-agent PX4 readiness.
+
+M52 multi-agent manifests are also part of this portable boundary. They prove
+that ownership and per-agent waypoint subsets are explicit and deterministic;
+they do not prove that multiple real PX4 instances are ready for autonomous
+swarm execution.
 
 Out of scope for automated CI in this repository:
 
@@ -117,6 +132,94 @@ PX4.
 For the full portable smoke, run `portable_sitl_regression_smoke`. It verifies
 scenario load, waypoint extraction, safety validation, dry-run output, mock
 transport output, expected mission item count, and mock replay log summary.
+
+## Multi-Agent SITL Foundation
+
+M52 adds a config-driven multi-agent SITL foundation. It is intentionally
+limited to explicit ownership and portable dry-run/mock behavior:
+
+- `agent_id` -> MAVLink `system_id`;
+- `agent_id` -> MAVLink `component_id`;
+- `agent_id` -> connection string;
+- `agent_id` -> explicit assigned task subset;
+- per-agent start delay;
+- per-agent `upload_only` / `execute` lifecycle mode.
+
+Example `multi_sitl.v1` config:
+
+```json
+{
+  "schema_version": "multi_sitl.v1",
+  "agents": [
+    {
+      "agent_id": "agent-0",
+      "system_id": 1,
+      "component_id": 1,
+      "connection_string": "udp:127.0.0.1:14550",
+      "start_delay_ms": 0,
+      "lifecycle": "upload_only",
+      "task_ids": ["wp-0", "wp-1"]
+    },
+    {
+      "agent_id": "agent-1",
+      "system_id": 2,
+      "component_id": 1,
+      "connection_string": "udp:127.0.0.1:14560",
+      "start_delay_ms": 250,
+      "lifecycle": "execute",
+      "task_ids": ["wp-2"]
+    }
+  ]
+}
+```
+
+Use `sitl_supervisor` to inspect the full dry-run manifest:
+
+```bash
+cargo run -p swarm-examples --bin sitl_supervisor -- \
+  --dry-run --scenario scenarios/sitl.waypoints.json --config path/to/multi-sitl.json
+```
+
+The output is a `multi_sitl_manifest.v1` JSON document with scenario metadata,
+per-agent task subsets, waypoint subsets, ownership summary, and generated
+standalone commands for the several-process workflow.
+
+Mock supervisor mode exercises the same split without PX4:
+
+```bash
+cargo run -p swarm-examples --bin sitl_supervisor -- \
+  --mock --scenario scenarios/sitl.waypoints.json --config path/to/multi-sitl.json \
+  --manifest target/sitl/multi-agent-manifest.json
+```
+
+The several-process workflow uses the same config from individual `sitl_agent`
+invocations:
+
+```bash
+cargo run -p swarm-examples --bin sitl_agent --features mavlink-transport -- \
+  --scenario scenarios/sitl.waypoints.json \
+  --agent-id agent-0 \
+  --multi-agent-config path/to/multi-sitl.json \
+  --connection udp:127.0.0.1:14550 \
+  --upload-only
+```
+
+If `--connection` or `--upload-only`/`--execute` is omitted, `sitl_agent` can
+read the connection and lifecycle from the matching config entry. CLI
+connection/lifecycle flags override config for that one process; the task subset
+always comes from config.
+
+Duplicate ownership is a hard pre-upload error: the same task id cannot appear
+under two agents. Unassigned pose tasks are allowed for partial experiments and
+are reported in the manifest ownership summary.
+
+Out of scope for M52:
+
+- robust distributed coordination;
+- automatic task allocation;
+- automated real multi-agent PX4 CI orchestration;
+- real hardware usage;
+- swarm safety certification.
 
 ## Experimental PX4 SITL Mode
 
