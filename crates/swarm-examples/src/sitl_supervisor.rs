@@ -416,9 +416,13 @@ fn run_live_supervisor_with_controllers<C: LiveAgentController>(
         if start_delay_ms > 0 {
             thread::sleep(Duration::from_millis(start_delay_ms));
         }
-        recorder.push_mission_count_sent(agent.waypoint_count);
+        recorder.push_multi_agent_mission_count_sent(agent.agent_id.clone(), agent.waypoint_count);
         for waypoint in &agent.waypoints {
-            recorder.push_mission_item_sent(waypoint.seq, Some(waypoint.task_id.clone()));
+            recorder.push_multi_agent_mission_item_sent(
+                agent.agent_id.clone(),
+                waypoint.seq,
+                Some(waypoint.task_id.clone()),
+            );
         }
         eprintln!(
             "SITL Supervisor execute: agent={} system_id={} component_id={} connection={} waypoints={}",
@@ -682,9 +686,13 @@ fn upload_and_start_manifest_agents<C: AgentController>(
             agent.connection_string,
             agent.waypoint_count
         );
-        recorder.push_mission_count_sent(agent.waypoint_count);
+        recorder.push_multi_agent_mission_count_sent(agent.agent_id.clone(), agent.waypoint_count);
         for waypoint in &agent.waypoints {
-            recorder.push_mission_item_sent(waypoint.seq, Some(waypoint.task_id.clone()));
+            recorder.push_multi_agent_mission_item_sent(
+                agent.agent_id.clone(),
+                waypoint.seq,
+                Some(waypoint.task_id.clone()),
+            );
             eprintln!(
                 "WAYPOINT agent={} seq={} task_id={} x={:.1} y={:.1} z={:.1}",
                 agent.agent_id, waypoint.seq, waypoint.task_id, waypoint.x, waypoint.y, waypoint.z
@@ -830,11 +838,20 @@ fn record_live_agent_run(
 ) {
     let completed_count = run.completed_task_count.min(agent.waypoints.len());
     for waypoint in agent.waypoints.iter().take(completed_count) {
-        recorder.push_waypoint_reached(waypoint.seq, Some(waypoint.task_id.clone()));
-        recorder.push_task_completed(waypoint.seq, waypoint.task_id.clone());
+        recorder.push_multi_agent_waypoint_reached(
+            agent.agent_id.clone(),
+            waypoint.seq,
+            Some(waypoint.task_id.clone()),
+        );
+        recorder.push_multi_agent_task_completed(
+            agent.agent_id.clone(),
+            waypoint.seq,
+            waypoint.task_id.clone(),
+        );
     }
     if run.final_status != "completed" {
-        recorder.push_failure(
+        recorder.push_multi_agent_failure(
+            agent.agent_id.clone(),
             run.final_status.clone(),
             run.error
                 .clone()
@@ -978,8 +995,16 @@ fn complete_one_task_per_active_agent(
         {
             if previous_agent_id == agent_id_typed {
                 let seq = manifest_seq_for_task(manifest, &task_id).unwrap_or(0);
-                recorder.push_waypoint_reached(seq, Some(task_id.to_string()));
-                recorder.push_task_completed(seq, task_id.to_string());
+                recorder.push_multi_agent_waypoint_reached(
+                    agent_id.clone(),
+                    seq,
+                    Some(task_id.to_string()),
+                );
+                recorder.push_multi_agent_task_completed(
+                    agent_id.clone(),
+                    seq,
+                    task_id.to_string(),
+                );
                 completed += 1;
             }
         }
@@ -1725,8 +1750,64 @@ mod tests {
         assert_eq!(summary.multi_agent_run_finished, 1);
         assert_eq!(summary.multi_agent_agent_started, 2);
         assert_eq!(summary.multi_agent_agent_finished, 2);
+        assert_eq!(summary.multi_agent_mission_count_sent, 2);
+        assert_eq!(summary.multi_agent_mission_item_sent, 2);
+        assert_eq!(summary.multi_agent_waypoint_reached, 2);
+        assert_eq!(summary.multi_agent_task_completed, 2);
+        assert_eq!(summary.mission_count_sent, 2);
+        assert_eq!(summary.mission_item_sent, 2);
+        assert_eq!(summary.waypoint_reached, 2);
+        assert_eq!(summary.task_completed, 2);
         assert_eq!(summary.multi_agent_agent_count, Some(2));
         assert_eq!(summary.final_status.as_deref(), Some("completed"));
+        let mission_items: Vec<(String, u16, String)> = log
+            .events
+            .iter()
+            .filter_map(|event| match event {
+                crate::sitl_observability::SitlEvent::MultiAgentMissionItemSent {
+                    agent_id,
+                    seq,
+                    task_id: Some(task_id),
+                    ..
+                } => Some((agent_id.clone(), *seq, task_id.clone())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            mission_items,
+            vec![
+                ("agent-0".to_owned(), 0, "wp-0".to_owned()),
+                ("agent-1".to_owned(), 0, "wp-1".to_owned())
+            ]
+        );
+        let task_completed: Vec<(String, u16, String)> = log
+            .events
+            .iter()
+            .filter_map(|event| match event {
+                crate::sitl_observability::SitlEvent::MultiAgentTaskCompleted {
+                    agent_id,
+                    seq,
+                    task_id,
+                    ..
+                } => Some((agent_id.clone(), *seq, task_id.clone())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            task_completed,
+            vec![
+                ("agent-0".to_owned(), 0, "wp-0".to_owned()),
+                ("agent-1".to_owned(), 0, "wp-1".to_owned())
+            ]
+        );
+        assert!(log.events.iter().all(|event| !matches!(
+            event,
+            crate::sitl_observability::SitlEvent::MissionCountSent { .. }
+                | crate::sitl_observability::SitlEvent::MissionItemSent { .. }
+                | crate::sitl_observability::SitlEvent::WaypointReached { .. }
+                | crate::sitl_observability::SitlEvent::TaskCompleted { .. }
+                | crate::sitl_observability::SitlEvent::Failure { .. }
+        )));
 
         let report_json: SitlMultiAgentRunReport =
             serde_json::from_str(&std::fs::read_to_string(run_report).unwrap()).unwrap();

@@ -266,21 +266,22 @@ fn parse_args() -> Result<CliArgs, SitlError> {
     }
 
     let mode = mode.ok_or(SitlError::MissingMode)?;
-    validate_cli_arg_combinations(
+    validate_cli_arg_combinations(CliValidationArgs {
         mode,
         execute,
-        run_report.as_ref(),
-        fail_agent.as_ref(),
+        run_report: run_report.as_deref(),
+        safety_config: safety_config.as_deref(),
+        fail_agent: fail_agent.as_deref(),
         heartbeat_timeout_ticks,
         max_ticks,
-        LiveOptionFlags {
+        live_options: LiveOptionFlags {
             timeout_set,
             telemetry_timeout_set,
             no_progress_timeout_set,
             no_arm,
             abort_after_set: abort_after.is_some(),
         },
-    )?;
+    })?;
 
     Ok(CliArgs {
         mode,
@@ -335,53 +336,62 @@ fn set_mode(mode: &mut Option<SupervisorMode>, next: SupervisorMode) -> Result<(
     Ok(())
 }
 
-fn validate_cli_arg_combinations(
-    mode: SupervisorMode,
-    execute: bool,
-    run_report: Option<&String>,
-    fail_agent: Option<&String>,
-    heartbeat_timeout_ticks: Option<u64>,
-    max_ticks: Option<u64>,
-    live_options: LiveOptionFlags,
-) -> Result<(), SitlError> {
-    if execute && mode != SupervisorMode::Connection {
+fn validate_cli_arg_combinations(args: CliValidationArgs<'_>) -> Result<(), SitlError> {
+    if args.execute && args.mode != SupervisorMode::Connection {
         return Err(SitlError::LifecycleOptionRequiresConnection {
             option: "--execute",
         });
     }
-    if run_report.is_some() && !(mode == SupervisorMode::Connection && execute) {
+    if args.run_report.is_some() && !(args.mode == SupervisorMode::Connection && args.execute) {
         return Err(SitlError::RunReportRequiresExecute {
             option: "--run-report",
         });
     }
-    if mode == SupervisorMode::Connection && !execute {
+    if args.safety_config.is_some() && !(args.mode == SupervisorMode::Connection && args.execute) {
+        return Err(SitlError::MultiAgentConfigInvalid {
+            message: "--safety-config requires --connection --execute".to_owned(),
+        });
+    }
+    if args.mode == SupervisorMode::Connection && !args.execute {
         return Err(SitlError::LifecycleOptionRequiresExecute {
             option: "--connection",
         });
     }
-    if mode != SupervisorMode::Connection {
-        if let Some(option) = live_options.first_set_option() {
+    if args.mode != SupervisorMode::Connection {
+        if let Some(option) = args.live_options.first_set_option() {
             return Err(SitlError::LifecycleOptionRequiresConnection { option });
         }
     }
-    if mode != SupervisorMode::Mock {
-        if fail_agent.is_some() {
+    if args.mode != SupervisorMode::Mock {
+        if args.fail_agent.is_some() {
             return Err(SitlError::MultiAgentConfigInvalid {
                 message: "--fail-agent requires --mock".to_owned(),
             });
         }
-        if heartbeat_timeout_ticks.is_some() {
+        if args.heartbeat_timeout_ticks.is_some() {
             return Err(SitlError::MultiAgentConfigInvalid {
                 message: "--heartbeat-timeout-ticks requires --mock".to_owned(),
             });
         }
-        if max_ticks.is_some() {
+        if args.max_ticks.is_some() {
             return Err(SitlError::MultiAgentConfigInvalid {
                 message: "--max-ticks requires --mock".to_owned(),
             });
         }
     }
     Ok(())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct CliValidationArgs<'a> {
+    mode: SupervisorMode,
+    execute: bool,
+    run_report: Option<&'a str>,
+    safety_config: Option<&'a str>,
+    fail_agent: Option<&'a str>,
+    heartbeat_timeout_ticks: Option<u64>,
+    max_ticks: Option<u64>,
+    live_options: LiveOptionFlags,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

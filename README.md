@@ -161,6 +161,8 @@ explicit, then sequentially drives local PX4/SIH endpoints through upload,
 arm/takeoff/start, telemetry progress, a common event log, and a structured
 multi-agent run report. This is still an experimental local SITL workflow: live
 PX4 failed-agent reallocation and real hardware are not claimed.
+The common event log uses per-agent mission/task/failure events with `agent_id`,
+so repeated waypoint sequence numbers remain attributable to the correct agent.
 
 ### 13. Upload or execute a mission in PX4 SITL
 
@@ -368,7 +370,10 @@ PX4/SIH endpoints. It reuses the same multi-agent manifest, requires
 pre-upload safety validation before any feature-gated MAVLink work, rejects
 hardware-candidate connection strings unless explicitly allowed, drives each
 agent through the PX4 upload/execute/telemetry progress path, and writes a
-common SITL event log plus a `sitl_multi_agent_run_report.v1` JSON report.
+common SITL event log with explicit per-agent mission/task/failure attribution
+plus a `sitl_multi_agent_run_report.v1` JSON report. `--safety-config` is
+accepted only in `--connection --execute`; dry-run/mock supervisor modes reject
+it instead of silently ignoring it.
 
 ```bash
 PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \

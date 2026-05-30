@@ -58,6 +58,41 @@ pub enum SitlEvent {
         final_status: String,
         completed_task_count: usize,
     },
+    MultiAgentMissionCountSent {
+        step: u64,
+        agent_id: String,
+        count: usize,
+    },
+    MultiAgentMissionItemSent {
+        step: u64,
+        agent_id: String,
+        seq: u16,
+        task_id: Option<String>,
+    },
+    MultiAgentCurrentSeqChanged {
+        step: u64,
+        agent_id: String,
+        seq: u16,
+        task_id: Option<String>,
+    },
+    MultiAgentWaypointReached {
+        step: u64,
+        agent_id: String,
+        seq: u16,
+        task_id: Option<String>,
+    },
+    MultiAgentTaskCompleted {
+        step: u64,
+        agent_id: String,
+        seq: u16,
+        task_id: String,
+    },
+    MultiAgentFailure {
+        step: u64,
+        agent_id: String,
+        status: String,
+        error: String,
+    },
     MultiAgentRunFinished {
         step: u64,
         overall_status: String,
@@ -237,6 +272,96 @@ impl SitlEventRecorder {
             agent_id: agent_id.into(),
             final_status: final_status.into(),
             completed_task_count,
+        });
+    }
+
+    pub fn push_multi_agent_mission_count_sent(
+        &mut self,
+        agent_id: impl Into<String>,
+        count: usize,
+    ) {
+        let step = self.next_step();
+        self.log.events.push(SitlEvent::MultiAgentMissionCountSent {
+            step,
+            agent_id: agent_id.into(),
+            count,
+        });
+    }
+
+    pub fn push_multi_agent_mission_item_sent(
+        &mut self,
+        agent_id: impl Into<String>,
+        seq: u16,
+        task_id: Option<String>,
+    ) {
+        let step = self.next_step();
+        self.log.events.push(SitlEvent::MultiAgentMissionItemSent {
+            step,
+            agent_id: agent_id.into(),
+            seq,
+            task_id,
+        });
+    }
+
+    pub fn push_multi_agent_current_seq_changed(
+        &mut self,
+        agent_id: impl Into<String>,
+        seq: u16,
+        task_id: Option<String>,
+    ) {
+        let step = self.next_step();
+        self.log
+            .events
+            .push(SitlEvent::MultiAgentCurrentSeqChanged {
+                step,
+                agent_id: agent_id.into(),
+                seq,
+                task_id,
+            });
+    }
+
+    pub fn push_multi_agent_waypoint_reached(
+        &mut self,
+        agent_id: impl Into<String>,
+        seq: u16,
+        task_id: Option<String>,
+    ) {
+        let step = self.next_step();
+        self.log.events.push(SitlEvent::MultiAgentWaypointReached {
+            step,
+            agent_id: agent_id.into(),
+            seq,
+            task_id,
+        });
+    }
+
+    pub fn push_multi_agent_task_completed(
+        &mut self,
+        agent_id: impl Into<String>,
+        seq: u16,
+        task_id: impl Into<String>,
+    ) {
+        let step = self.next_step();
+        self.log.events.push(SitlEvent::MultiAgentTaskCompleted {
+            step,
+            agent_id: agent_id.into(),
+            seq,
+            task_id: task_id.into(),
+        });
+    }
+
+    pub fn push_multi_agent_failure(
+        &mut self,
+        agent_id: impl Into<String>,
+        status: impl Into<String>,
+        error: impl Into<String>,
+    ) {
+        let step = self.next_step();
+        self.log.events.push(SitlEvent::MultiAgentFailure {
+            step,
+            agent_id: agent_id.into(),
+            status: status.into(),
+            error: error.into(),
         });
     }
 
@@ -479,6 +604,12 @@ pub struct SitlEventLogSummary {
     pub multi_agent_run_finished: usize,
     pub multi_agent_agent_started: usize,
     pub multi_agent_agent_finished: usize,
+    pub multi_agent_mission_count_sent: usize,
+    pub multi_agent_mission_item_sent: usize,
+    pub multi_agent_current_seq_changed: usize,
+    pub multi_agent_waypoint_reached: usize,
+    pub multi_agent_task_completed: usize,
+    pub multi_agent_failures: usize,
     pub multi_agent_agent_count: Option<usize>,
     pub final_status: Option<String>,
 }
@@ -504,6 +635,31 @@ pub fn summarize_sitl_event_log(log: &SitlEventLog) -> SitlEventLogSummary {
             }
             SitlEvent::MultiAgentAgentFinished { .. } => {
                 summary.multi_agent_agent_finished += 1;
+            }
+            SitlEvent::MultiAgentMissionCountSent { .. } => {
+                summary.multi_agent_mission_count_sent += 1;
+                summary.mission_count_sent += 1;
+            }
+            SitlEvent::MultiAgentMissionItemSent { .. } => {
+                summary.multi_agent_mission_item_sent += 1;
+                summary.mission_item_sent += 1;
+            }
+            SitlEvent::MultiAgentCurrentSeqChanged { .. } => {
+                summary.multi_agent_current_seq_changed += 1;
+                summary.current_seq_changed += 1;
+            }
+            SitlEvent::MultiAgentWaypointReached { .. } => {
+                summary.multi_agent_waypoint_reached += 1;
+                summary.waypoint_reached += 1;
+            }
+            SitlEvent::MultiAgentTaskCompleted { .. } => {
+                summary.multi_agent_task_completed += 1;
+                summary.task_completed += 1;
+            }
+            SitlEvent::MultiAgentFailure { status, .. } => {
+                summary.multi_agent_failures += 1;
+                summary.failures += 1;
+                summary.final_status = Some(status.clone());
             }
             SitlEvent::MultiAgentRunFinished { overall_status, .. } => {
                 summary.multi_agent_run_finished += 1;
@@ -628,6 +784,15 @@ pub fn format_sitl_summary(summary: &SitlEventLogSummary) -> String {
                 .multi_agent_agent_count
                 .map(|count| count.to_string())
                 .unwrap_or_else(|| "none".to_owned())
+        ),
+        format!(
+            "Multi-agent events: mission_count={} mission_items={} current_seq={} waypoint_reached={} task_completed={} failures={}",
+            summary.multi_agent_mission_count_sent,
+            summary.multi_agent_mission_item_sent,
+            summary.multi_agent_current_seq_changed,
+            summary.multi_agent_waypoint_reached,
+            summary.multi_agent_task_completed,
+            summary.multi_agent_failures
         ),
     ]
     .join("\n")
@@ -822,6 +987,12 @@ mod tests {
         });
         recorder.push_multi_agent_run_started(2, "multi");
         recorder.push_multi_agent_agent_started("agent-0", "udp:127.0.0.1:14550", 1, 1);
+        recorder.push_multi_agent_mission_count_sent("agent-0", 1);
+        recorder.push_multi_agent_mission_item_sent("agent-0", 0, Some("wp-0".to_owned()));
+        recorder.push_multi_agent_current_seq_changed("agent-0", 0, Some("wp-0".to_owned()));
+        recorder.push_multi_agent_waypoint_reached("agent-0", 0, Some("wp-0".to_owned()));
+        recorder.push_multi_agent_task_completed("agent-0", 0, "wp-0");
+        recorder.push_multi_agent_failure("agent-1", "failed", "test failure");
         recorder.push_multi_agent_agent_finished("agent-0", "completed", 2);
         recorder.push_multi_agent_run_finished("completed");
         let log = recorder.into_log();
@@ -829,6 +1000,12 @@ mod tests {
         let json = serde_json::to_string(&log).unwrap();
         assert!(json.contains(r#""type":"multi_agent_run_started""#));
         assert!(json.contains(r#""type":"multi_agent_agent_started""#));
+        assert!(json.contains(r#""type":"multi_agent_mission_count_sent""#));
+        assert!(json.contains(r#""type":"multi_agent_mission_item_sent""#));
+        assert!(json.contains(r#""type":"multi_agent_current_seq_changed""#));
+        assert!(json.contains(r#""type":"multi_agent_waypoint_reached""#));
+        assert!(json.contains(r#""type":"multi_agent_task_completed""#));
+        assert!(json.contains(r#""type":"multi_agent_failure""#));
         assert!(json.contains(r#""type":"multi_agent_agent_finished""#));
         let restored: SitlEventLog = serde_json::from_str(&json).unwrap();
         assert_eq!(restored, log);
@@ -837,6 +1014,18 @@ mod tests {
         assert_eq!(summary.multi_agent_run_started, 1);
         assert_eq!(summary.multi_agent_agent_started, 1);
         assert_eq!(summary.multi_agent_agent_finished, 1);
+        assert_eq!(summary.multi_agent_mission_count_sent, 1);
+        assert_eq!(summary.multi_agent_mission_item_sent, 1);
+        assert_eq!(summary.multi_agent_current_seq_changed, 1);
+        assert_eq!(summary.multi_agent_waypoint_reached, 1);
+        assert_eq!(summary.multi_agent_task_completed, 1);
+        assert_eq!(summary.multi_agent_failures, 1);
+        assert_eq!(summary.mission_count_sent, 1);
+        assert_eq!(summary.mission_item_sent, 1);
+        assert_eq!(summary.current_seq_changed, 1);
+        assert_eq!(summary.waypoint_reached, 1);
+        assert_eq!(summary.task_completed, 1);
+        assert_eq!(summary.failures, 1);
         assert_eq!(summary.multi_agent_run_finished, 1);
         assert_eq!(summary.multi_agent_agent_count, Some(2));
         assert_eq!(summary.final_status.as_deref(), Some("completed"));
@@ -852,6 +1041,7 @@ mod tests {
         assert!(text.contains("waypoint_reached=1"));
         assert!(text.contains("Reallocation: agent_lost=0"));
         assert!(text.contains("agents_started=0"));
+        assert!(text.contains("Multi-agent events: mission_count=0"));
         assert!(text.contains("final_status=completed"));
     }
 }

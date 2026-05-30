@@ -278,8 +278,9 @@ intended for local PX4/SIH endpoints, not real hardware. The supervisor:
 - runs agents sequentially in one process, honoring per-agent `start_delay_ms`;
 - drives each local PX4/SIH endpoint through mission upload, arm/takeoff/start,
   telemetry progress tracking, and bounded abort-on-failure behavior;
-- writes a common SITL event log and a `sitl_multi_agent_run_report.v1` JSON
-  report when requested.
+- writes a common SITL event log with per-agent mission/task/failure `agent_id`
+  attribution and a `sitl_multi_agent_run_report.v1` JSON report when
+  requested.
 
 Use the execute-specific config fixture because the upload-only fixture is
 deliberately rejected by live supervisor execute mode:
@@ -297,11 +298,17 @@ cargo run -p swarm-examples --bin sitl_supervisor --features mavlink-transport -
   --replay-log target/sitl/multi-agent.sitl-log.json
 ```
 
+`--safety-config` is only valid for `--connection --execute`. Dry-run and mock
+supervisor modes reject it because they do not apply the live pre-upload safety
+gate.
+
 The structured report contains run/scenario metadata, one row per agent,
 connection/system/component ids, mission item counts, completed task counts,
 per-agent final status, total completed tasks, failed-agent count, and known
-limitations. The common event log adds `multi_agent_run_started` and
-`multi_agent_run_finished` around the existing SITL event schema.
+limitations. The common event log adds `multi_agent_run_started`,
+`multi_agent_run_finished`, and per-agent mission/progress/task variants such as
+`multi_agent_mission_item_sent` and `multi_agent_task_completed`; these variants
+include `agent_id` so repeated waypoint `seq` values remain unambiguous.
 
 Portable tests cover the controller/report boundary with fake live controllers,
 CLI validation order, safety-before-feature behavior, hardware-candidate
@@ -567,6 +574,9 @@ Upload: clear=1 count=1 requested=3 sent=3 ack_accepted=1 ack_rejected=0
 Commands: sent=3 ack_accepted=3 ack_rejected=0
 Telemetry: heartbeat=2 current_seq=2 waypoint_reached=3 task_completed=3
 Failures: aborts=0 disconnected=0 failures=0 final_status=completed
+Reallocation: agent_lost=0 task_released=0 task_reassigned=0 completed=0 tasks_recovered=0 latency_ticks=none
+Multi-agent: started=0 finished=0 agents_started=0 agents_finished=0 agent_count=none
+Multi-agent events: mission_count=0 mission_items=0 current_seq=0 waypoint_reached=0 task_completed=0 failures=0
 ```
 
 ## M48 Tested PX4 SITL Setup

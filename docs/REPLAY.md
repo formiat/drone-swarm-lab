@@ -63,6 +63,12 @@ SITL event types are serialized in `snake_case`:
 | `multi_agent_run_started` | Common supervisor run started | `step`, `agent_count`, `scenario` |
 | `multi_agent_agent_started` | One supervised agent run started | `step`, `agent_id`, `connection_string`, `system_id`, `component_id` |
 | `multi_agent_agent_finished` | One supervised agent run finished | `step`, `agent_id`, `final_status`, `completed_task_count` |
+| `multi_agent_mission_count_sent` | One supervised agent mission count sent | `step`, `agent_id`, `count` |
+| `multi_agent_mission_item_sent` | One supervised agent mission item sent | `step`, `agent_id`, `seq`, `task_id` |
+| `multi_agent_current_seq_changed` | One supervised agent telemetry current mission sequence changed | `step`, `agent_id`, `seq`, `task_id` |
+| `multi_agent_waypoint_reached` | One supervised agent telemetry waypoint reached | `step`, `agent_id`, `seq`, `task_id` |
+| `multi_agent_task_completed` | One supervised agent SITL task marked completed | `step`, `agent_id`, `seq`, `task_id` |
+| `multi_agent_failure` | One supervised agent terminal or bounded failure | `step`, `agent_id`, `status`, `error` |
 | `multi_agent_run_finished` | Common supervisor run finished | `step`, `overall_status` |
 | `connection_opened` | Runtime connection/context opened | `step`, `mode`, `connection_string` |
 | `heartbeat_seen` | MAVLink heartbeat or telemetry heartbeat observed | `step` |
@@ -87,9 +93,11 @@ SITL event types are serialized in `snake_case`:
 
 Reallocation events are schema/API/runtime covered and are produced by the mock
 multi-agent supervisor flow. M58 adds a live multi-agent PX4 supervisor path
-that writes common run-start/run-finished events and aggregate per-agent report
-artifacts, but it does not yet inject failures or emit a combined real-PX4
-reallocation log.
+that writes common run-start/run-finished events, per-agent mission/task/failure
+events with explicit `agent_id`, and aggregate per-agent report artifacts. The
+per-agent event variants keep repeated waypoint `seq` values unambiguous across
+agents. The live supervisor does not yet inject failures or emit a combined
+real-PX4 reallocation log.
 
 M57 keeps these replay semantics stable while moving mock supervisor execution
 behind an internal supervisor/controller boundary. `MockAgentController` still
@@ -159,9 +167,12 @@ cargo run --bin sitl_supervisor --features mavlink-transport -- \
 ```
 
 The live log contains common `multi_agent_run_started`, per-agent
-`multi_agent_agent_started` / `multi_agent_agent_finished`,
-`mission_item_sent`/`task_completed` summaries, failures, and
-`multi_agent_run_finished`. The detailed per-agent final state is in the
+`multi_agent_agent_started` / `multi_agent_agent_finished`, per-agent
+`multi_agent_mission_item_sent` / `multi_agent_task_completed` /
+`multi_agent_failure` events, and `multi_agent_run_finished`. Mission/progress
+events include `agent_id`, so a common log can reconstruct mappings such as
+`(agent_id, seq) -> task_id` even when each agent starts waypoint numbering at
+`seq=0`. The detailed per-agent final state is in the
 `sitl_multi_agent_run_report.v1` report. Live PX4 failure/reallocation events
 remain future work.
 
@@ -234,6 +245,7 @@ Telemetry: heartbeat=2 current_seq=2 waypoint_reached=3 task_completed=3
 Failures: aborts=0 disconnected=0 failures=0 final_status=completed
 Reallocation: agent_lost=0 task_released=0 task_reassigned=0 completed=0 tasks_recovered=0 latency_ticks=none
 Multi-agent: started=0 finished=0 agents_started=0 agents_finished=0 agent_count=none
+Multi-agent events: mission_count=0 mission_items=0 current_seq=0 waypoint_reached=0 task_completed=0 failures=0
 ```
 
 `--sitl-summary` is mutually exclusive with `--log`, `--summary`, `--tick`,
