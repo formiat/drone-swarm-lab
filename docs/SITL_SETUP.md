@@ -52,7 +52,7 @@ PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
 
 Manual/local PX4 checks are separate. They require a running PX4 SITL instance,
 the `mavlink-transport` feature, and an operator-controlled endpoint such as
-`udp:127.0.0.1:14550`. Manual PX4 verification may cover upload-only mode,
+`udpin:127.0.0.1:14550`. Manual PX4 verification may cover upload-only mode,
 execute lifecycle, telemetry progress, timeout tuning, final reports, and SITL
 replay logs.
 
@@ -155,7 +155,7 @@ Example `multi_sitl.v1` config:
       "agent_id": "agent-0",
       "system_id": 1,
       "component_id": 1,
-      "connection_string": "udp:127.0.0.1:14550",
+      "connection_string": "udpin:127.0.0.1:14550",
       "start_delay_ms": 0,
       "lifecycle": "upload_only",
       "task_ids": ["wp-0", "wp-1"]
@@ -164,7 +164,7 @@ Example `multi_sitl.v1` config:
       "agent_id": "agent-1",
       "system_id": 2,
       "component_id": 1,
-      "connection_string": "udp:127.0.0.1:14560",
+      "connection_string": "udpin:127.0.0.1:14560",
       "start_delay_ms": 250,
       "lifecycle": "execute",
       "task_ids": ["wp-2"]
@@ -204,7 +204,7 @@ cargo run -p swarm-examples --bin sitl_agent --features mavlink-transport -- \
   --scenario scenarios/sitl.multi-agent.json \
   --agent-id agent-0 \
   --multi-agent-config scenarios/sitl.multi-agent.config.json \
-  --connection udp:127.0.0.1:14550 \
+  --connection udpin:127.0.0.1:14550 \
   --upload-only
 ```
 
@@ -229,14 +229,15 @@ Out of scope for M52:
 
 Prerequisites:
 
-1. PX4 SITL running, for example `make px4_sitl gazebo_iris`.
-2. MAVLink connection address, for example `udp:127.0.0.1:14550`.
+1. PX4 SITL running, for example `make px4_sitl gz_x500` for Gazebo or
+   `make px4_sitl_sih sihsim_quadx` for headless SIH.
+2. MAVLink connection address, for example `udpin:127.0.0.1:14550`.
 3. Build with the `mavlink-transport` feature.
 
 ```bash
 cargo build --bin sitl_agent --features mavlink-transport
 cargo run --bin sitl_agent --features mavlink-transport -- \
-  --connection udp:127.0.0.1:14550 \
+  --connection udpin:127.0.0.1:14550 \
   --scenario scenarios/sitl.px4-golden.json \
   --agent-id agent-0 \
   --safety-config path/to/sitl-safety.json \
@@ -270,7 +271,7 @@ with a single-agent telemetry progress loop. It is opt-in: plain
 
 ```bash
 cargo run --bin sitl_agent --features mavlink-transport -- \
-  --connection udp:127.0.0.1:14550 \
+  --connection udpin:127.0.0.1:14550 \
   --scenario scenarios/sitl.px4-golden.json \
   --agent-id agent-0 \
   --safety-config path/to/sitl-safety.json \
@@ -286,14 +287,14 @@ Useful bounded variants:
 ```bash
 # Skip arm for controlled SITL experiments where the vehicle is already armed.
 cargo run --bin sitl_agent --features mavlink-transport -- \
-  --connection udp:127.0.0.1:14550 \
+  --connection udpin:127.0.0.1:14550 \
   --scenario scenarios/sitl.px4-golden.json \
   --agent-id agent-0 \
   --execute --no-arm --timeout 5 --telemetry-timeout 10 --no-progress-timeout 60
 
 # Start the lifecycle and then request RTL abort immediately after a short delay.
 cargo run --bin sitl_agent --features mavlink-transport -- \
-  --connection udp:127.0.0.1:14550 \
+  --connection udpin:127.0.0.1:14550 \
   --scenario scenarios/sitl.px4-golden.json \
   --agent-id agent-0 \
   --execute --abort-after 10 --timeout 5
@@ -348,7 +349,7 @@ M48 adds an optional structured final report for the single-agent execute path:
 
 ```bash
 cargo run --bin sitl_agent --features mavlink-transport -- \
-  --connection udp:127.0.0.1:14550 \
+  --connection udpin:127.0.0.1:14550 \
   --scenario scenarios/sitl.px4-golden.json \
   --agent-id agent-0 \
   --execute \
@@ -369,7 +370,7 @@ contains:
   "mission": "sitl",
   "profile": "px4-golden",
   "agent_id": "agent-0",
-  "connection_string": "udp:127.0.0.1:14550",
+  "connection_string": "udpin:127.0.0.1:14550",
   "mode": "connection_execute",
   "mission_item_count": 3,
   "completed_count": 3,
@@ -392,7 +393,7 @@ state?", while the replay log answers "what happened before that state?".
 
 ```bash
 cargo run --bin sitl_agent --features mavlink-transport -- \
-  --connection udp:127.0.0.1:14550 \
+  --connection udpin:127.0.0.1:14550 \
   --scenario scenarios/sitl.px4-golden.json \
   --agent-id agent-0 \
   --execute \
@@ -419,7 +420,7 @@ Upload-only mode also supports `--replay-log`:
 
 ```bash
 cargo run --bin sitl_agent --features mavlink-transport -- \
-  --connection udp:127.0.0.1:14550 \
+  --connection udpin:127.0.0.1:14550 \
   --scenario scenarios/sitl.px4-golden.json \
   --agent-id agent-0 \
   --upload-only \
@@ -459,26 +460,29 @@ Failures: aborts=0 disconnected=0 failures=0 final_status=completed
 
 ## M48 Tested PX4 SITL Setup
 
-Manual PX4 SITL verification is required before treating a local environment as
-tested. This repository run did not start a live PX4 simulator, so the verified
-setup fields below are intentionally explicit and should be filled with the
-operator's actual local run:
+The current repository contains one captured manual M48 verification:
 
-- PX4 version/commit: pending local PX4 run.
-- Simulator backend: pending local PX4 run, commonly Gazebo / PX4 SITL.
-- Startup command: `make px4_sitl gazebo_iris` or the backend-specific
-  equivalent used locally.
-- `sitl_agent` connection string: commonly `udp:127.0.0.1:14550`.
-- Expected MAVLink endpoint: PX4 should emit heartbeat and mission protocol
-  responses on the configured UDP endpoint.
+- Date: 2026-05-30.
+- Host OS: Ubuntu 25.10.
+- PX4 source path: `/home/formi/Documents/RustProjects/PX4-Autopilot`
+  outside this repository.
+- PX4 commit: `a2be9197b57b2d065e4c47ca7fc5b7565ee07282`.
+- Setup command: `bash Tools/setup/ubuntu.sh --no-nuttx`.
+- Simulator backend: PX4 SIH, `sihsim_quadx`, headless.
+- Startup command: `PX4_SIM_SPEED_FACTOR=1 make px4_sitl_sih sihsim_quadx`.
+- PX4 MAVLink endpoint observed in startup log: normal mode on UDP port
+  `18570`, remote port `14550`.
+- `sitl_agent` connection string: `udpin:0.0.0.0:14550`.
+- Hardware-boundary flag: `--allow-hardware-candidate`, required because
+  `0.0.0.0` is a wildcard listener.
 - Golden scenario: `scenarios/sitl.px4-golden.json`.
-- Expected result: all waypoint tasks completed and final report
+- Captured result directory: `results/m48_px4_sitl_2026-05-30/`.
+- Result: all 3 waypoint tasks completed, final report
   `final_status=completed`.
 
-Do not copy these pending fields into a release note as a verified result. A
-valid M48 manual result must include the actual PX4 version/backend, exact
-startup command, exact connection string, command output summary, and generated
-report JSON.
+This is a real local PX4 SIH/SITL verification of the single-agent golden path.
+It is not Gazebo validation, multi-agent PX4 orchestration, HIL, real hardware
+validation, or a production safety claim.
 
 ## Pre-Upload Safety Validation
 
@@ -565,9 +569,13 @@ accidentally:
 - `dry-run`: `--dry-run`, prints the mission upload plan and does not open a
   transport.
 - `local_px4_sitl_udp`: loopback UDP connections such as
-  `udp:127.0.0.1:14550`, `udp:localhost:14550`, or `udp:[::1]:14550`.
-- `hardware_candidate`: `serial:*`, `tcp:*`, or `udp:*` with a non-loopback
-  host. These may target real hardware or a remote endpoint and require
+  `udpin:127.0.0.1:14550`, `udpin:localhost:14550`, or
+  `udpout:127.0.0.1:14550`. Legacy `udp:*` loopback aliases are also accepted
+  and normalized before calling the MAVLink crate.
+- `hardware_candidate`: `serial:*`, `tcpin:*`, `tcpout:*`,
+  `udpin:0.0.0.0:*`, `udpin:*` with a non-loopback host, `udpout:*` with a
+  non-loopback host, or legacy `udp:*`/`tcp:*` with a non-loopback host. These
+  may target real hardware, a wildcard listener, or a remote endpoint and require
   `--allow-hardware-candidate`.
 
 Example guarded failure:
@@ -587,8 +595,8 @@ continues. The flag is an opt-in acknowledgement, not a safety guarantee.
 | `conflicting SITL modes` | More than one mode was provided | Keep exactly one of `--mock`, `--dry-run`, `--connection <addr>` |
 | `no pose tasks found` | Scenario has no tasks with `pose` | Use or adapt `scenarios/sitl.waypoints.json` |
 | `feature missing` | `--connection` was used without `mavlink-transport` | Build/run with `--features mavlink-transport` |
-| `bad connection string` | Connection address is not a supported form | Use `udp:<host>:<port>` for PX4 SITL |
-| `hardware candidate connection` | Connection may target real hardware or a remote endpoint | Use local loopback PX4 SITL UDP, or read `docs/HARDWARE_READINESS.md` and pass `--allow-hardware-candidate` only for a controlled hardware experiment |
+| `bad connection string` | Connection address is not a supported form | Use `udpin:<host>:<port>` for PX4 SITL; legacy `udp:<host>:<port>` aliases are accepted but normalized before opening MAVLink |
+| `hardware candidate connection` | Connection may target real hardware, a wildcard listener, or a remote endpoint | Use local loopback PX4 SITL UDP, or read `docs/HARDWARE_READINESS.md` and pass `--allow-hardware-candidate` only for a controlled hardware experiment |
 | `safety config read failed` | `--safety-config` points to a missing/unreadable file | Fix the path or omit the option to use defaults |
 | `safety config parse failed` | Safety config is not valid JSON | Fix JSON syntax |
 | `safety validation failed` | Mission violates a pre-upload safety rule | Read the `rule_id`, `actual`, and `allowed` fields and adjust scenario/config |

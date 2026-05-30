@@ -6,9 +6,9 @@ provide flight certification, a certified safety layer, hardware-specific
 failsafe tuning, operator training, or a production flight workflow.
 
 Use `sitl_agent` against real drones only as a deliberately planned hardware
-experiment in a controlled environment. The CLI treats remote, TCP, and serial
-connections as hardware candidates and requires `--allow-hardware-candidate` so
-that this path is not enabled accidentally.
+experiment in a controlled environment. The CLI treats remote, wildcard, TCP,
+and serial connections as hardware candidates and requires
+`--allow-hardware-candidate` so that this path is not enabled accidentally.
 
 ## Verified Scope
 
@@ -39,8 +39,8 @@ that this path is not enabled accidentally.
 |---|---|---|
 | `mock` | `sitl_agent --mock` | Portable in-memory transport. No hardware path. |
 | `dry-run` | `sitl_agent --dry-run` | Prints the mission upload plan. No hardware path. |
-| `local_px4_sitl_udp` | `udp:127.0.0.1:14550`, `udp:localhost:14550`, `udp:[::1]:14550` | Local PX4 SITL candidate. Still experimental, but not treated as hardware by the CLI guard. |
-| `hardware_candidate` | `serial:/dev/ttyUSB0:57600`, `tcp:*`, `udp:*` with non-loopback host | May target real hardware or a remote endpoint. Requires `--allow-hardware-candidate`. |
+| `local_px4_sitl_udp` | `udpin:127.0.0.1:14550`, `udpin:localhost:14550`, `udpout:127.0.0.1:14550`; legacy `udp:*` loopback aliases are accepted | Local PX4 SITL candidate. Still experimental, but not treated as hardware by the CLI guard. |
+| `hardware_candidate` | `serial:/dev/ttyUSB0:57600`, `tcpout:*`, `tcpin:*`, `udpout:*`, `udpin:0.0.0.0:*`, `udpin:*` with non-loopback host | May target real hardware, a wildcard listener, or a remote endpoint. Requires `--allow-hardware-candidate`. |
 
 The classifier is a guardrail, not a safety guarantee. A loopback endpoint can
 still be forwarded to hardware by external tools, and a non-loopback endpoint

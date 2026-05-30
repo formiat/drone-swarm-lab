@@ -1,3 +1,5 @@
+#[cfg(feature = "mavlink-transport")]
+use std::borrow::Cow;
 use std::collections::VecDeque;
 #[cfg(feature = "mavlink-transport")]
 use std::io::ErrorKind;
@@ -391,7 +393,8 @@ impl MavlinkTransport {
         connection_string: &str,
         agent_id: swarm_types::AgentId,
     ) -> Result<Self, MavlinkError> {
-        let conn: mavlink::Connection<CommonMessage> = mavlink::connect(connection_string)
+        let connection_string = normalize_mavlink_connection_string(connection_string);
+        let conn: mavlink::Connection<CommonMessage> = mavlink::connect(connection_string.as_ref())
             .map_err(|e: std::io::Error| MavlinkError::Connection(e.to_string()))?;
         Ok(Self {
             conn,
@@ -1237,6 +1240,18 @@ impl Transport for MavlinkTransport {
 }
 
 #[cfg(feature = "mavlink-transport")]
+fn normalize_mavlink_connection_string(connection_string: &str) -> Cow<'_, str> {
+    let connection_string = connection_string.trim();
+    if let Some(rest) = connection_string.strip_prefix("udp:") {
+        return Cow::Owned(format!("udpin:{rest}"));
+    }
+    if let Some(rest) = connection_string.strip_prefix("tcp:") {
+        return Cow::Owned(format!("tcpout:{rest}"));
+    }
+    Cow::Borrowed(connection_string)
+}
+
+#[cfg(feature = "mavlink-transport")]
 fn reject_raw_transport_send(_msg: RawMessage) -> Result<(), MavlinkError> {
     Err(MavlinkError::UnsupportedRawTransportSend)
 }
@@ -1440,6 +1455,23 @@ mod tests {
 
         assert!(matches!(error, MavlinkError::UnsupportedRawTransportSend));
         assert!(error.to_string().contains("mission upload/lifecycle APIs"));
+    }
+
+    #[test]
+    #[cfg(feature = "mavlink-transport")]
+    fn mavlink_connection_string_legacy_aliases_are_normalized() {
+        assert_eq!(
+            normalize_mavlink_connection_string("udp:127.0.0.1:14550").as_ref(),
+            "udpin:127.0.0.1:14550"
+        );
+        assert_eq!(
+            normalize_mavlink_connection_string("tcp:127.0.0.1:5760").as_ref(),
+            "tcpout:127.0.0.1:5760"
+        );
+        assert_eq!(
+            normalize_mavlink_connection_string("udpin:0.0.0.0:14550").as_ref(),
+            "udpin:0.0.0.0:14550"
+        );
     }
 
     #[test]

@@ -26,7 +26,7 @@ status table.
 | M45 Pre-upload Safety Validation | Complete | Safety config, default rules, subset validation, and actionable violations are implemented. |
 | M46 Flight Sequence | Complete | Upload-only/execute lifecycle, arm/takeoff/start/abort command handling, and bounded failures are implemented. |
 | M47 Telemetry Loop & TaskStatus Mapping | Complete | `MISSION_CURRENT`, `MISSION_ITEM_REACHED`, completion/rejection/disconnect/no-progress mapping are implemented. |
-| M48 Single-Agent PX4 SITL Golden Path | Code complete, live verification pending | Report/replay/golden fake path exists. Public `scenarios/sitl.px4-golden.json` has explicit altitudes for the manual live PX4 run. |
+| M48 Single-Agent PX4 SITL Golden Path | Complete for local PX4 SIH | Live single-agent PX4 SIH run completed on 2026-05-30 with `scenarios/sitl.px4-golden.json`; report/replay artifacts are in `results/m48_px4_sitl_2026-05-30/`. |
 | M49 SITL Observability & Replay | Complete | SITL event log, replay summary, task id mapping, failure events, and reallocation schema events are implemented. |
 | M50 Mock Regression & Docs Hardening | Complete | Portable dry-run/mock/docs checks exist and require no PX4. |
 | M51 Dynamic Reallocation for Failed Agent | Runtime/mock boundary complete | Runtime reallocation and metrics exist; SITL log has reallocation event schema. Live multi-agent PX4 supervisor reallocation flow is not wired. |
@@ -37,8 +37,10 @@ status table.
 
 ### SITL / PX4
 
-- **Live M48 PX4 result is pending.** The code path is present, but the
-  repository does not yet contain a verified PX4 version/backend/command/report.
+- **M48 is live-verified on local PX4 SIH, not Gazebo or hardware.** The
+  repository contains a 2026-05-30 PX4 SIH result with version/backend/command,
+  report JSON, and replay summary. It does not prove Gazebo behavior, HIL, real
+  aircraft, or production safety.
 - **Multi-agent PX4 is a foundation, not orchestration.** M52 proves explicit
   ownership and per-agent commands; it does not launch and coordinate multiple
   real PX4 instances automatically.
@@ -72,20 +74,18 @@ status table.
 | Goal | Status | Blocker |
 |---|---|---|
 | Portable SITL verification | Ready | Run `sitl_agent`/`sitl_docs` targeted tests. |
-| M48 live PX4 verification | Ready for manual attempt | Requires local PX4 SITL environment and result capture. |
+| M48 live PX4 verification | Complete for local PX4 SIH | Captured in `results/m48_px4_sitl_2026-05-30/`; Gazebo/HIL/hardware remain out of scope. |
 | Real multi-agent PX4 | Not ready | Needs supervisor orchestration and live failure/reallocation design. |
 | Large benchmark publication | Not ready | Regression flake and baseline freshness must be resolved first. |
 | Hardware experiment | Not product-ready | Requires external safety process; see `docs/HARDWARE_READINESS.md`. |
 
 ## Recommended Next Steps
 
-1. Run the M48 live PX4 SITL check with `scenarios/sitl.px4-golden.json`, then
-   record PX4 version/backend/command/report/replay summary.
-2. Run a repeated regression determinism sweep across jobs/seed-count variants
+1. Run a repeated regression determinism sweep across jobs/seed-count variants
    before relying on benchmark gates or long seed runs.
-3. Decide whether M51 should stay at "runtime/mock/schema covered" or become a
+2. Decide whether M51 should stay at "runtime/mock/schema covered" or become a
    separate live multi-agent supervisor reallocation milestone.
-4. Keep README, `docs/SITL_SETUP.md`, `docs/REPLAY.md`, and this file in sync
+3. Keep README, `docs/SITL_SETUP.md`, `docs/REPLAY.md`, and this file in sync
    when M48 live verification changes state.
 
 ## How to Verify This Status
@@ -104,5 +104,6 @@ PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
   /home/formi/.local/bin/runlim cargo test -p swarm-runtime reallocation
 ```
 
-For M48 live verification, use the command in `docs/SITL_SETUP.md` and record the
-actual PX4 setup details. Do not mark M48 live-verified from mock/fake tests.
+For M48 live verification, inspect `results/m48_px4_sitl_2026-05-30/` and the
+tested setup in `docs/SITL_SETUP.md`. Do not extend that result to Gazebo, HIL,
+real hardware, or multi-agent PX4 without a new captured run.

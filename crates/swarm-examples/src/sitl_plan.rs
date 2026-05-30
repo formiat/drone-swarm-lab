@@ -96,7 +96,7 @@ pub enum SitlError {
     )]
     FeatureMissing { feature: &'static str },
     #[error(
-        "bad connection string '{addr}': expected udp:<host>:<port>, tcp:<host>:<port>, or serial:<path>:<baud>"
+        "bad connection string '{addr}': expected udpin:<host>:<port>, udpout:<host>:<port>, tcpout:<host>:<port>, tcpin:<host>:<port>, serial:<path>:<baud>, or legacy udp:/tcp: alias"
     )]
     BadConnectionString { addr: String },
     #[error(
@@ -181,8 +181,12 @@ fn parse_sitl_connection(addr: &str) -> Result<ParsedSitlConnection<'_>, SitlErr
     };
 
     match scheme {
-        "udp" => parse_host_port(addr, rest).map(|host| ParsedSitlConnection::Udp { host }),
-        "tcp" => parse_host_port(addr, rest).map(|_| ParsedSitlConnection::Tcp),
+        "udp" | "udpin" | "udpout" | "udpbcast" => {
+            parse_host_port(addr, rest).map(|host| ParsedSitlConnection::Udp { host })
+        }
+        "tcp" | "tcpin" | "tcpout" => {
+            parse_host_port(addr, rest).map(|_| ParsedSitlConnection::Tcp)
+        }
         "serial" => validate_serial(addr, rest).map(|_| ParsedSitlConnection::Serial),
         _ => bad_connection_string(addr),
     }
@@ -714,7 +718,10 @@ mod tests {
     #[test]
     fn supported_connection_strings_are_valid() {
         validate_connection_string("udp:127.0.0.1:14550").unwrap();
+        validate_connection_string("udpin:127.0.0.1:14550").unwrap();
+        validate_connection_string("udpout:127.0.0.1:14550").unwrap();
         validate_connection_string("tcp:localhost:5760").unwrap();
+        validate_connection_string("tcpout:localhost:5760").unwrap();
         validate_connection_string("serial:/dev/ttyUSB0:57600").unwrap();
     }
 
@@ -722,6 +729,8 @@ mod tests {
     fn sitl_connection_class_loopback_udp_is_local_px4_sitl() {
         for addr in [
             "udp:127.0.0.1:14550",
+            "udpin:127.0.0.1:14550",
+            "udpout:127.0.0.1:14550",
             "udp:localhost:14550",
             "udp:[::1]:14550",
         ] {
@@ -734,7 +743,12 @@ mod tests {
 
     #[test]
     fn sitl_connection_class_remote_udp_is_hardware_candidate() {
-        for addr in ["udp:192.168.1.10:14550", "udp:10.0.0.5:14550"] {
+        for addr in [
+            "udp:192.168.1.10:14550",
+            "udp:10.0.0.5:14550",
+            "udpin:0.0.0.0:14550",
+            "udpin:192.168.1.10:14550",
+        ] {
             assert_eq!(
                 classify_connection_string(addr).unwrap(),
                 SitlConnectionClass::HardwareCandidate

@@ -1,0 +1,8 @@
+SITL run: sitl_px4_golden_0:agent-0:connection_execute
+Scenario: sitl_px4_golden_0 | Agent: agent-0 | Mode: connection_execute
+Events: 75
+Upload: clear=1 count=1 requested=3 sent=3 ack_accepted=1 ack_rejected=0
+Commands: sent=3 ack_accepted=3 ack_rejected=0
+Telemetry: heartbeat=27 current_seq=13 waypoint_reached=15 task_completed=3
+Failures: aborts=0 disconnected=0 failures=0 final_status=completed
+Reallocation: agent_lost=0 task_released=0 task_reassigned=0 completed=0 tasks_recovered=0 latency_ticks=none

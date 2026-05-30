@@ -1,0 +1,22 @@
+   Compiling swarm-comms v0.1.0 (/home/formi/Documents/RustProjects/drone/crates/swarm-comms)
+   Compiling swarm-alloc v0.1.0 (/home/formi/Documents/RustProjects/drone/crates/swarm-alloc)
+   Compiling swarm-runtime v0.1.0 (/home/formi/Documents/RustProjects/drone/crates/swarm-runtime)
+   Compiling swarm-sim v0.1.0 (/home/formi/Documents/RustProjects/drone/crates/swarm-sim)
+   Compiling swarm-scenarios v0.1.0 (/home/formi/Documents/RustProjects/drone/crates/swarm-scenarios)
+   Compiling swarm-examples v0.1.0 (/home/formi/Documents/RustProjects/drone/crates/swarm-examples)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.44s
+     Running `target/debug/sitl_agent --dry-run --scenario scenarios/sitl.px4-golden.json --agent-id agent-0`
+mode: dry-run
+agent_id: agent-0
+scenario_path: scenarios/sitl.px4-golden.json
+suite_name: SITL PX4 Golden
+scenario_name: sitl_px4_golden_0
+mission: sitl
+profile: px4-golden
+coordinate_frame: local_simulation
+altitude_source: pose.z (serde default 0.0 when omitted)
+limitations: x/y are local simulation coordinates, not WGS84 latitude/longitude; dry-run does not upload to PX4
+waypoints:
+  seq=0 task_id=wp-0 x=10.000 y=15.000 z=5.000
+  seq=1 task_id=wp-1 x=25.000 y=25.000 z=6.000
+  seq=2 task_id=wp-2 x=40.000 y=10.000 z=5.000

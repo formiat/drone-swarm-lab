@@ -1,0 +1,402 @@
+{
+  "schema_version": "sitl_event_log.v1",
+  "run_id": "sitl_px4_golden_0:agent-0:connection_execute",
+  "scenario_path": "scenarios/sitl.px4-golden.json",
+  "scenario_name": "sitl_px4_golden_0",
+  "mission": "sitl",
+  "profile": "px4-golden",
+  "agent_id": "agent-0",
+  "connection_string": "udpin:0.0.0.0:14550",
+  "mode": "connection_execute",
+  "events": [
+    {
+      "type": "connection_opened",
+      "step": 0,
+      "mode": "connection_execute",
+      "connection_string": "udpin:0.0.0.0:14550"
+    },
+    {
+      "type": "heartbeat_seen",
+      "step": 1
+    },
+    {
+      "type": "mission_clear_sent",
+      "step": 2
+    },
+    {
+      "type": "mission_count_sent",
+      "step": 3,
+      "count": 3
+    },
+    {
+      "type": "mission_item_requested",
+      "step": 4,
+      "seq": 0
+    },
+    {
+      "type": "mission_item_sent",
+      "step": 5,
+      "seq": 0,
+      "task_id": "wp-0"
+    },
+    {
+      "type": "mission_item_requested",
+      "step": 6,
+      "seq": 1
+    },
+    {
+      "type": "mission_item_sent",
+      "step": 7,
+      "seq": 1,
+      "task_id": "wp-1"
+    },
+    {
+      "type": "mission_item_requested",
+      "step": 8,
+      "seq": 2
+    },
+    {
+      "type": "mission_item_sent",
+      "step": 9,
+      "seq": 2,
+      "task_id": "wp-2"
+    },
+    {
+      "type": "mission_ack_received",
+      "step": 10,
+      "result": "MAV_MISSION_ACCEPTED",
+      "accepted": true
+    },
+    {
+      "type": "command_sent",
+      "step": 11,
+      "command": "MAV_CMD_COMPONENT_ARM_DISARM"
+    },
+    {
+      "type": "command_ack_received",
+      "step": 12,
+      "command": "MAV_CMD_COMPONENT_ARM_DISARM",
+      "result": "MAV_RESULT_ACCEPTED",
+      "accepted": true
+    },
+    {
+      "type": "command_sent",
+      "step": 13,
+      "command": "MAV_CMD_NAV_TAKEOFF"
+    },
+    {
+      "type": "command_ack_received",
+      "step": 14,
+      "command": "MAV_CMD_NAV_TAKEOFF",
+      "result": "MAV_RESULT_ACCEPTED",
+      "accepted": true
+    },
+    {
+      "type": "command_sent",
+      "step": 15,
+      "command": "MAV_CMD_MISSION_START"
+    },
+    {
+      "type": "command_ack_received",
+      "step": 16,
+      "command": "MAV_CMD_MISSION_START",
+      "result": "MAV_RESULT_ACCEPTED",
+      "accepted": true
+    },
+    {
+      "type": "heartbeat_seen",
+      "step": 17
+    },
+    {
+      "type": "current_seq_changed",
+      "step": 18,
+      "seq": 0,
+      "task_id": "wp-0"
+    },
+    {
+      "type": "heartbeat_seen",
+      "step": 19
+    },
+    {
+      "type": "heartbeat_seen",
+      "step": 20
+    },
+    {
+      "type": "heartbeat_seen",
+      "step": 21
+    },
+    {
+      "type": "heartbeat_seen",
+      "step": 22
+    },
+    {
+      "type": "heartbeat_seen",
+      "step": 23
+    },
+    {
+      "type": "heartbeat_seen",
+      "step": 24
+    },
+    {
+      "type": "heartbeat_seen",
+      "step": 25
+    },
+    {
+      "type": "heartbeat_seen",
+      "step": 26
+    },
+    {
+      "type": "heartbeat_seen",
+      "step": 27
+    },
+    {
+      "type": "heartbeat_seen",
+      "step": 28
+    },
+    {
+      "type": "heartbeat_seen",
+      "step": 29
+    },
+    {
+      "type": "heartbeat_seen",
+      "step": 30
+    },
+    {
+      "type": "waypoint_reached",
+      "step": 31,
+      "seq": 0,
+      "task_id": "wp-0"
+    },
+    {
+      "type": "task_completed",
+      "step": 32,
+      "seq": 0,
+      "task_id": "wp-0"
+    },
+    {
+      "type": "heartbeat_seen",
+      "step": 33
+    },
+    {
+      "type": "current_seq_changed",
+      "step": 34,
+      "seq": 1,
+      "task_id": "wp-1"
+    },
+    {
+      "type": "waypoint_reached",
+      "step": 35,
+      "seq": 0,
+      "task_id": "wp-0"
+    },
+    {
+      "type": "heartbeat_seen",
+      "step": 36
+    },
+    {
+      "type": "current_seq_changed",
+      "step": 37,
+      "seq": 1,
+      "task_id": "wp-1"
+    },
+    {
+      "type": "waypoint_reached",
+      "step": 38,
+      "seq": 0,
+      "task_id": "wp-0"
+    },
+    {
+      "type": "heartbeat_seen",
+      "step": 39
+    },
+    {
+      "type": "current_seq_changed",
+      "step": 40,
+      "seq": 1,
+      "task_id": "wp-1"
+    },
+    {
+      "type": "waypoint_reached",
+      "step": 41,
+      "seq": 0,
+      "task_id": "wp-0"
+    },
+    {
+      "type": "heartbeat_seen",
+      "step": 42
+    },
+    {
+      "type": "current_seq_changed",
+      "step": 43,
+      "seq": 1,
+      "task_id": "wp-1"
+    },
+    {
+      "type": "waypoint_reached",
+      "step": 44,
+      "seq": 0,
+      "task_id": "wp-0"
+    },
+    {
+      "type": "heartbeat_seen",
+      "step": 45
+    },
+    {
+      "type": "current_seq_changed",
+      "step": 46,
+      "seq": 1,
+      "task_id": "wp-1"
+    },
+    {
+      "type": "waypoint_reached",
+      "step": 47,
+      "seq": 0,
+      "task_id": "wp-0"
+    },
+    {
+      "type": "heartbeat_seen",
+      "step": 48
+    },
+    {
+      "type": "waypoint_reached",
+      "step": 49,
+      "seq": 1,
+      "task_id": "wp-1"
+    },
+    {
+      "type": "task_completed",
+      "step": 50,
+      "seq": 1,
+      "task_id": "wp-1"
+    },
+    {
+      "type": "current_seq_changed",
+      "step": 51,
+      "seq": 2,
+      "task_id": "wp-2"
+    },
+    {
+      "type": "waypoint_reached",
+      "step": 52,
+      "seq": 1,
+      "task_id": "wp-1"
+    },
+    {
+      "type": "heartbeat_seen",
+      "step": 53
+    },
+    {
+      "type": "current_seq_changed",
+      "step": 54,
+      "seq": 2,
+      "task_id": "wp-2"
+    },
+    {
+      "type": "waypoint_reached",
+      "step": 55,
+      "seq": 1,
+      "task_id": "wp-1"
+    },
+    {
+      "type": "heartbeat_seen",
+      "step": 56
+    },
+    {
+      "type": "current_seq_changed",
+      "step": 57,
+      "seq": 2,
+      "task_id": "wp-2"
+    },
+    {
+      "type": "waypoint_reached",
+      "step": 58,
+      "seq": 1,
+      "task_id": "wp-1"
+    },
+    {
+      "type": "heartbeat_seen",
+      "step": 59
+    },
+    {
+      "type": "current_seq_changed",
+      "step": 60,
+      "seq": 2,
+      "task_id": "wp-2"
+    },
+    {
+      "type": "waypoint_reached",
+      "step": 61,
+      "seq": 1,
+      "task_id": "wp-1"
+    },
+    {
+      "type": "heartbeat_seen",
+      "step": 62
+    },
+    {
+      "type": "current_seq_changed",
+      "step": 63,
+      "seq": 2,
+      "task_id": "wp-2"
+    },
+    {
+      "type": "waypoint_reached",
+      "step": 64,
+      "seq": 1,
+      "task_id": "wp-1"
+    },
+    {
+      "type": "heartbeat_seen",
+      "step": 65
+    },
+    {
+      "type": "current_seq_changed",
+      "step": 66,
+      "seq": 2,
+      "task_id": "wp-2"
+    },
+    {
+      "type": "waypoint_reached",
+      "step": 67,
+      "seq": 1,
+      "task_id": "wp-1"
+    },
+    {
+      "type": "heartbeat_seen",
+      "step": 68
+    },
+    {
+      "type": "current_seq_changed",
+      "step": 69,
+      "seq": 2,
+      "task_id": "wp-2"
+    },
+    {
+      "type": "waypoint_reached",
+      "step": 70,
+      "seq": 1,
+      "task_id": "wp-1"
+    },
+    {
+      "type": "heartbeat_seen",
+      "step": 71
+    },
+    {
+      "type": "waypoint_reached",
+      "step": 72,
+      "seq": 2,
+      "task_id": "wp-2"
+    },
+    {
+      "type": "task_completed",
+      "step": 73,
+      "seq": 2,
+      "task_id": "wp-2"
+    },
+    {
+      "type": "run_completed",
+      "step": 74,
+      "status": "completed"
+    }
+  ]
+}

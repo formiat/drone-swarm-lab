@@ -135,7 +135,7 @@ dry-run/mock/config foundation; it does not run real multi-agent PX4.
 
 ```bash
 cargo run -p swarm-examples --bin sitl_agent --features mavlink-transport -- \
-  --connection udp:127.0.0.1:14550 \
+  --connection udpin:127.0.0.1:14550 \
   --scenario scenarios/sitl.px4-golden.json \
   --agent-id agent-0 \
   --safety-config path/to/sitl-safety.json \
@@ -149,16 +149,17 @@ legacy `MISSION_REQUEST`, sends `MISSION_ITEM_INT` waypoints, and requires an
 accepted `MISSION_ACK`. If `--safety-config` is omitted, conservative SITL
 defaults are used.
 
-Remote, TCP, and serial connections are treated as hardware candidates and are
-guarded by `--allow-hardware-candidate`. This opt-in does not make the project
-hardware-ready. Read [`docs/HARDWARE_READINESS.md`](docs/HARDWARE_READINESS.md)
-before any hardware experiment.
+Remote, wildcard, TCP, and serial connections are treated as hardware
+candidates and are guarded by `--allow-hardware-candidate`. This opt-in does
+not make the project hardware-ready. Read
+[`docs/HARDWARE_READINESS.md`](docs/HARDWARE_READINESS.md) before any hardware
+experiment.
 
 Execution is opt-in:
 
 ```bash
 cargo run -p swarm-examples --bin sitl_agent --features mavlink-transport -- \
-  --connection udp:127.0.0.1:14550 \
+  --connection udpin:127.0.0.1:14550 \
   --scenario scenarios/sitl.px4-golden.json \
   --agent-id agent-0 \
   --execute --timeout 5 --telemetry-timeout 10 --no-progress-timeout 60 \
@@ -199,7 +200,7 @@ cargo run -p swarm-examples --bin replay -- \
 | SITL Portable Regression | ✅ Stable | M50 | `portable_sitl_regression_smoke` and `sitl_docs` validate dry-run/mock/safety/docs without external PX4 |
 | Dynamic Reallocation | ✅ Stable | M51 | Heartbeat timeout releases unfinished tasks from lost agents, recovers assignable tasks on survivors, exposes runtime metrics and SITL reallocation events; real multi-agent PX4 remains future work |
 | Multi-Agent SITL Foundation | ✅ Stable | M52 | `multi_sitl.v1` config, public `scenarios/sitl.multi-agent.json` / `scenarios/sitl.multi-agent.config.json`, `sitl_supervisor` dry-run/mock manifest, per-agent task subsets, MAVLink system/component mapping, duplicate ownership rejection before upload; real multi-agent PX4 remains manual/future work |
-| Hardware Readiness Boundary | ✅ Stable | M53 | `docs/HARDWARE_READINESS.md`, connection classes, and `--allow-hardware-candidate` guard remote/serial hardware candidates; this documents the boundary, not hardware readiness |
+| Hardware Readiness Boundary | ✅ Stable | M53 | `docs/HARDWARE_READINESS.md`, connection classes, and `--allow-hardware-candidate` guard remote/wildcard/serial hardware candidates; this documents the boundary, not hardware readiness |
 | Replay / Debuggability | ✅ Stable | M23 | `replay` CLI, ASCII visualization |
 | Mission Semantics | ✅ Stable | M33 | `TaskKind`, 6 concrete adapters, `AdapterRegistry`, adapter-driven completion/scoring in runner and allocator |
 | Planner Quality | ✅ Stable | M34 | `RoutePlanner` trait, 2-opt, battery-aware feasibility v2 (ordered-subset feasibility, battery model v2 integration, meaningful runner metrics) |
@@ -212,7 +213,7 @@ cargo run -p swarm-examples --bin replay -- \
 | Wildfire / Flood Mapping | ✅ Stable | M30 | `TaskKind::MappingZone`, `WildfireState`, hazard zones, dynamic threat |
 | Simulation Realism | ✅ Stable | M31 | Battery model v2, altitude sensor penalty, wind drift, pose noise, comms jitter, time-gated no-fly zones, `--realism` preset |
 | Reporting & Metrics | ✅ Stable | M32 | Per-row mission/scenario in exports, mission-scoped profiles, merged `all` benchmark id, wildfire/planner metrics, realism metadata in manifest |
-| Real PX4 | 🧪 Experimental | M49 | Feature-gated single-agent PX4 SITL report and replay plumbing with pre-upload safety validation, arm/takeoff/start, telemetry-to-task progress mapping, structured final run report, compact SITL event log summary, and public `scenarios/sitl.px4-golden.json`; live PX4 verification remains manual and documented separately |
+| Real PX4 | 🧪 Experimental | M49 | Feature-gated single-agent PX4 SITL report and replay plumbing with pre-upload safety validation, arm/takeoff/start, telemetry-to-task progress mapping, structured final run report, compact SITL event log summary, public `scenarios/sitl.px4-golden.json`, and a captured M48 PX4 SIH run in `results/m48_px4_sitl_2026-05-30`; still not hardware-ready |
 
 **Test coverage:** 360+ tests, 10 crates, 18 JSON scenarios.
 
@@ -367,7 +368,7 @@ Parametric sweeps over variables such as packet loss, agent count, or grid size 
 ## Known Limitations
 
 1. **Simulation only:** No real hardware workflow; PX4 integration is limited to experimental SITL waypoint upload plus opt-in single-agent lifecycle/progress tracking with static pre-upload safety checks.
-2. **Hardware boundary:** Remote UDP, TCP, and serial connection strings are hardware candidates and require `--allow-hardware-candidate`; this is only an explicit opt-in guard, not flight certification or proof of hardware readiness. See [`docs/HARDWARE_READINESS.md`](docs/HARDWARE_READINESS.md).
+2. **Hardware boundary:** Remote UDP, wildcard UDP, TCP, and serial connection strings are hardware candidates and require `--allow-hardware-candidate`; this is only an explicit opt-in guard, not flight certification or proof of hardware readiness. See [`docs/HARDWARE_READINESS.md`](docs/HARDWARE_READINESS.md).
 3. **Multi-agent SITL foundation only:** M52 supports config-driven per-agent task subsets, dry-run/mock manifests, standalone command generation, and duplicate ownership checks. It does not provide robust distributed coordination, automated real multi-agent PX4 orchestration, or hardware safety guarantees.
 4. **SITL coordinate frame:** `sitl_agent` dry-run/mock mode treats `Pose { x, y, z }` as local simulation coordinates; `x/y` are not WGS84 latitude/longitude, and `z` is local altitude.
 5. **3D pose:** Scenarios support `z` coordinate and altitude-aware sensors, but most missions operate primarily in XY plane.

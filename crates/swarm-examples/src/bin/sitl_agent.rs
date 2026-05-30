@@ -1553,7 +1553,9 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
-    fn connection_string_validation_accepts_udp() {
+    fn connection_string_validation_accepts_mavlink_udp_and_legacy_alias() {
+        validate_connection_string("udpin:0.0.0.0:14550").unwrap();
+        validate_connection_string("udpout:127.0.0.1:14550").unwrap();
         validate_connection_string("udp:127.0.0.1:14550").unwrap();
     }
 

@@ -98,8 +98,9 @@ fn sitl_docs_explain_portable_and_manual_boundaries() {
 
     for required in [
         "M48 Single-Agent PX4 SITL Golden Path",
-        "Code complete, live verification pending",
+        "Complete for local PX4 SIH",
         "scenarios/sitl.px4-golden.json",
+        "results/m48_px4_sitl_2026-05-30",
         "M52 Multi-Agent SITL Foundation",
         "scenarios/sitl.multi-agent.json",
         "scenarios/sitl.multi-agent.config.json",
