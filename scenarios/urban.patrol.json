@@ -1,6 +1,6 @@
 {
   "name": "Urban Patrol Small Block",
-  "description": "M64 Urban Foundations fixture: one agent, road graph loop, AABB building, and a blocked diagonal edge.",
+  "description": "M65 Urban Patrol v0 fixture: one agent follows the road graph loop, avoids the AABB building route, and completes before timeout.",
   "scenarios": [
     {
       "mission": "urban-patrol",

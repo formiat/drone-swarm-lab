@@ -99,6 +99,14 @@ fn main() {
         if !s.cbba_convergence_ticks.is_empty() {
             println!("  Convergence ticks: {:?}", s.cbba_convergence_ticks);
         }
+        println!("Urban routes planned: {}", s.urban_routes_planned);
+        println!("Urban segments entered: {}", s.urban_segments_entered);
+        println!("Urban segments completed: {}", s.urban_segments_completed);
+        println!("Urban violations: {}", s.urban_violations);
+        println!("Urban patrol completions: {}", s.urban_patrol_completions);
+        if !s.urban_completion_ticks.is_empty() {
+            println!("  Urban completion ticks: {:?}", s.urban_completion_ticks);
+        }
     }
 
     if let Some(t) = tick {

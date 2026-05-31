@@ -14,8 +14,8 @@ use swarm_metrics::RunMetrics;
 use swarm_runtime::{AgentNode, Coordinator, GridState, NodeTickOutput};
 use swarm_safety::SafetyConfig;
 use swarm_types::{
-    AdapterRegistry, AgentId, EdgeId, Health, InspectionGraph, Role, RunState, Task, TaskId,
-    UrbanMap, UrbanNodeId, UrbanRouteLoop,
+    AdapterRegistry, Agent, AgentId, EdgeId, Health, InspectionGraph, Role, RunState, Task, TaskId,
+    UrbanMap, UrbanNodeId, UrbanPlannedRoute, UrbanRouteLoop, UrbanRouteSegment, UrbanViolation,
 };
 
 use crate::{Clock, Scenario};
@@ -424,6 +424,10 @@ impl ScenarioRunner {
         allocator: A,
         mut log_builder: Option<swarm_replay::EventLogBuilder>,
     ) -> (RunMetrics, Option<swarm_replay::EventLog>) {
+        if config.urban_state.is_some() {
+            return Self::run_urban_patrol(scenario, config, log_builder);
+        }
+
         let mut inspection_state = config.inspection_state;
         let urban_state = config.urban_state.clone();
         let (urban_route_planned, urban_route_length_m, urban_violation_count) =
@@ -1741,8 +1745,233 @@ impl ScenarioRunner {
                 urban_route_planned,
                 urban_violation_count,
                 urban_route_completed,
+                urban_patrol_completed: urban_route_completed,
+                urban_time_to_complete_loop: urban_route_completed.then_some(total_ticks),
+                urban_distance_travelled_m: 0.0,
+                urban_route_efficiency: 0.0,
+                urban_replan_count: 0,
             },
             event_log,
+        )
+    }
+
+    fn run_urban_patrol(
+        scenario: &Scenario,
+        config: RunConfig,
+        mut log_builder: Option<swarm_replay::EventLogBuilder>,
+    ) -> (RunMetrics, Option<swarm_replay::EventLog>) {
+        let Some(urban_state) = config.urban_state.clone() else {
+            unreachable!("run_urban_patrol is called only for urban_state runs");
+        };
+        let route = match crate::urban::expand_route_loop(&urban_state.map, &urban_state.route_loop)
+        {
+            Ok(route) => route,
+            Err(error) => {
+                return (
+                    urban_patrol_metrics(
+                        scenario,
+                        0,
+                        false,
+                        false,
+                        0.0,
+                        1,
+                        false,
+                        None,
+                        0.0,
+                        0.0,
+                        Some(error.to_string()),
+                    ),
+                    log_builder.map(|builder| builder.build()),
+                );
+            }
+        };
+
+        let Some(agent) = scenario
+            .agents
+            .iter()
+            .find(|agent| agent.health == Health::Alive)
+        else {
+            return (
+                urban_patrol_metrics(
+                    scenario,
+                    0,
+                    false,
+                    true,
+                    route.total_length_m,
+                    0,
+                    false,
+                    None,
+                    0.0,
+                    0.0,
+                    Some("urban_patrol_no_alive_agent".to_owned()),
+                ),
+                log_builder.map(|builder| builder.build()),
+            );
+        };
+        let agent_id = agent.id.clone();
+
+        if let Some(ref mut builder) = log_builder {
+            builder.push(swarm_replay::Event::UrbanRoutePlanned {
+                agent_id: agent_id.clone(),
+                tick: 0,
+                edge_ids: route
+                    .segments
+                    .iter()
+                    .map(|segment| segment.edge_id.clone())
+                    .collect(),
+                route_length_m: route.total_length_m,
+            });
+        }
+
+        let static_violations = crate::urban::judge_route(&urban_state.map, &route);
+        if !static_violations.is_empty() {
+            if let Some(ref mut builder) = log_builder {
+                for violation in &static_violations {
+                    push_urban_violation_event(builder, &agent_id, 0, &route, violation);
+                }
+            }
+            return (
+                urban_patrol_metrics(
+                    scenario,
+                    0,
+                    false,
+                    true,
+                    route.total_length_m,
+                    static_violations.len() as u64,
+                    false,
+                    None,
+                    0.0,
+                    0.0,
+                    None,
+                ),
+                log_builder.map(|builder| builder.build()),
+            );
+        }
+
+        let speed_m_per_tick = speed_m_per_tick(agent, config.tick_duration_ms);
+        let mut total_ticks = 0;
+        let mut completed = route.segments.is_empty();
+        let mut completion_tick = completed.then_some(0);
+        let mut total_distance_travelled = 0.0;
+        let mut segment_index = 0usize;
+        let mut distance_on_segment = 0.0;
+
+        if completed {
+            if let Some(ref mut builder) = log_builder {
+                builder.push(swarm_replay::Event::UrbanPatrolCompleted {
+                    agent_id: agent_id.clone(),
+                    tick: 0,
+                    route_length_m: route.total_length_m,
+                    distance_travelled_m: 0.0,
+                });
+            }
+        } else if let Some(first_segment) = route.segments.first() {
+            if let Some(ref mut builder) = log_builder {
+                push_segment_entered(builder, &agent_id, 0, 0, first_segment);
+            }
+        }
+
+        for tick in 1..=config.max_ticks {
+            if completed {
+                break;
+            }
+            total_ticks = tick;
+            if let Some(ref mut builder) = log_builder {
+                builder.push(swarm_replay::Event::TickStart { tick });
+            }
+
+            let mut remaining = speed_m_per_tick;
+            while remaining > 0.0 && segment_index < route.segments.len() {
+                let segment = &route.segments[segment_index];
+                let segment_remaining = (segment.length_m - distance_on_segment).max(0.0);
+                if remaining + f64::EPSILON >= segment_remaining {
+                    total_distance_travelled += segment_remaining;
+                    remaining -= segment_remaining;
+                    distance_on_segment = segment.length_m;
+
+                    if let Some(ref mut builder) = log_builder {
+                        builder.push(swarm_replay::Event::UrbanSegmentCompleted {
+                            agent_id: agent_id.clone(),
+                            tick,
+                            segment_index,
+                            edge_id: segment.edge_id.clone(),
+                        });
+                    }
+
+                    segment_index += 1;
+                    if segment_index == route.segments.len() {
+                        completed = true;
+                        completion_tick = Some(tick);
+                        if let Some(ref mut builder) = log_builder {
+                            builder.push(swarm_replay::Event::UrbanPatrolCompleted {
+                                agent_id: agent_id.clone(),
+                                tick,
+                                route_length_m: route.total_length_m,
+                                distance_travelled_m: total_distance_travelled,
+                            });
+                        }
+                        break;
+                    }
+
+                    distance_on_segment = 0.0;
+                    if let Some(ref mut builder) = log_builder {
+                        push_segment_entered(
+                            builder,
+                            &agent_id,
+                            tick,
+                            segment_index,
+                            &route.segments[segment_index],
+                        );
+                    }
+                } else {
+                    distance_on_segment += remaining;
+                    total_distance_travelled += remaining;
+                    remaining = 0.0;
+                }
+            }
+
+            if let Some(ref mut builder) = log_builder {
+                if let Some(pose) = current_urban_pose(
+                    &urban_state.map,
+                    &route,
+                    segment_index,
+                    distance_on_segment,
+                    completed,
+                ) {
+                    builder.push(swarm_replay::Event::PoseUpdated {
+                        agent_id: agent_id.clone(),
+                        pose,
+                        tick,
+                    });
+                }
+            }
+        }
+
+        if completed && total_ticks == 0 {
+            total_ticks = completion_tick.unwrap_or(0);
+        }
+
+        let route_efficiency = if total_distance_travelled > 0.0 {
+            route.total_length_m / total_distance_travelled
+        } else {
+            0.0
+        };
+
+        (
+            urban_patrol_metrics(
+                scenario,
+                total_ticks,
+                completed,
+                true,
+                route.total_length_m,
+                0,
+                completed,
+                completion_tick,
+                total_distance_travelled,
+                route_efficiency,
+                None,
+            ),
+            log_builder.map(|builder| builder.build()),
         )
     }
 }
@@ -1757,6 +1986,205 @@ fn compute_urban_foundation_metrics(urban_state: &Option<UrbanState>) -> (bool, 
             (true, route.total_length_m, violations.len() as u64)
         }
         Err(_) => (false, 0.0, 1),
+    }
+}
+
+fn speed_m_per_tick(agent: &Agent, tick_duration_ms: u64) -> f64 {
+    let tick_seconds = tick_duration_ms as f64 / 1000.0;
+    if tick_seconds.is_finite() && tick_seconds > 0.0 && agent.speed.is_finite() {
+        (agent.speed * tick_seconds).max(0.0)
+    } else {
+        0.0
+    }
+}
+
+fn push_segment_entered(
+    builder: &mut swarm_replay::EventLogBuilder,
+    agent_id: &AgentId,
+    tick: u64,
+    segment_index: usize,
+    segment: &UrbanRouteSegment,
+) {
+    builder.push(swarm_replay::Event::UrbanSegmentEntered {
+        agent_id: agent_id.clone(),
+        tick,
+        segment_index,
+        edge_id: segment.edge_id.clone(),
+        from: segment.from.clone(),
+        to: segment.to.clone(),
+    });
+}
+
+fn push_urban_violation_event(
+    builder: &mut swarm_replay::EventLogBuilder,
+    agent_id: &AgentId,
+    tick: u64,
+    route: &UrbanPlannedRoute,
+    violation: &UrbanViolation,
+) {
+    let edge_id = match violation {
+        UrbanViolation::MissingEdge { edge_id }
+        | UrbanViolation::BlockedEdge { edge_id }
+        | UrbanViolation::ObstacleIntersection { edge_id, .. } => Some(edge_id.clone()),
+    };
+    let segment_index = edge_id.as_ref().and_then(|id| {
+        route
+            .segments
+            .iter()
+            .position(|segment| &segment.edge_id == id)
+    });
+    let pose = match violation {
+        UrbanViolation::ObstacleIntersection { location, .. } => *location,
+        UrbanViolation::MissingEdge { .. } | UrbanViolation::BlockedEdge { .. } => {
+            swarm_types::Pose::default()
+        }
+    };
+    builder.push(swarm_replay::Event::UrbanViolation {
+        agent_id: agent_id.clone(),
+        tick,
+        segment_index,
+        edge_id,
+        pose,
+        reason: format!("{violation:?}"),
+    });
+}
+
+fn current_urban_pose(
+    map: &UrbanMap,
+    route: &UrbanPlannedRoute,
+    segment_index: usize,
+    distance_on_segment: f64,
+    completed: bool,
+) -> Option<swarm_types::Pose> {
+    if completed {
+        return route
+            .segments
+            .last()
+            .and_then(|segment| map.node(&segment.to).map(|node| node.pose));
+    }
+    route.segments.get(segment_index).and_then(|segment| {
+        crate::urban::pose_along_segment(map, segment, distance_on_segment).ok()
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn urban_patrol_metrics(
+    scenario: &Scenario,
+    total_ticks: u64,
+    success: bool,
+    urban_route_planned: bool,
+    urban_route_length_m: f64,
+    urban_violation_count: u64,
+    urban_patrol_completed: bool,
+    urban_time_to_complete_loop: Option<u64>,
+    urban_distance_travelled_m: f64,
+    urban_route_efficiency: f64,
+    unsupported_reason: Option<String>,
+) -> RunMetrics {
+    let agent_count = scenario.agents.len() as f64;
+    let battery_min = scenario
+        .agents
+        .iter()
+        .map(|agent| agent.battery)
+        .fold(f64::INFINITY, f64::min);
+    let battery_min = if battery_min.is_finite() {
+        battery_min
+    } else {
+        0.0
+    };
+    let battery_avg = if agent_count > 0.0 {
+        scenario
+            .agents
+            .iter()
+            .map(|agent| agent.battery)
+            .sum::<f64>()
+            / agent_count
+    } else {
+        0.0
+    };
+    let coverage_progress = if urban_route_length_m > 0.0 {
+        (urban_distance_travelled_m / urban_route_length_m).clamp(0.0, 1.0)
+    } else if urban_patrol_completed {
+        1.0
+    } else {
+        0.0
+    };
+
+    RunMetrics {
+        seed: scenario.seed,
+        total_ticks,
+        messages_attempted: 0,
+        messages_dropped: 0,
+        detection_time_ticks: None,
+        reallocation_time_ticks: None,
+        max_task_unassigned_ticks: 0,
+        all_tasks_assigned: urban_patrol_completed,
+        success,
+        tasks_injected: 0,
+        tasks_expired: 0,
+        conflicting_assignments: 0,
+        partition_events: 0,
+        partitions_active: false,
+        stale_messages_discarded: 0,
+        convergence_ticks: None,
+        max_view_divergence: 0,
+        network_availability: 1.0,
+        relay_reallocation_ticks: None,
+        avg_hop_count: 0.0,
+        disconnected_agents_max: 0,
+        coverage_progress,
+        bytes_sent: 0,
+        stale_state_age_ticks: 0,
+        battery_margin_min: battery_min,
+        battery_margin_avg: battery_avg,
+        final_battery_min: battery_min,
+        avg_distance_travelled: urban_distance_travelled_m,
+        agents_exhausted: 0,
+        total_distance_travelled: urban_distance_travelled_m,
+        mission_completion_ticks: urban_time_to_complete_loop.unwrap_or(total_ticks),
+        time_to_first_exhaustion: None,
+        time_to_find: None,
+        coverage_over_time: vec![coverage_progress],
+        probability_of_detection: 0.0,
+        targets_found: 0,
+        targets_total: 0,
+        scan_count: 0,
+        cbba_rounds_to_convergence: 0,
+        cbba_converged: false,
+        cbba_messages: 0,
+        safety_violations: 0,
+        belief_entropy_final: 0.0,
+        false_positives: 0,
+        confirmation_scans: 0,
+        cbba_convergence_tick: None,
+        bundle_travel_distance: urban_distance_travelled_m,
+        edge_coverage_rate: 0.0,
+        missed_edges: 0,
+        revisit_count: 0,
+        route_efficiency: urban_route_efficiency,
+        avg_route_length: urban_route_length_m,
+        avg_wasted_travel: 0.0,
+        avg_return_reserve: 0.0,
+        infeasible_routes: 0,
+        hazard_zones_mapped: 0,
+        priority_updates: 0,
+        final_avg_threat_level: 0.0,
+        high_priority_zones_mapped: 0,
+        time_to_map_first_high_risk: None,
+        threat_level_over_time: vec![],
+        zone_observations: 0,
+        unsupported_reason,
+        realism_profile: None,
+        wind: None,
+        urban_route_length_m,
+        urban_route_planned,
+        urban_violation_count,
+        urban_route_completed: urban_patrol_completed,
+        urban_patrol_completed,
+        urban_time_to_complete_loop,
+        urban_distance_travelled_m,
+        urban_route_efficiency,
+        urban_replan_count: 0,
     }
 }
 
@@ -1796,8 +2224,9 @@ mod tests {
     use super::*;
     use swarm_alloc::{AllocationAgent, AllocationTask, Allocator};
     use swarm_types::{
-        Agent, Capability, CellState, Health, InspectionEdge, Pose, Role, SearchGrid, SensorModel,
-        Task, TaskKind, TaskStatus, UrbanEdge, UrbanEdgeId, UrbanNode,
+        Aabb, Agent, Capability, CellState, Health, InspectionEdge, Pose, Role, SearchGrid,
+        SensorModel, Task, TaskKind, TaskStatus, UrbanEdge, UrbanEdgeId, UrbanNode,
+        UrbanObstacleId, UrbanStaticObstacle,
     };
 
     fn scenario(seed: u64, agent_count: usize, task_count: usize) -> Scenario {
@@ -2233,16 +2662,20 @@ mod tests {
         );
     }
 
-    #[test]
-    fn urban_foundation_metrics_report_planned_route_without_completion_claim() {
+    fn urban_test_run_config(
+        max_ticks: u64,
+        static_obstacles: Vec<UrbanStaticObstacle>,
+    ) -> (Scenario, RunConfig) {
         let n0 = UrbanNodeId::from("n0".to_owned());
         let n1 = UrbanNodeId::from("n1".to_owned());
         let n2 = UrbanNodeId::from("n2".to_owned());
         let n3 = UrbanNodeId::from("n3".to_owned());
         let mut scenario = scenario(0, 1, 0);
         scenario.name = "urban-patrol".to_owned();
+        scenario.agents[0].speed = 2.0;
         let run_config = RunConfig {
-            max_ticks: 20,
+            max_ticks,
+            tick_duration_ms: 1000,
             urban_state: Some(UrbanState {
                 map: UrbanMap {
                     nodes: vec![
@@ -2317,7 +2750,7 @@ mod tests {
                             blocked: false,
                         },
                     ],
-                    static_obstacles: vec![],
+                    static_obstacles,
                 },
                 route_loop: UrbanRouteLoop {
                     nodes: vec![n0.clone(), n1, n2, n3, n0],
@@ -2327,20 +2760,103 @@ mod tests {
             }),
             ..config(vec![])
         };
+        (scenario, run_config)
+    }
+
+    #[test]
+    fn urban_patrol_completes_small_block_loop() {
+        let (scenario, run_config) = urban_test_run_config(50, vec![]);
 
         let metrics = ScenarioRunner::run(&scenario, run_config);
 
         assert!(metrics.urban_route_planned);
         assert_eq!(metrics.urban_route_length_m, 80.0);
         assert_eq!(metrics.urban_violation_count, 0);
-        assert!(
-            !metrics.urban_route_completed,
-            "M64 should not claim Urban Patrol progress completion"
+        assert!(metrics.urban_route_completed);
+        assert!(metrics.urban_patrol_completed);
+        assert_eq!(metrics.urban_time_to_complete_loop, Some(40));
+        assert_eq!(metrics.urban_distance_travelled_m, 80.0);
+        assert_eq!(metrics.urban_route_efficiency, 1.0);
+        assert_eq!(metrics.urban_replan_count, 0);
+        assert!(metrics.success);
+        assert!(metrics.total_ticks < 50);
+    }
+
+    #[test]
+    fn urban_patrol_timeout_does_not_complete() {
+        let (scenario, run_config) = urban_test_run_config(3, vec![]);
+
+        let metrics = ScenarioRunner::run(&scenario, run_config);
+
+        assert!(metrics.urban_route_planned);
+        assert_eq!(metrics.urban_route_length_m, 80.0);
+        assert!(!metrics.urban_patrol_completed);
+        assert!(!metrics.success);
+        assert_eq!(metrics.urban_time_to_complete_loop, None);
+        assert_eq!(metrics.urban_distance_travelled_m, 6.0);
+    }
+
+    #[test]
+    fn urban_patrol_violation_fails_before_completion() {
+        let obstacle = UrbanStaticObstacle {
+            id: UrbanObstacleId::from("road-block".to_owned()),
+            bounds: Aabb {
+                min_x: 8.0,
+                min_y: -1.0,
+                max_x: 12.0,
+                max_y: 1.0,
+            },
+            label: Some("building".to_owned()),
+        };
+        let (scenario, run_config) = urban_test_run_config(50, vec![obstacle]);
+
+        let (metrics, event_log) =
+            ScenarioRunner::run_with_log(&scenario, run_config, swarm_alloc::GreedyAllocator);
+        let event_log = event_log.expect("urban run should produce replay log");
+
+        assert!(metrics.urban_route_planned);
+        assert!(metrics.urban_violation_count > 0);
+        assert!(!metrics.urban_patrol_completed);
+        assert!(!metrics.success);
+        assert!(event_log
+            .events
+            .iter()
+            .any(|event| matches!(event, swarm_replay::Event::UrbanViolation { .. })));
+    }
+
+    #[test]
+    fn urban_patrol_replay_records_ordered_route_events() {
+        let (scenario, run_config) = urban_test_run_config(50, vec![]);
+
+        let (metrics, event_log) =
+            ScenarioRunner::run_with_log(&scenario, run_config, swarm_alloc::GreedyAllocator);
+        let event_log = event_log.expect("urban run should produce replay log");
+
+        assert!(metrics.success);
+        assert!(matches!(
+            event_log.events.first(),
+            Some(swarm_replay::Event::UrbanRoutePlanned { .. })
+        ));
+        assert_eq!(
+            event_log
+                .events
+                .iter()
+                .filter(|event| matches!(event, swarm_replay::Event::UrbanSegmentEntered { .. }))
+                .count(),
+            4
         );
-        assert!(
-            !metrics.success,
-            "Urban Patrol success waits for M65 progress semantics"
+        assert_eq!(
+            event_log
+                .events
+                .iter()
+                .filter(|event| matches!(event, swarm_replay::Event::UrbanSegmentCompleted { .. }))
+                .count(),
+            4
         );
+        assert!(event_log.events.iter().any(|event| matches!(
+            event,
+            swarm_replay::Event::UrbanPatrolCompleted { tick: 40, .. }
+        )));
     }
 
     fn semantic_task(id: &str, kind: TaskKind) -> Task {

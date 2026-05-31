@@ -59,6 +59,47 @@ fn create_test_replay_log(path: &std::path::Path) {
     std::fs::write(path, json).unwrap();
 }
 
+fn create_urban_replay_log(path: &std::path::Path) {
+    use swarm_replay::{Event, EventLogBuilder};
+    use swarm_types::{AgentId, UrbanEdgeId, UrbanNodeId};
+
+    let agent_id = AgentId::from("agent-0".to_owned());
+    let edge_id = UrbanEdgeId::from("road-n0-n1".to_owned());
+    let mut builder = EventLogBuilder::new("urban-run", 0, "urban_patrol_small_block");
+    builder.push(Event::UrbanRoutePlanned {
+        agent_id: agent_id.clone(),
+        tick: 0,
+        edge_ids: vec![edge_id.clone()],
+        route_length_m: 20.0,
+    });
+    builder.push(Event::UrbanSegmentEntered {
+        agent_id: agent_id.clone(),
+        tick: 0,
+        segment_index: 0,
+        edge_id: edge_id.clone(),
+        from: UrbanNodeId::from("n0".to_owned()),
+        to: UrbanNodeId::from("n1".to_owned()),
+    });
+    builder.push(Event::UrbanSegmentCompleted {
+        agent_id: agent_id.clone(),
+        tick: 10,
+        segment_index: 0,
+        edge_id,
+    });
+    builder.push(Event::UrbanPatrolCompleted {
+        agent_id,
+        tick: 10,
+        route_length_m: 20.0,
+        distance_travelled_m: 20.0,
+    });
+    let log = builder.build();
+    let json = serde_json::to_string_pretty(&log).unwrap();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    std::fs::write(path, json).unwrap();
+}
+
 fn create_test_sitl_log(path: &std::path::Path) {
     use swarm_examples::sitl_observability::{
         SitlEventLogMetadata, SitlEventLogMode, SitlEventRecorder,
@@ -108,6 +149,26 @@ fn replay_cli_summary_outputs_ticks() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Total ticks:"));
     assert!(stdout.contains("Events:"));
+}
+
+#[test]
+fn replay_cli_summary_outputs_urban_counts() {
+    let tmp_dir = tempfile::TempDir::new().unwrap();
+    let log_path = tmp_dir.path().join("urban.replay.json");
+    create_urban_replay_log(&log_path);
+    let output = run_replay(&["--log", log_path.to_str().unwrap(), "--summary"]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "replay --summary failed: {}",
+        stderr
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Urban routes planned: 1"));
+    assert!(stdout.contains("Urban segments entered: 1"));
+    assert!(stdout.contains("Urban segments completed: 1"));
+    assert!(stdout.contains("Urban patrol completions: 1"));
+    assert!(stdout.contains("Urban completion ticks: [10]"));
 }
 
 #[test]

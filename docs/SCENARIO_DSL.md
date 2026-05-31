@@ -76,12 +76,13 @@ an explicit schema policy update and compatibility tests.
 | `inspection` | `run_config.enable_movement` | Must be `true`; tasks must have `edge_id` |
 | `cbba-stress` | `run_config.enable_cbba` | Must be `true`; `gossip_interval_ticks <= 5` |
 | `sitl` | tasks with `pose` | At least one task must have a `pose` |
-| `urban-patrol` | `run_config.urban_state` | Must include `UrbanMap`, route loop, Dijkstra planner, valid node/edge refs, and waypoint placeholder tasks |
+| `urban-patrol` | `run_config.urban_state` | Must include `UrbanMap`, route loop, Dijkstra planner, valid node/edge refs, and waypoint placeholder tasks; M65 runner follows the planned route in order |
 | `safety` | `run_config.safety_config` | Must have `safety_config` with geofence or no-fly zones |
 
-## Urban Foundations
+## Urban Patrol
 
-M64 adds `urban-patrol` as a foundation mission fixture. The DSL uses
+M64 added `urban-patrol` as a foundation mission fixture. M65 makes it an
+executable one-agent patrol simulation. The DSL uses
 `run_config.urban_state` with:
 
 - `map.nodes[]` — road graph intersections with `id` and `pose`.
@@ -93,11 +94,16 @@ M64 adds `urban-patrol` as a foundation mission fixture. The DSL uses
   Dijkstra shortest paths.
 - `planner` — currently must be `"dijkstra"`.
 
-The M64 fixture uses `TaskKind::Waypoint` placeholder tasks because full Urban
-Patrol progress/completion semantics are planned for M65. The DSL validates
-graph references and rejects invalid route loops with field-specific errors.
+The fixture still uses `TaskKind::Waypoint` placeholder tasks for compatibility,
+but Urban Patrol completion is now route-based rather than task-assignment
+based. Completion means the selected scout traverses every planned route
+segment in order before timeout with zero Urban judge violations. Failure means
+timeout or a static/execution judge violation. M65 v0 has no replanning, so
+`urban_replan_count = 0`.
+
 It does not implement lidar/raycast, bus detection, dynamic obstacles,
-multi-agent route conflicts, arbitrary polygons, or PX4/SITL export.
+multi-agent route conflicts, arbitrary polygons, PX4/SITL export, hardware
+readiness, or a visual UI.
 
 ## Minimal Example
 
@@ -159,7 +165,7 @@ The repository includes 20 pre-built scenario files in `scenarios/`:
 - `emergency-mesh.ideal.json` — mesh network with relay
 - `cbba_stress.json` — CBBA convergence under packet loss
 - `sitl.waypoints.json` — SITL waypoints, 1 agent
-- `urban.patrol.json` — M64 Urban road-graph foundation fixture
+- `urban.patrol.json` — M65 Urban Patrol road-graph simulation fixture
 
 ## Export / Import
 

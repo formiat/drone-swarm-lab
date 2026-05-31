@@ -89,8 +89,9 @@ Internal or experimental:
 
 ### Urban Mission Path
 
-M64 adds an Urban foundation that future Urban Patrol/Search work should reuse
-instead of starting with arbitrary polygons:
+M64 adds an Urban foundation and M65 adds the first Urban Patrol simulation.
+Future Urban Search work should reuse this road-graph path instead of starting
+with arbitrary polygons:
 
 - shared types live in `crates/swarm-types/src/urban.rs`;
 - deterministic Dijkstra planning and the initial judge live in
@@ -98,14 +99,20 @@ instead of starting with arbitrary polygons:
 - `run_config.urban_state` carries the road graph, route loop and planner
   choice in Scenario DSL;
 - `scenarios/urban.patrol.json` is the portable fixture for catalog tests;
-- metrics currently report route-planning skeleton fields:
+- metrics report route planning and patrol execution fields:
   `urban_route_length_m`, `urban_route_planned`,
-  `urban_violation_count`, and `urban_route_completed`.
+  `urban_violation_count`, `urban_route_completed`,
+  `urban_patrol_completed`, `urban_time_to_complete_loop`,
+  `urban_distance_travelled_m`, `urban_route_efficiency`, and
+  `urban_replan_count`;
+- replay logs expose `UrbanRoutePlanned`, `UrbanSegmentEntered`,
+  `UrbanSegmentCompleted`, `UrbanViolation`, and `UrbanPatrolCompleted`.
 
 This is intentionally a mission-level substrate. Do not add lidar/raycast, bus
 detection, dynamic obstacles, multi-agent route deconfliction, PX4/SITL export,
-or arbitrary polygon dependencies as part of M64-style foundation work. Those
-belong to later milestones with their own tests and docs.
+hardware claims, visual UI, or arbitrary polygon dependencies as part of this
+Urban Patrol path. Those belong to later milestones with their own tests and
+docs.
 
 ## Add A Strategy
 

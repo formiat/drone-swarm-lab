@@ -257,7 +257,8 @@ cargo run -p swarm-examples --bin replay -- \
 | Supervisor Controller Boundary | ✅ Stable | M57 | `sitl_supervisor` mock orchestration is split into a testable internal supervisor module with `AgentController`, `MockAgentController`, fake-controller coverage, and assertable `SupervisorMetrics`; M58 adds the separate live PX4/SIH execute controller path |
 | Replay / Debuggability | ✅ Stable | M23 | `replay` CLI, ASCII visualization |
 | Mission Semantics | ✅ Stable | M33 | `TaskKind`, 6 concrete adapters, `AdapterRegistry`, adapter-driven completion/scoring in runner and allocator |
-| Urban Foundations | ✅ Foundation | M64 | Road-graph-first Urban substrate: `UrbanMap`, deterministic Dijkstra route-loop planning, AABB static obstacle judge, `urban-patrol` DSL validation, `scenarios/urban.patrol.json`, and Urban metrics skeleton; no bus detector, lidar, dynamic obstacles, multi-agent deconfliction, PX4/SITL export, or full Urban Patrol completion semantics yet |
+| Urban Patrol | ✅ Simulation v0 | M65 | One drone follows an ordered road-graph block loop, completes before timeout, records Urban replay events and exports patrol metrics; simulation-only, with no bus detector, lidar, dynamic obstacles, multi-agent deconfliction, PX4/SITL export, hardware claim, or UI |
+| Urban Foundations | ✅ Stable substrate | M64 | Road-graph-first Urban substrate: `UrbanMap`, deterministic Dijkstra route-loop planning, AABB static obstacle judge, `urban-patrol` DSL validation, `scenarios/urban.patrol.json`, and Urban metrics skeleton |
 | Planner Quality | ✅ Stable | M34 | `RoutePlanner` trait, 2-opt, battery-aware feasibility v2 (ordered-subset feasibility, battery model v2 integration, meaningful runner metrics) |
 | Dynamic Mission Correctness | ✅ Stable | M35/M63 | Mission-specific success semantics (SAR=targets-found, inspection=coverage-threshold, wildfire=mapped-ratio threshold plus failure/unassigned guards), SAR unsupported reasons (cbba=delayed-reconvergence, centralized=static-pre-plan), support matrix tests |
 | Regression Harness v2 | ✅ Stable | M36 | Calibrated thresholds, portability fixes, wildfire/realism suites, failure delta output, and repeated release determinism sweep for `jobs=1/4/14` |
@@ -544,8 +545,8 @@ See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known l
 | `swarm-runtime` | Membership, failure detection, task registry, coordinator, `AgentNode`. |
 | `swarm-alloc` | Greedy, auction, connectivity-aware, centralized, CBBA allocation strategies. |
 | `swarm-sim` | Deterministic clock, scenario model, generic scenario runner, DSL loader, JSON/CSV export. |
-| `swarm-scenarios` | Scenario builders: Coverage, Emergency Mesh, SAR, Infrastructure Inspection, Wildfire Mapping, Urban Foundations; flood remains future work. |
-| `swarm-metrics` | Per-run and aggregate metrics, including M64 Urban route-planning skeleton fields. |
+| `swarm-scenarios` | Scenario builders: Coverage, Emergency Mesh, SAR, Infrastructure Inspection, Wildfire Mapping, Urban Patrol; flood remains future work. |
+| `swarm-metrics` | Per-run and aggregate metrics, including Urban route planning and patrol completion/time/distance/efficiency fields. |
 | `swarm-replay` | Event log, replay engine, summary CLI, ASCII visualization. |
 | `swarm-safety` | Safety layer: geofence, no-fly zones, separation constraints. |
 | `swarm-examples` | Runnable binaries: `strategy_comparison`, `regression_runner`, `sitl_agent`, `replay`. |
@@ -605,7 +606,8 @@ points, not a published semver-stable SDK.
 | M61 | ✅ | Platform / API Stabilization: `docs/EXTENSION_GUIDE.md`, crate-boundary notes, schema-version policy, docs sync, and test-only mission/strategy/runner extension fixtures; not semver-stable public API |
 | M62 | ✅ | Benchmark / Baseline Refresh: 500-seed release `--mission all --jobs 14` validation baseline captured for commit `81260ca7afa114a5d9add7b832f6c5d7875b88cd` in `results/all_500_jobs14_m62_release/`; after M63 this is historical evidence unless rerun on current HEAD; not a publication-grade 1000-seed run |
 | M63 | ✅ | Evidence Cleanup / Status Honesty: no benchmark rerun; M62 pack marked as historical evidence for `81260ca7afa114a5d9add7b832f6c5d7875b88cd`, flood moved to future work, wildfire success predicate documented/tested, and M58/M59 replay artifacts covered by sanity tests |
-| M64 | ✅ | Urban Foundations: road graph model, deterministic Dijkstra route planning, route-loop expansion, AABB static obstacle judge, `urban-patrol` DSL fixture, and Urban metrics skeleton; route progress, bus/lidar/dynamic obstacles, multi-agent deconfliction, and PX4/SITL export remain future work |
+| M64 | ✅ | Urban Foundations: road graph model, deterministic Dijkstra route planning, route-loop expansion, AABB static obstacle judge, `urban-patrol` DSL fixture, and Urban metrics skeleton |
+| M65 | ✅ | Urban Patrol v0: one scout follows the ordered `urban-patrol` road-graph loop, completes when all planned segments are traversed without judge violations before timeout, emits Urban replay events, and exports patrol completion/time/distance/efficiency metrics; simulation-only |
 
 ---
 
@@ -663,13 +665,19 @@ Pre-configured scenario suites with realism presets are available in `scenarios/
 | `scenarios/inspection.realism.json` | Inspection | medium |
 | `scenarios/wildfire.realism.json` | Wildfire | medium |
 
-### Urban Foundation Scenario
+### Urban Patrol Scenario
 
-M64 adds `scenarios/urban.patrol.json` as a deterministic road-graph fixture.
-It validates `UrbanMap`, route-loop planning and AABB static obstacle judging.
-It is a foundation scenario only: it does not implement lidar, bus detection,
-dynamic obstacles, multi-agent route conflicts, PX4/SITL export, or full Urban
-Patrol completion semantics.
+M65 makes `scenarios/urban.patrol.json` an executable deterministic
+simulation fixture. One scout follows the ordered road-graph loop
+`n0 -> n1 -> n2 -> n3 -> n0` and succeeds when every planned segment is
+traversed before timeout with zero Urban judge violations. Replay logs include
+`UrbanRoutePlanned`, `UrbanSegmentEntered`, `UrbanSegmentCompleted`, and
+`UrbanPatrolCompleted`; reports include patrol completion, time, distance,
+route efficiency, violation count, and `urban_replan_count = 0`.
+
+This remains simulation-only: it does not implement lidar, bus detection,
+dynamic obstacles, multi-agent route conflicts, PX4/SITL export, hardware
+readiness, or a visual UI.
 
 Load a realism scenario directly:
 

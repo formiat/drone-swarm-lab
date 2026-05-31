@@ -290,8 +290,8 @@ fn extension_guide_documents_platform_extension_boundaries() {
 #[test]
 fn m64_docs_describe_urban_foundation_boundaries() {
     for required in [
-        "Urban Foundations",
-        "M64",
+        "Urban Patrol",
+        "M65",
         "UrbanMap",
         "scenarios/urban.patrol.json",
         "AABB static obstacle judge",
@@ -305,10 +305,10 @@ fn m64_docs_describe_urban_foundation_boundaries() {
     }
 
     for required in [
-        "M64 Urban Foundations",
-        "road-graph planning",
-        "urban_route_completed=false",
-        "no benchmark rerun",
+        "M65 Urban Patrol v0",
+        "simulation-only",
+        "ordered road-graph patrol",
+        "zero Urban judge violations",
     ] {
         assert!(STATUS.contains(required), "STATUS missing {required}");
     }
@@ -320,6 +320,7 @@ fn m64_docs_describe_urban_foundation_boundaries() {
         "AABB-only static obstacles",
         "TaskKind::Waypoint",
         "M65",
+        "Completion means",
     ] {
         assert!(
             SCENARIO_DSL.contains(required),
@@ -332,6 +333,7 @@ fn m64_docs_describe_urban_foundation_boundaries() {
         "crates/swarm-types/src/urban.rs",
         "crates/swarm-sim/src/urban.rs",
         "urban_route_planned",
+        "urban_patrol_completed",
         "arbitrary polygon dependencies",
     ] {
         assert!(
@@ -341,9 +343,11 @@ fn m64_docs_describe_urban_foundation_boundaries() {
     }
 
     for required in [
-        "M64 Urban Foundations does not add simulation replay event variants yet",
-        "urban_route_planned",
-        "M65 Urban Patrol semantics",
+        "UrbanRoutePlanned",
+        "UrbanSegmentEntered",
+        "UrbanSegmentCompleted",
+        "UrbanViolation",
+        "UrbanPatrolCompleted",
     ] {
         assert!(REPLAY.contains(required), "Replay doc missing {required}");
     }

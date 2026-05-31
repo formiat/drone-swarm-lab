@@ -222,6 +222,39 @@ pub fn judge_route(map: &UrbanMap, route: &UrbanPlannedRoute) -> Vec<UrbanViolat
     violations
 }
 
+/// Interpolate a pose along a planned Urban route segment.
+///
+/// Distance is clamped to the segment length. A zero-length segment returns the
+/// destination node pose.
+pub fn pose_along_segment(
+    map: &UrbanMap,
+    segment: &UrbanRouteSegment,
+    distance_m: f64,
+) -> Result<Pose, UrbanRouteError> {
+    let from = map
+        .node(&segment.from)
+        .map(|node| node.pose)
+        .ok_or_else(|| UrbanRouteError::InvalidInput {
+            field: "segment.from".to_owned(),
+            message: format!("Unknown urban node id '{}'", segment.from),
+        })?;
+    let to = map.node(&segment.to).map(|node| node.pose).ok_or_else(|| {
+        UrbanRouteError::InvalidInput {
+            field: "segment.to".to_owned(),
+            message: format!("Unknown urban node id '{}'", segment.to),
+        }
+    })?;
+    if segment.length_m <= 0.0 {
+        return Ok(to);
+    }
+    let ratio = (distance_m / segment.length_m).clamp(0.0, 1.0);
+    Ok(Pose {
+        x: from.x + (to.x - from.x) * ratio,
+        y: from.y + (to.y - from.y) * ratio,
+        z: from.z + (to.z - from.z) * ratio,
+    })
+}
+
 fn ensure_valid_route_inputs(
     map: &UrbanMap,
     from: &UrbanNodeId,
@@ -503,5 +536,25 @@ mod tests {
             judge_route(&map, &route).as_slice(),
             [UrbanViolation::ObstacleIntersection { .. }]
         ));
+    }
+
+    #[test]
+    fn urban_pose_along_segment_interpolates_and_clamps() {
+        let map = block_map();
+        let segment = UrbanRouteSegment {
+            edge_id: UrbanEdgeId::from("e01".to_owned()),
+            from: UrbanNodeId::from("n0".to_owned()),
+            to: UrbanNodeId::from("n1".to_owned()),
+            length_m: 10.0,
+            cost: 10.0,
+        };
+
+        let halfway = pose_along_segment(&map, &segment, 5.0).unwrap();
+        assert_eq!(halfway.x, 5.0);
+        assert_eq!(halfway.y, 0.0);
+
+        let clamped = pose_along_segment(&map, &segment, 50.0).unwrap();
+        assert_eq!(clamped.x, 10.0);
+        assert_eq!(clamped.y, 0.0);
     }
 }

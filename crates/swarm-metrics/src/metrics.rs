@@ -136,6 +136,17 @@ pub struct RunMetrics {
     pub urban_violation_count: u64,
     #[serde(default)]
     pub urban_route_completed: bool,
+    // v0.65 Urban Patrol v0
+    #[serde(default)]
+    pub urban_patrol_completed: bool,
+    #[serde(default)]
+    pub urban_time_to_complete_loop: Option<u64>,
+    #[serde(default)]
+    pub urban_distance_travelled_m: f64,
+    #[serde(default)]
+    pub urban_route_efficiency: f64,
+    #[serde(default)]
+    pub urban_replan_count: u64,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -230,6 +241,17 @@ pub struct AggregateMetrics {
     pub avg_urban_violation_count: f64,
     #[serde(default)]
     pub urban_route_completed_rate: f64,
+    // v0.65 Urban Patrol v0
+    #[serde(default)]
+    pub urban_patrol_completed_rate: f64,
+    #[serde(default)]
+    pub avg_urban_time_to_complete_loop: f64,
+    #[serde(default)]
+    pub avg_urban_distance_travelled_m: f64,
+    #[serde(default)]
+    pub avg_urban_route_efficiency: f64,
+    #[serde(default)]
+    pub avg_urban_replan_count: f64,
 }
 
 fn percentile_of_sorted(sorted: &[u64], p: f64) -> f64 {
@@ -300,6 +322,12 @@ impl AggregateMetrics {
                 urban_route_planned_rate: 0.0,
                 avg_urban_violation_count: 0.0,
                 urban_route_completed_rate: 0.0,
+                // v0.65 Urban Patrol v0
+                urban_patrol_completed_rate: 0.0,
+                avg_urban_time_to_complete_loop: 0.0,
+                avg_urban_distance_travelled_m: 0.0,
+                avg_urban_route_efficiency: 0.0,
+                avg_urban_replan_count: 0.0,
             };
         }
 
@@ -368,6 +396,22 @@ impl AggregateMetrics {
             runs.iter().map(|run| run.urban_violation_count).sum();
         let urban_route_completed_count =
             runs.iter().filter(|run| run.urban_route_completed).count() as f64;
+        // v0.65 Urban Patrol v0
+        let urban_patrol_completed_count =
+            runs.iter().filter(|run| run.urban_patrol_completed).count() as f64;
+        let total_urban_time_to_complete_loop: u64 = runs
+            .iter()
+            .filter_map(|run| run.urban_time_to_complete_loop)
+            .sum();
+        let urban_time_to_complete_loop_count = runs
+            .iter()
+            .filter(|run| run.urban_time_to_complete_loop.is_some())
+            .count() as f64;
+        let total_urban_distance_travelled_m: f64 =
+            runs.iter().map(|run| run.urban_distance_travelled_m).sum();
+        let total_urban_route_efficiency: f64 =
+            runs.iter().map(|run| run.urban_route_efficiency).sum();
+        let total_urban_replan_count: u64 = runs.iter().map(|run| run.urban_replan_count).sum();
         let mut convergence_ticks: Vec<u64> = runs
             .iter()
             .filter_map(|run| run.cbba_convergence_tick)
@@ -451,6 +495,16 @@ impl AggregateMetrics {
             urban_route_planned_rate: urban_route_planned_count / n,
             avg_urban_violation_count: total_urban_violation_count as f64 / n,
             urban_route_completed_rate: urban_route_completed_count / n,
+            // v0.65 Urban Patrol v0
+            urban_patrol_completed_rate: urban_patrol_completed_count / n,
+            avg_urban_time_to_complete_loop: if urban_time_to_complete_loop_count > 0.0 {
+                total_urban_time_to_complete_loop as f64 / urban_time_to_complete_loop_count
+            } else {
+                0.0
+            },
+            avg_urban_distance_travelled_m: total_urban_distance_travelled_m / n,
+            avg_urban_route_efficiency: total_urban_route_efficiency / n,
+            avg_urban_replan_count: total_urban_replan_count as f64 / n,
         }
     }
 }
@@ -629,6 +683,32 @@ impl fmt::Display for AggregateMetrics {
             "urban_route_completed_rate: {:.3}",
             self.urban_route_completed_rate
         )?;
+        // v0.65 Urban Patrol v0
+        writeln!(
+            f,
+            "urban_patrol_completed_rate: {:.3}",
+            self.urban_patrol_completed_rate
+        )?;
+        writeln!(
+            f,
+            "avg_urban_time_to_complete_loop: {:.3}",
+            self.avg_urban_time_to_complete_loop
+        )?;
+        writeln!(
+            f,
+            "avg_urban_distance_travelled_m: {:.3}",
+            self.avg_urban_distance_travelled_m
+        )?;
+        writeln!(
+            f,
+            "avg_urban_route_efficiency: {:.3}",
+            self.avg_urban_route_efficiency
+        )?;
+        writeln!(
+            f,
+            "avg_urban_replan_count: {:.3}",
+            self.avg_urban_replan_count
+        )?;
         // v0.31 Report identity
         writeln!(f, "mission: {}", self.mission)?;
         write!(f, "scenario: {}", self.scenario)
@@ -733,6 +813,12 @@ mod tests {
             urban_route_planned: false,
             urban_violation_count: 0,
             urban_route_completed: false,
+            // v0.65 Urban Patrol v0
+            urban_patrol_completed: false,
+            urban_time_to_complete_loop: None,
+            urban_distance_travelled_m: 0.0,
+            urban_route_efficiency: 0.0,
+            urban_replan_count: 0,
         }
     }
 
@@ -829,10 +915,19 @@ mod tests {
         runs[0].urban_route_length_m = 40.0;
         runs[0].urban_violation_count = 0;
         runs[0].urban_route_completed = false;
+        runs[0].urban_patrol_completed = false;
+        runs[0].urban_distance_travelled_m = 40.0;
+        runs[0].urban_route_efficiency = 1.0;
+        runs[0].urban_replan_count = 0;
         runs[1].urban_route_planned = true;
         runs[1].urban_route_length_m = 20.0;
         runs[1].urban_violation_count = 2;
         runs[1].urban_route_completed = true;
+        runs[1].urban_patrol_completed = true;
+        runs[1].urban_time_to_complete_loop = Some(12);
+        runs[1].urban_distance_travelled_m = 20.0;
+        runs[1].urban_route_efficiency = 1.0;
+        runs[1].urban_replan_count = 1;
 
         let metrics = AggregateMetrics::from_runs(&runs);
 
@@ -840,6 +935,11 @@ mod tests {
         assert_eq!(metrics.urban_route_planned_rate, 1.0);
         assert_eq!(metrics.avg_urban_violation_count, 1.0);
         assert_eq!(metrics.urban_route_completed_rate, 0.5);
+        assert_eq!(metrics.urban_patrol_completed_rate, 0.5);
+        assert_eq!(metrics.avg_urban_time_to_complete_loop, 12.0);
+        assert_eq!(metrics.avg_urban_distance_travelled_m, 30.0);
+        assert_eq!(metrics.avg_urban_route_efficiency, 1.0);
+        assert_eq!(metrics.avg_urban_replan_count, 0.5);
     }
 
     #[test]

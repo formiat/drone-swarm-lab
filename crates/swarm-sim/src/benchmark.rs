@@ -25,11 +25,11 @@ impl std::fmt::Display for ComparisonReport {
         let seeds = format!("{}-{}", self.seed_range_start, self.seed_range_end);
         writeln!(
             f,
-            "| Mission | Scenario | Strategy | Profile | Seeds | Success | Completion | Detection | Realloc | Coverage | Messages | Bytes | Conflicts | Stale | BatteryMin | BatteryAvg | Availability | TimeToFind | PoD | Targets | BeliefEntropy | FalsePosRate | ConfirmationScans | ConvP50 | ConvP95 | BundleDist | EdgeCoverage | MissedEdges | Revisits | RouteEfficiency | UrbanRouteLength | UrbanPlanned | UrbanViolations | UrbanCompleted |"
+            "| Mission | Scenario | Strategy | Profile | Seeds | Success | Completion | Detection | Realloc | Coverage | Messages | Bytes | Conflicts | Stale | BatteryMin | BatteryAvg | Availability | TimeToFind | PoD | Targets | BeliefEntropy | FalsePosRate | ConfirmationScans | ConvP50 | ConvP95 | BundleDist | EdgeCoverage | MissedEdges | Revisits | RouteEfficiency | UrbanRouteLength | UrbanPlanned | UrbanViolations | UrbanCompleted | PatrolCompleted | TimeToLoop | UrbanDistance | UrbanEfficiency | UrbanReplans |"
         )?;
         writeln!(
             f,
-            "|---------|----------|----------|---------|-------|---------|------------|-----------|---------|----------|----------|-------|-----------|-------|------------|------------|--------------|-----------|-----|---------|---------------|--------------|-------------------|---------|---------|------------|--------------|-------------|----------|-----------------|------------------|--------------|-----------------|----------------|"
+            "|---------|----------|----------|---------|-------|---------|------------|-----------|---------|----------|----------|-------|-----------|-------|------------|------------|--------------|-----------|-----|---------|---------------|--------------|-------------------|---------|---------|------------|--------------|-------------|----------|-----------------|------------------|--------------|-----------------|----------------|-----------------|------------|---------------|-----------------|--------------|"
         )?;
         for strategy_name in &self.strategy_names {
             for profile_name in &self.profile_names {
@@ -42,7 +42,7 @@ impl std::fmt::Display for ComparisonReport {
                     };
                     writeln!(
                         f,
-                        "| {:7} | {:8} | {:8} | {:7} | {:5} | {:7.3} | {:10.3} | {:9.3} | {:7.3} | {:8.3} | {:8.3} | {:5.0} | {:9.3} | {:5.0} | {:10.3} | {:10.3} | {:12.3} | {:>10} | {:3.3} | {:7.1} | {:13.3} | {:12.3} | {:17.3} | {:7.3} | {:7.3} | {:10.3} | {:12.3} | {:11.3} | {:8.3} | {:15.3} | {:16.3} | {:12.3} | {:15.3} | {:14.3} |",
+                        "| {:7} | {:8} | {:8} | {:7} | {:5} | {:7.3} | {:10.3} | {:9.3} | {:7.3} | {:8.3} | {:8.3} | {:5.0} | {:9.3} | {:5.0} | {:10.3} | {:10.3} | {:12.3} | {:>10} | {:3.3} | {:7.1} | {:13.3} | {:12.3} | {:17.3} | {:7.3} | {:7.3} | {:10.3} | {:12.3} | {:11.3} | {:8.3} | {:15.3} | {:16.3} | {:12.3} | {:15.3} | {:14.3} | {:15.3} | {:10.3} | {:13.3} | {:15.3} | {:12.3} |",
                         metrics.mission.as_str(),
                         metrics.scenario.as_str(),
                         strategy_name,
@@ -79,6 +79,12 @@ impl std::fmt::Display for ComparisonReport {
                         metrics.urban_route_planned_rate,
                         metrics.avg_urban_violation_count,
                         metrics.urban_route_completed_rate,
+                        // v0.65 Urban Patrol v0 metrics
+                        metrics.urban_patrol_completed_rate,
+                        metrics.avg_urban_time_to_complete_loop,
+                        metrics.avg_urban_distance_travelled_m,
+                        metrics.avg_urban_route_efficiency,
+                        metrics.avg_urban_replan_count,
                     )?;
                 }
             }

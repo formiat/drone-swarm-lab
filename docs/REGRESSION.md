@@ -30,10 +30,13 @@ Baseline обновлять из отчета с threshold violations нельз
 `results/m56_regression_determinism_2026-05-30/`.
 
 M64 Urban Foundations добавляет `scenarios/urban.patrol.json`,
-road-graph planning и judge/metrics skeleton, но не добавляет новый default
-regression gate и не обновляет M62 benchmark evidence. Urban regression suites
-имеет смысл добавлять после M65, когда появятся route progress/completion
-semantics.
+road-graph planning и judge/metrics skeleton. M65 Urban Patrol v0 делает этот
+fixture executable simulation smoke: one scout follows the ordered road-graph
+loop, completes before timeout, emits Urban replay events, and reports patrol
+metrics. Это не publication benchmark и не обновляет M62 evidence.
+
+Urban regression может использовать explicit `--mission urban-patrol` smoke,
+но длинные 500/1000-seed sweeps остаются будущей M69-style evidence work.
 
 ## CLI
 

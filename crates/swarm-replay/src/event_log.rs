@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use swarm_types::{AgentId, Pose, TaskId};
+use swarm_types::{AgentId, Pose, TaskId, UrbanEdgeId, UrbanNodeId};
 
 /// Schema version for the event log format.
 pub const EVENT_LOG_SCHEMA_VERSION: &str = "0.2";
@@ -127,6 +127,41 @@ pub enum Event {
         new_priority: u8,
         tick: u64,
     },
+    // M65: Urban Patrol v0
+    UrbanRoutePlanned {
+        agent_id: AgentId,
+        tick: u64,
+        edge_ids: Vec<UrbanEdgeId>,
+        route_length_m: f64,
+    },
+    UrbanSegmentEntered {
+        agent_id: AgentId,
+        tick: u64,
+        segment_index: usize,
+        edge_id: UrbanEdgeId,
+        from: UrbanNodeId,
+        to: UrbanNodeId,
+    },
+    UrbanSegmentCompleted {
+        agent_id: AgentId,
+        tick: u64,
+        segment_index: usize,
+        edge_id: UrbanEdgeId,
+    },
+    UrbanViolation {
+        agent_id: AgentId,
+        tick: u64,
+        segment_index: Option<usize>,
+        edge_id: Option<UrbanEdgeId>,
+        pose: Pose,
+        reason: String,
+    },
+    UrbanPatrolCompleted {
+        agent_id: AgentId,
+        tick: u64,
+        route_length_m: f64,
+        distance_travelled_m: f64,
+    },
 }
 
 /// Reason why a message was dropped.
@@ -221,6 +256,63 @@ mod tests {
         let json = serde_json::to_string(&log).unwrap();
         let restored: EventLog = serde_json::from_str(&json).unwrap();
         assert_eq!(log, restored);
+    }
+
+    #[test]
+    fn urban_events_round_trip_serde() {
+        let agent_id = AgentId::from("agent-0".to_owned());
+        let edge_id = UrbanEdgeId::from("road-n0-n1".to_owned());
+        let log = EventLog {
+            schema_version: "0.2".to_owned(),
+            run_id: "urban-run".to_owned(),
+            seed: 7,
+            scenario_name: "urban_patrol_small_block".to_owned(),
+            events: vec![
+                Event::UrbanRoutePlanned {
+                    agent_id: agent_id.clone(),
+                    tick: 0,
+                    edge_ids: vec![edge_id.clone()],
+                    route_length_m: 20.0,
+                },
+                Event::UrbanSegmentEntered {
+                    agent_id: agent_id.clone(),
+                    tick: 0,
+                    segment_index: 0,
+                    edge_id: edge_id.clone(),
+                    from: UrbanNodeId::from("n0".to_owned()),
+                    to: UrbanNodeId::from("n1".to_owned()),
+                },
+                Event::UrbanSegmentCompleted {
+                    agent_id: agent_id.clone(),
+                    tick: 10,
+                    segment_index: 0,
+                    edge_id: edge_id.clone(),
+                },
+                Event::UrbanViolation {
+                    agent_id: agent_id.clone(),
+                    tick: 11,
+                    segment_index: Some(0),
+                    edge_id: Some(edge_id),
+                    pose: Pose {
+                        x: 1.0,
+                        ..Default::default()
+                    },
+                    reason: "test".to_owned(),
+                },
+                Event::UrbanPatrolCompleted {
+                    agent_id,
+                    tick: 12,
+                    route_length_m: 20.0,
+                    distance_travelled_m: 20.0,
+                },
+            ],
+        };
+
+        let json = serde_json::to_string(&log).unwrap();
+        let restored: EventLog = serde_json::from_str(&json).unwrap();
+        assert_eq!(log, restored);
+        assert!(json.contains("urban_route_planned"));
+        assert!(json.contains("urban_patrol_completed"));
     }
 
     #[test]

@@ -205,4 +205,15 @@ mod tests {
         assert_eq!(route.total_length_m, 80.0);
         assert!(swarm_sim::judge_route(&urban_state.map, &route).is_empty());
     }
+
+    #[test]
+    fn urban_patrol_fixture_completes_under_m65_runner() {
+        let (scenario, run_config) =
+            build_urban_patrol_scenario(&UrbanProfile::PatrolSmallBlock.config(42));
+        let metrics = swarm_sim::ScenarioRunner::run(&scenario, run_config);
+        assert!(metrics.success);
+        assert!(metrics.urban_patrol_completed);
+        assert_eq!(metrics.urban_time_to_complete_loop, Some(40));
+        assert_eq!(metrics.urban_violation_count, 0);
+    }
 }

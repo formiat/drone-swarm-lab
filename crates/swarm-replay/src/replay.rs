@@ -34,6 +34,13 @@ pub struct ReplaySummary {
     pub zones_mapped: usize,
     pub hazard_updates: usize,
     pub observations: usize,
+    // M65 Urban Patrol v0
+    pub urban_routes_planned: usize,
+    pub urban_segments_entered: usize,
+    pub urban_segments_completed: usize,
+    pub urban_violations: usize,
+    pub urban_patrol_completions: usize,
+    pub urban_completion_ticks: Vec<u64>,
 }
 
 /// Snapshot of the system at a specific tick.
@@ -93,7 +100,12 @@ pub fn replay(log: &EventLog) -> ReplayState {
             | Event::CbbaBundleUpdated { .. }
             | Event::AgentObservation { .. }
             | Event::HazardMapUpdated { .. }
-            | Event::TaskPriorityUpdated { .. } => {}
+            | Event::TaskPriorityUpdated { .. }
+            | Event::UrbanRoutePlanned { .. }
+            | Event::UrbanSegmentEntered { .. }
+            | Event::UrbanSegmentCompleted { .. }
+            | Event::UrbanViolation { .. }
+            | Event::UrbanPatrolCompleted { .. } => {}
         }
     }
 
@@ -144,6 +156,22 @@ pub fn summarize(log: &EventLog) -> ReplaySummary {
             }
             Event::HazardMapUpdated { .. } => {
                 summary.hazard_updates += 1;
+            }
+            Event::UrbanRoutePlanned { .. } => {
+                summary.urban_routes_planned += 1;
+            }
+            Event::UrbanSegmentEntered { .. } => {
+                summary.urban_segments_entered += 1;
+            }
+            Event::UrbanSegmentCompleted { .. } => {
+                summary.urban_segments_completed += 1;
+            }
+            Event::UrbanViolation { .. } => {
+                summary.urban_violations += 1;
+            }
+            Event::UrbanPatrolCompleted { tick, .. } => {
+                summary.urban_patrol_completions += 1;
+                summary.urban_completion_ticks.push(*tick);
             }
             _ => {}
         }
@@ -295,7 +323,7 @@ pub fn render_ascii_grid(
 mod tests {
     use super::*;
     use crate::event_log::EventLogBuilder;
-    use swarm_types::{AgentId, Pose, TaskId};
+    use swarm_types::{AgentId, Pose, TaskId, UrbanEdgeId, UrbanNodeId};
 
     #[test]
     fn replay_reconstructs_state() {
@@ -396,6 +424,55 @@ mod tests {
         assert_eq!(s.cbba_convergence_ticks, vec![1]);
         assert_eq!(s.messages_sent, 1);
         assert_eq!(s.messages_dropped, 1);
+    }
+
+    #[test]
+    fn summarize_counts_urban_events() {
+        let mut builder = EventLogBuilder::new("urban", 0, "urban_patrol_small_block");
+        let agent_id = AgentId::from("agent-0".to_owned());
+        let edge_id = UrbanEdgeId::from("road-n0-n1".to_owned());
+        builder.push(Event::UrbanRoutePlanned {
+            agent_id: agent_id.clone(),
+            tick: 0,
+            edge_ids: vec![edge_id.clone()],
+            route_length_m: 20.0,
+        });
+        builder.push(Event::UrbanSegmentEntered {
+            agent_id: agent_id.clone(),
+            tick: 0,
+            segment_index: 0,
+            edge_id: edge_id.clone(),
+            from: UrbanNodeId::from("n0".to_owned()),
+            to: UrbanNodeId::from("n1".to_owned()),
+        });
+        builder.push(Event::UrbanSegmentCompleted {
+            agent_id: agent_id.clone(),
+            tick: 10,
+            segment_index: 0,
+            edge_id: edge_id.clone(),
+        });
+        builder.push(Event::UrbanViolation {
+            agent_id: agent_id.clone(),
+            tick: 11,
+            segment_index: Some(0),
+            edge_id: Some(edge_id),
+            pose: Pose::default(),
+            reason: "test".to_owned(),
+        });
+        builder.push(Event::UrbanPatrolCompleted {
+            agent_id,
+            tick: 12,
+            route_length_m: 20.0,
+            distance_travelled_m: 20.0,
+        });
+
+        let summary = summarize(&builder.build());
+        assert_eq!(summary.urban_routes_planned, 1);
+        assert_eq!(summary.urban_segments_entered, 1);
+        assert_eq!(summary.urban_segments_completed, 1);
+        assert_eq!(summary.urban_violations, 1);
+        assert_eq!(summary.urban_patrol_completions, 1);
+        assert_eq!(summary.urban_completion_ticks, vec![12]);
     }
 
     #[test]

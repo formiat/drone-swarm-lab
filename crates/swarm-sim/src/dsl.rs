@@ -204,7 +204,18 @@ pub fn validate_mission_specific(entry: &ScenarioSuiteEntry) -> Vec<ValidationEr
                 if urban_state.planner != "dijkstra" {
                     errors.push(ValidationError {
                         field: "run_config.urban_state.planner".to_owned(),
-                        message: "Urban planner must be 'dijkstra' in M64".to_owned(),
+                        message: "Urban planner must be 'dijkstra' in M65".to_owned(),
+                    });
+                }
+                if !entry
+                    .scenario
+                    .agents
+                    .iter()
+                    .any(|agent| matches!(agent.health, swarm_types::Health::Alive))
+                {
+                    errors.push(ValidationError {
+                        field: "scenario.agents".to_owned(),
+                        message: "Urban Patrol requires at least one alive agent".to_owned(),
                     });
                 }
                 for error in urban_state.map.validate() {

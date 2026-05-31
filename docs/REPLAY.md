@@ -29,12 +29,17 @@ Each simulation run can optionally produce an `EventLog` — a JSON file contain
 | `SafetyViolation` | Safety constraint violated | `agent_id`, `violation_type`, `tick` |
 | `CbbaConverged` | CBBA reached consensus | `tick` |
 | `CbbaBundleUpdated` | CBBA bundle changed | `agent_id`, `bundle_size`, `tick` |
+| `UrbanRoutePlanned` | Urban Patrol route planned | `agent_id`, `tick`, `edge_ids`, `route_length_m` |
+| `UrbanSegmentEntered` | Urban route segment entered | `agent_id`, `tick`, `segment_index`, `edge_id`, `from`, `to` |
+| `UrbanSegmentCompleted` | Urban route segment completed | `agent_id`, `tick`, `segment_index`, `edge_id` |
+| `UrbanViolation` | Urban judge violation | `agent_id`, `tick`, `segment_index`, `edge_id`, `pose`, `reason` |
+| `UrbanPatrolCompleted` | Urban Patrol loop completed | `agent_id`, `tick`, `route_length_m`, `distance_travelled_m` |
 
-M64 Urban Foundations does not add simulation replay event variants yet.
-Urban route planning and judge state are exposed through metrics and DSL
-validation first (`urban_route_planned`, `urban_violation_count`,
-`urban_route_length_m`, `urban_route_completed`). Route-progress replay events
-belong with M65 Urban Patrol semantics.
+M65 Urban Patrol v0 adds route-progress replay events. `replay --summary`
+prints Urban route planned, segment entered/completed, violation, patrol
+completion, and completion tick counters. The events are simulation-only and do
+not imply lidar, real obstacle avoidance, PX4/SITL execution, hardware
+readiness, dynamic obstacles, bus detection, or multi-agent deconfliction.
 
 ### Backward Compatibility
 

@@ -102,6 +102,12 @@ pub fn export_json(report: &ComparisonReport) -> Result<String, serde_json::Erro
                     urban_route_planned_rate: metrics.urban_route_planned_rate,
                     avg_urban_violation_count: metrics.avg_urban_violation_count,
                     urban_route_completed_rate: metrics.urban_route_completed_rate,
+                    // v0.65 Urban Patrol v0
+                    urban_patrol_completed_rate: metrics.urban_patrol_completed_rate,
+                    avg_urban_time_to_complete_loop: metrics.avg_urban_time_to_complete_loop,
+                    avg_urban_distance_travelled_m: metrics.avg_urban_distance_travelled_m,
+                    avg_urban_route_efficiency: metrics.avg_urban_route_efficiency,
+                    avg_urban_replan_count: metrics.avg_urban_replan_count,
                 });
             }
         }
@@ -179,6 +185,12 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
         "urban_route_planned_rate",
         "avg_urban_violation_count",
         "urban_route_completed_rate",
+        // v0.65 Urban Patrol v0
+        "urban_patrol_completed_rate",
+        "avg_urban_time_to_complete_loop",
+        "avg_urban_distance_travelled_m",
+        "avg_urban_route_efficiency",
+        "avg_urban_replan_count",
     ])?;
 
     for strategy_name in &report.strategy_names {
@@ -251,6 +263,12 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
                     format!("{:.3}", m.urban_route_planned_rate).as_str(),
                     format!("{:.3}", m.avg_urban_violation_count).as_str(),
                     format!("{:.3}", m.urban_route_completed_rate).as_str(),
+                    // v0.65 Urban Patrol v0
+                    format!("{:.3}", m.urban_patrol_completed_rate).as_str(),
+                    format!("{:.3}", m.avg_urban_time_to_complete_loop).as_str(),
+                    format!("{:.3}", m.avg_urban_distance_travelled_m).as_str(),
+                    format!("{:.3}", m.avg_urban_route_efficiency).as_str(),
+                    format!("{:.3}", m.avg_urban_replan_count).as_str(),
                 ])?;
             }
         }
@@ -333,6 +351,12 @@ struct ReportRow {
     urban_route_planned_rate: f64,
     avg_urban_violation_count: f64,
     urban_route_completed_rate: f64,
+    // v0.65 Urban Patrol v0
+    urban_patrol_completed_rate: f64,
+    avg_urban_time_to_complete_loop: f64,
+    avg_urban_distance_travelled_m: f64,
+    avg_urban_route_efficiency: f64,
+    avg_urban_replan_count: f64,
 }
 
 /// Benchmark run manifest for reproducibility.
@@ -497,13 +521,13 @@ pub fn generate_focused_report(reports: &[(String, crate::ComparisonReport)]) ->
                 }
             }
             "urban-patrol" => {
-                out.push_str("| Strategy | Profile | Success | Completion | UrbanRouteLength | UrbanPlanned | UrbanViolations | UrbanCompleted |\n");
-                out.push_str("|---|---|---|---|---|---|---|---|\n");
+                out.push_str("| Strategy | Profile | Success | Completion | UrbanRouteLength | UrbanPlanned | UrbanViolations | UrbanCompleted | PatrolCompleted | TimeToLoop | Distance | RouteEfficiency | Replans |\n");
+                out.push_str("|---|---|---|---|---|---|---|---|---|---|---|---|---|\n");
                 for strategy in &report.strategy_names {
                     for profile in &report.profile_names {
                         if let Some(m) = report.results.get(&(strategy.clone(), profile.clone())) {
                             out.push_str(&format!(
-                                "| {} | {} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} |\n",
+                                "| {} | {} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} |\n",
                                 strategy,
                                 profile,
                                 m.success_rate,
@@ -511,7 +535,12 @@ pub fn generate_focused_report(reports: &[(String, crate::ComparisonReport)]) ->
                                 m.avg_urban_route_length_m,
                                 m.urban_route_planned_rate,
                                 m.avg_urban_violation_count,
-                                m.urban_route_completed_rate
+                                m.urban_route_completed_rate,
+                                m.urban_patrol_completed_rate,
+                                m.avg_urban_time_to_complete_loop,
+                                m.avg_urban_distance_travelled_m,
+                                m.avg_urban_route_efficiency,
+                                m.avg_urban_replan_count
                             ));
                         }
                     }
@@ -832,6 +861,11 @@ fn compare_aggregate_metrics(
     compare_field!(urban_route_planned_rate);
     compare_field!(avg_urban_violation_count);
     compare_field!(urban_route_completed_rate);
+    compare_field!(urban_patrol_completed_rate);
+    compare_field!(avg_urban_time_to_complete_loop);
+    compare_field!(avg_urban_distance_travelled_m);
+    compare_field!(avg_urban_route_efficiency);
+    compare_field!(avg_urban_replan_count);
     compare_field!(mission);
     compare_field!(scenario);
 
@@ -928,7 +962,12 @@ mod tests {
         metrics.avg_urban_route_length_m = 80.0;
         metrics.urban_route_planned_rate = 1.0;
         metrics.avg_urban_violation_count = 0.0;
-        metrics.urban_route_completed_rate = 0.0;
+        metrics.urban_route_completed_rate = 1.0;
+        metrics.urban_patrol_completed_rate = 1.0;
+        metrics.avg_urban_time_to_complete_loop = 40.0;
+        metrics.avg_urban_distance_travelled_m = 80.0;
+        metrics.avg_urban_route_efficiency = 1.0;
+        metrics.avg_urban_replan_count = 0.0;
         report
     }
 
@@ -952,6 +991,11 @@ mod tests {
         assert!(csv.contains("urban_route_planned_rate"));
         assert!(csv.contains("avg_urban_violation_count"));
         assert!(csv.contains("urban_route_completed_rate"));
+        assert!(csv.contains("urban_patrol_completed_rate"));
+        assert!(csv.contains("avg_urban_time_to_complete_loop"));
+        assert!(csv.contains("avg_urban_distance_travelled_m"));
+        assert!(csv.contains("avg_urban_route_efficiency"));
+        assert!(csv.contains("avg_urban_replan_count"));
     }
 
     #[test]
@@ -1013,6 +1057,9 @@ mod tests {
         assert!(md.contains("UrbanPlanned"));
         assert!(md.contains("UrbanViolations"));
         assert!(md.contains("UrbanCompleted"));
+        assert!(md.contains("PatrolCompleted"));
+        assert!(md.contains("TimeToLoop"));
+        assert!(md.contains("RouteEfficiency"));
         assert!(md.contains("80.000"));
     }
 
@@ -1059,6 +1106,9 @@ mod tests {
         assert!(focused.contains("UrbanPlanned"));
         assert!(focused.contains("UrbanViolations"));
         assert!(focused.contains("UrbanCompleted"));
+        assert!(focused.contains("PatrolCompleted"));
+        assert!(focused.contains("TimeToLoop"));
+        assert!(focused.contains("RouteEfficiency"));
         assert!(focused.contains("80.000"));
     }
 

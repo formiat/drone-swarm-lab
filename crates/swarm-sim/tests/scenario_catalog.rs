@@ -54,5 +54,10 @@ mod tests {
             swarm_sim::expand_route_loop(&urban_state.map, &urban_state.route_loop).unwrap();
         assert_eq!(route.total_length_m, 80.0);
         assert!(swarm_sim::judge_route(&urban_state.map, &route).is_empty());
+
+        let metrics = swarm_sim::ScenarioRunner::run(&entry.scenario, entry.run_config.clone());
+        assert!(metrics.success);
+        assert!(metrics.urban_patrol_completed);
+        assert_eq!(metrics.urban_time_to_complete_loop, Some(40));
     }
 }
