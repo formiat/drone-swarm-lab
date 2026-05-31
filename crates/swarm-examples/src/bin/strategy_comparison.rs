@@ -7,9 +7,10 @@ use swarm_alloc::{
 };
 use swarm_scenarios::{
     build_emergency_mesh_scenario, build_inspection_scenario, build_sar_scenario,
-    build_urban_patrol_scenario, build_wildfire_scenario, EmergencyMeshProfile,
-    EmergencyMeshStandardProfiles, InspectionProfile, InspectionStandardProfiles, SarProfile,
-    StandardProfiles, UrbanProfile, UrbanStandardProfiles, WildfireProfile,
+    build_urban_patrol_scenario, build_urban_search_scenario, build_wildfire_scenario,
+    EmergencyMeshProfile, EmergencyMeshStandardProfiles, InspectionProfile,
+    InspectionStandardProfiles, SarProfile, StandardProfiles, UrbanProfile, UrbanStandardProfiles,
+    WildfireProfile,
 };
 use swarm_sim::{
     default_suites, export_csv, export_json, Baseline, BenchmarkHarness, BenchmarkOptions,
@@ -57,6 +58,7 @@ enum Mission {
     Inspection,
     Wildfire,
     UrbanPatrol,
+    UrbanSearch,
 }
 
 fn parse_mission(arg: &str) -> Vec<Mission> {
@@ -67,6 +69,7 @@ fn parse_mission(arg: &str) -> Vec<Mission> {
         "inspection" => vec![Mission::Inspection],
         "wildfire" => vec![Mission::Wildfire],
         "urban-patrol" => vec![Mission::UrbanPatrol],
+        "urban-search" => vec![Mission::UrbanSearch],
         "all" => vec![
             Mission::Coverage,
             Mission::EmergencyMesh,
@@ -75,7 +78,7 @@ fn parse_mission(arg: &str) -> Vec<Mission> {
             Mission::Wildfire,
         ],
         _ => {
-            panic!("unknown mission: {arg}. Valid: coverage, emergency-mesh, sar, inspection, wildfire, urban-patrol, all")
+            panic!("unknown mission: {arg}. Valid: coverage, emergency-mesh, sar, inspection, wildfire, urban-patrol, urban-search, all")
         }
     }
 }
@@ -88,6 +91,7 @@ fn mission_name(mission: &Mission) -> &'static str {
         Mission::Inspection => "inspection",
         Mission::Wildfire => "wildfire",
         Mission::UrbanPatrol => "urban-patrol",
+        Mission::UrbanSearch => "urban-search",
     }
 }
 
@@ -469,7 +473,7 @@ fn main() {
                 (profiles, builder)
             }
             Mission::UrbanPatrol => {
-                let profiles: Vec<String> = UrbanStandardProfiles::profile_names()
+                let profiles: Vec<String> = UrbanStandardProfiles::patrol_profile_names()
                     .iter()
                     .map(|s| s.to_string())
                     .collect();
@@ -477,6 +481,18 @@ fn main() {
                     let profile = UrbanProfile::from_str(profile_name)
                         .unwrap_or(UrbanProfile::PatrolSmallBlock);
                     build_urban_patrol_scenario(&profile.config(seed))
+                });
+                (profiles, builder)
+            }
+            Mission::UrbanSearch => {
+                let profiles: Vec<String> = UrbanStandardProfiles::search_profile_names()
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect();
+                let builder: ScenarioBuilder = Box::new(|seed: u64, profile_name: &str| {
+                    let profile = UrbanProfile::from_str(profile_name)
+                        .unwrap_or(UrbanProfile::SearchStaticBus);
+                    build_urban_search_scenario(&profile.config(seed), profile)
                 });
                 (profiles, builder)
             }

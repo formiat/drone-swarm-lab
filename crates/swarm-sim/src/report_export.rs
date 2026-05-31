@@ -108,6 +108,13 @@ pub fn export_json(report: &ComparisonReport) -> Result<String, serde_json::Erro
                     avg_urban_distance_travelled_m: metrics.avg_urban_distance_travelled_m,
                     avg_urban_route_efficiency: metrics.avg_urban_route_efficiency,
                     avg_urban_replan_count: metrics.avg_urban_replan_count,
+                    // v0.66 Urban Search v1
+                    bus_detection_rate: metrics.bus_detection_rate,
+                    avg_time_to_detect_bus: metrics.avg_time_to_detect_bus,
+                    avg_false_positive_count: metrics.avg_false_positive_count,
+                    avg_distance_before_detection: metrics.avg_distance_before_detection,
+                    search_success_without_violation_rate: metrics
+                        .search_success_without_violation_rate,
                 });
             }
         }
@@ -191,6 +198,12 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
         "avg_urban_distance_travelled_m",
         "avg_urban_route_efficiency",
         "avg_urban_replan_count",
+        // v0.66 Urban Search v1
+        "bus_detection_rate",
+        "avg_time_to_detect_bus",
+        "avg_false_positive_count",
+        "avg_distance_before_detection",
+        "search_success_without_violation_rate",
     ])?;
 
     for strategy_name in &report.strategy_names {
@@ -269,6 +282,12 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
                     format!("{:.3}", m.avg_urban_distance_travelled_m).as_str(),
                     format!("{:.3}", m.avg_urban_route_efficiency).as_str(),
                     format!("{:.3}", m.avg_urban_replan_count).as_str(),
+                    // v0.66 Urban Search v1
+                    format!("{:.3}", m.bus_detection_rate).as_str(),
+                    format!("{:.3}", m.avg_time_to_detect_bus).as_str(),
+                    format!("{:.3}", m.avg_false_positive_count).as_str(),
+                    format!("{:.3}", m.avg_distance_before_detection).as_str(),
+                    format!("{:.3}", m.search_success_without_violation_rate).as_str(),
                 ])?;
             }
         }
@@ -357,6 +376,12 @@ struct ReportRow {
     avg_urban_distance_travelled_m: f64,
     avg_urban_route_efficiency: f64,
     avg_urban_replan_count: f64,
+    // v0.66 Urban Search v1
+    bus_detection_rate: f64,
+    avg_time_to_detect_bus: f64,
+    avg_false_positive_count: f64,
+    avg_distance_before_detection: f64,
+    search_success_without_violation_rate: f64,
 }
 
 /// Benchmark run manifest for reproducibility.
@@ -541,6 +566,29 @@ pub fn generate_focused_report(reports: &[(String, crate::ComparisonReport)]) ->
                                 m.avg_urban_distance_travelled_m,
                                 m.avg_urban_route_efficiency,
                                 m.avg_urban_replan_count
+                            ));
+                        }
+                    }
+                }
+            }
+            "urban-search" => {
+                out.push_str("| Strategy | Profile | Success | BusDetected | TimeToBus | FalsePositives | DistanceBeforeBus | SearchSuccessNoViolation | UrbanViolations | RouteEfficiency |\n");
+                out.push_str("|---|---|---|---|---|---|---|---|---|---|\n");
+                for strategy in &report.strategy_names {
+                    for profile in &report.profile_names {
+                        if let Some(m) = report.results.get(&(strategy.clone(), profile.clone())) {
+                            out.push_str(&format!(
+                                "| {} | {} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} |\n",
+                                strategy,
+                                profile,
+                                m.success_rate,
+                                m.bus_detection_rate,
+                                m.avg_time_to_detect_bus,
+                                m.avg_false_positive_count,
+                                m.avg_distance_before_detection,
+                                m.search_success_without_violation_rate,
+                                m.avg_urban_violation_count,
+                                m.avg_urban_route_efficiency
                             ));
                         }
                     }
@@ -866,6 +914,11 @@ fn compare_aggregate_metrics(
     compare_field!(avg_urban_distance_travelled_m);
     compare_field!(avg_urban_route_efficiency);
     compare_field!(avg_urban_replan_count);
+    compare_field!(bus_detection_rate);
+    compare_field!(avg_time_to_detect_bus);
+    compare_field!(avg_false_positive_count);
+    compare_field!(avg_distance_before_detection);
+    compare_field!(search_success_without_violation_rate);
     compare_field!(mission);
     compare_field!(scenario);
 
@@ -971,6 +1024,26 @@ mod tests {
         report
     }
 
+    fn make_urban_search_report() -> ComparisonReport {
+        let mut report = make_report();
+        report.mission_names = vec!["urban-search".to_owned()];
+        report.scenario_names = vec!["urban_search_static_bus".to_owned()];
+        let metrics = report
+            .results
+            .get_mut(&("greedy".to_owned(), "ideal".to_owned()))
+            .expect("test report should contain greedy/ideal metrics");
+        metrics.mission = "urban-search".to_owned();
+        metrics.scenario = "urban_search_static_bus".to_owned();
+        metrics.bus_detection_rate = 1.0;
+        metrics.avg_time_to_detect_bus = 2.0;
+        metrics.avg_false_positive_count = 0.0;
+        metrics.avg_distance_before_detection = 4.0;
+        metrics.search_success_without_violation_rate = 1.0;
+        metrics.avg_urban_violation_count = 0.0;
+        metrics.avg_urban_route_efficiency = 1.0;
+        report
+    }
+
     #[test]
     fn json_export_contains_benchmark_run_id() {
         let report = make_report();
@@ -996,6 +1069,11 @@ mod tests {
         assert!(csv.contains("avg_urban_distance_travelled_m"));
         assert!(csv.contains("avg_urban_route_efficiency"));
         assert!(csv.contains("avg_urban_replan_count"));
+        assert!(csv.contains("bus_detection_rate"));
+        assert!(csv.contains("avg_time_to_detect_bus"));
+        assert!(csv.contains("avg_false_positive_count"));
+        assert!(csv.contains("avg_distance_before_detection"));
+        assert!(csv.contains("search_success_without_violation_rate"));
     }
 
     #[test]
@@ -1110,6 +1188,19 @@ mod tests {
         assert!(focused.contains("TimeToLoop"));
         assert!(focused.contains("RouteEfficiency"));
         assert!(focused.contains("80.000"));
+    }
+
+    #[test]
+    fn focused_report_has_urban_search_metrics() {
+        let report = make_urban_search_report();
+        let focused = generate_focused_report(&[("urban-search".to_owned(), report)]);
+        assert!(focused.contains("## urban-search"));
+        assert!(focused.contains("BusDetected"));
+        assert!(focused.contains("TimeToBus"));
+        assert!(focused.contains("FalsePositives"));
+        assert!(focused.contains("DistanceBeforeBus"));
+        assert!(focused.contains("SearchSuccessNoViolation"));
+        assert!(focused.contains("4.000"));
     }
 
     #[test]

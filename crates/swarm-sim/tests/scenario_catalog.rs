@@ -60,4 +60,34 @@ mod tests {
         assert!(metrics.urban_patrol_completed);
         assert_eq!(metrics.urban_time_to_complete_loop, Some(40));
     }
+
+    #[test]
+    fn urban_search_scenario_loads_validates_and_detects_bus() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../scenarios/urban.search.json"
+        );
+        let suite = swarm_sim::load_scenario_suite(path).expect("urban search scenario loads");
+        assert_eq!(suite.name, "Urban Search Static Bus");
+        assert_eq!(suite.scenarios.len(), 1);
+        let entry = &suite.scenarios[0];
+        assert_eq!(entry.mission, "urban-search");
+        let errors = swarm_sim::validate_entry(entry);
+        assert!(
+            errors.is_empty(),
+            "urban search scenario must validate: {errors:?}"
+        );
+        let urban_search_state = entry
+            .run_config
+            .urban_search_state
+            .as_ref()
+            .expect("urban_search_state exists");
+        assert!(urban_search_state.validate().is_empty());
+
+        let metrics = swarm_sim::ScenarioRunner::run(&entry.scenario, entry.run_config.clone());
+        assert!(metrics.success);
+        assert!(metrics.bus_detected);
+        assert_eq!(metrics.time_to_detect_bus, Some(2));
+        assert!(metrics.search_success_without_violation);
+    }
 }

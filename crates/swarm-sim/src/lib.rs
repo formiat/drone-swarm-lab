@@ -31,4 +31,7 @@ pub use runner::{
 };
 pub use scenario::Scenario;
 pub use support_matrix::{classify_support, SupportMatrixEntry, SupportReason, SupportStatus};
-pub use urban::{expand_route_loop, judge_route, plan_route, pose_along_segment, UrbanRouteError};
+pub use urban::{
+    detect_buses, expand_route_loop, judge_route, plan_route, pose_along_segment,
+    UrbanBusObservation, UrbanDetectionOutcome, UrbanRouteError,
+};

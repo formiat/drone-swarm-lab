@@ -3,9 +3,11 @@ use std::collections::{BinaryHeap, HashMap};
 use std::error::Error;
 use std::fmt;
 
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use swarm_types::{
-    Pose, UrbanEdge, UrbanMap, UrbanNode, UrbanNodeId, UrbanPlannedRoute, UrbanRouteLoop,
-    UrbanRouteSegment, UrbanViolation,
+    Pose, UrbanBus, UrbanBusId, UrbanDetectorConfig, UrbanEdge, UrbanMap, UrbanNode, UrbanNodeId,
+    UrbanPlannedRoute, UrbanRouteLoop, UrbanRouteSegment, UrbanSearchState, UrbanViolation,
 };
 
 pub const URBAN_START_POSE_TOLERANCE_M: f64 = 0.01;
@@ -298,6 +300,93 @@ pub fn pose_along_segment(
     })
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct UrbanBusObservation {
+    pub bus_id: UrbanBusId,
+    pub pose: Pose,
+    pub distance_m: f64,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct UrbanDetectionOutcome {
+    pub observations: Vec<UrbanBusObservation>,
+    pub detection: Option<UrbanBusObservation>,
+    pub false_positive: bool,
+}
+
+/// Evaluate the mocked distance-based Urban Search detector for one tick.
+pub fn detect_buses(
+    agent_pose: Pose,
+    tick: u64,
+    scenario_seed: u64,
+    search_state: &UrbanSearchState,
+) -> UrbanDetectionOutcome {
+    let mut observations: Vec<UrbanBusObservation> = search_state
+        .buses
+        .iter()
+        .filter(|bus| bus_is_active(bus, tick))
+        .filter_map(|bus| {
+            let distance_m = agent_pose.distance_to(&bus.pose);
+            (distance_m <= search_state.detector.detection_range_m).then(|| UrbanBusObservation {
+                bus_id: bus.id.clone(),
+                pose: bus.pose,
+                distance_m,
+            })
+        })
+        .collect();
+    observations.sort_by(|a, b| a.bus_id.as_ref().cmp(b.bus_id.as_ref()));
+
+    let detection = observations
+        .iter()
+        .enumerate()
+        .find(|(index, _)| {
+            deterministic_probability_draw(
+                &search_state.detector,
+                scenario_seed,
+                tick,
+                *index as u64,
+                0xD37E_C710_0000_0001,
+            ) < search_state.detector.detection_probability
+        })
+        .map(|(_, observation)| observation.clone());
+
+    let false_positive = detection.is_none()
+        && deterministic_probability_draw(
+            &search_state.detector,
+            scenario_seed,
+            tick,
+            observations.len() as u64,
+            0xFA15_EF05_1717_0001,
+        ) < search_state.detector.false_positive_rate;
+
+    UrbanDetectionOutcome {
+        observations,
+        detection,
+        false_positive,
+    }
+}
+
+fn bus_is_active(bus: &UrbanBus, tick: u64) -> bool {
+    bus.active_from_tick.is_none_or(|from| tick >= from)
+        && bus.active_until_tick.is_none_or(|until| tick <= until)
+}
+
+fn deterministic_probability_draw(
+    detector: &UrbanDetectorConfig,
+    scenario_seed: u64,
+    tick: u64,
+    draw_index: u64,
+    salt: u64,
+) -> f64 {
+    let seed = detector.seed
+        ^ scenario_seed.rotate_left(13)
+        ^ tick.wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        ^ draw_index.wrapping_mul(0xBF58_476D_1CE4_E5B9)
+        ^ salt;
+    let mut rng = StdRng::seed_from_u64(seed);
+    rng.gen()
+}
+
 fn ensure_valid_route_inputs(
     map: &UrbanMap,
     from: &UrbanNodeId,
@@ -378,7 +467,10 @@ fn clip_axis(p: f64, q: f64, t_min: &mut f64, t_max: &mut f64) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use swarm_types::{Aabb, UrbanEdge, UrbanEdgeId, UrbanMap, UrbanNode, UrbanStaticObstacle};
+    use swarm_types::{
+        Aabb, UrbanBus, UrbanBusId, UrbanDetectorConfig, UrbanEdge, UrbanEdgeId, UrbanMap,
+        UrbanNode, UrbanSearchState, UrbanStaticObstacle,
+    };
 
     fn node(id: &str, x: f64, y: f64) -> UrbanNode {
         UrbanNode {
@@ -419,6 +511,28 @@ mod tests {
                 edge("e02", "n0", "n2", 25.0),
             ],
             static_obstacles: vec![],
+        }
+    }
+
+    fn search_state(
+        bus_pose: Pose,
+        range: f64,
+        probability: f64,
+        false_positive: f64,
+    ) -> UrbanSearchState {
+        UrbanSearchState {
+            buses: vec![UrbanBus {
+                id: UrbanBusId::from("bus-0".to_owned()),
+                pose: bus_pose,
+                active_from_tick: None,
+                active_until_tick: None,
+            }],
+            detector: UrbanDetectorConfig {
+                detection_range_m: range,
+                detection_probability: probability,
+                false_positive_rate: false_positive,
+                seed: 11,
+            },
         }
     }
 
@@ -599,5 +713,111 @@ mod tests {
         let clamped = pose_along_segment(&map, &segment, 50.0).unwrap();
         assert_eq!(clamped.x, 10.0);
         assert_eq!(clamped.y, 0.0);
+    }
+
+    #[test]
+    fn detector_detects_in_range_bus_with_probability_one() {
+        let state = search_state(
+            Pose {
+                x: 1.0,
+                y: 0.0,
+                ..Default::default()
+            },
+            2.0,
+            1.0,
+            0.0,
+        );
+
+        let outcome = detect_buses(Pose::default(), 0, 42, &state);
+
+        assert_eq!(outcome.observations.len(), 1);
+        assert!(outcome.detection.is_some());
+        assert!(!outcome.false_positive);
+    }
+
+    #[test]
+    fn detector_ignores_out_of_range_bus() {
+        let state = search_state(
+            Pose {
+                x: 10.0,
+                y: 0.0,
+                ..Default::default()
+            },
+            2.0,
+            1.0,
+            0.0,
+        );
+
+        let outcome = detect_buses(Pose::default(), 0, 42, &state);
+
+        assert!(outcome.observations.is_empty());
+        assert!(outcome.detection.is_none());
+        assert!(!outcome.false_positive);
+    }
+
+    #[test]
+    fn detector_probability_zero_never_detects_real_bus() {
+        let state = search_state(
+            Pose {
+                x: 1.0,
+                y: 0.0,
+                ..Default::default()
+            },
+            2.0,
+            0.0,
+            0.0,
+        );
+
+        let outcome = detect_buses(Pose::default(), 0, 42, &state);
+
+        assert_eq!(outcome.observations.len(), 1);
+        assert!(outcome.detection.is_none());
+        assert!(!outcome.false_positive);
+    }
+
+    #[test]
+    fn detector_false_positive_is_seed_controlled() {
+        let state = search_state(
+            Pose {
+                x: 10.0,
+                y: 0.0,
+                ..Default::default()
+            },
+            2.0,
+            0.0,
+            1.0,
+        );
+
+        let outcome = detect_buses(Pose::default(), 0, 42, &state);
+
+        assert!(outcome.observations.is_empty());
+        assert!(outcome.detection.is_none());
+        assert!(outcome.false_positive);
+    }
+
+    #[test]
+    fn detector_respects_bus_active_window() {
+        let mut state = search_state(
+            Pose {
+                x: 1.0,
+                y: 0.0,
+                ..Default::default()
+            },
+            2.0,
+            1.0,
+            0.0,
+        );
+        state.buses[0].active_from_tick = Some(5);
+        state.buses[0].active_until_tick = Some(10);
+
+        assert!(detect_buses(Pose::default(), 4, 42, &state)
+            .observations
+            .is_empty());
+        assert!(detect_buses(Pose::default(), 5, 42, &state)
+            .detection
+            .is_some());
+        assert!(detect_buses(Pose::default(), 11, 42, &state)
+            .observations
+            .is_empty());
     }
 }

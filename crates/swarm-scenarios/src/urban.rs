@@ -1,8 +1,8 @@
 use swarm_sim::{RunConfig, Scenario, UrbanState};
 use swarm_types::{
-    Aabb, Agent, AgentId, Health, Pose, Role, Task, TaskId, TaskKind, TaskStatus, UrbanEdge,
-    UrbanEdgeId, UrbanMap, UrbanNode, UrbanNodeId, UrbanObstacleId, UrbanRouteLoop,
-    UrbanStaticObstacle,
+    Aabb, Agent, AgentId, Health, Pose, Role, Task, TaskId, TaskKind, TaskStatus, UrbanBus,
+    UrbanBusId, UrbanDetectorConfig, UrbanEdge, UrbanEdgeId, UrbanMap, UrbanNode, UrbanNodeId,
+    UrbanObstacleId, UrbanRouteLoop, UrbanSearchState, UrbanStaticObstacle,
 };
 
 pub struct UrbanConfig {
@@ -13,6 +13,9 @@ pub struct UrbanConfig {
 #[derive(Clone, Debug, PartialEq)]
 pub enum UrbanProfile {
     PatrolSmallBlock,
+    SearchStaticBus,
+    SearchOutOfRange,
+    SearchFalsePositive,
 }
 
 impl UrbanProfile {
@@ -20,6 +23,9 @@ impl UrbanProfile {
     pub fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "patrol-small-block" | "patrolsmallblock" => Some(Self::PatrolSmallBlock),
+            "search-static-bus" | "searchstaticbus" => Some(Self::SearchStaticBus),
+            "search-out-of-range" | "searchoutofrange" => Some(Self::SearchOutOfRange),
+            "search-false-positive" | "searchfalsepositive" => Some(Self::SearchFalsePositive),
             _ => None,
         }
     }
@@ -30,6 +36,15 @@ impl UrbanProfile {
                 seed,
                 max_ticks: 120,
             },
+            Self::SearchStaticBus => UrbanConfig {
+                seed,
+                max_ticks: 60,
+            },
+            Self::SearchOutOfRange => UrbanConfig {
+                seed,
+                max_ticks: 12,
+            },
+            Self::SearchFalsePositive => UrbanConfig { seed, max_ticks: 6 },
         }
     }
 }
@@ -38,7 +53,19 @@ pub struct UrbanStandardProfiles;
 
 impl UrbanStandardProfiles {
     pub fn profile_names() -> Vec<&'static str> {
+        Self::patrol_profile_names()
+    }
+
+    pub fn patrol_profile_names() -> Vec<&'static str> {
         vec!["patrol-small-block"]
+    }
+
+    pub fn search_profile_names() -> Vec<&'static str> {
+        vec![
+            "search-static-bus",
+            "search-out-of-range",
+            "search-false-positive",
+        ]
     }
 }
 
@@ -155,6 +182,78 @@ pub fn build_urban_patrol_scenario(config: &UrbanConfig) -> (Scenario, RunConfig
     (scenario, run_config)
 }
 
+pub fn build_urban_search_scenario(
+    config: &UrbanConfig,
+    profile: UrbanProfile,
+) -> (Scenario, RunConfig) {
+    let (mut scenario, mut run_config) = build_urban_patrol_scenario(config);
+    let (scenario_name, bus_pose, detection_range_m, detection_probability, false_positive_rate) =
+        match profile {
+            UrbanProfile::SearchStaticBus => (
+                "urban_search_static_bus",
+                Pose {
+                    x: 4.0,
+                    y: 0.0,
+                    ..Default::default()
+                },
+                0.1,
+                1.0,
+                0.0,
+            ),
+            UrbanProfile::SearchOutOfRange => (
+                "urban_search_out_of_range",
+                Pose {
+                    x: 100.0,
+                    y: 100.0,
+                    ..Default::default()
+                },
+                1.0,
+                1.0,
+                0.0,
+            ),
+            UrbanProfile::SearchFalsePositive => (
+                "urban_search_false_positive",
+                Pose {
+                    x: 100.0,
+                    y: 100.0,
+                    ..Default::default()
+                },
+                1.0,
+                0.0,
+                1.0,
+            ),
+            UrbanProfile::PatrolSmallBlock => (
+                "urban_search_static_bus",
+                Pose {
+                    x: 4.0,
+                    y: 0.0,
+                    ..Default::default()
+                },
+                0.1,
+                1.0,
+                0.0,
+            ),
+        };
+    scenario.name = scenario_name.to_owned();
+    run_config.max_ticks = config.max_ticks;
+    run_config.max_unassigned_ticks = config.max_ticks;
+    run_config.urban_search_state = Some(UrbanSearchState {
+        buses: vec![UrbanBus {
+            id: UrbanBusId::from("bus-0".to_owned()),
+            pose: bus_pose,
+            active_from_tick: None,
+            active_until_tick: None,
+        }],
+        detector: UrbanDetectorConfig {
+            detection_range_m,
+            detection_probability,
+            false_positive_rate,
+            seed: config.seed ^ 0x66,
+        },
+    });
+    (scenario, run_config)
+}
+
 fn node(id: &UrbanNodeId, x: f64, y: f64) -> UrbanNode {
     UrbanNode {
         id: id.clone(),
@@ -215,5 +314,43 @@ mod tests {
         assert!(metrics.urban_patrol_completed);
         assert_eq!(metrics.urban_time_to_complete_loop, Some(40));
         assert_eq!(metrics.urban_violation_count, 0);
+    }
+
+    #[test]
+    fn urban_search_fixture_has_valid_search_state() {
+        let (_, run_config) = build_urban_search_scenario(
+            &UrbanProfile::SearchStaticBus.config(42),
+            UrbanProfile::SearchStaticBus,
+        );
+        let urban_search_state = run_config
+            .urban_search_state
+            .as_ref()
+            .expect("urban_search_state exists");
+        assert!(urban_search_state.validate().is_empty());
+    }
+
+    #[test]
+    fn urban_search_static_bus_fixture_detects_target() {
+        let (scenario, run_config) = build_urban_search_scenario(
+            &UrbanProfile::SearchStaticBus.config(42),
+            UrbanProfile::SearchStaticBus,
+        );
+        let metrics = swarm_sim::ScenarioRunner::run(&scenario, run_config);
+        assert!(metrics.success);
+        assert!(metrics.bus_detected);
+        assert_eq!(metrics.time_to_detect_bus, Some(2));
+        assert!(metrics.search_success_without_violation);
+    }
+
+    #[test]
+    fn urban_search_out_of_range_fixture_times_out() {
+        let (scenario, run_config) = build_urban_search_scenario(
+            &UrbanProfile::SearchOutOfRange.config(42),
+            UrbanProfile::SearchOutOfRange,
+        );
+        let metrics = swarm_sim::ScenarioRunner::run(&scenario, run_config);
+        assert!(!metrics.success);
+        assert!(!metrics.bus_detected);
+        assert_eq!(metrics.time_to_detect_bus, None);
     }
 }

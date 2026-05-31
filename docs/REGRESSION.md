@@ -35,8 +35,15 @@ fixture executable simulation smoke: one scout follows the ordered road-graph
 loop, completes before timeout, emits Urban replay events, and reports patrol
 metrics. Это не publication benchmark и не обновляет M62 evidence.
 
-Urban regression может использовать explicit `--mission urban-patrol` smoke,
-но длинные 500/1000-seed sweeps остаются будущей M69-style evidence work.
+M66 Urban Search v1 добавляет `urban_search_static_bus_greedy` в smoke gate:
+один scout идёт по road graph, mocked bus detector находит static bus, а
+thresholds проверяют `success_rate`, `bus_detection_rate`,
+`search_success_without_violation` и отсутствие false positives. Это
+portable simulation gate, не publication benchmark и не PX4/SITL evidence.
+
+Urban regression также может использовать explicit `--mission urban-patrol`
+или `--mission urban-search` smoke. Длинные 500/1000-seed sweeps остаются
+будущей M69-style evidence work.
 
 ## CLI
 

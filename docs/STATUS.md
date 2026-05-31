@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-31
 **HEAD commit:** see `git rev-parse HEAD`
-**Last audit:** M65 Urban Patrol v0
+**Last audit:** M66 Urban Search v1
 
 This document is the current status summary for the repository. It supersedes
 the older M39b-only audit and should be read together with the README current
@@ -40,7 +40,8 @@ status table.
 | M62 Benchmark / Baseline Refresh | Complete as historical 500-seed validation baseline | Release `strategy_comparison --seeds 500 --mission all --jobs 14` completed for commit `81260ca7afa114a5d9add7b832f6c5d7875b88cd`. Artifacts are in `results/all_500_jobs14_m62_release/`; after M63 this is historical validation evidence unless rerun on current HEAD, not a publication-grade 1000-seed statistical run. |
 | M63 Evidence Cleanup / Status Honesty | Complete without benchmark rerun | README/status/benchmark docs mark the M62 pack as historical evidence for `81260ca7afa114a5d9add7b832f6c5d7875b88cd`, flood is future work, wildfire success semantics are documented/tested, and committed M58/M59 SITL artifacts have targeted replay/event sanity tests. |
 | M64 Urban Foundations | Complete as stable substrate | `UrbanMap`, directed road graph nodes/edges, deterministic Dijkstra route-loop planning, AABB static obstacle judge, `urban-patrol` DSL validation, `scenarios/urban.patrol.json`, and Urban metrics skeleton are implemented. |
-| M65 Urban Patrol v0 | Complete as simulation-only mission | One scout follows the ordered `urban-patrol` road-graph loop and succeeds only after traversing every planned segment before timeout with zero Urban judge violations. The runner emits Urban replay events and reports patrol completion/time/distance/efficiency metrics. Bus detection, lidar/raycast, dynamic obstacles, multi-agent route deconfliction, PX4/SITL export, hardware claims, visual UI, and publication benchmark evidence remain future work. |
+| M65 Urban Patrol v0 | Complete as simulation-only mission | One scout follows the ordered `urban-patrol` road-graph loop and succeeds only after traversing every planned segment before timeout with zero Urban judge violations. The runner emits Urban replay events and reports patrol completion/time/distance/efficiency metrics. M65 itself has no bus detection; M66 adds mocked bus search separately. Lidar/raycast, dynamic obstacles, multi-agent route deconfliction, PX4/SITL export, hardware claims, visual UI, and publication benchmark evidence remain future work. |
+| M66 Urban Search v1 | Complete as simulation-only mission | One scout follows the Urban road graph and evaluates a deterministic mocked bus detector. `urban-search` DSL validation, `scenarios/urban.search.json`, bus observation/detection/false-positive/search-completion replay events, bus detection/time/false-positive/distance metrics, focused reports, and a smoke regression gate are implemented. Lidar/raycast, dynamic obstacles, real perception, multi-agent deconfliction, PX4/SITL export, hardware claims, visual UI, and publication benchmark evidence remain future work. |
 
 ## Current Known Limitations
 
@@ -113,6 +114,10 @@ status table.
   timeout with zero Urban judge violations. This is not lidar, real obstacle
   avoidance, dynamic traffic, multi-agent deconfliction, PX4/SITL export, or
   hardware readiness.
+- **Urban Search v1**: M66 adds one-agent mocked bus search on top of the same
+  road graph. The detector is deterministic and distance/probability based; it
+  is not lidar/raycast, computer vision, dynamic traffic, multi-agent
+  deconfliction, PX4/SITL export, hardware readiness, or real perception.
 
 ### Platform / API
 
@@ -130,7 +135,7 @@ status table.
 |---|---|---|
 | Portable SITL verification | Ready | Run `sitl_agent`/`sitl_docs` targeted tests. |
 | In-repository extension work | Ready with M61 boundaries | Use `docs/EXTENSION_GUIDE.md`; external semver-stable plugin/API work remains out of scope. |
-| Urban Patrol work | Ready for M66 Search | M65 provides one-agent road-graph patrol completion, replay events, and patrol metrics. Mock bus detection/Search remains the next Urban mission boundary. |
+| Urban Search work | Ready for M67+ follow-up | M66 provides one-agent mocked bus-search completion, replay events, metrics, DSL validation, and regression coverage. Dynamic obstacles, richer judging, and multi-agent deconfliction remain future work. |
 | M48 live PX4 verification | Complete for local PX4 SIH | Captured in `results/m48_px4_sitl_2026-05-30/`; Gazebo/HIL/hardware remain out of scope. |
 | Real multi-agent PX4/SIH | Experimental local workflow with M60 hardening | Upload-only, execute, and controlled failure/reallocation SIH evidence exists. `sitl_supervisor --connection --execute --reupload-on-failure --output-dir ... --run-id ...` can produce stable artifacts and exit codes for local runs; automated PX4 CI, Gazebo/HIL, hardware, broader failure modes, and production safety remain future work. |
 | Large benchmark publication | Not ready | M62 gives a historical 500-seed validation baseline for commit `81260ca7afa114a5d9add7b832f6c5d7875b88cd`; current-head publication-level evidence still needs a fresh run and interpretation of SAR/wildfire/CBBA rows. |
@@ -203,8 +208,9 @@ supervisor artifact/exit-code/report hardening. M61 adds the extension guide
 and test-only extension contract checks. M62 adds a 500-seed release simulation
 benchmark baseline for commit `81260ca7afa114a5d9add7b832f6c5d7875b88cd`; M63
 marks it historical because no current-HEAD rerun was performed. M64 adds Urban
-foundation code and docs, and M65 adds Urban Patrol v0 simulation semantics,
-but neither milestone refreshes the benchmark evidence. Do not extend
+foundation code and docs, M65 adds Urban Patrol v0 simulation semantics, and
+M66 adds Urban Search v1 simulation semantics with a mocked bus detector; none
+of these milestones refreshes the benchmark evidence. Do not extend
 any existing result to Gazebo, HIL, real hardware, automated PX4 CI,
 semver-stable external API, or publication-level algorithm claims without new
 code/evidence.

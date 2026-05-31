@@ -147,6 +147,17 @@ pub struct RunMetrics {
     pub urban_route_efficiency: f64,
     #[serde(default)]
     pub urban_replan_count: u64,
+    // v0.66 Urban Search v1
+    #[serde(default)]
+    pub bus_detected: bool,
+    #[serde(default)]
+    pub time_to_detect_bus: Option<u64>,
+    #[serde(default)]
+    pub false_positive_count: u64,
+    #[serde(default)]
+    pub distance_before_detection: f64,
+    #[serde(default)]
+    pub search_success_without_violation: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -252,6 +263,17 @@ pub struct AggregateMetrics {
     pub avg_urban_route_efficiency: f64,
     #[serde(default)]
     pub avg_urban_replan_count: f64,
+    // v0.66 Urban Search v1
+    #[serde(default)]
+    pub bus_detection_rate: f64,
+    #[serde(default)]
+    pub avg_time_to_detect_bus: f64,
+    #[serde(default)]
+    pub avg_false_positive_count: f64,
+    #[serde(default)]
+    pub avg_distance_before_detection: f64,
+    #[serde(default)]
+    pub search_success_without_violation_rate: f64,
 }
 
 fn percentile_of_sorted(sorted: &[u64], p: f64) -> f64 {
@@ -328,6 +350,12 @@ impl AggregateMetrics {
                 avg_urban_distance_travelled_m: 0.0,
                 avg_urban_route_efficiency: 0.0,
                 avg_urban_replan_count: 0.0,
+                // v0.66 Urban Search v1
+                bus_detection_rate: 0.0,
+                avg_time_to_detect_bus: 0.0,
+                avg_false_positive_count: 0.0,
+                avg_distance_before_detection: 0.0,
+                search_success_without_violation_rate: 0.0,
             };
         }
 
@@ -412,6 +440,21 @@ impl AggregateMetrics {
         let total_urban_route_efficiency: f64 =
             runs.iter().map(|run| run.urban_route_efficiency).sum();
         let total_urban_replan_count: u64 = runs.iter().map(|run| run.urban_replan_count).sum();
+        // v0.66 Urban Search v1
+        let bus_detected_count = runs.iter().filter(|run| run.bus_detected).count() as f64;
+        let total_time_to_detect_bus: u64 =
+            runs.iter().filter_map(|run| run.time_to_detect_bus).sum();
+        let time_to_detect_bus_count = runs
+            .iter()
+            .filter(|run| run.time_to_detect_bus.is_some())
+            .count() as f64;
+        let total_false_positive_count: u64 = runs.iter().map(|run| run.false_positive_count).sum();
+        let total_distance_before_detection: f64 =
+            runs.iter().map(|run| run.distance_before_detection).sum();
+        let search_success_without_violation_count = runs
+            .iter()
+            .filter(|run| run.search_success_without_violation)
+            .count() as f64;
         let mut convergence_ticks: Vec<u64> = runs
             .iter()
             .filter_map(|run| run.cbba_convergence_tick)
@@ -505,6 +548,16 @@ impl AggregateMetrics {
             avg_urban_distance_travelled_m: total_urban_distance_travelled_m / n,
             avg_urban_route_efficiency: total_urban_route_efficiency / n,
             avg_urban_replan_count: total_urban_replan_count as f64 / n,
+            // v0.66 Urban Search v1
+            bus_detection_rate: bus_detected_count / n,
+            avg_time_to_detect_bus: if time_to_detect_bus_count > 0.0 {
+                total_time_to_detect_bus as f64 / time_to_detect_bus_count
+            } else {
+                0.0
+            },
+            avg_false_positive_count: total_false_positive_count as f64 / n,
+            avg_distance_before_detection: total_distance_before_detection / n,
+            search_success_without_violation_rate: search_success_without_violation_count / n,
         }
     }
 }
@@ -709,6 +762,28 @@ impl fmt::Display for AggregateMetrics {
             "avg_urban_replan_count: {:.3}",
             self.avg_urban_replan_count
         )?;
+        // v0.66 Urban Search v1
+        writeln!(f, "bus_detection_rate: {:.3}", self.bus_detection_rate)?;
+        writeln!(
+            f,
+            "avg_time_to_detect_bus: {:.3}",
+            self.avg_time_to_detect_bus
+        )?;
+        writeln!(
+            f,
+            "avg_false_positive_count: {:.3}",
+            self.avg_false_positive_count
+        )?;
+        writeln!(
+            f,
+            "avg_distance_before_detection: {:.3}",
+            self.avg_distance_before_detection
+        )?;
+        writeln!(
+            f,
+            "search_success_without_violation_rate: {:.3}",
+            self.search_success_without_violation_rate
+        )?;
         // v0.31 Report identity
         writeln!(f, "mission: {}", self.mission)?;
         write!(f, "scenario: {}", self.scenario)
@@ -819,6 +894,12 @@ mod tests {
             urban_distance_travelled_m: 0.0,
             urban_route_efficiency: 0.0,
             urban_replan_count: 0,
+            // v0.66 Urban Search v1
+            bus_detected: false,
+            time_to_detect_bus: None,
+            false_positive_count: 0,
+            distance_before_detection: 0.0,
+            search_success_without_violation: false,
         }
     }
 
@@ -844,6 +925,26 @@ mod tests {
         let metrics = AggregateMetrics::from_runs(&runs);
 
         assert_eq!(metrics.avg_detection_ticks, 3.0);
+    }
+
+    #[test]
+    fn aggregate_urban_search_fields() {
+        let mut runs = vec![run(true, None), run(false, None)];
+        runs[0].bus_detected = true;
+        runs[0].time_to_detect_bus = Some(12);
+        runs[0].false_positive_count = 1;
+        runs[0].distance_before_detection = 24.0;
+        runs[0].search_success_without_violation = true;
+        runs[1].false_positive_count = 3;
+        runs[1].distance_before_detection = 40.0;
+
+        let metrics = AggregateMetrics::from_runs(&runs);
+
+        assert_eq!(metrics.bus_detection_rate, 0.5);
+        assert_eq!(metrics.avg_time_to_detect_bus, 12.0);
+        assert_eq!(metrics.avg_false_positive_count, 2.0);
+        assert_eq!(metrics.avg_distance_before_detection, 32.0);
+        assert_eq!(metrics.search_success_without_violation_rate, 0.5);
     }
 
     #[test]

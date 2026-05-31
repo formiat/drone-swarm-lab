@@ -107,6 +107,20 @@ fn main() {
         if !s.urban_completion_ticks.is_empty() {
             println!("  Urban completion ticks: {:?}", s.urban_completion_ticks);
         }
+        println!("Bus observations: {}", s.bus_observations);
+        println!("Bus detections: {}", s.bus_detections);
+        println!("Bus false positives: {}", s.bus_false_positives);
+        println!("Urban search completions: {}", s.urban_search_completions);
+        println!(
+            "Urban search no-detection completions: {}",
+            s.urban_search_no_detection_count
+        );
+        if !s.urban_search_time_to_detection_ticks.is_empty() {
+            println!(
+                "  Urban search detection ticks: {:?}",
+                s.urban_search_time_to_detection_ticks
+            );
+        }
     }
 
     if let Some(t) = tick {

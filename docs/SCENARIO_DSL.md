@@ -77,6 +77,7 @@ an explicit schema policy update and compatibility tests.
 | `cbba-stress` | `run_config.enable_cbba` | Must be `true`; `gossip_interval_ticks <= 5` |
 | `sitl` | tasks with `pose` | At least one task must have a `pose` |
 | `urban-patrol` | `run_config.urban_state` | Must include `UrbanMap`, route loop, Dijkstra planner, valid node/edge refs, and waypoint placeholder tasks; M65 runner follows the planned route in order |
+| `urban-search` | `run_config.urban_state`, `run_config.urban_search_state` | Reuses the Urban road graph and start contract, then validates bus targets and deterministic mocked detector config; M66 runner stops on real bus detection or times out |
 | `safety` | `run_config.safety_config` | Must have `safety_config` with geofence or no-fly zones |
 
 ## Urban Patrol
@@ -105,9 +106,36 @@ selected alive agent must start within `0.01m` of the validated start node pose;
 M65 v0 does not infer or silently teleport from an arbitrary `agent.pose`. M65
 v0 has no replanning, so `urban_replan_count = 0`.
 
-It does not implement lidar/raycast, bus detection, dynamic obstacles,
-multi-agent route conflicts, arbitrary polygons, PX4/SITL export, hardware
-readiness, or a visual UI.
+Urban Patrol itself does not implement lidar/raycast, bus detection, dynamic
+obstacles, multi-agent route conflicts, arbitrary polygons, PX4/SITL export,
+hardware readiness, or a visual UI.
+
+## Urban Search
+
+M66 adds `urban-search` as a simulation-only search mission on top of the
+Urban Patrol road graph. It uses the same `run_config.urban_state` map,
+`route_loop`, `start_node`, and `"dijkstra"` planner constraints, plus
+`run_config.urban_search_state`:
+
+- `buses[]` — mocked bus targets with `id`, `pose`, and optional
+  `active_from_tick` / `active_until_tick` visibility windows.
+- `detector.detection_range_m` — distance threshold for observable buses.
+- `detector.detection_probability` — probability in `[0, 1]` for turning an
+  in-range observation into a real detection.
+- `detector.false_positive_rate` — probability in `[0, 1]` for a false
+  positive when no real bus is detected on that tick.
+- `detector.seed` — deterministic detector RNG seed.
+
+The selected scout follows the route repeatedly until the first real bus
+detection or timeout. `BusObserved`, `BusDetected`, `BusFalsePositive`, and
+`UrbanSearchCompleted` replay events make the run inspectable. Search success
+means a real bus was detected with zero Urban judge violations and no runtime
+unsupported reason. False positives are counted but do not complete the
+mission.
+
+This is a mocked detector, not lidar/raycast, computer vision, dynamic
+traffic, physical obstacle avoidance, PX4/SITL export, hardware readiness, or
+visualization.
 
 ## Minimal Example
 
@@ -156,7 +184,7 @@ for err in &errors {
 
 ## Available Scenarios
 
-The repository includes 20 pre-built scenario files in `scenarios/`:
+The repository includes 21 pre-built scenario files in `scenarios/`:
 
 - `coverage.ideal.json` — 5 agents, 3 tasks, ideal network
 - `coverage.safety.json` — coverage with no-fly zone
@@ -170,6 +198,7 @@ The repository includes 20 pre-built scenario files in `scenarios/`:
 - `cbba_stress.json` — CBBA convergence under packet loss
 - `sitl.waypoints.json` — SITL waypoints, 1 agent
 - `urban.patrol.json` — M65 Urban Patrol road-graph simulation fixture
+- `urban.search.json` — M66 Urban Search static-bus simulation fixture
 
 ## Export / Import
 

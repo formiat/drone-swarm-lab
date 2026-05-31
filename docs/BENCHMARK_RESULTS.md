@@ -7,11 +7,12 @@ not current-HEAD evidence. It supersedes the older M32b benchmark report as the
 latest committed full benchmark pack, but it is still a 500-seed validation
 baseline rather than a publication-grade 1000-seed statistical run.
 
-M64 adds Urban foundation code and documentation, and M65 adds Urban Patrol v0
-simulation semantics, replay events, and patrol metrics. Neither milestone
-refreshes benchmark evidence. `scenarios/urban.patrol.json` is a deterministic
-Urban Patrol fixture and can be used for smoke/regression checks, but it is not
-a benchmark baseline or publication run.
+M64 adds Urban foundation code and documentation, M65 adds Urban Patrol v0
+simulation semantics, and M66 adds Urban Search v1 with a deterministic mocked
+bus detector, replay events, search metrics, and a smoke regression gate. These
+milestones do not refresh benchmark evidence. `scenarios/urban.patrol.json` and
+`scenarios/urban.search.json` are deterministic Urban fixtures for
+smoke/regression checks, not benchmark baselines or publication runs.
 
 For live PX4/SIH evidence, see `docs/STATUS.md` and the `results/m48_*`,
 `results/m55_*`, `results/m58_*`, and `results/m59_*` artifacts. Simulation

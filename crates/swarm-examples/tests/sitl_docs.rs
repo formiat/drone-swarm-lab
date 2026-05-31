@@ -294,10 +294,11 @@ fn m64_docs_describe_urban_foundation_boundaries() {
         "M65",
         "UrbanMap",
         "scenarios/urban.patrol.json",
+        "scenarios/urban.search.json",
         "start_node",
         "0.01m",
         "AABB static obstacle judge",
-        "no bus detector",
+        "mocked bus detector",
         "lidar",
         "dynamic obstacles",
         "multi-agent deconfliction",
@@ -308,8 +309,10 @@ fn m64_docs_describe_urban_foundation_boundaries() {
 
     for required in [
         "M65 Urban Patrol v0",
+        "M66 Urban Search v1",
         "simulation-only",
         "ordered road-graph patrol",
+        "mocked bus detector",
         "zero Urban judge violations",
     ] {
         assert!(STATUS.contains(required), "STATUS missing {required}");
@@ -322,6 +325,9 @@ fn m64_docs_describe_urban_foundation_boundaries() {
         "AABB-only static obstacles",
         "TaskKind::Waypoint",
         "M65",
+        "M66",
+        "urban_search_state",
+        "detector.seed",
         "Completion means",
         "start_node",
         "0.01m",
@@ -338,6 +344,8 @@ fn m64_docs_describe_urban_foundation_boundaries() {
         "crates/swarm-sim/src/urban.rs",
         "urban_route_planned",
         "urban_patrol_completed",
+        "bus_detected",
+        "UrbanSearchCompleted",
         "arbitrary polygon dependencies",
     ] {
         assert!(
@@ -352,6 +360,10 @@ fn m64_docs_describe_urban_foundation_boundaries() {
         "UrbanSegmentCompleted",
         "UrbanViolation",
         "UrbanPatrolCompleted",
+        "BusObserved",
+        "BusDetected",
+        "BusFalsePositive",
+        "UrbanSearchCompleted",
     ] {
         assert!(REPLAY.contains(required), "Replay doc missing {required}");
     }
@@ -359,7 +371,7 @@ fn m64_docs_describe_urban_foundation_boundaries() {
     for forbidden in [
         "bus detector implemented",
         "lidar implemented",
-        "Urban Search complete",
+        "real perception implemented",
     ] {
         assert!(
             !README.contains(forbidden),

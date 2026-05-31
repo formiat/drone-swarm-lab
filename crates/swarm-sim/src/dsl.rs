@@ -262,6 +262,86 @@ pub fn validate_mission_specific(entry: &ScenarioSuiteEntry) -> Vec<ValidationEr
                 message: "Urban patrol mission requires urban_state".to_owned(),
             }),
         },
+        "urban-search" => {
+            match &entry.run_config.urban_state {
+                Some(urban_state) => {
+                    if urban_state.planner != "dijkstra" {
+                        errors.push(ValidationError {
+                            field: "run_config.urban_state.planner".to_owned(),
+                            message: "Urban planner must be 'dijkstra' in M66".to_owned(),
+                        });
+                    }
+                    if !entry
+                        .scenario
+                        .agents
+                        .iter()
+                        .any(|agent| matches!(agent.health, swarm_types::Health::Alive))
+                    {
+                        errors.push(ValidationError {
+                            field: "scenario.agents".to_owned(),
+                            message: "Urban Search requires at least one alive agent".to_owned(),
+                        });
+                    }
+                    for error in urban_state.map.validate() {
+                        errors.push(ValidationError {
+                            field: format!("run_config.urban_state.map.{}", error.field),
+                            message: error.message,
+                        });
+                    }
+                    for error in urban_state.map.validate_route_loop(&urban_state.route_loop) {
+                        errors.push(ValidationError {
+                            field: format!("run_config.urban_state.{}", error.field),
+                            message: error.message,
+                        });
+                    }
+                    match crate::urban::expand_route_loop(&urban_state.map, &urban_state.route_loop)
+                    {
+                        Ok(route) => {
+                            match crate::urban::route_start_node(
+                                &urban_state.map,
+                                &urban_state.route_loop,
+                                &route,
+                                urban_state.start_node.as_ref(),
+                            ) {
+                                Ok(start_node) => {
+                                    validate_urban_start_pose(entry, start_node.pose, &mut errors);
+                                }
+                                Err(error) => push_urban_state_error(&mut errors, error),
+                            }
+                            let violations = crate::urban::judge_route(&urban_state.map, &route);
+                            for violation in violations {
+                                errors.push(ValidationError {
+                                    field: "run_config.urban_state.route_loop".to_owned(),
+                                    message: format!("Urban route judge violation: {violation:?}"),
+                                });
+                            }
+                        }
+                        Err(error) => errors.push(ValidationError {
+                            field: "run_config.urban_state.route_loop".to_owned(),
+                            message: error.to_string(),
+                        }),
+                    }
+                }
+                None => errors.push(ValidationError {
+                    field: "run_config.urban_state".to_owned(),
+                    message: "Urban search mission requires urban_state".to_owned(),
+                }),
+            }
+            match &entry.run_config.urban_search_state {
+                Some(search_state) => {
+                    for error in search_state.validate() {
+                        errors.push(ValidationError {
+                            field: format!("run_config.urban_search_state.{}", error.field),
+                            message: error.message,
+                        });
+                    }
+                }
+                None => errors.push(ValidationError {
+                    field: "run_config.urban_search_state".to_owned(),
+                    message: "Urban search mission requires urban_search_state".to_owned(),
+                }),
+            }
+        }
         _ => {}
     }
 
@@ -412,7 +492,7 @@ fn validate_urban_start_pose(
         errors.push(ValidationError {
             field: format!("scenario.agents[{agent_index}].pose"),
             message: format!(
-                "Urban Patrol selected agent must start within {:.2}m of start_node pose; distance was {:.3}m",
+                "Urban selected agent must start within {:.2}m of start_node pose; distance was {:.3}m",
                 crate::urban::URBAN_START_POSE_TOLERANCE_M,
                 distance
             ),
@@ -429,7 +509,7 @@ fn mission_allows_task_kind(mission: &str, kind: &swarm_types::TaskKind) -> bool
         "inspection" => matches!(kind, swarm_types::TaskKind::InspectionEdge),
         "wildfire" => matches!(kind, swarm_types::TaskKind::MappingZone),
         "sitl" => matches!(kind, swarm_types::TaskKind::Waypoint),
-        "urban-patrol" => matches!(kind, swarm_types::TaskKind::Waypoint),
+        "urban-patrol" | "urban-search" => matches!(kind, swarm_types::TaskKind::Waypoint),
         "coverage" => matches!(kind, swarm_types::TaskKind::CoverageCell),
         "emergency-mesh" => matches!(
             kind,
@@ -445,8 +525,9 @@ mod tests {
     use crate::runner::UrbanState;
     use crate::scenario::Scenario;
     use swarm_types::{
-        Agent, Health, Pose, Role, Task, TaskKind, TaskStatus, UrbanEdge, UrbanEdgeId, UrbanMap,
-        UrbanNode, UrbanNodeId, UrbanRouteLoop,
+        Agent, Health, Pose, Role, Task, TaskKind, TaskStatus, UrbanBus, UrbanBusId,
+        UrbanDetectorConfig, UrbanEdge, UrbanEdgeId, UrbanMap, UrbanNode, UrbanNodeId,
+        UrbanRouteLoop, UrbanSearchState,
     };
 
     fn make_minimal_entry() -> ScenarioSuiteEntry {
@@ -575,6 +656,32 @@ mod tests {
             },
             start_node: Some(UrbanNodeId::from("n0".to_owned())),
             planner: "dijkstra".to_owned(),
+        });
+        entry
+    }
+
+    fn make_urban_search_entry() -> ScenarioSuiteEntry {
+        let mut entry = make_urban_entry();
+        entry.mission = "urban-search".to_owned();
+        entry.profile = "search-static-bus".to_owned();
+        entry.scenario.name = "urban_search_static_bus".to_owned();
+        entry.run_config.urban_search_state = Some(UrbanSearchState {
+            buses: vec![UrbanBus {
+                id: UrbanBusId::from("bus-0".to_owned()),
+                pose: Pose {
+                    x: 5.0,
+                    y: 0.0,
+                    ..Default::default()
+                },
+                active_from_tick: None,
+                active_until_tick: None,
+            }],
+            detector: UrbanDetectorConfig {
+                detection_range_m: 2.0,
+                detection_probability: 1.0,
+                false_positive_rate: 0.0,
+                seed: 11,
+            },
         });
         entry
     }
@@ -898,6 +1005,71 @@ mod tests {
         assert!(errors
             .iter()
             .any(|error| error.field == "run_config.urban_state.map.edges[0].to"));
+    }
+
+    #[test]
+    fn validate_urban_search_accepts_valid_entry() {
+        let errors = validate_entry(&make_urban_search_entry());
+        assert!(
+            errors.is_empty(),
+            "Expected valid urban search entry, got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn validate_urban_search_rejects_missing_urban_state() {
+        let mut entry = make_urban_search_entry();
+        entry.run_config.urban_state = None;
+
+        let errors = validate_entry(&entry);
+
+        assert!(errors
+            .iter()
+            .any(|error| error.field == "run_config.urban_state"));
+    }
+
+    #[test]
+    fn validate_urban_search_rejects_missing_search_state() {
+        let mut entry = make_urban_search_entry();
+        entry.run_config.urban_search_state = None;
+
+        let errors = validate_entry(&entry);
+
+        assert!(errors
+            .iter()
+            .any(|error| error.field == "run_config.urban_search_state"));
+    }
+
+    #[test]
+    fn validate_urban_search_rejects_invalid_detector() {
+        let mut entry = make_urban_search_entry();
+        entry
+            .run_config
+            .urban_search_state
+            .as_mut()
+            .unwrap()
+            .detector
+            .detection_probability = 2.0;
+
+        let errors = validate_entry(&entry);
+
+        assert!(errors.iter().any(|error| {
+            error.field == "run_config.urban_search_state.detector.detection_probability"
+        }));
+    }
+
+    #[test]
+    fn validate_urban_search_rejects_invalid_bus() {
+        let mut entry = make_urban_search_entry();
+        entry.run_config.urban_search_state.as_mut().unwrap().buses[0]
+            .pose
+            .x = f64::NAN;
+
+        let errors = validate_entry(&entry);
+
+        assert!(errors
+            .iter()
+            .any(|error| error.field == "run_config.urban_search_state.buses[0].pose"));
     }
 
     #[test]

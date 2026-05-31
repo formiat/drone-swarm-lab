@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use swarm_alloc::Strategy;
 use swarm_scenarios::{
     build_coverage_scenario, build_emergency_mesh_scenario, build_inspection_scenario,
-    build_sar_scenario, build_urban_patrol_scenario, build_wildfire_scenario, CoverageConfig,
-    EmergencyMeshProfile, InspectionProfile, SarProfile, StandardProfiles, UrbanProfile,
-    WildfireProfile,
+    build_sar_scenario, build_urban_patrol_scenario, build_urban_search_scenario,
+    build_wildfire_scenario, CoverageConfig, EmergencyMeshProfile, InspectionProfile, SarProfile,
+    StandardProfiles, UrbanProfile, WildfireProfile,
 };
 use swarm_sim::{
     BenchmarkHarness, BenchmarkOptions, RegressionSuite, RunConfig, Scenario, SuiteMode,
@@ -143,6 +143,10 @@ pub fn build_mission_scenario_builder(mission: &str) -> Option<ScenarioBuilder> 
         "urban-patrol" => Some(Box::new(|seed, profile| {
             let profile = UrbanProfile::from_str(profile).unwrap_or(UrbanProfile::PatrolSmallBlock);
             build_urban_patrol_scenario(&profile.config(seed))
+        })),
+        "urban-search" => Some(Box::new(|seed, profile| {
+            let profile = UrbanProfile::from_str(profile).unwrap_or(UrbanProfile::SearchStaticBus);
+            build_urban_search_scenario(&profile.config(seed), profile)
         })),
         _ => None,
     }

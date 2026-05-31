@@ -25,11 +25,11 @@ impl std::fmt::Display for ComparisonReport {
         let seeds = format!("{}-{}", self.seed_range_start, self.seed_range_end);
         writeln!(
             f,
-            "| Mission | Scenario | Strategy | Profile | Seeds | Success | Completion | Detection | Realloc | Coverage | Messages | Bytes | Conflicts | Stale | BatteryMin | BatteryAvg | Availability | TimeToFind | PoD | Targets | BeliefEntropy | FalsePosRate | ConfirmationScans | ConvP50 | ConvP95 | BundleDist | EdgeCoverage | MissedEdges | Revisits | RouteEfficiency | UrbanRouteLength | UrbanPlanned | UrbanViolations | UrbanCompleted | PatrolCompleted | TimeToLoop | UrbanDistance | UrbanEfficiency | UrbanReplans |"
+            "| Mission | Scenario | Strategy | Profile | Seeds | Success | Completion | Detection | Realloc | Coverage | Messages | Bytes | Conflicts | Stale | BatteryMin | BatteryAvg | Availability | TimeToFind | PoD | Targets | BeliefEntropy | FalsePosRate | ConfirmationScans | ConvP50 | ConvP95 | BundleDist | EdgeCoverage | MissedEdges | Revisits | RouteEfficiency | UrbanRouteLength | UrbanPlanned | UrbanViolations | UrbanCompleted | PatrolCompleted | TimeToLoop | UrbanDistance | UrbanEfficiency | UrbanReplans | BusDetected | TimeToBus | BusFalsePos | DistanceBeforeBus | SearchSuccessNoViolation |"
         )?;
         writeln!(
             f,
-            "|---------|----------|----------|---------|-------|---------|------------|-----------|---------|----------|----------|-------|-----------|-------|------------|------------|--------------|-----------|-----|---------|---------------|--------------|-------------------|---------|---------|------------|--------------|-------------|----------|-----------------|------------------|--------------|-----------------|----------------|-----------------|------------|---------------|-----------------|--------------|"
+            "|---------|----------|----------|---------|-------|---------|------------|-----------|---------|----------|----------|-------|-----------|-------|------------|------------|--------------|-----------|-----|---------|---------------|--------------|-------------------|---------|---------|------------|--------------|-------------|----------|-----------------|------------------|--------------|-----------------|----------------|-----------------|------------|---------------|-----------------|--------------|-------------|-----------|-------------|-------------------|--------------------------|"
         )?;
         for strategy_name in &self.strategy_names {
             for profile_name in &self.profile_names {
@@ -42,7 +42,7 @@ impl std::fmt::Display for ComparisonReport {
                     };
                     writeln!(
                         f,
-                        "| {:7} | {:8} | {:8} | {:7} | {:5} | {:7.3} | {:10.3} | {:9.3} | {:7.3} | {:8.3} | {:8.3} | {:5.0} | {:9.3} | {:5.0} | {:10.3} | {:10.3} | {:12.3} | {:>10} | {:3.3} | {:7.1} | {:13.3} | {:12.3} | {:17.3} | {:7.3} | {:7.3} | {:10.3} | {:12.3} | {:11.3} | {:8.3} | {:15.3} | {:16.3} | {:12.3} | {:15.3} | {:14.3} | {:15.3} | {:10.3} | {:13.3} | {:15.3} | {:12.3} |",
+                        "| {:7} | {:8} | {:8} | {:7} | {:5} | {:7.3} | {:10.3} | {:9.3} | {:7.3} | {:8.3} | {:8.3} | {:5.0} | {:9.3} | {:5.0} | {:10.3} | {:10.3} | {:12.3} | {:>10} | {:3.3} | {:7.1} | {:13.3} | {:12.3} | {:17.3} | {:7.3} | {:7.3} | {:10.3} | {:12.3} | {:11.3} | {:8.3} | {:15.3} | {:16.3} | {:12.3} | {:15.3} | {:14.3} | {:15.3} | {:10.3} | {:13.3} | {:15.3} | {:12.3} | {:11.3} | {:9.3} | {:11.3} | {:17.3} | {:24.3} |",
                         metrics.mission.as_str(),
                         metrics.scenario.as_str(),
                         strategy_name,
@@ -85,6 +85,12 @@ impl std::fmt::Display for ComparisonReport {
                         metrics.avg_urban_distance_travelled_m,
                         metrics.avg_urban_route_efficiency,
                         metrics.avg_urban_replan_count,
+                        // v0.66 Urban Search v1 metrics
+                        metrics.bus_detection_rate,
+                        metrics.avg_time_to_detect_bus,
+                        metrics.avg_false_positive_count,
+                        metrics.avg_distance_before_detection,
+                        metrics.search_success_without_violation_rate,
                     )?;
                 }
             }

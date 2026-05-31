@@ -61,10 +61,11 @@ fn create_test_replay_log(path: &std::path::Path) {
 
 fn create_urban_replay_log(path: &std::path::Path) {
     use swarm_replay::{Event, EventLogBuilder};
-    use swarm_types::{AgentId, UrbanEdgeId, UrbanNodeId};
+    use swarm_types::{AgentId, Pose, UrbanBusId, UrbanEdgeId, UrbanNodeId};
 
     let agent_id = AgentId::from("agent-0".to_owned());
     let edge_id = UrbanEdgeId::from("road-n0-n1".to_owned());
+    let bus_id = UrbanBusId::from("bus-0".to_owned());
     let mut builder = EventLogBuilder::new("urban-run", 0, "urban_patrol_small_block");
     builder.push(Event::UrbanRoutePlanned {
         agent_id: agent_id.clone(),
@@ -85,6 +86,48 @@ fn create_urban_replay_log(path: &std::path::Path) {
         tick: 10,
         segment_index: 0,
         edge_id,
+    });
+    builder.push(Event::BusObserved {
+        agent_id: agent_id.clone(),
+        tick: 10,
+        bus_id: bus_id.clone(),
+        pose: Pose {
+            x: 20.0,
+            y: 0.0,
+            ..Default::default()
+        },
+        distance_m: 0.0,
+        detector_seed: 66,
+    });
+    builder.push(Event::BusDetected {
+        agent_id: agent_id.clone(),
+        tick: 10,
+        bus_id: bus_id.clone(),
+        pose: Pose {
+            x: 20.0,
+            y: 0.0,
+            ..Default::default()
+        },
+        distance_m: 0.0,
+        detector_seed: 66,
+    });
+    builder.push(Event::BusFalsePositive {
+        agent_id: agent_id.clone(),
+        tick: 11,
+        pose: Pose {
+            x: 20.0,
+            y: 0.0,
+            ..Default::default()
+        },
+        detector_seed: 66,
+    });
+    builder.push(Event::UrbanSearchCompleted {
+        agent_id: agent_id.clone(),
+        tick: 10,
+        detected: true,
+        bus_id: Some(bus_id),
+        reason: "detected".to_owned(),
+        distance_travelled_m: 20.0,
     });
     builder.push(Event::UrbanPatrolCompleted {
         agent_id,
@@ -169,6 +212,11 @@ fn replay_cli_summary_outputs_urban_counts() {
     assert!(stdout.contains("Urban segments completed: 1"));
     assert!(stdout.contains("Urban patrol completions: 1"));
     assert!(stdout.contains("Urban completion ticks: [10]"));
+    assert!(stdout.contains("Bus observations: 1"));
+    assert!(stdout.contains("Bus detections: 1"));
+    assert!(stdout.contains("Bus false positives: 1"));
+    assert!(stdout.contains("Urban search completions: 1"));
+    assert!(stdout.contains("Urban search detection ticks: [10]"));
 }
 
 #[test]

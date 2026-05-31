@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use swarm_types::{AgentId, Pose, TaskId, UrbanEdgeId, UrbanNodeId};
+use swarm_types::{AgentId, Pose, TaskId, UrbanBusId, UrbanEdgeId, UrbanNodeId};
 
 /// Schema version for the event log format.
 pub const EVENT_LOG_SCHEMA_VERSION: &str = "0.2";
@@ -162,6 +162,37 @@ pub enum Event {
         route_length_m: f64,
         distance_travelled_m: f64,
     },
+    // M66: Urban Search v1
+    BusObserved {
+        agent_id: AgentId,
+        tick: u64,
+        bus_id: UrbanBusId,
+        pose: Pose,
+        distance_m: f64,
+        detector_seed: u64,
+    },
+    BusDetected {
+        agent_id: AgentId,
+        tick: u64,
+        bus_id: UrbanBusId,
+        pose: Pose,
+        distance_m: f64,
+        detector_seed: u64,
+    },
+    BusFalsePositive {
+        agent_id: AgentId,
+        tick: u64,
+        pose: Pose,
+        detector_seed: u64,
+    },
+    UrbanSearchCompleted {
+        agent_id: AgentId,
+        tick: u64,
+        detected: bool,
+        bus_id: Option<UrbanBusId>,
+        reason: String,
+        distance_travelled_m: f64,
+    },
 }
 
 /// Reason why a message was dropped.
@@ -262,6 +293,7 @@ mod tests {
     fn urban_events_round_trip_serde() {
         let agent_id = AgentId::from("agent-0".to_owned());
         let edge_id = UrbanEdgeId::from("road-n0-n1".to_owned());
+        let bus_id = UrbanBusId::from("bus-0".to_owned());
         let log = EventLog {
             schema_version: "0.2".to_owned(),
             run_id: "urban-run".to_owned(),
@@ -300,10 +332,49 @@ mod tests {
                     reason: "test".to_owned(),
                 },
                 Event::UrbanPatrolCompleted {
-                    agent_id,
+                    agent_id: agent_id.clone(),
                     tick: 12,
                     route_length_m: 20.0,
                     distance_travelled_m: 20.0,
+                },
+                Event::BusObserved {
+                    agent_id: agent_id.clone(),
+                    tick: 13,
+                    bus_id: bus_id.clone(),
+                    pose: Pose {
+                        x: 2.0,
+                        ..Default::default()
+                    },
+                    distance_m: 1.0,
+                    detector_seed: 9,
+                },
+                Event::BusDetected {
+                    agent_id: agent_id.clone(),
+                    tick: 13,
+                    bus_id: bus_id.clone(),
+                    pose: Pose {
+                        x: 2.0,
+                        ..Default::default()
+                    },
+                    distance_m: 1.0,
+                    detector_seed: 9,
+                },
+                Event::BusFalsePositive {
+                    agent_id: agent_id.clone(),
+                    tick: 14,
+                    pose: Pose {
+                        x: 3.0,
+                        ..Default::default()
+                    },
+                    detector_seed: 9,
+                },
+                Event::UrbanSearchCompleted {
+                    agent_id,
+                    tick: 14,
+                    detected: true,
+                    bus_id: Some(bus_id),
+                    reason: "detected".to_owned(),
+                    distance_travelled_m: 10.0,
                 },
             ],
         };
@@ -313,6 +384,8 @@ mod tests {
         assert_eq!(log, restored);
         assert!(json.contains("urban_route_planned"));
         assert!(json.contains("urban_patrol_completed"));
+        assert!(json.contains("bus_observed"));
+        assert!(json.contains("urban_search_completed"));
     }
 
     #[test]

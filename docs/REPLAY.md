@@ -34,12 +34,18 @@ Each simulation run can optionally produce an `EventLog` — a JSON file contain
 | `UrbanSegmentCompleted` | Urban route segment completed | `agent_id`, `tick`, `segment_index`, `edge_id` |
 | `UrbanViolation` | Urban judge violation | `agent_id`, `tick`, `segment_index`, `edge_id`, `pose`, `reason` |
 | `UrbanPatrolCompleted` | Urban Patrol loop completed | `agent_id`, `tick`, `route_length_m`, `distance_travelled_m` |
+| `BusObserved` | Urban Search mocked detector observed an in-range bus | `agent_id`, `tick`, `bus_id`, `pose`, `distance_m`, `detector_seed` |
+| `BusDetected` | Urban Search mocked detector confirmed a real bus detection | `agent_id`, `tick`, `bus_id`, `pose`, `distance_m`, `detector_seed` |
+| `BusFalsePositive` | Urban Search mocked detector produced a false positive | `agent_id`, `tick`, `pose`, `detector_seed` |
+| `UrbanSearchCompleted` | Urban Search run completed by detection, timeout, or violation | `agent_id`, `tick`, `detected`, `bus_id`, `reason`, `distance_travelled_m` |
 
 M65 Urban Patrol v0 adds route-progress replay events. `replay --summary`
 prints Urban route planned, segment entered/completed, violation, patrol
-completion, and completion tick counters. The events are simulation-only and do
-not imply lidar, real obstacle avoidance, PX4/SITL execution, hardware
-readiness, dynamic obstacles, bus detection, or multi-agent deconfliction.
+completion, and completion tick counters. M66 Urban Search v1 adds mocked bus
+observation/detection/false-positive/search-completion counters and detection
+ticks. The events are simulation-only and do not imply lidar, real obstacle
+avoidance, PX4/SITL execution, hardware readiness, dynamic obstacles, real
+perception, or multi-agent deconfliction.
 
 ### Backward Compatibility
 

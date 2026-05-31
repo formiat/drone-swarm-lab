@@ -89,9 +89,10 @@ Internal or experimental:
 
 ### Urban Mission Path
 
-M64 adds an Urban foundation and M65 adds the first Urban Patrol simulation.
-Future Urban Search work should reuse this road-graph path instead of starting
-with arbitrary polygons:
+M64 adds an Urban foundation, M65 adds the first Urban Patrol simulation, and
+M66 adds Urban Search v1 with a deterministic mocked bus detector. Future Urban
+work should reuse this road-graph path instead of starting with arbitrary
+polygons:
 
 - shared types live in `crates/swarm-types/src/urban.rs`;
 - deterministic Dijkstra planning and the initial judge live in
@@ -100,21 +101,32 @@ with arbitrary polygons:
   `start_node`, and planner choice in Scenario DSL;
 - M65 validates `start_node` against `route_loop.nodes[0]` and requires the
   selected alive agent pose to start within `0.01m` of that node;
+- `run_config.urban_search_state` carries M66 bus targets and mocked detector
+  settings (`detection_range_m`, `detection_probability`,
+  `false_positive_rate`, `seed`);
 - `scenarios/urban.patrol.json` is the portable fixture for catalog tests;
+- `scenarios/urban.search.json` is the portable fixture for mocked bus-search
+  catalog and regression tests;
 - metrics report route planning and patrol execution fields:
   `urban_route_length_m`, `urban_route_planned`,
   `urban_violation_count`, `urban_route_completed`,
   `urban_patrol_completed`, `urban_time_to_complete_loop`,
   `urban_distance_travelled_m`, `urban_route_efficiency`, and
   `urban_replan_count`;
+- M66 search metrics add `bus_detected`, `time_to_detect_bus`,
+  `false_positive_count`, `distance_before_detection`, and
+  `search_success_without_violation`, plus aggregate report fields with the
+  same semantics;
 - replay logs expose `UrbanRoutePlanned`, `UrbanSegmentEntered`,
-  `UrbanSegmentCompleted`, `UrbanViolation`, and `UrbanPatrolCompleted`.
+  `UrbanSegmentCompleted`, `UrbanViolation`, `UrbanPatrolCompleted`,
+  `BusObserved`, `BusDetected`, `BusFalsePositive`, and
+  `UrbanSearchCompleted`.
 
-This is intentionally a mission-level substrate. Do not add lidar/raycast, bus
-detection, dynamic obstacles, multi-agent route deconfliction, PX4/SITL export,
-hardware claims, visual UI, or arbitrary polygon dependencies as part of this
-Urban Patrol path. Those belong to later milestones with their own tests and
-docs.
+This is intentionally a mission-level substrate. The M66 detector is mocked and
+distance/probability based. Do not add real lidar/raycast, dynamic obstacles,
+multi-agent route deconfliction, PX4/SITL export, hardware claims, visual UI,
+or arbitrary polygon dependencies as part of this path. Those belong to later
+milestones with their own tests and docs.
 
 ## Add A Strategy
 

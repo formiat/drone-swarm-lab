@@ -53,6 +53,9 @@ pub fn classify_support(mission: &str, profile: &str, strategy: &str) -> Support
             SupportStatus::Experimental,
             SupportReason::DynamicThreatDrift,
         ),
+        ("urban-search", "search-static-bus", "greedy") => {
+            (SupportStatus::Supported, SupportReason::StableBaseline)
+        }
         ("emergency-mesh", _, "connectivity-aware") => (
             SupportStatus::Experimental,
             SupportReason::RelayPlacementExperimental,

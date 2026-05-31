@@ -41,6 +41,13 @@ pub struct ReplaySummary {
     pub urban_violations: usize,
     pub urban_patrol_completions: usize,
     pub urban_completion_ticks: Vec<u64>,
+    // M66 Urban Search v1
+    pub bus_observations: usize,
+    pub bus_detections: usize,
+    pub bus_false_positives: usize,
+    pub urban_search_completions: usize,
+    pub urban_search_time_to_detection_ticks: Vec<u64>,
+    pub urban_search_no_detection_count: usize,
 }
 
 /// Snapshot of the system at a specific tick.
@@ -105,7 +112,11 @@ pub fn replay(log: &EventLog) -> ReplayState {
             | Event::UrbanSegmentEntered { .. }
             | Event::UrbanSegmentCompleted { .. }
             | Event::UrbanViolation { .. }
-            | Event::UrbanPatrolCompleted { .. } => {}
+            | Event::UrbanPatrolCompleted { .. }
+            | Event::BusObserved { .. }
+            | Event::BusDetected { .. }
+            | Event::BusFalsePositive { .. }
+            | Event::UrbanSearchCompleted { .. } => {}
         }
     }
 
@@ -172,6 +183,22 @@ pub fn summarize(log: &EventLog) -> ReplaySummary {
             Event::UrbanPatrolCompleted { tick, .. } => {
                 summary.urban_patrol_completions += 1;
                 summary.urban_completion_ticks.push(*tick);
+            }
+            Event::BusObserved { .. } => {
+                summary.bus_observations += 1;
+            }
+            Event::BusDetected { tick, .. } => {
+                summary.bus_detections += 1;
+                summary.urban_search_time_to_detection_ticks.push(*tick);
+            }
+            Event::BusFalsePositive { .. } => {
+                summary.bus_false_positives += 1;
+            }
+            Event::UrbanSearchCompleted { detected, .. } => {
+                summary.urban_search_completions += 1;
+                if !detected {
+                    summary.urban_search_no_detection_count += 1;
+                }
             }
             _ => {}
         }
@@ -431,6 +458,7 @@ mod tests {
         let mut builder = EventLogBuilder::new("urban", 0, "urban_patrol_small_block");
         let agent_id = AgentId::from("agent-0".to_owned());
         let edge_id = UrbanEdgeId::from("road-n0-n1".to_owned());
+        let bus_id = swarm_types::UrbanBusId::from("bus-0".to_owned());
         builder.push(Event::UrbanRoutePlanned {
             agent_id: agent_id.clone(),
             tick: 0,
@@ -460,10 +488,48 @@ mod tests {
             reason: "test".to_owned(),
         });
         builder.push(Event::UrbanPatrolCompleted {
-            agent_id,
+            agent_id: agent_id.clone(),
             tick: 12,
             route_length_m: 20.0,
             distance_travelled_m: 20.0,
+        });
+        builder.push(Event::BusObserved {
+            agent_id: agent_id.clone(),
+            tick: 13,
+            bus_id: bus_id.clone(),
+            pose: Pose::default(),
+            distance_m: 1.0,
+            detector_seed: 9,
+        });
+        builder.push(Event::BusDetected {
+            agent_id: agent_id.clone(),
+            tick: 13,
+            bus_id: bus_id.clone(),
+            pose: Pose::default(),
+            distance_m: 1.0,
+            detector_seed: 9,
+        });
+        builder.push(Event::BusFalsePositive {
+            agent_id: agent_id.clone(),
+            tick: 14,
+            pose: Pose::default(),
+            detector_seed: 9,
+        });
+        builder.push(Event::UrbanSearchCompleted {
+            agent_id: agent_id.clone(),
+            tick: 13,
+            detected: true,
+            bus_id: Some(bus_id),
+            reason: "detected".to_owned(),
+            distance_travelled_m: 10.0,
+        });
+        builder.push(Event::UrbanSearchCompleted {
+            agent_id,
+            tick: 20,
+            detected: false,
+            bus_id: None,
+            reason: "timeout".to_owned(),
+            distance_travelled_m: 40.0,
         });
 
         let summary = summarize(&builder.build());
@@ -473,6 +539,12 @@ mod tests {
         assert_eq!(summary.urban_violations, 1);
         assert_eq!(summary.urban_patrol_completions, 1);
         assert_eq!(summary.urban_completion_ticks, vec![12]);
+        assert_eq!(summary.bus_observations, 1);
+        assert_eq!(summary.bus_detections, 1);
+        assert_eq!(summary.bus_false_positives, 1);
+        assert_eq!(summary.urban_search_completions, 2);
+        assert_eq!(summary.urban_search_time_to_detection_ticks, vec![13]);
+        assert_eq!(summary.urban_search_no_detection_count, 1);
     }
 
     #[test]

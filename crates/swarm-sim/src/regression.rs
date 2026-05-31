@@ -254,6 +254,11 @@ fn extract_metric(metrics: &AggregateMetrics, metric: &str) -> f64 {
         "wasted_travel" => metrics.avg_wasted_travel,
         "return_reserve" => metrics.avg_return_reserve,
         "infeasible_routes" => metrics.avg_infeasible_routes,
+        "bus_detection_rate" => metrics.bus_detection_rate,
+        "time_to_detect_bus" => metrics.avg_time_to_detect_bus,
+        "false_positive_count" => metrics.avg_false_positive_count,
+        "distance_before_detection" => metrics.avg_distance_before_detection,
+        "search_success_without_violation" => metrics.search_success_without_violation_rate,
         _ => 0.0,
     }
 }
@@ -873,6 +878,38 @@ pub fn all_suites() -> Vec<RegressionSuite> {
             }],
             mode: SuiteMode::Smoke,
             realism: true,
+        },
+        // Urban Search — M66 simulation-only search fixture with a mocked bus detector.
+        RegressionSuite {
+            name: "urban_search_static_bus_greedy".to_owned(),
+            group: SuiteGroup::Smoke,
+            mission: "urban-search".to_owned(),
+            profile: "search-static-bus".to_owned(),
+            strategy: "greedy".to_owned(),
+            thresholds: vec![
+                Threshold {
+                    metric: "success_rate".to_owned(),
+                    min: Some(1.0),
+                    max: None,
+                },
+                Threshold {
+                    metric: "bus_detection_rate".to_owned(),
+                    min: Some(1.0),
+                    max: None,
+                },
+                Threshold {
+                    metric: "search_success_without_violation".to_owned(),
+                    min: Some(1.0),
+                    max: None,
+                },
+                Threshold {
+                    metric: "false_positive_count".to_owned(),
+                    min: None,
+                    max: Some(0.0),
+                },
+            ],
+            mode: SuiteMode::Smoke,
+            realism: false,
         },
     ]
 }
