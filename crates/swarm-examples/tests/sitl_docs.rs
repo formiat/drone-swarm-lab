@@ -294,6 +294,8 @@ fn m64_docs_describe_urban_foundation_boundaries() {
         "M65",
         "UrbanMap",
         "scenarios/urban.patrol.json",
+        "start_node",
+        "0.01m",
         "AABB static obstacle judge",
         "no bus detector",
         "lidar",
@@ -321,6 +323,8 @@ fn m64_docs_describe_urban_foundation_boundaries() {
         "TaskKind::Waypoint",
         "M65",
         "Completion means",
+        "start_node",
+        "0.01m",
     ] {
         assert!(
             SCENARIO_DSL.contains(required),

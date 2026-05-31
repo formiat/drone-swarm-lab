@@ -1809,6 +1809,54 @@ impl ScenarioRunner {
             );
         };
         let agent_id = agent.id.clone();
+        let start_node = match crate::urban::route_start_node(
+            &urban_state.map,
+            &urban_state.route_loop,
+            &route,
+            urban_state.start_node.as_ref(),
+        ) {
+            Ok(start_node) => start_node,
+            Err(error) => {
+                return (
+                    urban_patrol_metrics(
+                        scenario,
+                        0,
+                        false,
+                        true,
+                        route.total_length_m,
+                        0,
+                        false,
+                        None,
+                        0.0,
+                        0.0,
+                        Some(format!("urban_patrol_invalid_start: {error}")),
+                    ),
+                    log_builder.map(|builder| builder.build()),
+                );
+            }
+        };
+        let start_pose_distance = agent.pose.distance_to(&start_node.pose);
+        if start_pose_distance > crate::urban::URBAN_START_POSE_TOLERANCE_M {
+            return (
+                urban_patrol_metrics(
+                    scenario,
+                    0,
+                    false,
+                    true,
+                    route.total_length_m,
+                    0,
+                    false,
+                    None,
+                    0.0,
+                    0.0,
+                    Some(format!(
+                        "urban_patrol_invalid_start: agent '{}' starts {:.3}m from start_node '{}'",
+                        agent.id, start_pose_distance, start_node.id
+                    )),
+                ),
+                log_builder.map(|builder| builder.build()),
+            );
+        }
 
         if let Some(ref mut builder) = log_builder {
             builder.push(swarm_replay::Event::UrbanRoutePlanned {
@@ -1820,6 +1868,11 @@ impl ScenarioRunner {
                     .map(|segment| segment.edge_id.clone())
                     .collect(),
                 route_length_m: route.total_length_m,
+            });
+            builder.push(swarm_replay::Event::PoseUpdated {
+                agent_id: agent_id.clone(),
+                pose: start_node.pose,
+                tick: 0,
             });
         }
 
@@ -2755,7 +2808,7 @@ mod tests {
                 route_loop: UrbanRouteLoop {
                     nodes: vec![n0.clone(), n1, n2, n3, n0],
                 },
-                start_node: None,
+                start_node: Some(UrbanNodeId::from("n0".to_owned())),
                 planner: "dijkstra".to_owned(),
             }),
             ..config(vec![])
@@ -2780,6 +2833,41 @@ mod tests {
         assert_eq!(metrics.urban_replan_count, 0);
         assert!(metrics.success);
         assert!(metrics.total_ticks < 50);
+    }
+
+    #[test]
+    fn urban_patrol_rejects_mismatched_start_node() {
+        let (scenario, mut run_config) = urban_test_run_config(50, vec![]);
+        run_config.urban_state.as_mut().unwrap().start_node =
+            Some(UrbanNodeId::from("n1".to_owned()));
+
+        let metrics = ScenarioRunner::run(&scenario, run_config);
+
+        assert!(!metrics.success);
+        assert!(!metrics.urban_patrol_completed);
+        assert!(metrics
+            .unsupported_reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("start_node")));
+    }
+
+    #[test]
+    fn urban_patrol_rejects_agent_pose_away_from_start_node() {
+        let (mut scenario, run_config) = urban_test_run_config(50, vec![]);
+        scenario.agents[0].pose = Pose {
+            x: 5.0,
+            y: 0.0,
+            ..Default::default()
+        };
+
+        let metrics = ScenarioRunner::run(&scenario, run_config);
+
+        assert!(!metrics.success);
+        assert!(!metrics.urban_patrol_completed);
+        assert!(metrics
+            .unsupported_reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("starts")));
     }
 
     #[test]

@@ -92,14 +92,18 @@ executable one-agent patrol simulation. The DSL uses
   no-fly rectangles.
 - `route_loop.nodes[]` — ordered graph node ids expanded through deterministic
   Dijkstra shortest paths.
+- `start_node` — optional but validated when present; in M65 it must exist in
+  the map and match `route_loop.nodes[0]`.
 - `planner` — currently must be `"dijkstra"`.
 
 The fixture still uses `TaskKind::Waypoint` placeholder tasks for compatibility,
 but Urban Patrol completion is now route-based rather than task-assignment
 based. Completion means the selected scout traverses every planned route
 segment in order before timeout with zero Urban judge violations. Failure means
-timeout or a static/execution judge violation. M65 v0 has no replanning, so
-`urban_replan_count = 0`.
+timeout, a static/execution judge violation, or an invalid start contract. The
+selected alive agent must start within `0.01m` of the validated start node pose;
+M65 v0 does not infer or silently teleport from an arbitrary `agent.pose`. M65
+v0 has no replanning, so `urban_replan_count = 0`.
 
 It does not implement lidar/raycast, bus detection, dynamic obstacles,
 multi-agent route conflicts, arbitrary polygons, PX4/SITL export, hardware

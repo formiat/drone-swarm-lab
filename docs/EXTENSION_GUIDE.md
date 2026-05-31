@@ -96,8 +96,10 @@ with arbitrary polygons:
 - shared types live in `crates/swarm-types/src/urban.rs`;
 - deterministic Dijkstra planning and the initial judge live in
   `crates/swarm-sim/src/urban.rs`;
-- `run_config.urban_state` carries the road graph, route loop and planner
-  choice in Scenario DSL;
+- `run_config.urban_state` carries the road graph, route loop, optional
+  `start_node`, and planner choice in Scenario DSL;
+- M65 validates `start_node` against `route_loop.nodes[0]` and requires the
+  selected alive agent pose to start within `0.01m` of that node;
 - `scenarios/urban.patrol.json` is the portable fixture for catalog tests;
 - metrics report route planning and patrol execution fields:
   `urban_route_length_m`, `urban_route_planned`,

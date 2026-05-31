@@ -4,9 +4,11 @@ use std::error::Error;
 use std::fmt;
 
 use swarm_types::{
-    Pose, UrbanEdge, UrbanMap, UrbanNodeId, UrbanPlannedRoute, UrbanRouteLoop, UrbanRouteSegment,
-    UrbanViolation,
+    Pose, UrbanEdge, UrbanMap, UrbanNode, UrbanNodeId, UrbanPlannedRoute, UrbanRouteLoop,
+    UrbanRouteSegment, UrbanViolation,
 };
+
+pub const URBAN_START_POSE_TOLERANCE_M: f64 = 0.01;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum UrbanRouteError {
@@ -183,6 +185,47 @@ pub fn expand_route_loop(
         segments.extend(route.segments);
     }
     Ok(planned_route(segments))
+}
+
+/// Resolve and validate the executable start node for an Urban patrol route.
+pub fn route_start_node<'a>(
+    map: &'a UrbanMap,
+    route_loop: &UrbanRouteLoop,
+    route: &UrbanPlannedRoute,
+    start_node: Option<&UrbanNodeId>,
+) -> Result<&'a UrbanNode, UrbanRouteError> {
+    let route_start_id = route
+        .segments
+        .first()
+        .map(|segment| &segment.from)
+        .or_else(|| route_loop.nodes.first())
+        .ok_or_else(|| UrbanRouteError::InvalidInput {
+            field: "route_loop.nodes".to_owned(),
+            message: "Urban route loop must define a start node".to_owned(),
+        })?;
+
+    if let Some(start_node) = start_node {
+        if map.node(start_node).is_none() {
+            return Err(UrbanRouteError::InvalidInput {
+                field: "start_node".to_owned(),
+                message: format!("Unknown urban start_node '{start_node}'"),
+            });
+        }
+        if start_node != route_start_id {
+            return Err(UrbanRouteError::InvalidInput {
+                field: "start_node".to_owned(),
+                message: format!(
+                    "Urban start_node '{start_node}' must match route_loop.nodes[0] '{route_start_id}' in M65"
+                ),
+            });
+        }
+    }
+
+    map.node(route_start_id)
+        .ok_or_else(|| UrbanRouteError::InvalidInput {
+            field: "route_loop.nodes[0]".to_owned(),
+            message: format!("Unknown urban node id '{route_start_id}'"),
+        })
 }
 
 /// Judge static validity of a planned Urban route.

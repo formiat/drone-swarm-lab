@@ -675,6 +675,12 @@ traversed before timeout with zero Urban judge violations. Replay logs include
 `UrbanPatrolCompleted`; reports include patrol completion, time, distance,
 route efficiency, violation count, and `urban_replan_count = 0`.
 
+`run_config.urban_state.start_node` is an enforced start contract in M65: when
+present, it must exist in the map and match `route_loop.nodes[0]`. The selected
+alive agent must start within `0.01m` of that node pose, so an inconsistent
+`agent.pose` fails validation/runtime instead of producing a false successful
+patrol.
+
 This remains simulation-only: it does not implement lidar, bus detection,
 dynamic obstacles, multi-agent route conflicts, PX4/SITL export, hardware
 readiness, or a visual UI.

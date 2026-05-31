@@ -232,6 +232,17 @@ pub fn validate_mission_specific(entry: &ScenarioSuiteEntry) -> Vec<ValidationEr
                 }
                 match crate::urban::expand_route_loop(&urban_state.map, &urban_state.route_loop) {
                     Ok(route) => {
+                        match crate::urban::route_start_node(
+                            &urban_state.map,
+                            &urban_state.route_loop,
+                            &route,
+                            urban_state.start_node.as_ref(),
+                        ) {
+                            Ok(start_node) => {
+                                validate_urban_start_pose(entry, start_node.pose, &mut errors);
+                            }
+                            Err(error) => push_urban_state_error(&mut errors, error),
+                        }
                         let violations = crate::urban::judge_route(&urban_state.map, &route);
                         for violation in violations {
                             errors.push(ValidationError {
@@ -363,6 +374,50 @@ pub fn validate_mission_specific(entry: &ScenarioSuiteEntry) -> Vec<ValidationEr
     }
 
     errors
+}
+
+fn push_urban_state_error(errors: &mut Vec<ValidationError>, error: crate::urban::UrbanRouteError) {
+    match error {
+        crate::urban::UrbanRouteError::InvalidInput { field, message } => {
+            errors.push(ValidationError {
+                field: format!("run_config.urban_state.{field}"),
+                message,
+            });
+        }
+        crate::urban::UrbanRouteError::NoRoute { .. } => {
+            errors.push(ValidationError {
+                field: "run_config.urban_state.route_loop".to_owned(),
+                message: error.to_string(),
+            });
+        }
+    }
+}
+
+fn validate_urban_start_pose(
+    entry: &ScenarioSuiteEntry,
+    start_pose: swarm_types::Pose,
+    errors: &mut Vec<ValidationError>,
+) {
+    let Some((agent_index, agent)) = entry
+        .scenario
+        .agents
+        .iter()
+        .enumerate()
+        .find(|(_, agent)| matches!(agent.health, swarm_types::Health::Alive))
+    else {
+        return;
+    };
+    let distance = agent.pose.distance_to(&start_pose);
+    if distance > crate::urban::URBAN_START_POSE_TOLERANCE_M {
+        errors.push(ValidationError {
+            field: format!("scenario.agents[{agent_index}].pose"),
+            message: format!(
+                "Urban Patrol selected agent must start within {:.2}m of start_node pose; distance was {:.3}m",
+                crate::urban::URBAN_START_POSE_TOLERANCE_M,
+                distance
+            ),
+        });
+    }
 }
 
 fn mission_allows_task_kind(mission: &str, kind: &swarm_types::TaskKind) -> bool {
@@ -803,6 +858,35 @@ mod tests {
         assert!(errors
             .iter()
             .any(|error| error.field == "run_config.urban_state.route_loop.nodes[3]"));
+    }
+
+    #[test]
+    fn validate_urban_patrol_rejects_start_node_mismatch() {
+        let mut entry = make_urban_entry();
+        entry.run_config.urban_state.as_mut().unwrap().start_node =
+            Some(UrbanNodeId::from("n1".to_owned()));
+
+        let errors = validate_entry(&entry);
+
+        assert!(errors
+            .iter()
+            .any(|error| error.field == "run_config.urban_state.start_node"));
+    }
+
+    #[test]
+    fn validate_urban_patrol_rejects_agent_pose_away_from_start_node() {
+        let mut entry = make_urban_entry();
+        entry.scenario.agents[0].pose = Pose {
+            x: 5.0,
+            y: 0.0,
+            ..Default::default()
+        };
+
+        let errors = validate_entry(&entry);
+
+        assert!(errors
+            .iter()
+            .any(|error| error.field == "scenario.agents[0].pose"));
     }
 
     #[test]
