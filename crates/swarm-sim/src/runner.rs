@@ -253,11 +253,14 @@ fn compute_mission_success(
             && all_expected_failures_detected
             && max_task_unassigned_ticks <= max_unassigned_ticks_config;
 
-        // Detect unsupported strategies for SAR
+        // Detect unsupported strategies for SAR.
+        // cbba: delayed reconvergence manifests as unassigned tasks after agent loss.
+        // centralized: static pre-plan assigns all tasks upfront but cannot adapt to
+        // dynamic belief updates, so the check does not require !all_tasks_assigned.
         if let Some(ref strategy) = strategy_name {
-            if !sar_success && !all_tasks_assigned {
+            if !sar_success {
                 match strategy.as_str() {
-                    "cbba" => {
+                    "cbba" if !all_tasks_assigned => {
                         return (false, Some("delayed_reconvergence".to_owned()));
                     }
                     "centralized" => {
