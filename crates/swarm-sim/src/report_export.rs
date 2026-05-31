@@ -496,6 +496,27 @@ pub fn generate_focused_report(reports: &[(String, crate::ComparisonReport)]) ->
                     }
                 }
             }
+            "urban-patrol" => {
+                out.push_str("| Strategy | Profile | Success | Completion | UrbanRouteLength | UrbanPlanned | UrbanViolations | UrbanCompleted |\n");
+                out.push_str("|---|---|---|---|---|---|---|---|\n");
+                for strategy in &report.strategy_names {
+                    for profile in &report.profile_names {
+                        if let Some(m) = report.results.get(&(strategy.clone(), profile.clone())) {
+                            out.push_str(&format!(
+                                "| {} | {} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} |\n",
+                                strategy,
+                                profile,
+                                m.success_rate,
+                                m.avg_task_completion_rate,
+                                m.avg_urban_route_length_m,
+                                m.urban_route_planned_rate,
+                                m.avg_urban_violation_count,
+                                m.urban_route_completed_rate
+                            ));
+                        }
+                    }
+                }
+            }
             _ => {
                 // Generic table for coverage, safety, cbba_stress, etc.
                 out.push_str("| Strategy | Profile | Success | Completion | Coverage | Messages | SafetyViolations | ConvP50 | ConvP95 | BundleDist |\n");
@@ -894,6 +915,23 @@ mod tests {
         }
     }
 
+    fn make_urban_report() -> ComparisonReport {
+        let mut report = make_report();
+        report.mission_names = vec!["urban-patrol".to_owned()];
+        report.scenario_names = vec!["urban_patrol_small_block".to_owned()];
+        let metrics = report
+            .results
+            .get_mut(&("greedy".to_owned(), "ideal".to_owned()))
+            .expect("test report should contain greedy/ideal metrics");
+        metrics.mission = "urban-patrol".to_owned();
+        metrics.scenario = "urban_patrol_small_block".to_owned();
+        metrics.avg_urban_route_length_m = 80.0;
+        metrics.urban_route_planned_rate = 1.0;
+        metrics.avg_urban_violation_count = 0.0;
+        metrics.urban_route_completed_rate = 0.0;
+        report
+    }
+
     #[test]
     fn json_export_contains_benchmark_run_id() {
         let report = make_report();
@@ -968,6 +1006,17 @@ mod tests {
     }
 
     #[test]
+    fn export_markdown_contains_urban_metric_columns() {
+        let report = make_urban_report();
+        let md = export_markdown(&report);
+        assert!(md.contains("UrbanRouteLength"));
+        assert!(md.contains("UrbanPlanned"));
+        assert!(md.contains("UrbanViolations"));
+        assert!(md.contains("UrbanCompleted"));
+        assert!(md.contains("80.000"));
+    }
+
+    #[test]
     fn benchmark_manifest_new_has_git_commit() {
         let manifest = BenchmarkManifest::new(
             "test_suite",
@@ -999,6 +1048,18 @@ mod tests {
         let focused = generate_focused_report(&[("sar".to_owned(), report)]);
         assert!(focused.contains("| Strategy"));
         assert!(focused.contains("| Profile"));
+    }
+
+    #[test]
+    fn focused_report_has_urban_patrol_metrics() {
+        let report = make_urban_report();
+        let focused = generate_focused_report(&[("urban-patrol".to_owned(), report)]);
+        assert!(focused.contains("## urban-patrol"));
+        assert!(focused.contains("UrbanRouteLength"));
+        assert!(focused.contains("UrbanPlanned"));
+        assert!(focused.contains("UrbanViolations"));
+        assert!(focused.contains("UrbanCompleted"));
+        assert!(focused.contains("80.000"));
     }
 
     #[test]
