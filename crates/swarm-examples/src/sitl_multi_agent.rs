@@ -71,7 +71,7 @@ pub struct MultiAgentSitlManifestAgent {
     pub standalone_command: Vec<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskOwnershipSummary {
     pub total_pose_tasks: usize,
     pub assigned_task_count: usize,

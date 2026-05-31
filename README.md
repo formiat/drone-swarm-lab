@@ -155,8 +155,8 @@ cargo run -p swarm-examples --bin sitl_supervisor --features mavlink-transport -
   --safety-config path/to/sitl-safety.json \
   --timeout 5 --telemetry-timeout 10 --no-progress-timeout 60 \
   --reupload-on-failure \
-  --run-report target/sitl/multi-agent-report.json \
-  --replay-log target/sitl/multi-agent.sitl-log.json
+  --output-dir target/sitl \
+  --run-id local-multi-agent-sih
 ```
 
 Expected: `sitl_supervisor` validates every configured agent before upload,
@@ -170,6 +170,17 @@ and before a pending survivor starts. It is not active in-flight survivor
 replacement, and real hardware is not claimed.
 The common event log uses per-agent mission/task/failure events with `agent_id`,
 so repeated waypoint sequence numbers remain attributable to the correct agent.
+
+M60 hardens this supervisor workflow for repeatable local PX4/SIH research
+runs. `--output-dir` creates a stable run directory containing
+`manifest.json`, `events.sitl-log.json`, `run-report.json` for connection
+execute mode, and `replay-summary.txt`; `--run-id` fixes the directory and log
+identity; `--force` is required to overwrite existing artifacts. The supervisor
+now returns stable exit codes: `2` for CLI/config errors, `3` for safety or
+hardware-candidate guard failures, `20` for unavailable endpoint/feature gates,
+`21` for upload or command rejection, `22` for heartbeat/telemetry/progress
+timeouts, `23` for abort failures, `30` for runtime partial failure after start,
+and `40` for artifact write or overwrite-policy failures.
 
 ### 13. Upload or execute a mission in PX4 SITL
 
@@ -240,6 +251,7 @@ cargo run -p swarm-examples --bin replay -- \
 | SITL Portable Regression | ✅ Stable | M50 | `portable_sitl_regression_smoke` and `sitl_docs` validate dry-run/mock/safety/docs without external PX4 |
 | Dynamic Reallocation | ✅ Stable / ⚠️ M59 partial | M51/M59 | Heartbeat timeout releases unfinished tasks from lost agents, recovers assignable tasks on survivors, exposes runtime metrics and SITL reallocation events; `sitl_supervisor --mock` emits the failure/reallocation flow; M59 adds a controlled one-shot live-supervisor foundation with pending survivor mission replacement behind `--reupload-on-failure`; the full stepwise live loop remains follow-up work |
 | Multi-Agent SITL Foundation | ✅ Stable / ⚠️ M59 partial | M52/M58/M59 | `multi_sitl.v1` config, public fixtures, `sitl_supervisor` dry-run/mock orchestration, per-agent task subsets, MAVLink system/component mapping, duplicate ownership rejection, two-instance PX4 SIH upload-only evidence, experimental local multi-agent PX4/SIH execute supervisor output, and controlled pending-survivor mission replacement foundation after a failed agent |
+| PX4/SIH Supervisor Hardening | ✅ Stable local workflow | M60 | `sitl_supervisor --output-dir`, `--run-id`, `--force`, checked artifact overwrite policy, stable exit codes, `task_ownership` / `events_summary` / `final_status` / `limitations` in `sitl_multi_agent_run_report.v1`, and replay summary artifacts for repeatable local PX4/SIH runs |
 | Hardware Readiness Boundary | ✅ Stable | M53 | `docs/HARDWARE_READINESS.md`, connection classes, and `--allow-hardware-candidate` guard remote/wildcard/serial hardware candidates; this documents the boundary, not hardware readiness |
 | Supervisor Controller Boundary | ✅ Stable | M57 | `sitl_supervisor` mock orchestration is split into a testable internal supervisor module with `AgentController`, `MockAgentController`, fake-controller coverage, and assertable `SupervisorMetrics`; M58 adds the separate live PX4/SIH execute controller path |
 | Replay / Debuggability | ✅ Stable | M23 | `replay` CLI, ASCII visualization |
@@ -575,6 +587,7 @@ See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known l
 | M57 | ✅ | Supervisor Controller Boundary: `sitl_supervisor` mock state machine extracted behind internal controller boundary, fake-controller transitions covered, metrics made assertable, CLI compatibility tests expanded |
 | M58 | ✅ | Live Multi-Agent PX4/SIH Execute Orchestration: `sitl_supervisor --connection --execute`, per-agent safety/hardware gates, sequential local PX4/SIH agent execution, common event log, structured multi-agent run report, and portable fake-controller/CLI coverage |
 | M59 | ⚠️ Partial foundation | Live PX4/SIH Failure & Reallocation foundation: explicit `--reupload-on-failure`, runtime release/reassignment events, pending survivor mission replacement planning, report reallocation metrics, and portable fake live-controller coverage; full stepwise live loop, active-survivor abort/clear/upload/execute, and manual real PX4/SIH failure artifact remain separate |
+| M60 | ✅ | PX4/SIH Supervisor Hardening: repeatable local `sitl_supervisor` run layout with `--output-dir` / `--run-id`, explicit `--force` overwrite policy, stable exit codes, report summary fields, replay summaries, and docs/tests for troubleshooting; not hardware readiness |
 
 ---
 

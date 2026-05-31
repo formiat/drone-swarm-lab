@@ -1,10 +1,12 @@
-use std::path::Path;
-use std::time::Duration;
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use swarm_examples::sitl_connection::SitlConnectionLifecycle;
 use swarm_examples::sitl_multi_agent::{
     build_multi_agent_manifest, load_multi_agent_config, MultiAgentSitlManifest,
 };
+use swarm_examples::sitl_observability::{format_sitl_summary, read_sitl_event_log};
 use swarm_examples::sitl_plan::{load_sitl_suite, SitlError};
 use swarm_examples::sitl_supervisor::{
     run_live_supervisor, run_mock_supervisor, SupervisorLiveConfig, SupervisorMetrics,
@@ -25,6 +27,9 @@ struct CliArgs {
     manifest: Option<String>,
     replay_log: Option<String>,
     run_report: Option<String>,
+    output_dir: Option<String>,
+    run_id: Option<String>,
+    force: bool,
     safety_config: Option<String>,
     fail_agent: Option<String>,
     fail_after_ticks: u64,
@@ -39,13 +44,26 @@ struct CliArgs {
     reupload_on_failure: bool,
 }
 
-fn main() {
-    if let Err(error) = run() {
-        eprintln!("error: {error}");
-        eprintln!(
-            "usage: sitl_supervisor --dry-run|--mock|--connection --scenario <path> --config <path> [--manifest <path>] [--replay-log <path>] [--fail-agent <id>] [--fail-after-ticks N] [--heartbeat-timeout-ticks N] [--max-ticks N] [--execute] [--run-report <path>] [--safety-config <path>] [--timeout <duration>] [--telemetry-timeout <duration>] [--no-progress-timeout <duration>] [--no-arm] [--abort-after <duration>] [--allow-hardware-candidate] [--reupload-on-failure]"
-        );
-        std::process::exit(1);
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct OutputPaths {
+    manifest: Option<PathBuf>,
+    replay_log: Option<PathBuf>,
+    run_report: Option<PathBuf>,
+    replay_summary: Option<PathBuf>,
+    run_id: Option<String>,
+}
+
+fn main() -> ExitCode {
+    match run() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            let code = supervisor_exit_code(&error);
+            eprintln!("error: {error}");
+            if prints_usage(&error) {
+                eprintln!("{}", usage());
+            }
+            ExitCode::from(code)
+        }
     }
 }
 
@@ -54,30 +72,43 @@ fn run() -> Result<(), SitlError> {
     let suite = load_sitl_suite(&cli.scenario)?;
     let config = load_multi_agent_config(&cli.config)?;
     let manifest = build_multi_agent_manifest(&suite, &cli.scenario, &cli.config, &config)?;
+    let output_paths = resolve_output_paths(&cli, &manifest);
+    ensure_output_paths_available(&output_paths, cli.force)?;
 
     match cli.mode {
         SupervisorMode::DryRun => {
-            write_or_print_manifest(cli.manifest.as_deref(), &manifest)?;
+            write_or_print_manifest(output_paths.manifest.as_deref(), &manifest, cli.force)?;
         }
         SupervisorMode::Mock => {
             let mock_config = SupervisorMockConfig {
                 scenario_path: cli.scenario.clone(),
-                replay_log: cli.replay_log.clone(),
+                replay_log: output_paths
+                    .replay_log
+                    .as_ref()
+                    .map(|path| path.to_string_lossy().into_owned()),
+                run_id: output_paths.run_id.clone(),
                 fail_agent: cli.fail_agent.clone(),
                 fail_after_ticks: cli.fail_after_ticks,
                 heartbeat_timeout_ticks: cli.heartbeat_timeout_ticks,
                 max_ticks: cli.max_ticks,
             };
             let _: SupervisorMetrics = run_mock_supervisor(&suite, &mock_config, &manifest)?;
-            write_or_print_manifest(cli.manifest.as_deref(), &manifest)?;
+            write_or_print_manifest(output_paths.manifest.as_deref(), &manifest, cli.force)?;
+            write_replay_summary_if_requested(&output_paths, cli.force)?;
         }
         SupervisorMode::Connection => {
             let live_config = SupervisorLiveConfig {
                 scenario_path: cli.scenario.clone(),
                 config_path: cli.config.clone(),
                 safety_config_path: cli.safety_config.clone(),
-                replay_log: cli.replay_log.clone(),
-                run_report: cli.run_report.clone(),
+                replay_log: output_paths
+                    .replay_log
+                    .as_ref()
+                    .map(|path| path.to_string_lossy().into_owned()),
+                run_report: output_paths
+                    .run_report
+                    .as_ref()
+                    .map(|path| path.to_string_lossy().into_owned()),
                 lifecycle: SitlConnectionLifecycle {
                     timeout: cli.timeout,
                     telemetry_timeout: cli.telemetry_timeout,
@@ -87,10 +118,22 @@ fn run() -> Result<(), SitlError> {
                 },
                 allow_hardware_candidate: cli.allow_hardware_candidate,
                 reupload_on_failure: cli.reupload_on_failure,
-                run_id: None,
+                run_id: output_paths.run_id.clone(),
             };
-            let _ = run_live_supervisor(&suite, &live_config, &manifest)?;
-            write_or_print_manifest(cli.manifest.as_deref(), &manifest)?;
+            let report = run_live_supervisor(&suite, &live_config, &manifest)?;
+            write_or_print_manifest(output_paths.manifest.as_deref(), &manifest, cli.force)?;
+            write_replay_summary_if_requested(&output_paths, cli.force)?;
+            if !matches!(
+                report.final_status.as_str(),
+                "completed" | "completed_with_reallocation"
+            ) {
+                return Err(SitlError::ConnectionFailed {
+                    message: format!(
+                        "supervisor run finished with final_status '{}'",
+                        report.final_status
+                    ),
+                });
+            }
         }
     }
     Ok(())
@@ -104,6 +147,9 @@ fn parse_args() -> Result<CliArgs, SitlError> {
     let mut manifest = None;
     let mut replay_log = None;
     let mut run_report = None;
+    let mut output_dir = None;
+    let mut run_id = None;
+    let mut force = false;
     let mut safety_config = None;
     let mut fail_agent = None;
     let mut fail_after_ticks = 1;
@@ -172,6 +218,25 @@ fn parse_args() -> Result<CliArgs, SitlError> {
                         .clone(),
                 );
             }
+            "--output-dir" => {
+                i += 1;
+                output_dir = Some(
+                    args.get(i)
+                        .ok_or(SitlError::MissingArgument {
+                            name: "--output-dir",
+                        })?
+                        .clone(),
+                );
+            }
+            "--run-id" => {
+                i += 1;
+                run_id = Some(
+                    args.get(i)
+                        .ok_or(SitlError::MissingArgument { name: "--run-id" })?
+                        .clone(),
+                );
+            }
+            "--force" => force = true,
             "--safety-config" => {
                 i += 1;
                 safety_config = Some(
@@ -295,6 +360,9 @@ fn parse_args() -> Result<CliArgs, SitlError> {
         manifest,
         replay_log,
         run_report,
+        output_dir,
+        run_id,
+        force,
         safety_config,
         fail_agent,
         fail_after_ticks,
@@ -393,6 +461,201 @@ fn validate_cli_arg_combinations(args: CliValidationArgs<'_>) -> Result<(), Sitl
     Ok(())
 }
 
+fn resolve_output_paths(cli: &CliArgs, manifest: &MultiAgentSitlManifest) -> OutputPaths {
+    let generated_run_id = cli.output_dir.as_ref().map(|_| {
+        cli.run_id
+            .clone()
+            .unwrap_or_else(|| generated_run_id(manifest))
+    });
+    let run_id = cli.run_id.clone().or(generated_run_id.clone());
+
+    if let Some(output_dir) = &cli.output_dir {
+        let base = PathBuf::from(output_dir).join(generated_run_id.as_deref().unwrap());
+        let replay_log = cli.replay_log.as_ref().map(PathBuf::from).or_else(|| {
+            (cli.mode != SupervisorMode::DryRun).then(|| base.join("events.sitl-log.json"))
+        });
+        return OutputPaths {
+            manifest: cli
+                .manifest
+                .as_ref()
+                .map(PathBuf::from)
+                .or_else(|| Some(base.join("manifest.json"))),
+            replay_summary: replay_log.as_ref().map(|_| base.join("replay-summary.txt")),
+            replay_log,
+            run_report: cli.run_report.as_ref().map(PathBuf::from).or_else(|| {
+                (cli.mode == SupervisorMode::Connection).then(|| base.join("run-report.json"))
+            }),
+            run_id,
+        };
+    }
+
+    OutputPaths {
+        manifest: cli.manifest.as_ref().map(PathBuf::from),
+        replay_log: cli.replay_log.as_ref().map(PathBuf::from),
+        run_report: cli.run_report.as_ref().map(PathBuf::from),
+        replay_summary: None,
+        run_id,
+    }
+}
+
+fn generated_run_id(manifest: &MultiAgentSitlManifest) -> String {
+    let seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0);
+    format!(
+        "sitl-supervisor-{}-{seconds}",
+        sanitize_run_id_component(&manifest.scenario_name)
+    )
+}
+
+fn sanitize_run_id_component(value: &str) -> String {
+    let mut sanitized = String::new();
+    for ch in value.chars() {
+        if ch.is_ascii_alphanumeric() {
+            sanitized.push(ch.to_ascii_lowercase());
+        } else if ch == '-' || ch == '_' {
+            sanitized.push(ch);
+        } else if !sanitized.ends_with('-') {
+            sanitized.push('-');
+        }
+    }
+    let sanitized = sanitized.trim_matches('-');
+    if sanitized.is_empty() {
+        "run".to_owned()
+    } else {
+        sanitized.to_owned()
+    }
+}
+
+fn ensure_output_paths_available(paths: &OutputPaths, force: bool) -> Result<(), SitlError> {
+    for path in [
+        paths.manifest.as_deref(),
+        paths.replay_log.as_deref(),
+        paths.run_report.as_deref(),
+        paths.replay_summary.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        ensure_output_path_available(path, force)?;
+    }
+    Ok(())
+}
+
+fn ensure_output_path_available(path: &Path, force: bool) -> Result<(), SitlError> {
+    if !force && path.exists() {
+        return Err(SitlError::OutputAlreadyExists {
+            path: path.to_path_buf(),
+        });
+    }
+    Ok(())
+}
+
+fn write_checked_file(
+    path: &Path,
+    contents: impl AsRef<[u8]>,
+    force: bool,
+) -> Result<(), SitlError> {
+    ensure_output_path_available(path, force)?;
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        std::fs::create_dir_all(parent).map_err(|error| SitlError::MultiAgentManifestWrite {
+            path: parent.to_path_buf(),
+            message: error.to_string(),
+        })?;
+    }
+    std::fs::write(path, contents).map_err(|error| SitlError::MultiAgentManifestWrite {
+        path: path.to_path_buf(),
+        message: error.to_string(),
+    })
+}
+
+fn write_replay_summary_if_requested(paths: &OutputPaths, force: bool) -> Result<(), SitlError> {
+    let (Some(summary_path), Some(replay_log_path)) = (&paths.replay_summary, &paths.replay_log)
+    else {
+        return Ok(());
+    };
+    let log = read_sitl_event_log(replay_log_path).map_err(|error| SitlError::ReplayLogWrite {
+        path: replay_log_path.to_path_buf(),
+        message: error.to_string(),
+    })?;
+    let summary =
+        format_sitl_summary(&swarm_examples::sitl_observability::summarize_sitl_event_log(&log));
+    write_checked_file(summary_path, summary, force)?;
+    eprintln!(
+        "SITL supervisor replay summary written: {}",
+        summary_path.display()
+    );
+    Ok(())
+}
+
+fn supervisor_exit_code(error: &SitlError) -> u8 {
+    match error {
+        SitlError::SafetyConfigRead { .. }
+        | SitlError::SafetyConfigParse { .. }
+        | SitlError::SafetyConfigInvalid { .. }
+        | SitlError::SafetyValidationFailed { .. }
+        | SitlError::HardwareCandidateRequiresExplicitAllow { .. } => 3,
+        SitlError::FeatureMissing { .. } => 20,
+        SitlError::RunReportWrite { .. }
+        | SitlError::ReplayLogWrite { .. }
+        | SitlError::MultiAgentManifestWrite { .. }
+        | SitlError::OutputAlreadyExists { .. } => 40,
+        SitlError::ConnectionFailed { message } => classify_connection_failure_exit_code(message),
+        _ => 2,
+    }
+}
+
+fn classify_connection_failure_exit_code(message: &str) -> u8 {
+    let lower = message.to_ascii_lowercase();
+    if lower.contains("heartbeat")
+        || lower.contains("telemetry")
+        || lower.contains("progress")
+        || lower.contains("timeout")
+    {
+        22
+    } else if lower.contains("abort") {
+        23
+    } else if lower.contains("upload")
+        || lower.contains("mission")
+        || lower.contains("ack")
+        || lower.contains("reject")
+        || lower.contains("command")
+    {
+        21
+    } else if lower.contains("final_status")
+        || lower.contains("partial")
+        || lower.contains("failed")
+        || lower.contains("failure")
+    {
+        30
+    } else {
+        20
+    }
+}
+
+fn prints_usage(error: &SitlError) -> bool {
+    matches!(
+        error,
+        SitlError::MissingMode
+            | SitlError::ConflictingModes
+            | SitlError::MissingArgument { .. }
+            | SitlError::UnknownArgument { .. }
+            | SitlError::LifecycleOptionRequiresConnection { .. }
+            | SitlError::LifecycleOptionRequiresExecute { .. }
+            | SitlError::InvalidDuration { .. }
+            | SitlError::RunReportRequiresExecute { .. }
+            | SitlError::MultiAgentConfigInvalid { .. }
+    )
+}
+
+fn usage() -> &'static str {
+    "usage: sitl_supervisor --dry-run|--mock|--connection --scenario <path> --config <path> [--manifest <path>] [--output-dir <dir>] [--run-id <id>] [--force] [--replay-log <path>] [--fail-agent <id>] [--fail-after-ticks N] [--heartbeat-timeout-ticks N] [--max-ticks N] [--execute] [--run-report <path>] [--safety-config <path>] [--timeout <duration>] [--telemetry-timeout <duration>] [--no-progress-timeout <duration>] [--no-arm] [--abort-after <duration>] [--allow-hardware-candidate] [--reupload-on-failure]"
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct CliValidationArgs<'a> {
     mode: SupervisorMode,
@@ -434,8 +697,9 @@ impl LiveOptionFlags {
 }
 
 fn write_or_print_manifest(
-    manifest_path: Option<&str>,
+    manifest_path: Option<&Path>,
     manifest: &MultiAgentSitlManifest,
+    force: bool,
 ) -> Result<(), SitlError> {
     let json = serde_json::to_string_pretty(manifest).map_err(|error| {
         SitlError::MultiAgentConfigInvalid {
@@ -446,20 +710,7 @@ fn write_or_print_manifest(
         println!("{json}");
         return Ok(());
     };
-    let path = Path::new(path);
-    if let Some(parent) = path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-    {
-        std::fs::create_dir_all(parent).map_err(|error| SitlError::MultiAgentManifestWrite {
-            path: parent.to_path_buf(),
-            message: error.to_string(),
-        })?;
-    }
-    std::fs::write(path, json).map_err(|error| SitlError::MultiAgentManifestWrite {
-        path: path.to_path_buf(),
-        message: error.to_string(),
-    })?;
+    write_checked_file(path, json, force)?;
     eprintln!("Multi-agent SITL manifest written: {}", path.display());
     Ok(())
 }

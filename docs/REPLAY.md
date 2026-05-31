@@ -169,8 +169,8 @@ cargo run --bin sitl_supervisor --features mavlink-transport -- \
   --scenario scenarios/sitl.multi-agent.json \
   --config scenarios/sitl.multi-agent.execute.config.json \
   --safety-config path/to/sitl-safety.json \
-  --run-report target/sitl/multi-agent-report.json \
-  --replay-log target/sitl/multi-agent.sitl-log.json
+  --output-dir target/sitl \
+  --run-id local-multi-agent-sih
 ```
 
 The live log contains common `multi_agent_run_started`, per-agent
@@ -183,6 +183,17 @@ events include `agent_id`, so a common log can reconstruct mappings such as
 `sitl_multi_agent_run_report.v1` report. With `--reupload-on-failure`, the
 report includes a `reallocation` section and the common event log includes the
 pending-survivor mission replacement events listed above.
+
+M60 adds an output-dir replay contract for the supervisor. A run with
+`--output-dir target/sitl --run-id local-multi-agent-sih` writes
+`target/sitl/local-multi-agent-sih/events.sitl-log.json`,
+`run-report.json`, `manifest.json`, and `replay-summary.txt`. The replay
+summary text is generated from the same `summarize_sitl_event_log` counters as
+the report's `events_summary` field, so reviewers can compare
+`replay-summary.txt` and `sitl_multi_agent_run_report.v1` without parsing
+stdout. The report also includes `task_ownership`, `final_status`, and
+`limitations` while keeping `overall_status` and `known_limitations` for
+compatibility.
 
 The captured M48 PX4 SIH replay is stored at
 `results/m48_px4_sitl_2026-05-30/single-agent.sitl-log.json` with a compact

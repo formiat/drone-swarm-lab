@@ -619,7 +619,7 @@ impl SitlEventRecorder {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SitlEventLogSummary {
     pub run_id: String,
     pub scenario_name: String,

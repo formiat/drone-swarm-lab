@@ -156,6 +156,8 @@ pub enum SitlError {
     MultiAgentConfigInvalid { message: String },
     #[error("multi-agent manifest write failed {path:?}: {message}")]
     MultiAgentManifestWrite { path: PathBuf, message: String },
+    #[error("output path already exists {path:?}; use --force to overwrite")]
+    OutputAlreadyExists { path: PathBuf },
 }
 
 pub fn validate_connection_string(addr: &str) -> Result<(), SitlError> {

@@ -3,6 +3,9 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::sitl_multi_agent::TaskOwnershipSummary;
+use crate::sitl_observability::SitlEventLogSummary;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SitlRunMode {
@@ -55,7 +58,15 @@ pub struct SitlMultiAgentRunReport {
     pub overall_status: String,
     pub event_log_path: Option<PathBuf>,
     #[serde(default)]
+    pub task_ownership: TaskOwnershipSummary,
+    #[serde(default)]
+    pub events_summary: SitlEventLogSummary,
+    #[serde(default)]
+    pub final_status: String,
+    #[serde(default)]
     pub reallocation: SitlMultiAgentReallocationReport,
+    #[serde(default)]
+    pub limitations: Vec<String>,
     pub known_limitations: Vec<String>,
 }
 
@@ -227,7 +238,23 @@ mod tests {
             aborted_agents: 0,
             overall_status: "completed".to_owned(),
             event_log_path: Some(PathBuf::from("run.sitl-log.json")),
+            task_ownership: TaskOwnershipSummary {
+                total_pose_tasks: 2,
+                assigned_task_count: 2,
+                unassigned_pose_tasks: Vec::new(),
+                duplicate_task_ids: Vec::new(),
+            },
+            events_summary: SitlEventLogSummary {
+                run_id: "run-1".to_owned(),
+                scenario_name: "sitl_multi_agent".to_owned(),
+                agent_id: "supervisor".to_owned(),
+                total_events: 8,
+                final_status: Some("completed".to_owned()),
+                ..Default::default()
+            },
+            final_status: "completed".to_owned(),
             reallocation: SitlMultiAgentReallocationReport::default(),
+            limitations: vec!["local PX4/SIH only".to_owned()],
             known_limitations: vec!["local PX4/SIH only".to_owned()],
         };
 
@@ -236,6 +263,10 @@ mod tests {
         assert!(json.contains("sitl_multi_agent_run_report.v1"));
         assert!(json.contains("connection_execute"));
         assert!(json.contains("completed"));
+        assert!(json.contains("task_ownership"));
+        assert!(json.contains("events_summary"));
+        assert!(json.contains("final_status"));
+        assert!(json.contains("limitations"));
     }
 
     #[test]
@@ -255,6 +286,21 @@ mod tests {
             aborted_agents: 0,
             overall_status: "completed_with_reallocation".to_owned(),
             event_log_path: Some(PathBuf::from("run.sitl-log.json")),
+            task_ownership: TaskOwnershipSummary {
+                total_pose_tasks: 2,
+                assigned_task_count: 2,
+                unassigned_pose_tasks: Vec::new(),
+                duplicate_task_ids: Vec::new(),
+            },
+            events_summary: SitlEventLogSummary {
+                run_id: "run-reallocation".to_owned(),
+                scenario_name: "sitl_multi_agent".to_owned(),
+                agent_id: "supervisor".to_owned(),
+                total_events: 12,
+                final_status: Some("completed_with_reallocation".to_owned()),
+                ..Default::default()
+            },
+            final_status: "completed_with_reallocation".to_owned(),
             reallocation: SitlMultiAgentReallocationReport {
                 lost_agent_count: 1,
                 released_tasks: vec!["wp-0".to_owned()],
@@ -265,6 +311,7 @@ mod tests {
                 survivor_mission_updates: 1,
                 final_completed_after_reallocation: 2,
             },
+            limitations: vec!["controlled local PX4/SIH only".to_owned()],
             known_limitations: vec!["controlled local PX4/SIH only".to_owned()],
         };
 
@@ -302,5 +349,9 @@ mod tests {
             report.reallocation,
             SitlMultiAgentReallocationReport::default()
         );
+        assert_eq!(report.task_ownership, TaskOwnershipSummary::default());
+        assert_eq!(report.events_summary, SitlEventLogSummary::default());
+        assert_eq!(report.final_status, "");
+        assert_eq!(report.limitations, Vec::<String>::new());
     }
 }

@@ -18,6 +18,8 @@ use crate::sitl_connection::{SitlConnectionLifecycle, SitlSafetyGate};
 use crate::sitl_multi_agent::{
     MultiAgentLifecycle, MultiAgentSitlManifest, MultiAgentSitlManifestAgent,
 };
+#[cfg(any(feature = "mavlink-transport", test))]
+use crate::sitl_observability::{summarize_sitl_event_log, SitlEventLogSummary};
 use crate::sitl_observability::{
     write_sitl_event_log, SitlEventLogMetadata, SitlEventLogMode, SitlEventRecorder,
 };
@@ -32,6 +34,7 @@ use crate::sitl_report::{SitlMultiAgentReallocationReport, SitlMultiAgentRunRepo
 pub struct SupervisorMockConfig {
     pub scenario_path: String,
     pub replay_log: Option<String>,
+    pub run_id: Option<String>,
     pub fail_agent: Option<String>,
     pub fail_after_ticks: u64,
     pub heartbeat_timeout_ticks: Option<u64>,
@@ -54,6 +57,7 @@ pub struct SupervisorLiveConfig {
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct SupervisorLoopConfig<'a> {
     replay_log: Option<&'a str>,
+    run_id: Option<&'a str>,
     timeout_ticks: u64,
     max_ticks: u64,
     own_id: String,
@@ -412,6 +416,7 @@ pub fn run_mock_supervisor(
     let controllers = build_mock_controllers(manifest, config);
     let loop_config = SupervisorLoopConfig {
         replay_log: config.replay_log.as_deref(),
+        run_id: config.run_id.as_deref(),
         timeout_ticks,
         max_ticks,
         own_id,
@@ -588,16 +593,18 @@ fn run_live_supervisor_with_controllers<C: LiveAgentController>(
     let overall_status = live_overall_status(&runs, manifest);
     recorder.push_multi_agent_run_finished(overall_status);
     recorder.push_run_completed(overall_status);
+    let events_summary = summarize_sitl_event_log(recorder.log());
 
-    let report = live_run_report(
+    let report = live_run_report(LiveRunReportInput {
         entry,
         config,
         manifest,
         run_id,
         overall_status,
-        &runs,
-        &live_metrics,
-    );
+        runs: &runs,
+        metrics: &live_metrics,
+        events_summary,
+    });
     if let Some(path) = &config.replay_log {
         write_sitl_event_log(path, recorder.log()).map_err(|error| SitlError::ReplayLogWrite {
             path: Path::new(path).to_path_buf(),
@@ -648,7 +655,10 @@ fn run_supervisor_with_controllers<C: AgentController>(
     node.gossip_interval_ticks = config.max_ticks.saturating_add(10);
     let mut allocator = GreedyAllocator;
     let mut recorder = SitlEventRecorder::new(SitlEventLogMetadata {
-        run_id: format!("sitl-supervisor-{}", manifest.scenario_name),
+        run_id: config
+            .run_id
+            .map(str::to_owned)
+            .unwrap_or_else(|| format!("sitl-supervisor-{}", manifest.scenario_name)),
         scenario_path: manifest.scenario_path.clone(),
         scenario_name: manifest.scenario_name.clone(),
         mission: manifest.mission.clone(),
@@ -1258,18 +1268,35 @@ fn live_overall_status(runs: &[LiveAgentRun], manifest: &MultiAgentSitlManifest)
 }
 
 #[cfg(any(feature = "mavlink-transport", test))]
-fn live_run_report(
-    entry: &swarm_sim::ScenarioSuiteEntry,
-    config: &SupervisorLiveConfig,
-    manifest: &MultiAgentSitlManifest,
+struct LiveRunReportInput<'a> {
+    entry: &'a swarm_sim::ScenarioSuiteEntry,
+    config: &'a SupervisorLiveConfig,
+    manifest: &'a MultiAgentSitlManifest,
     run_id: String,
-    overall_status: &str,
-    runs: &[LiveAgentRun],
-    metrics: &SupervisorMetrics,
-) -> SitlMultiAgentRunReport {
+    overall_status: &'a str,
+    runs: &'a [LiveAgentRun],
+    metrics: &'a SupervisorMetrics,
+    events_summary: SitlEventLogSummary,
+}
+
+#[cfg(any(feature = "mavlink-transport", test))]
+fn live_run_report(input: LiveRunReportInput<'_>) -> SitlMultiAgentRunReport {
+    let entry = input.entry;
+    let config = input.config;
+    let manifest = input.manifest;
+    let runs = input.runs;
+    let limitations = vec![
+        "local PX4/SIH endpoints only unless --allow-hardware-candidate is explicit".to_owned(),
+        "agents are orchestrated sequentially in one supervisor process".to_owned(),
+        if config.reupload_on_failure {
+            "failed-agent reallocation uses controlled local mission replacement; Gazebo, HIL, and hardware are not claimed".to_owned()
+        } else {
+            "live failed-agent reallocation requires explicit --reupload-on-failure".to_owned()
+        },
+    ];
     SitlMultiAgentRunReport {
         schema_version: "sitl_multi_agent_run_report.v1".to_owned(),
-        run_id,
+        run_id: input.run_id,
         scenario_path: manifest.scenario_path.clone(),
         scenario_name: entry.scenario.name.clone(),
         config_path: PathBuf::from(&config.config_path),
@@ -1286,18 +1313,14 @@ fn live_run_report(
             .iter()
             .filter(|run| run.final_status == "aborted")
             .count(),
-        overall_status: overall_status.to_owned(),
+        overall_status: input.overall_status.to_owned(),
         event_log_path: config.replay_log.as_ref().map(PathBuf::from),
-        reallocation: metrics.into(),
-        known_limitations: vec![
-            "local PX4/SIH endpoints only unless --allow-hardware-candidate is explicit".to_owned(),
-            "agents are orchestrated sequentially in one supervisor process".to_owned(),
-            if config.reupload_on_failure {
-                "failed-agent reallocation uses controlled local mission replacement; Gazebo, HIL, and hardware are not claimed".to_owned()
-            } else {
-                "live failed-agent reallocation requires explicit --reupload-on-failure".to_owned()
-            },
-        ],
+        task_ownership: manifest.ownership_summary.clone(),
+        events_summary: input.events_summary,
+        final_status: input.overall_status.to_owned(),
+        reallocation: input.metrics.into(),
+        limitations: limitations.clone(),
+        known_limitations: limitations,
     }
 }
 
@@ -2109,6 +2132,7 @@ mod tests {
         let entry = first_sitl_entry(&suite, "inline-scenario.json").unwrap();
         let loop_config = SupervisorLoopConfig {
             replay_log: None,
+            run_id: None,
             timeout_ticks,
             max_ticks,
             own_id: own_id.to_owned(),
@@ -2218,6 +2242,7 @@ mod tests {
         let config = SupervisorMockConfig {
             scenario_path: "inline-scenario.json".to_owned(),
             replay_log: None,
+            run_id: None,
             fail_agent: Some("agent-0".to_owned()),
             fail_after_ticks: 0,
             heartbeat_timeout_ticks: Some(1),
@@ -2238,6 +2263,7 @@ mod tests {
         let config = SupervisorMockConfig {
             scenario_path: "inline-scenario.json".to_owned(),
             replay_log: None,
+            run_id: None,
             fail_agent: Some("missing-agent".to_owned()),
             fail_after_ticks: 0,
             heartbeat_timeout_ticks: Some(1),
@@ -2294,9 +2320,17 @@ mod tests {
             run_live_supervisor_with_controllers(entry, &config, &manifest, controllers).unwrap();
 
         assert_eq!(report.overall_status, "completed");
+        assert_eq!(report.final_status, "completed");
         assert_eq!(report.total_completed_tasks, 2);
         assert_eq!(report.failed_agents, 0);
         assert_eq!(report.agents.len(), 2);
+        assert_eq!(report.task_ownership, manifest.ownership_summary);
+        assert_eq!(
+            report.events_summary.final_status.as_deref(),
+            Some("completed")
+        );
+        assert_eq!(report.events_summary.multi_agent_agent_started, 2);
+        assert_eq!(report.limitations, report.known_limitations);
         assert_eq!(
             report.reallocation,
             SitlMultiAgentReallocationReport::default()
@@ -2394,8 +2428,16 @@ mod tests {
             run_live_supervisor_with_controllers(entry, &config, &manifest, controllers).unwrap();
 
         assert_eq!(report.overall_status, "completed_with_reallocation");
+        assert_eq!(report.final_status, "completed_with_reallocation");
         assert_eq!(report.total_completed_tasks, 2);
         assert_eq!(report.failed_agents, 1);
+        assert_eq!(report.task_ownership, manifest.ownership_summary);
+        assert_eq!(
+            report.events_summary.final_status.as_deref(),
+            Some("completed_with_reallocation")
+        );
+        assert_eq!(report.events_summary.survivor_mission_updates, 1);
+        assert_eq!(report.limitations, report.known_limitations);
         assert_eq!(report.reallocation.lost_agent_count, 1);
         assert_eq!(report.reallocation.released_tasks, vec!["wp-0"]);
         assert_eq!(report.reallocation.reassigned_tasks, vec!["wp-0"]);
@@ -2566,8 +2608,13 @@ mod tests {
             run_live_supervisor_with_controllers(entry, &config, &manifest, controllers).unwrap();
 
         assert_eq!(report.overall_status, "partial_failed");
+        assert_eq!(report.final_status, "partial_failed");
         assert_eq!(report.total_completed_tasks, 1);
         assert_eq!(report.failed_agents, 1);
+        assert_eq!(
+            report.events_summary.final_status.as_deref(),
+            Some("partial_failed")
+        );
         assert_eq!(report.agents[1].error.as_deref(), Some("fake live failure"));
     }
 

@@ -13,7 +13,7 @@ hardware.
 | Multi-agent dry-run/mock | `sitl_supervisor --dry-run/--mock` or `sitl_agent --multi-agent-config` | None | Split explicit waypoint subsets, run mock supervisor orchestration, and produce a manifest/replay log | Stable M52 foundation |
 | PX4 SITL upload-only | `--connection <addr> [--upload-only]` | PX4 SITL + `mavlink-transport` feature | Upload waypoint mission to PX4 SITL without starting flight | Experimental |
 | PX4 SITL execute | `--connection <addr> --execute` | PX4 SITL + `mavlink-transport` feature | Upload, arm/takeoff/start mission, map telemetry to task progress, write optional final report, and abort on bounded failures | Experimental single-agent golden path |
-| Multi-agent PX4/SIH execute | `sitl_supervisor --connection --execute` | Local PX4/SIH endpoints + `mavlink-transport` feature | Validate all configured agents, sequentially execute local PX4/SIH missions, optionally replace a pending survivor mission after terminal failed-agent reallocation, and write common event/report artifacts | Experimental M58 workflow with partial M59 foundation |
+| Multi-agent PX4/SIH execute | `sitl_supervisor --connection --execute` | Local PX4/SIH endpoints + `mavlink-transport` feature | Validate all configured agents, sequentially execute local PX4/SIH missions, optionally replace a pending survivor mission after terminal failed-agent reallocation, and write common event/report artifacts | Experimental M58 workflow with partial M59 foundation and M60 hardening |
 
 ## CI / Manual Boundary
 
@@ -297,8 +297,8 @@ cargo run -p swarm-examples --bin sitl_supervisor --features mavlink-transport -
   --telemetry-timeout 10 \
   --no-progress-timeout 60 \
   --reupload-on-failure \
-  --run-report target/sitl/multi-agent-report.json \
-  --replay-log target/sitl/multi-agent.sitl-log.json
+  --output-dir target/sitl \
+  --run-id local-multi-agent-sih
 ```
 
 `--safety-config` is only valid for `--connection --execute`. Dry-run and mock
@@ -361,6 +361,82 @@ Out of scope for M52/M58/M59:
 - automated live multi-agent PX4 failure/reallocation;
 - real hardware usage;
 - swarm safety certification.
+
+### M60 PX4/SIH Supervisor Hardening
+
+M60 makes the existing local supervisor path easier to repeat and diagnose. It
+does not change the M59 boundary: real hardware, Gazebo/HIL, PX4 CI, and
+stepwise in-flight survivor replacement remain out of scope.
+
+The preferred local run shape is now:
+
+```bash
+cargo run -p swarm-examples --bin sitl_supervisor --features mavlink-transport -- \
+  --connection --execute \
+  --scenario scenarios/sitl.multi-agent.json \
+  --config scenarios/sitl.multi-agent.execute.config.json \
+  --safety-config path/to/sitl-safety.json \
+  --timeout 5 \
+  --telemetry-timeout 10 \
+  --no-progress-timeout 60 \
+  --reupload-on-failure \
+  --output-dir target/sitl \
+  --run-id local-multi-agent-sih
+```
+
+With `--output-dir`, the supervisor derives a per-run artifact layout:
+
+```text
+target/sitl/local-multi-agent-sih/
+  manifest.json
+  events.sitl-log.json
+  run-report.json
+  replay-summary.txt
+```
+
+`--run-id` fixes the run identity in both filenames and the SITL event log.
+When it is omitted, the supervisor generates
+`sitl-supervisor-<scenario-name>-<epoch-seconds>`. Existing artifact files are
+refused by default; pass `--force` only when intentionally replacing a previous
+local run.
+
+The multi-agent report keeps `overall_status` and `known_limitations` for
+compatibility and adds preferred M60 fields:
+
+- `task_ownership`: copy of the manifest ownership summary;
+- `events_summary`: replay summary counters from the common SITL event log;
+- `final_status`: preferred final status field mirroring `overall_status`;
+- `limitations`: preferred limitations field mirroring `known_limitations`.
+
+Stable `sitl_supervisor` exit codes:
+
+| Exit code | Meaning |
+|---:|---|
+| `0` | Completed successfully |
+| `2` | CLI/config/schema/lifecycle error |
+| `3` | Safety validation or hardware-candidate guard failure |
+| `20` | PX4 endpoint unavailable or `mavlink-transport` feature missing |
+| `21` | Mission upload failed or command rejected before useful execution |
+| `22` | Heartbeat, telemetry, or no-progress timeout |
+| `23` | Abort failed |
+| `30` | Runtime failure or partial run after start |
+| `40` | Artifact/report/replay write failure, including overwrite refusal without `--force` |
+
+Additional local troubleshooting for M60:
+
+- Port conflicts: if two PX4/SIH instances use the same MAVLink UDP port, one
+  agent may receive the wrong heartbeat or no heartbeat. Use distinct endpoints
+  such as `udpin:127.0.0.1:14550` and `udpin:127.0.0.1:14560`.
+- Wrong system id: each configured `system_id` must match the target PX4
+  instance. A mismatch can look like mission upload timeout, command rejection,
+  or missing progress.
+- Output overwrite refusal: `output path already exists` is intentional. Pick a
+  new `--run-id` for a new experiment or pass `--force` for a deliberate rerun.
+- `replay-summary.txt` is derived from `events.sitl-log.json`; if it is missing,
+  inspect the event log write error first.
+- M60 is not hardware-ready. It improves local artifact discipline and error
+  classification; it does not add flight certification or an operator safety
+  process.
 
 ## Experimental PX4 SITL Mode
 

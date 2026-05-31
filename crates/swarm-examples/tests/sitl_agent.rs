@@ -269,10 +269,19 @@ fn run_sitl_supervisor(args: &[&str]) -> std::process::Output {
 }
 
 fn assert_sitl_supervisor_cli_error(args: &[&str], expected: &str) {
+    assert_sitl_supervisor_cli_error_code(args, expected, 2);
+}
+
+fn assert_sitl_supervisor_cli_error_code(args: &[&str], expected: &str, expected_code: i32) {
     let output = run_sitl_supervisor(args);
     assert!(
         !output.status.success(),
         "sitl_supervisor unexpectedly succeeded for args: {args:?}"
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(expected_code),
+        "unexpected sitl_supervisor exit code for args: {args:?}"
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
@@ -651,6 +660,74 @@ fn multi_agent_sitl_supervisor_mock_reallocates_after_agent_loss_test() {
 }
 
 #[test]
+fn multi_agent_sitl_supervisor_output_dir_layout_and_force_test() {
+    let scenario = write_multi_agent_sitl_scenario();
+    let config = write_multi_agent_config(false);
+    let dir = tempfile::tempdir().unwrap();
+    let output_dir = dir.path().join("runs");
+    let output_dir = output_dir.to_string_lossy().into_owned();
+    let scenario = scenario.path().to_str().unwrap().to_owned();
+    let config = config.path().to_str().unwrap().to_owned();
+
+    let args = [
+        "--mock",
+        "--scenario",
+        &scenario,
+        "--config",
+        &config,
+        "--output-dir",
+        &output_dir,
+        "--run-id",
+        "run-m60",
+    ];
+
+    let output = run_sitl_supervisor(&args);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "supervisor output-dir run failed: {stderr}"
+    );
+
+    let run_dir = std::path::Path::new(&output_dir).join("run-m60");
+    let manifest_path = run_dir.join("manifest.json");
+    let replay_log = run_dir.join("events.sitl-log.json");
+    let summary_path = run_dir.join("replay-summary.txt");
+    assert!(manifest_path.exists());
+    assert!(replay_log.exists());
+    assert!(summary_path.exists());
+    let log = swarm_examples::sitl_observability::read_sitl_event_log(&replay_log).unwrap();
+    assert_eq!(log.run_id, "run-m60");
+    let summary = std::fs::read_to_string(&summary_path).unwrap();
+    assert!(summary.contains("SITL run: run-m60"));
+    assert!(summary.contains("Multi-agent:"));
+
+    let duplicate = run_sitl_supervisor(&args);
+    assert!(!duplicate.status.success());
+    assert_eq!(duplicate.status.code(), Some(40));
+    let duplicate_stderr = String::from_utf8_lossy(&duplicate.stderr);
+    assert!(duplicate_stderr.contains("output path already exists"));
+    assert!(!duplicate_stderr.contains("usage: sitl_supervisor"));
+
+    let forced = run_sitl_supervisor(&[
+        "--mock",
+        "--scenario",
+        &scenario,
+        "--config",
+        &config,
+        "--output-dir",
+        &output_dir,
+        "--run-id",
+        "run-m60",
+        "--force",
+    ]);
+    let forced_stderr = String::from_utf8_lossy(&forced.stderr);
+    assert!(
+        forced.status.success(),
+        "supervisor forced output-dir run failed: {forced_stderr}"
+    );
+}
+
+#[test]
 fn multi_agent_sitl_supervisor_duplicate_ownership_rejected_test() {
     let scenario = write_multi_agent_sitl_scenario();
     let config = write_multi_agent_config(true);
@@ -749,6 +826,28 @@ fn multi_agent_sitl_supervisor_rejects_missing_and_invalid_cli_args_test() {
                 "--max-ticks",
             ],
             "missing required argument: --max-ticks",
+        ),
+        (
+            vec![
+                "--mock",
+                "--scenario",
+                &scenario,
+                "--config",
+                &config,
+                "--output-dir",
+            ],
+            "missing required argument: --output-dir",
+        ),
+        (
+            vec![
+                "--mock",
+                "--scenario",
+                &scenario,
+                "--config",
+                &config,
+                "--run-id",
+            ],
+            "missing required argument: --run-id",
         ),
         (
             vec![
@@ -957,6 +1056,7 @@ fn multi_agent_sitl_supervisor_connection_rejects_upload_only_manifest_test() {
     ]);
 
     assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(2));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("live supervisor execute requires lifecycle=execute"));
     assert!(!stderr.contains("feature missing"));
@@ -980,6 +1080,7 @@ fn multi_agent_sitl_supervisor_connection_rejects_hardware_candidate_before_uplo
     ]);
 
     assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(3));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("requires --allow-hardware-candidate"));
     assert!(!stderr.contains("feature missing"));
@@ -1010,6 +1111,7 @@ fn multi_agent_sitl_supervisor_connection_rejects_unsafe_agent_subset_before_upl
     ]);
 
     assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(3));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("safety validation failed"));
     assert!(stderr.contains("rule_id=outside_geofence"));
@@ -1039,6 +1141,7 @@ fn multi_agent_sitl_supervisor_connection_validates_before_feature_error_test() 
     ]);
 
     assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(20));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("feature missing"));
     assert!(stderr.contains("mavlink-transport"));

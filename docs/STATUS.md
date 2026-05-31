@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-30
 **HEAD commit:** see `git rev-parse HEAD`
-**Last audit:** M59 Live PX4/SIH Failure & Reallocation partial foundation
+**Last audit:** M60 PX4/SIH Supervisor Hardening
 
 This document is the current status summary for the repository. It supersedes
 the older M39b-only audit and should be read together with the README current
@@ -35,6 +35,7 @@ status table.
 | M57 Supervisor Controller Boundary | Complete | `sitl_supervisor` mock orchestration is extracted into a testable internal supervisor module with `AgentController`, `MockAgentController`, fake-controller tests over the shared supervisor loop, returned `SupervisorMetrics`, and expanded CLI negative tests. M58 builds the live PX4/SIH path beside this boundary. |
 | M58 Live Multi-Agent PX4/SIH Execute Orchestration | Complete as experimental local SITL plumbing | `sitl_supervisor --connection --execute` with `scenarios/sitl.multi-agent.execute.config.json` validates all live agents, rejects non-execute lifecycles, applies per-agent safety and hardware-candidate gates before upload, runs sequential local PX4/SIH controllers, and writes a common SITL event log plus `sitl_multi_agent_run_report.v1`. |
 | M59 Live PX4/SIH Failure & Reallocation | Partial foundation | `--reupload-on-failure` turns a terminal failed live-agent run into runtime release/reassignment events, pending-survivor mission replacement, report `reallocation` metrics, and replay summary counters. The full stepwise live loop, active-survivor abort/clear/upload/execute replacement, and real PX4/SIH failure-injection artifact remain follow-up work. |
+| M60 PX4/SIH Supervisor Hardening | Complete for local workflow hardening | `sitl_supervisor` now supports `--output-dir`, `--run-id`, and `--force`, refuses artifact overwrites by default, returns stable exit codes, writes replay summaries for output-dir runs, and extends `sitl_multi_agent_run_report.v1` with `task_ownership`, `events_summary`, `final_status`, and `limitations`. This hardens repeatable local PX4/SIH research runs, not hardware readiness. |
 
 ## Current Known Limitations
 
@@ -62,6 +63,12 @@ status table.
   The mock supervisor state machine remains testable behind an internal
   controller boundary, while M58 adds the separate live PX4/SIH execute path and
   M59 adds explicit mission replacement after failed-agent reallocation.
+- **M60 hardens repeatability and failure diagnosis.** Local supervisor runs can
+  use `--output-dir` and `--run-id` to produce a predictable run directory with
+  manifest, event log, run report, and replay summary. Existing artifacts are
+  protected unless `--force` is explicit, and stable exit codes separate
+  CLI/config, safety, endpoint/feature, upload/command, timeout, runtime, and
+  artifact failures.
 - **Hardware is out of scope.** The project is not flight-certified and is not a
   production safety layer.
 
@@ -91,18 +98,20 @@ status table.
 |---|---|---|
 | Portable SITL verification | Ready | Run `sitl_agent`/`sitl_docs` targeted tests. |
 | M48 live PX4 verification | Complete for local PX4 SIH | Captured in `results/m48_px4_sitl_2026-05-30/`; Gazebo/HIL/hardware remain out of scope. |
-| Real multi-agent PX4/SIH | Experimental local workflow with M59 gap | Upload-only SIH evidence exists and `sitl_supervisor --connection --execute --reupload-on-failure` can orchestrate controlled one-shot execute/reallocation foundation attempts; stepwise live loss detection, active-survivor mission replacement, PX4 CI, Gazebo/HIL, hardware, and a captured real failure-injection artifact remain future work. |
+| Real multi-agent PX4/SIH | Experimental local workflow with M59 gap and M60 hardening | Upload-only SIH evidence exists and `sitl_supervisor --connection --execute --reupload-on-failure --output-dir ... --run-id ...` can orchestrate controlled one-shot execute/reallocation foundation attempts with stable artifacts and exit codes; stepwise live loss detection, active-survivor mission replacement, PX4 CI, Gazebo/HIL, hardware, and a captured real failure-injection artifact remain future work. |
 | Large benchmark publication | Not ready | Default regression flake is fixed; benchmark baselines/results still need a fresh publication run. |
 | Hardware experiment | Not product-ready | Requires external safety process; see `docs/HARDWARE_READINESS.md`. |
 
 ## Recommended Next Steps
 
-1. Implement the stepwise M59 follow-up if the project needs true live
+1. Use M60 `--output-dir` / `--run-id` for any new local PX4/SIH evidence so
+   artifacts are repeatable and overwrite-safe.
+2. Implement the stepwise M59 follow-up if the project needs true live
    reallocation during active multi-agent execution.
-2. Capture a real local PX4/SIH M59 failure-injection artifact only after the
+3. Capture a real local PX4/SIH M59 failure-injection artifact only after the
    stepwise/live boundary is implemented or explicitly out of scope.
-3. Refresh benchmark baselines/results before using them as publication claims.
-4. Keep README, `docs/SITL_SETUP.md`, `docs/REPLAY.md`, and this file in sync
+4. Refresh benchmark baselines/results before using them as publication claims.
+5. Keep README, `docs/SITL_SETUP.md`, `docs/REPLAY.md`, and this file in sync
    when M48 live verification changes state.
 
 ## How to Verify This Status
@@ -131,6 +140,7 @@ For M48 live verification, inspect `results/m48_px4_sitl_2026-05-30/`. For the
 two-instance PX4 SIH upload-only check, inspect
 `results/m55_multi_agent_px4_sih_2026-05-30/`. M58 adds live execute supervisor
 code and portable fake/CLI coverage; M59 adds a partial failed-agent mission
-replacement foundation and portable fake coverage. Do not extend any existing
-result to Gazebo, HIL, real hardware, real PX4/SIH failure/reallocation, or
-stepwise active-survivor replacement without new code/evidence.
+replacement foundation and portable fake coverage. M60 adds local supervisor
+artifact/exit-code/report hardening. Do not extend any existing result to
+Gazebo, HIL, real hardware, real PX4/SIH failure/reallocation, or stepwise
+active-survivor replacement without new code/evidence.
