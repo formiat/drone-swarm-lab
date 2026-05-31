@@ -1,4 +1,4 @@
-# DRONE_C.21 - Итоговый набор вариантов развития проекта
+# DRONE_C.21 - Линейный roadmap после M57-M62
 
 Дата фиксации: 2026-05-31
 
@@ -8,492 +8,508 @@ artifacts.
 
 ## Назначение документа
 
-Этот документ фиксирует итоговый набор вариантов развития проекта после
-обсуждения трех конкурирующих планов A/B/C.20.
-
-Он не заменяет технический план конкретной задачи. Его роль:
-
-- выбрать канонический набор векторов;
-- объяснить, какие части A/B/C.20 стоит оставить;
-- убрать противоречия между "mission realism", PX4/SITL, algorithm depth и
-  benchmark evidence;
-- предложить разумный порядок следующих milestone;
-- задать тестовые ожидания для каждого направления.
-
-## Executive Summary
-
-Ни один из A/B/C.20 не стоит брать целиком.
-
-Лучший итоговый план:
+Этот документ заменяет формат "набор вариантов" на линейную цепочку
+milestone. Выбор следующего основного направления уже сделан:
 
 ```text
-short evidence cleanup
-  -> Urban Patrol v0
-  -> Urban Search v1
-  -> Replay / Analysis support
-  -> Algorithm Depth on the stronger mission substrate
-  -> Benchmark / Research Refresh
+evidence cleanup
+  -> Urban foundations
+  -> Urban Patrol
+  -> Urban Search
+  -> replay/analysis and multi-agent prep
+  -> algorithm depth
+  -> benchmark refresh
+  -> SITL/platform decision
 ```
 
-PX4/SITL hardening остается поддерживающим направлением, но не главным
-следующим вектором. Platform/API packaging откладывается до появления хотя бы
-одной реальной новой миссии через extension path.
+Идея: развивать проект не как замену PX4 и не как физический симулятор, а как
+mission-level simulation, planning, coordination, replay and metrics layer.
 
-Главная рекомендация: **Urban Navigation / Mission Realism** как следующий
-основной вектор, но в строго ограниченном первом scope:
+## Что взято из A/B/C.20
 
-- road graph, not arbitrary polygons first;
-- AABB buildings/no-fly zones first;
-- deterministic route planner;
-- independent judge;
-- replay/metrics;
-- no lidar/raycast in v0;
-- no real physics;
-- no PX4 dependency in v0.
+### Из DRONE_A.20
 
-## Comparison Of A/B/C.20
+Берем как базовую архитектурную рамку:
 
-### DRONE_A.20
+- проект не должен реализовывать low-level flight control;
+- PX4 остается execution layer for real SITL waypoint workflows;
+- этот workspace развивает mission-level navigation, map constraints,
+  decision logic, replay, metrics and coordination;
+- Urban Navigation / Mission Realism становится главным следующим направлением;
+- replay/debuggability нужно делать рядом с новой миссией, а не отдельным
+  украшением;
+- Platform/API packaging пока рано стабилизировать.
 
-Сильные стороны:
+### Из DRONE_B.20
 
-- лучшая архитектурная рамка;
-- правильно разделяет low-level flight control and mission-level logic;
-- хорошо объясняет, почему Urban Navigation не конфликтует с PX4;
-- делает Urban Navigation главным практическим вектором;
-- содержит понятную тестовую стратегию;
-- не пытается преждевременно стабилизировать API/platform.
+Берем как backlog после появления новой миссии:
 
-Слабые стороны:
+- communication-aware scoring;
+- mission-specific planners;
+- CBBA convergence analysis;
+- benchmark interpretation issues;
+- local PX4/SIH harness and artifact validation as later supporting work.
 
-- местами слишком быстро переходит к polygon geometry;
-- не так подробно раскрывает algorithm/benchmark backlog, как B.20;
-- утверждения про current benchmark evidence требуют осторожности: текущий
-  benchmark pack указывает на старый commit.
+Не переносим как открытый долг:
 
-Что оставить:
+- M59 replacement replay seq bug уже исправлен в последующих коммитах.
 
-- layered architecture principle;
-- Urban Navigation as primary next vector;
-- "do not build a PX4 replacement";
-- replay/debuggability as supporting track;
-- Platform/API packaging as later work.
+### Из DRONE_C.20
 
-### DRONE_B.20
-
-Сильные стороны:
-
-- лучший список algorithm-depth work items:
-  communication-aware scoring, mission-specific planners, CBBA convergence,
-  hierarchical coordination;
-- хорошо выделяет benchmark interpretation issues;
-- хорошо фиксирует PX4/SITL follow-up items: local harness, broader failure
-  modes, replay timeline;
-- Perimeter Patrol описан как low/medium complexity mission candidate.
-
-Слабые стороны:
-
-- слишком осторожно отрезает motion/navigation layer от проекта;
-- слишком сильно смещает фокус в algorithm/PX4 backlog;
-- replay seq fix уже закрыт последующими коммитами, поэтому не должен
-  оставаться активным пунктом;
-- current benchmark status needs correction before being used as evidence.
-
-Что оставить:
-
-- algorithm-depth backlog;
-- benchmark interpretation backlog;
-- SITL hardening as optional/supporting track;
-- lightweight Perimeter Patrol idea, but broaden it into Urban Patrol/Search.
-
-### DRONE_C.20
-
-Сильные стороны:
-
-- самая подробная staged decomposition;
-- road-graph-first approach снижает риск geometry scope creep;
-- хорошо разделяет Urban Patrol, Urban Search, Dynamic Avoidance;
-- содержит детальные test categories per vector;
-- явно признает M62/evidence cleanup as pre-step.
-
-Слабые стороны:
-
-- слишком длинный как основной roadmap;
-- частично дублирует A.20;
-- New Mission generic и Urban Navigation можно объединить, чтобы не держать
-  два конкурирующих направления.
-
-Что оставить:
+Берем как детализацию реализации:
 
 - road-graph-first Urban plan;
+- AABB/static obstacle first, polygons later;
 - mock perception framing;
-- decision matrix;
-- detailed testing discipline;
-- recommendation to postpone full lidar/polygon physics.
+- independent judge;
+- route trace/replay discipline;
+- split Urban Patrol, Urban Search and later multi-agent/deconfliction stages.
 
-## Corrections To Carry Forward
+## Архитектурная граница
 
-### Benchmark current-HEAD claim
+Проект не должен делать:
+
+- motor physics;
+- attitude/rate control;
+- real lidar processing;
+- real object detection;
+- SLAM;
+- certified collision avoidance;
+- hardware readiness claims.
+
+Проект должен делать:
+
+- map-aware mission constraints;
+- deterministic route planning over a simplified environment;
+- independent simulation judge;
+- mock perception events;
+- mission-level stop/replan/report decisions;
+- multi-agent task allocation and deconfliction at the mission layer;
+- replay, reports, metrics and benchmark evidence.
+
+Короткая формула:
+
+```text
+Do not build a new PX4.
+Build map-aware mission planning, a deterministic judge, mock perception,
+replay, metrics, and coordination logic.
+```
+
+## Correction: M62 Benchmark Evidence
 
 Текущий 500-seed benchmark artifact:
 
 - artifact: `results/all_500_jobs14_m62_release/`;
 - manifest commit: `81260ca7afa114a5d9add7b832f6c5d7875b88cd`;
 - observed pre-document HEAD: `f9ed1c399589631e3079f0d31dc01bc999f75892`;
-- simulation-affecting code changed after artifact, including
+- simulation-affecting code changed after the artifact, including
   `crates/swarm-sim/src/runner.rs`.
 
-Therefore the artifact must be treated as historical validation evidence until
-it is rerun for current HEAD or docs explicitly downgrade the claim.
+Поэтому до нового прогона этот artifact нужно считать historical validation
+evidence, not current-HEAD evidence.
 
-### Replay seq debt
-
-The M59 replay replacement-seq issue listed in `DRONE_B.20.md` is no longer an
-open vector item. It was fixed by the later `Fix M59 replay replacement seqs`
-commit. Future plans can still include artifact validation around seq semantics,
-but not the original bug as an open task.
-
-### Motion planning boundary
-
-The project should not implement low-level flight control, motor physics,
-attitude control, SLAM, real lidar processing, or certified obstacle avoidance.
-
-The project can implement:
-
-- map-aware mission constraints;
-- route planning over a simplified map;
-- independent simulation judge;
-- mock perception events;
-- mission-level replan/stop/report decisions;
-- multi-agent deconfliction at the mission layer.
-
-This is not a contradiction. PX4 can remain the waypoint execution layer while
-the Rust workspace owns mission planning, simulation semantics, replay, metrics
-and coordination.
-
-## Final Vector Set
-
-The final set has six active vectors plus one deferred vector.
+## Линейный план
 
 ```text
-V0 Evidence / Cleanup
-V1 Urban Navigation / Search
-V2 Replay / Analysis
-V3 Algorithm Depth
-V4 PX4 / SITL Hardening
-V5 Benchmark / Research Evidence
-V6 Platform / API Packaging (deferred)
+M63 Evidence Cleanup / Status Honesty
+  -> M64 Urban Foundations
+    -> M65 Urban Patrol v0
+      -> M66 Urban Search v1
+        -> M67 Urban Replay / Analysis + Multi-Agent Prep
+          -> M68 Algorithm Depth On Urban + Existing Missions
+            -> M69 Benchmark Refresh / Research Evidence
+              -> M70 SITL Export And Platform Boundary Decision
 ```
 
-Generic New Mission is not a separate top-level vector in the final plan.
-Urban Navigation/Search is the chosen New Mission candidate. Logistics and
-Pursuit remain alternatives if Urban is deferred or completed.
+M70 является decision milestone: если после M69 нужен live/SITL artifact для
+Urban routes, он идет в PX4/SIH direction; если важнее external reuse, он идет
+в Platform/API direction. До M70 эти направления не должны отвлекать основной
+путь.
 
-## V0 - Evidence / Cleanup
+---
 
-### Purpose
+## M63 - Evidence Cleanup / Status Honesty
 
-Create a clean baseline before starting a new large feature.
+### Цель
 
-This vector is intentionally short. It should not consume the project, but it
-prevents stale claims from contaminating the next milestone.
+Создать честную стартовую точку перед новой большой миссией.
 
-### Current state
+M63 короткий, но обязательный. Он закрывает stale claims и старый
+wildfire/flood debt, чтобы Urban work не начинался поверх противоречивого
+status.
 
-What exists:
+### Что сделать
 
-- M58/M59 artifacts;
-- benchmark pack in `results/all_500_jobs14_m62_release/`;
-- README, `docs/STATUS.md`, `docs/BENCHMARK_RESULTS.md`;
-- regression and benchmark tooling.
+1. Benchmark status:
+   - либо rerun 500-seed release benchmark на текущем HEAD;
+   - либо явно маркировать `results/all_500_jobs14_m62_release/` как historical
+     evidence for `81260ca...`.
 
-Known issues:
-
-- benchmark pack is not current HEAD evidence;
-- wildfire/flood wording remains historically confusing;
-- wildfire success semantics are not cleanly explained against completion;
-- some docs claim "current HEAD" too strongly.
-
-### Work items
-
-1. Decide benchmark treatment:
-   - rerun the 500-seed release benchmark on current HEAD; or
-   - mark existing pack as historical evidence for commit `81260ca...`.
-
-2. Sync status docs:
+2. Docs/status sync:
    - README;
    - `docs/STATUS.md`;
    - `docs/BENCHMARK_RESULTS.md`;
-   - result README/manifest notes if necessary.
+   - result README/manifest notes if needed.
 
-3. Close flood wording:
-   - preferred: remove "flood" from active capability claims;
-   - leave flood as future work;
-   - do not implement flood unless Disaster Mapping becomes the main vector.
+3. Flood wording cleanup:
+   - убрать active flood claims from user-facing docs/comments;
+   - оставить flood as future work;
+   - не реализовывать flood в M63.
 
-4. Harden wildfire success semantics:
-   - document exact success predicate;
-   - add test for small-static and medium-dynamic;
-   - explain success vs task completion in benchmark docs.
+4. Wildfire success semantics:
+   - задокументировать exact success predicate;
+   - добавить тесты для small-static и medium-dynamic;
+   - объяснить success vs task completion mismatch in benchmark docs.
 
-5. Validate M58/M59 artifacts:
+5. M58/M59 artifact sanity:
    - replay summaries parse;
-   - event categories are present;
-   - replacement mission seq semantics remain correct.
+   - expected event categories present;
+   - M59 replacement seq semantics stay correct.
+
+### Не делать
+
+- Не начинать Urban implementation before status cleanup.
+- Не делать minimal flood mission.
+- Не делать 1000-seed publication benchmark.
+- Не менять algorithm behavior beyond tiny test/docs fixes.
 
 ### Done criteria
 
-- No user-facing doc claims current benchmark evidence unless manifest commit
-  matches the intended code state.
-- Flood is either implemented or explicitly future work.
-- Wildfire success/completion mismatch is documented and tested.
-- Existing targeted test set passes.
+- User-facing docs do not claim current benchmark evidence for stale artifacts.
+- Flood is clearly future work unless implemented later.
+- Wildfire success/completion semantics are documented and tested.
+- M58/M59 replay artifacts remain readable and semantically consistent.
+- Targeted regression/SITL tests pass.
 
 ### Tests
 
-#### No refactoring
+#### Tests that need no refactoring
 
 - Docs smoke tests for required limitation phrases.
-- Benchmark manifest identity test for committed artifact metadata.
-- Wildfire success semantics test.
-- Replay summary tests for M58/M59 event categories.
+- Benchmark manifest identity test.
+- Wildfire success semantics tests.
+- Replay summary tests for M58/M59 categories.
+- Existing SITL supervisor/replay tests.
 
-#### Light refactoring
+#### Tests that need light refactoring
 
 - Benchmark-pack validation helper.
 - Shared docs/status assertion helper.
 - Small wildfire fixture with explicit mapped-ratio expectations.
 
-#### Heavy refactoring
+#### Tests that need heavy refactoring
 
-- Structured status manifest instead of duplicated free-form Markdown claims.
+- Structured status manifest instead of duplicated Markdown claims.
 - Historical/current benchmark classifier.
 
-## V1 - Urban Navigation / Search
+---
 
-### Purpose
+## M64 - Urban Foundations
 
-Add a practical simulation mission that is closer to real drone tasks without
-requiring real hardware, Gazebo, visualization, real CV, or physics simulation.
+### Цель
 
-This is the main recommended next vector.
+Добавить минимальную основу для Urban missions без полноценной геометрии,
+лидара, автобуса или multi-agent deconfliction.
 
-### Core idea
+M64 должен создать reusable substrate:
 
-Stage 1:
+- road graph;
+- route planner;
+- simple map constraints;
+- initial judge API;
+- scenario DSL fixtures;
+- metrics/replay schema placeholders where needed.
 
-> "Облети квартал."
+### Почему road graph first
 
-Stage 2:
+Начинать с arbitrary polygons опасно: geometry quickly becomes the project.
+Road graph gives practical navigation semantics with much lower risk:
 
-> "Облетай квартал пока не встретишь автобус."
+- intersections as nodes;
+- road/corridor segments as edges;
+- deterministic shortest path;
+- route loop;
+- AABB buildings/no-fly zones as first static obstacles.
 
-Interpretation:
+Polygon geometry can be added later after route/judge/replay are stable.
 
-- fixed flight altitude;
-- local 2D coordinate frame;
-- buildings are static obstacles/no-fly zones;
-- allowed travel space is represented first as road graph/corridors;
-- drone movement remains kinematic and deterministic;
-- judge independently checks violations;
-- perception blocks are mocked.
+### Что сделать
 
-### Why this belongs in the project
+1. Urban map model:
+   - `UrbanMap`;
+   - graph nodes with `Pose`;
+   - graph edges with id, from, to, cost/length;
+   - optional edge metadata such as corridor width;
+   - static obstacles as AABB first.
 
-It develops mission-level navigation and decision logic, not low-level flight
-control.
+2. Scenario DSL:
+   - add an `urban_patrol` fixture or profile;
+   - include map, agents, route loop and run config;
+   - keep it deterministic and portable.
 
-PX4 answers:
-
-- how to execute waypoints;
-- low-level flight stabilization;
-- real vehicle control.
-
-This project answers:
-
-- which route to choose;
-- whether the route is valid;
-- how to represent the mission;
-- what to do after a detection event;
-- how to score success/failure;
-- how several agents avoid mission-level conflicts;
-- how to replay and benchmark behavior.
-
-### What already exists
-
-- `Pose`, `Task`, `TaskKind`, `MissionAdapter`, `RunState`;
-- scenario DSL and scenario catalog tests;
-- movement with `enable_movement`;
-- safety config with geofence, AABB no-fly zones, separation;
-- replay events and summaries;
-- SAR-like sensor concepts;
-- metrics/report/export infrastructure.
-
-### What is missing
-
-- road graph / map model;
-- route planner through allowed space;
-- independent judge for route validity;
-- urban-specific mission events;
-- bus/dynamic object model;
-- mock detector interface;
-- route trace export;
-- multi-agent route deconfliction.
-
-### Milestone V1.1 - Urban Patrol v0
-
-Goal: one drone completes a city-block patrol route on a road graph with no
-judge violations.
-
-Scope:
-
-1. Introduce `urban_patrol` scenario profile.
-2. Add minimal map representation:
-   - nodes;
-   - edges;
-   - edge length;
-   - allowed route loop;
-   - optional AABB buildings/no-fly zones.
-3. Add deterministic route planner:
+3. Route planner:
    - Dijkstra or A*;
    - deterministic tie-breaking;
-   - route is a sequence of graph nodes or generated waypoints.
-4. Add judge:
-   - route uses only allowed edges;
-   - no point enters building/no-fly AABB;
-   - loop completed;
-   - timeout if incomplete.
-5. Add metrics:
+   - route from node to node;
+   - route loop expansion into planned segments.
+
+4. Initial judge API:
+   - route uses existing graph edges;
+   - planned route does not use blocked edges;
+   - planned route does not enter AABB obstacles if edge/point check is cheap;
+   - report violation type and location.
+
+5. Metrics skeleton:
+   - route_length_m;
+   - route_planned;
+   - urban_violation_count;
+   - urban_route_completed initially false/true based on route progress.
+
+### Не делать
+
+- No bus detector.
+- No lidar/raycast.
+- No dynamic obstacles.
+- No multi-agent route conflicts.
+- No PX4/SITL export.
+- No arbitrary polygon dependency unless a tiny local implementation is enough.
+
+### Done criteria
+
+- Urban fixture loads through scenario catalog.
+- Route planner returns a deterministic route on a simple block.
+- Invalid map/route inputs are rejected with actionable errors.
+- Judge can identify at least one simple invalid route.
+- New types are documented enough for M65 implementation.
+
+### Tests
+
+#### Tests that need no refactoring
+
+- Urban DSL parse/validation from inline fixture.
+- Road graph node/edge validation.
+- Deterministic shortest path unit test.
+- Invalid edge/node references are rejected.
+- Simple AABB obstacle violation test if implemented in M64.
+
+#### Tests that need light refactoring
+
+- Shared urban fixture builder.
+- Route assertion helper.
+- Judge assertion helper.
+- Scenario catalog helper for urban fixtures.
+
+#### Tests that need heavy refactoring
+
+- Random graph generation with guaranteed route existence.
+- Polygon geometry tests.
+- Route planner abstraction if multiple planners are supported.
+
+---
+
+## M65 - Urban Patrol v0
+
+### Цель
+
+Реализовать первую полноценную Urban mission:
+
+> One drone patrols a city-block loop and completes it without judge violations.
+
+M65 превращает foundations из M64 в user-visible simulation capability.
+
+### Что сделать
+
+1. Mission semantics:
+   - patrol route is an ordered loop over graph nodes or generated waypoints;
+   - completion means all required segments/nodes are visited in order or under
+     clearly documented rules;
+   - failure means timeout or judge violation.
+
+2. Runner integration:
+   - agent moves along planned route, not simply direct-to-nearest task if that
+     would ignore the road graph;
+   - route progress updates each tick;
+   - mission can finish before max_ticks.
+
+3. Judge integration:
+   - route validity checked before run;
+   - execution checked during run where possible;
+   - violations recorded with tick, agent, segment/point and reason.
+
+4. Replay/events:
+   - `UrbanRoutePlanned`;
+   - `UrbanSegmentEntered`;
+   - `UrbanSegmentCompleted`;
+   - `UrbanViolation`;
+   - `UrbanPatrolCompleted`.
+
+5. Metrics:
    - `urban_patrol_completed`;
    - `urban_violation_count`;
    - `route_length_m`;
    - `route_efficiency`;
    - `time_to_complete_loop`;
-   - `replan_count` initially zero.
-6. Add replay/report events:
-   - route planned;
-   - segment entered/completed;
-   - violation;
-   - patrol completed.
+   - `distance_travelled_m`;
+   - `replan_count = 0` in v0.
 
-Non-goals:
+6. Docs:
+   - README/status mention Urban Patrol as simulation-only;
+   - scenario docs describe map/route fields;
+   - limitations say no lidar, no real obstacle avoidance, no hardware claim.
 
-- no arbitrary polygon geometry;
-- no lidar;
-- no bus;
-- no dynamic obstacles;
-- no PX4 execution;
-- no multi-agent deconfliction.
+### Не делать
 
-### Milestone V1.2 - Urban Patrol v1 Geometry
+- No buses.
+- No dynamic obstacle avoidance.
+- No multi-agent deconfliction.
+- No PX4 claim.
+- No visual UI.
 
-Goal: expand from graph-only constraints to simple geometric constraints.
+### Done criteria
 
-Scope:
+- `urban_patrol` small scenario runs and completes.
+- An invalid route scenario fails with judge violation.
+- Replay summary explains route completion and violations.
+- JSON/CSV/Markdown exports include new user-facing metrics if exposed in
+  benchmark/report tables.
+- Regression smoke is portable and deterministic.
 
-1. Keep road graph as primary route topology.
-2. Add corridor width or AABB corridor bands.
-3. Detect leaving allowed corridor.
-4. Detect segment intersection with AABB building/no-fly zone.
-5. Export route trace.
+### Tests
 
-Non-goals:
+#### Tests that need no refactoring
 
-- no arbitrary polygon library unless needed;
-- no continuous collision physics.
+- Urban Patrol success fixture.
+- Urban Patrol timeout fixture.
+- Judge violation fixture.
+- Replay event serialization roundtrip.
+- Regression smoke for small Urban Patrol.
+- Report/export header tests if metrics are exported.
 
-### Milestone V1.3 - Urban Search v1
+#### Tests that need light refactoring
 
-Goal: drone patrols until it detects a bus through a mocked detector.
+- Mission outcome assertion helper:
+  - completed;
+  - timeout;
+  - violation.
+- Route progress fixture.
+- Replay summary fixture.
 
-Scope:
+#### Tests that need heavy refactoring
 
-1. Add bus entity:
-   - static bus first, dynamic route later;
-   - id, pose, active tick range.
-2. Add `BusDetector` mock:
-   - range;
+- Property tests for random route loops.
+- Random map tests where every generated route must remain valid.
+- Long-run determinism sweep for urban scenarios.
+
+---
+
+## M66 - Urban Search v1
+
+### Цель
+
+Добавить вторую практическую Urban mission:
+
+> Drone patrols the block until it detects a bus through a mocked detector.
+
+M66 introduces perception-driven mission decision logic without real CV,
+camera simulation or physics.
+
+### Что сделать
+
+1. Bus entity:
+   - id;
+   - pose or graph node/edge position;
+   - active_from_tick / active_until_tick optional;
+   - static bus first, dynamic route later if still small.
+
+2. Mock detector:
+   - detection range;
    - detection probability;
    - false positive rate;
-   - deterministic seed.
-3. Add mission policy:
-   - continue patrol until detection;
-   - stop/report on detection;
-   - timeout if not detected.
-4. Add metrics:
+   - deterministic seed;
+   - optional field-of-view later.
+
+3. Mission policy:
+   - patrol until bus detection;
+   - stop/report on confirmed detection;
+   - timeout if not detected;
+   - no judge violation allowed for success.
+
+4. Replay/events:
+   - `BusObserved`;
+   - `BusDetected`;
+   - `BusFalsePositive`;
+   - `UrbanSearchCompleted`;
+   - detector/no-detection summary counters.
+
+5. Metrics:
    - `bus_detected`;
    - `time_to_detect_bus`;
    - `false_positive_count`;
    - `distance_before_detection`;
    - `search_success_without_violation`.
-5. Add replay events:
-   - bus observed;
-   - bus detected;
-   - false positive;
-   - urban search completed.
 
-Non-goals:
+6. Docs:
+   - explicitly say detector is mocked;
+   - no real object recognition claim;
+   - no line-of-sight realism unless implemented.
 
-- no image processing;
-- no camera model;
-- no real object detection;
-- no line-of-sight in first version unless cheap.
+### Не делать
 
-### Milestone V1.4 - Urban Multi-Agent / Avoidance v2
+- No image/CV implementation.
+- No lidar implementation.
+- No realistic bus physics.
+- No multi-agent search coordination unless trivial.
 
-Goal: multiple drones share the urban map and resolve mission-level route
-conflicts.
+### Done criteria
 
-Scope:
+- Deterministic search fixture detects a bus.
+- Fixture with out-of-range bus does not detect before timeout.
+- False-positive behavior is testable with seed control.
+- Success predicate is clear: detected target, no judge violation, within
+  timeout.
+- Replay summary reports detection events.
 
-1. Two or more drones on the same graph.
-2. Separation measured by judge.
-3. Route conflicts detected on edges/nodes.
-4. Simple policies:
-   - wait;
-   - yield;
-   - replan around blocked edge.
-5. Metrics:
-   - separation violations;
-   - near misses;
-   - wait time;
-   - replan success rate;
-   - unresolved blockages.
+### Tests
 
-Non-goals:
+#### Tests that need no refactoring
 
-- no certified collision avoidance;
-- no full multi-agent traffic simulator;
-- no onboard distributed autonomy claim.
+- Bus entity parse/validation.
+- Detector in-range success test with deterministic probability.
+- Detector out-of-range no-detection test.
+- False-positive controlled-seed test.
+- Urban Search success/timeout fixtures.
+- Replay event roundtrip for bus events.
 
-### Risks
+#### Tests that need light refactoring
 
-- Geometry scope creep.
-- Mock lidar/object detector could be mistaken for real perception.
-- If replay/report support is weak, debugging urban scenarios becomes painful.
-- If route graph is too simple, the mission may look like waypoint expansion.
+- Mock detector fixture helper.
+- Search outcome assertion helper.
+- Deterministic RNG helper for detector tests.
 
-### Recommendation
+#### Tests that need heavy refactoring
 
-Start with graph-first Urban Patrol. Add geometry and detector layers only
-after route/judge/replay are stable.
+- Dynamic bus schedule property tests.
+- Line-of-sight geometry tests.
+- Multi-agent search partitioning tests.
 
-## V2 - Replay / Analysis
+---
 
-### Purpose
+## M67 - Urban Replay / Analysis + Multi-Agent Prep
 
-Make behavior inspectable without building a visual 2D/3D viewer.
+### Цель
 
-Urban missions need this immediately: without route traces and judge timelines,
-failures will be hard to understand.
+Сделать Urban runs inspectable from text artifacts and prepare the ground for
+multi-agent Urban scenarios.
 
-### Work items
+M67 is not a visualizer milestone. It is a debugging and analysis milestone.
 
-1. Route trace:
+### Что сделать
+
+1. Route trace export:
    - planned route;
    - executed route;
-   - segment status;
-   - distance per segment.
+   - per-segment status;
+   - per-agent pose trace if cheap enough.
 
 2. Judge report:
    - violation type;
@@ -502,411 +518,330 @@ failures will be hard to understand.
    - tick;
    - agent id.
 
-3. Timeline output:
-   - task assigned;
-   - route planned;
-   - segment entered;
-   - detector event;
-   - violation;
-   - replan;
-   - completion.
-
-4. CLI support:
+3. Replay timeline:
    - `replay --timeline`;
    - `replay --agent <id>`;
    - optional `replay --category urban`.
 
-5. CSV/JSON analysis export:
-   - per-tick pose trace;
-   - event counts;
-   - route metrics.
+4. Multi-agent prep:
+   - two-agent urban fixture;
+   - separation metrics;
+   - route conflict representation;
+   - no advanced avoidance policy yet.
+
+5. Reports:
+   - route trace path in run report if artifact is written;
+   - urban event counts in summary.
+
+### Не делать
+
+- No GUI.
+- No Bevy/egui viewer.
+- No full traffic simulator.
+- No complex avoidance policy.
 
 ### Done criteria
 
-- Urban Patrol/Search runs can be debugged from text artifacts.
+- Urban Patrol/Search failures can be diagnosed from replay/report files.
+- Timeline output is deterministic and readable.
+- Two-agent fixture can at least measure route/separation conflicts.
 - Replay schema remains backward-compatible.
-- New event categories have summary tests.
 
 ### Tests
 
-#### No refactoring
+#### Tests that need no refactoring
 
-- Event serialization roundtrip.
-- Replay summary contains urban event counters.
-- Timeline output is deterministic for a fixture.
-- CSV route trace headers are stable.
+- Timeline output fixture.
+- Route trace JSON/CSV header test.
+- Judge report serialization test.
+- Two-agent separation measurement fixture.
+- Replay compatibility test for old logs.
 
-#### Light refactoring
+#### Tests that need light refactoring
 
-- Shared event-summary formatter.
-- Compact route trace fixture.
-- Backward-compatibility fixture for old replay logs.
+- Shared replay timeline formatter.
+- Compact route trace fixture builder.
+- Urban summary assertion helper.
 
-#### Heavy refactoring
+#### Tests that need heavy refactoring
 
 - Versioned replay schema migration tests.
 - Large replay performance tests.
 - Cross-run replay diff tooling.
+- Multi-agent deconfliction property tests.
 
-## V3 - Algorithm Depth
+---
 
-### Purpose
+## M68 - Algorithm Depth On Urban + Existing Missions
 
-Improve strategies after the project has a stronger mission substrate.
+### Цель
 
-Algorithm work is valuable, but it becomes much more meaningful when tested
-against Urban Patrol/Search or another realistic mission, not only point/zone
-scenarios.
+После Urban Patrol/Search получить более содержательную среду для algorithmic
+improvements and strategy comparison.
 
-### Workstream V3.1 - Communication-aware scoring
+M68 должен дать хотя бы одно измеримое улучшение, а не просто новый параметр.
 
-Current gap:
+### Что сделать
 
-- `comms_range` exists;
-- connectivity-aware allocator exists;
-- most scoring still ignores communication cost.
+1. Choose one primary algorithm improvement:
+   - urban corridor-aware planner;
+   - communication-aware scoring;
+   - wildfire priority-triggered reallocation;
+   - SAR uncertainty-aware planner.
 
-Work:
+2. Add benchmark delta:
+   - before/after or enabled/disabled comparison;
+   - at least one metric where the change should matter;
+   - clear interpretation.
 
-1. Add `message_budget` or `comms_penalty_weight`.
-2. Penalize assignments outside reliable communication range.
-3. Benchmark under packet-loss and partition profiles.
-4. Compare greedy/auction/connectivity-aware/CBBA on success vs message cost.
+3. Support matrix update:
+   - stable;
+   - experimental;
+   - unsupported with reason.
 
-Metrics:
+4. CBBA analysis:
+   - analyze weak/unsupported pairs with replay;
+   - decide inherent vs bug vs parameter issue;
+   - try failure-triggered gossip burst only if evidence supports it.
 
-- messages_attempted;
-- messages_dropped;
-- network_availability;
-- disconnected_agents_max;
-- task_completion_rate;
-- success_rate.
+5. Scaling prep:
+   - add 8-agent or 16-agent profile only if useful for the chosen algorithm;
+   - defer hierarchical coordination until measured need exists.
 
-### Workstream V3.2 - Mission-specific planners
+### Не делать
 
-Work:
-
-- SAR uncertainty-aware planner;
-- wildfire priority-triggered reallocation;
-- inspection route optimization for non-centralized strategies;
-- urban corridor-aware planner.
-
-This should not be a generic abstraction first. Implement one measurable
-mission-specific improvement, benchmark it, then generalize if needed.
-
-### Workstream V3.3 - CBBA convergence and support matrix
-
-Work:
-
-1. Analyze unsupported/weak pairs with replay.
-2. Decide whether each gap is inherent, a parameter issue, or a bug.
-3. Try failure-triggered gossip burst or tuned gossip interval.
-4. Update support matrix honestly.
-
-### Workstream V3.4 - Scaling
-
-Work:
-
-- add 8-agent and 16-agent profiles;
-- measure message count, conflicts, completion time;
-- consider hierarchical coordination only after measuring need.
+- Do not add many algorithm knobs without benchmark interpretation.
+- Do not start hierarchical coordination before scaling evidence.
+- Do not try to fix every weak benchmark row in one milestone.
 
 ### Done criteria
 
-- At least one strategy improvement shows measurable benefit on a meaningful
-  scenario.
-- Support matrix distinguishes unsupported-by-design from current bugs.
-- Benchmark docs explain tradeoffs instead of only ranking success rates.
+- One strategy/planner improvement has measurable benefit.
+- Benchmark delta is committed or documented.
+- Support matrix is updated.
+- Unsupported pairs are not presented as failures without explanation.
 
-## V4 - PX4 / SITL Hardening
+### Tests
 
-### Purpose
+#### Tests that need no refactoring
 
-Keep improving local PX4/SIH evidence without making it the main next vector.
+- Unit tests for chosen scoring/planner change.
+- Regression smoke for affected mission.
+- Support matrix tests for explicit unsupported pairs.
+- Benchmark delta smoke if cheap.
 
-This vector is useful when a new mission needs export to SITL waypoints, or
-when supervisor reliability becomes a bottleneck.
+#### Tests that need light refactoring
 
-### Work items
+- Shared scoring helper.
+- Strategy comparison fixture.
+- Replay diagnostic helper for convergence events.
 
-1. Local integration harness:
-   - launch two PX4 SIH instances;
-   - wait for ports;
-   - run supervisor;
-   - capture logs;
-   - clean up processes;
-   - write repeatable result directory.
+#### Tests that need heavy refactoring
 
-2. Artifact validator:
-   - manifest/report/event-log/replay-summary consistency;
-   - event seq/task id consistency;
-   - final status consistency.
+- CBBA convergence property tests under arbitrary message loss.
+- Multi-agent scaling benchmark harness.
+- Hierarchical coordination integration tests.
 
-3. Broader failure modes:
-   - fail before upload;
-   - fail after upload;
-   - fail during progress;
-   - no-progress timeout;
-   - partial completion then failure;
-   - repeated failure if scope requires it.
+---
 
-4. Replay timeline for SITL:
-   - agent-filtered timeline;
-   - event categories;
-   - elapsed time ordering.
+## M69 - Benchmark Refresh / Research Evidence
 
-### Non-goals
+### Цель
 
-- no hardware readiness claim;
-- no Gazebo as default gate;
-- no PX4 CI unless explicitly chosen later;
-- no production failover claim.
+Обновить benchmark evidence after Urban and Algorithm work, with honest
+current/historical artifact handling.
 
-### Done criteria
+M69 should not run before M65/M66 unless the project explicitly wants only a
+cleanup benchmark.
 
-- Local manual runs are reproducible enough for development use.
-- Artifacts are easier to validate.
-- Failure modes are covered by fake-controller tests even if PX4 runs remain
-  manual.
+### Что сделать
 
-## V5 - Benchmark / Research Evidence
+1. Current-head validation:
+   - 500-seed release benchmark after Urban/Algorithm changes;
+   - manifest commit must match intended code state.
 
-### Purpose
-
-Build stronger analytical claims after the mission/algorithm substrate improves.
-
-The benchmark vector should not be the next big step before Urban or Algorithm
-Depth. Otherwise it mainly measures the current abstract scenarios.
-
-### Work items
-
-1. Current-head 500-seed validation after major changes.
 2. Supported-pair matrix:
    - stable;
    - experimental;
    - unsupported with reason.
-3. 1000-seed publication-like run only when claims need it.
-4. Confidence intervals:
-   - mean;
-   - stderr;
-   - min/max;
-   - failure rate.
-5. Degradation curves:
+
+3. Benchmark interpretation:
+   - where greedy is enough;
+   - where connectivity-aware or mission-specific planner wins;
+   - where centralized is an oracle;
+   - where CBBA is unsupported or weak.
+
+4. Optional publication-like run:
+   - 1000-seed only if needed;
+   - confidence intervals;
+   - degradation curves.
+
+5. Degradation suites:
    - packet loss;
    - latency;
    - agent count;
    - urban obstacle density;
    - bus detection probability;
    - failure count.
-6. Strategy comparison interpretation:
-   - where greedy is enough;
-   - where connectivity-aware wins;
-   - where centralized is only an oracle;
-   - where CBBA is unsupported or weak.
+
+### Не делать
+
+- Do not mix current and historical evidence.
+- Do not include unsupported pairs as success claims.
+- Do not use benchmark as substitute for PX4/SITL evidence.
 
 ### Done criteria
 
-- Benchmark artifact commit identity is explicit.
-- Current/historical evidence is not mixed.
+- Benchmark artifact identity is explicit.
+- Docs distinguish current, historical and unsupported evidence.
 - Tables include interpretation, not only numbers.
-- Unsupported pairs are excluded from success claims or clearly marked.
+- Regression runner remains green.
 
-## V6 - Platform / API Packaging
+### Tests
 
-### Status
+#### Tests that need no refactoring
 
-Deferred.
+- Existing benchmark export tests.
+- Manifest/report identity tests.
+- Regression runner suite.
+- Baseline comparison tests.
 
-### Purpose
+#### Tests that need light refactoring
 
-Eventually convert stable-ish extension guidance into a cleaner external API or
-plugin boundary.
+- Confidence interval helper tests.
+- Benchmark pack validation helper.
+- Summary table consistency tests.
 
-### Why deferred
+#### Tests that need heavy refactoring
 
-The project already has `docs/EXTENSION_GUIDE.md`. Stabilizing public APIs now
-would be premature because:
+- Statistical delta report validation.
+- Multi-pack comparison tooling.
+- Long-run reproducibility harness.
 
-- no real supported new mission has exercised the full extension path yet;
-- Urban Navigation may reveal missing extension surfaces;
-- public API work gives little research value by itself.
+---
 
-### Revisit when
+## M70 - SITL Export And Platform Boundary Decision
 
-- Urban Patrol/Search or another real mission is complete;
-- at least one external-style strategy/mission example exists;
-- schema compatibility tests are already in place.
+### Цель
 
-## Alternatives Kept On The Shelf
+После Urban and benchmark refresh принять следующий осознанный decision:
+
+1. углублять local PX4/SIH evidence for Urban-generated routes; or
+2. стабилизировать platform/API boundary for external mission/strategy work; or
+3. continue algorithm depth if Urban benchmark shows clear gaps.
+
+M70 is a decision milestone, not a promise to do all three.
+
+### Option A - Urban route export to SITL/PX4
+
+Scope:
+
+- convert Urban route to waypoint mission;
+- validate with existing safety gate;
+- run local PX4/SIH upload or execute if practical;
+- capture artifact using output-dir/run-id discipline.
+
+Non-goals:
+
+- no hardware;
+- no Gazebo gate;
+- no real obstacle avoidance claim.
+
+### Option B - PX4/SITL hardening
+
+Scope:
+
+- local integration harness;
+- artifact validator;
+- broader failure modes;
+- replay timeline for SITL events.
+
+### Option C - Platform/API packaging
+
+Scope:
+
+- external-style mission example;
+- schema compatibility tests;
+- crate boundary review;
+- no public semver promise unless explicitly chosen.
+
+### Done criteria
+
+- A concrete next roadmap is selected based on M63-M69 evidence.
+- If SITL is chosen, artifact reproducibility improves.
+- If platform is chosen, extension path has at least one real mission behind it.
+- If algorithm depth continues, benchmark gaps justify it.
+
+### Tests
+
+#### Tests that need no refactoring
+
+- Urban route to waypoint conversion unit test if Option A is chosen.
+- Artifact validator fixture if Option B is chosen.
+- Extension example compile/test if Option C is chosen.
+
+#### Tests that need light refactoring
+
+- Shared route-to-waypoint conversion helper.
+- SITL artifact consistency helper.
+- External-style extension fixture.
+
+#### Tests that need heavy refactoring
+
+- Manual/ignored PX4/SIH integration test harness.
+- Schema compatibility test suite.
+- Multi-crate public API compatibility checks.
+
+---
+
+## Alternatives Deferred
+
+These are not part of the M63-M70 mainline.
 
 ### Logistics / Delivery
 
-Good future mission if the goal becomes task dependencies, pickup/dropoff,
-capacity and deadlines.
+Useful later if the goal becomes task dependencies, pickup/dropoff, capacity
+and deadlines.
 
-Keep because:
-
-- it tests a different axis than Urban;
-- it stresses task registry and completion semantics.
-
-Do not choose first because:
-
-- it is less connected to physical navigation;
-- it can become a scheduling/VRP project.
+Do not choose before Urban because it is less connected to movement in a
+physical environment and can become a scheduling/VRP project.
 
 ### Multi-target Pursuit
 
-Good future mission if the goal becomes dynamic target tracking.
+Useful later if the goal becomes dynamic target tracking.
 
-Keep because:
+Do not choose before Urban because moving-target semantics are harder to debug
+without route trace and replay improvements.
 
-- it stresses reactive planning;
-- it differs from static waypoint/zone tasks.
+### Full polygon geometry and lidar/raycast
 
-Do not choose first because:
+Useful later after graph-based Urban Patrol/Search works.
 
-- without map/perception it can become a toy chase model;
-- moving target semantics are harder to debug without replay improvements.
+Do not start here because it risks turning the next milestone into a geometry
+or sensor-simulation project.
 
-### Minimal Perimeter Patrol
+### Minimal flood mission
 
-Could be a smaller version of Urban Patrol:
+Useful only if Disaster Mapping becomes the main product/research direction.
 
-- polygon or route loop;
-- generated waypoints;
-- no road graph;
-- no judge beyond safety config.
-
-Use only if a quick demo is needed. As main M63, prefer graph-first Urban
-Patrol because it creates more reusable navigation infrastructure.
-
-## Recommended Milestone Sequence
-
-### M63 - Evidence Cleanup And Urban Foundations
-
-This can be split into two commits/plans if needed.
-
-Outcome:
-
-- benchmark/status docs are honest;
-- flood/wildfire wording cleaned;
-- wildfire success semantics tested;
-- Urban map/road graph design finalized;
-- initial fixtures planned.
-
-### M64 - Urban Patrol v0
-
-Outcome:
-
-- `urban_patrol` scenario loads;
-- one-drone route loop completes;
-- road graph planner works;
-- judge reports route validity;
-- replay/report include core urban events and metrics;
-- regression smoke exists.
-
-### M65 - Urban Search v1
-
-Outcome:
-
-- bus entity exists;
-- mock bus detector exists;
-- mission stops on detection;
-- success semantics include detection and no judge violation;
-- deterministic search test exists.
-
-### M66 - Urban Replay / Analysis And Multi-Agent Prep
-
-Outcome:
-
-- route traces;
-- judge timeline;
-- replay timeline filtering;
-- multi-agent route conflict fixture;
-- separation metrics ready for next step.
-
-### M67 - Algorithm Depth On Urban + Existing Missions
-
-Outcome:
-
-- one mission-specific planner improvement;
-- one communication-aware scoring improvement or explicit defer;
-- benchmark delta showing measurable impact.
-
-### M68 - Benchmark Refresh
-
-Outcome:
-
-- current-head benchmark after Urban/Algorithm changes;
-- support matrix updated;
-- benchmark docs distinguish current, historical and unsupported evidence.
-
-## Test Strategy
-
-### Tests that need no refactoring
-
-- Scenario DSL load/validation tests for new urban fixtures.
-- Unit tests for route graph parsing.
-- Unit tests for deterministic shortest path.
-- Unit tests for AABB judge violations.
-- Replay event serialization roundtrip.
-- Regression smoke for a small Urban Patrol scenario.
-- Wildfire success semantics test.
-- Benchmark manifest identity test.
-- Existing SITL supervisor and replay tests remain green.
-
-### Tests that need light refactoring
-
-- Shared urban fixture builder.
-- Route assertion helper:
-  - route uses allowed edges;
-  - route avoids forbidden zones;
-  - route completes loop.
-- Judge assertion helper:
-  - no violation;
-  - building violation;
-  - corridor exit;
-  - separation breach.
-- Mock detector fixture:
-  - bus visible;
-  - bus out of range;
-  - false positive controlled by seed.
-- Replay timeline fixture.
-- Benchmark pack validation helper.
-
-### Tests that need heavy refactoring
-
-- Polygon geometry property tests.
-- Random map generation with route existence guarantees.
-- Dynamic obstacle and replan property tests.
-- Multi-agent deconfliction property tests.
-- CBBA convergence under arbitrary message loss.
-- Long-run benchmark reproducibility harness.
-- Versioned replay schema migration tests.
+For M63, prefer cleanup and future-work wording.
 
 ## Final Recommendation
 
-Adopt this final plan:
+Execute the milestone chain in order:
 
 ```text
-V0 cleanup/evidence
-V1 Urban Navigation/Search as main new capability
-V2 replay/analysis as support
-V3 algorithm depth after Urban gives better pressure
-V4 PX4/SITL hardening only as needed
-V5 benchmark/research after stronger scenarios
-V6 platform packaging later
+M63 Evidence Cleanup / Status Honesty
+M64 Urban Foundations
+M65 Urban Patrol v0
+M66 Urban Search v1
+M67 Urban Replay / Analysis + Multi-Agent Prep
+M68 Algorithm Depth On Urban + Existing Missions
+M69 Benchmark Refresh / Research Evidence
+M70 SITL Export And Platform Boundary Decision
 ```
 
-The next major implementation should be **Urban Patrol v0** after a short
-evidence cleanup. It gives the project the most useful new capability:
-realistic mission-level movement and decision semantics without crossing into
-hardware, Gazebo, real CV, or low-level flight control.
-
-Short formula:
-
-```text
-Do not build a new PX4.
-Build map-aware mission planning, a deterministic judge, mock perception,
-replay, metrics, and coordination logic.
-```
+The next implementation plan should be M63 first, then M64/M65. Urban Patrol
+is the main new capability, but it should not start before the short evidence
+cleanup because current benchmark/status claims are not fully aligned with the
+current code state.
