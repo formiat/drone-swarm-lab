@@ -2037,6 +2037,43 @@ mod tests {
     }
 
     #[test]
+    fn extension_fixture_runs_mapping_mission_with_replay_log() {
+        let mut scenario = scenario(0, 1, 0);
+        scenario.name = "extension_fixture".to_owned();
+        scenario.tasks = vec![semantic_task("zone-0", TaskKind::MappingZone)];
+
+        let cfg = RunConfig {
+            max_ticks: 10,
+            wildfire_state: Some(WildfireState {
+                zones: vec![WildfireZone {
+                    id: "zone-0".to_owned(),
+                    threat_level: 1.0,
+                    priority: 1,
+                }],
+                mapped_zone_ids: std::collections::HashSet::new(),
+                update_interval_ticks: 999,
+                enable_dynamic_threat: false,
+                enable_zone_expansion: false,
+                enable_spatial_spread: false,
+            }),
+            ..config(vec![])
+        };
+
+        let (metrics, event_log) =
+            ScenarioRunner::run_with_log(&scenario, cfg, swarm_alloc::GreedyAllocator);
+        let event_log = event_log.expect("run_with_log should return an event log");
+
+        assert!(metrics.success);
+        assert_eq!(metrics.hazard_zones_mapped, 1);
+        assert_eq!(event_log.schema_version, "0.2");
+        assert!(event_log.events.iter().any(|event| matches!(
+            event,
+            swarm_replay::Event::TaskCompleted { task_id, .. }
+                if task_id.to_string() == "zone-0"
+        )));
+    }
+
+    #[test]
     fn build_run_state_collects_mission_semantics() {
         let grid = SearchGrid::new(2, 2, 1.0);
         let mut grid_state =

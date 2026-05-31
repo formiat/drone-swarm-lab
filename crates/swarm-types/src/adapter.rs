@@ -246,6 +246,47 @@ mod tests {
         }
     }
 
+    #[derive(Clone, Debug, Default)]
+    struct TestExtensionAdapter;
+
+    impl MissionAdapter for TestExtensionAdapter {
+        fn task_kind(&self, _task: &Task) -> TaskKind {
+            TaskKind::Waypoint
+        }
+
+        fn route_cost(&self, from: Pose, task: &Task) -> f64 {
+            from.distance_to_2d(&task.pose.unwrap_or_default())
+        }
+
+        fn is_completed(&self, task: &Task, state: &RunState) -> bool {
+            state.completed_tasks.contains(&task.id)
+        }
+
+        fn score(&self, agent: &AllocationAgent, task: &Task) -> f64 {
+            500.0 - self.route_cost(agent.pose, task) + f64::from(task.priority)
+        }
+    }
+
+    #[test]
+    fn test_only_extension_adapter_contract() {
+        let adapter = TestExtensionAdapter;
+        let t = task("extension-0", TaskKind::Waypoint);
+        let agent = agent_at(7.0, 10.0);
+        let mut state = RunState::default();
+
+        assert_eq!(adapter.task_kind(&t), TaskKind::Waypoint);
+        assert_eq!(adapter.route_cost(agent.pose, &t), 3.0);
+        assert!(!adapter.is_completed(&t, &state));
+
+        state.completed_tasks.insert(t.id.clone());
+        assert!(adapter.is_completed(&t, &state));
+        assert!(adapter.score(&agent, &t) > adapter.score(&agent_at(100.0, 10.0), &t));
+
+        let mut no_pose = task("extension-no-pose", TaskKind::Waypoint);
+        no_pose.pose = None;
+        assert!(adapter.route_cost(Pose::default(), &no_pose).is_finite());
+    }
+
     #[test]
     fn coverage_adapter_task_kind() {
         let adapter = CoverageAdapter;

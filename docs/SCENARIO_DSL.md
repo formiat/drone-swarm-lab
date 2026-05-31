@@ -8,6 +8,11 @@ Current schema version: `0.1`
 
 All scenario suites must include `"schema_version": "0.1"`. Legacy files without this field default to `"0.1"`.
 
+For mission-extension work, follow
+[`docs/EXTENSION_GUIDE.md`](EXTENSION_GUIDE.md). Additive mission fixtures can
+usually stay on schema `0.1`; incompatible structure or validation changes need
+an explicit schema policy update and compatibility tests.
+
 ## ScenarioSuite Format
 
 ```json

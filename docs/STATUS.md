@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-30
 **HEAD commit:** see `git rev-parse HEAD`
-**Last audit:** M60 PX4/SIH Supervisor Hardening
+**Last audit:** M61 Platform / API Stabilization
 
 This document is the current status summary for the repository. It supersedes
 the older M39b-only audit and should be read together with the README current
@@ -36,6 +36,7 @@ status table.
 | M58 Live Multi-Agent PX4/SIH Execute Orchestration | Complete as experimental local SITL plumbing | `sitl_supervisor --connection --execute` with `scenarios/sitl.multi-agent.execute.config.json` validates all live agents, rejects non-execute lifecycles, applies per-agent safety and hardware-candidate gates before upload, runs sequential local PX4/SIH controllers, and writes a common SITL event log plus `sitl_multi_agent_run_report.v1`. |
 | M59 Live PX4/SIH Failure & Reallocation | Partial foundation | `--reupload-on-failure` turns a terminal failed live-agent run into runtime release/reassignment events, pending-survivor mission replacement, report `reallocation` metrics, and replay summary counters. The full stepwise live loop, active-survivor abort/clear/upload/execute replacement, and real PX4/SIH failure-injection artifact remain follow-up work. |
 | M60 PX4/SIH Supervisor Hardening | Complete for local workflow hardening | `sitl_supervisor` now supports `--output-dir`, `--run-id`, and `--force`, refuses artifact overwrites by default, returns stable exit codes, writes replay summaries for output-dir runs, and extends `sitl_multi_agent_run_report.v1` with `task_ownership`, `events_summary`, `final_status`, and `limitations`. This hardens repeatable local PX4/SIH research runs, not hardware readiness. |
+| M61 Platform / API Stabilization | Complete as in-repository extension guidance | `docs/EXTENSION_GUIDE.md` documents mission, strategy, metrics, crate boundaries, schema-version policy, and test-only extension fixtures. It is a stable-ish in-repository guide, not a semver-stable published API or hardware-readiness claim. |
 
 ## Current Known Limitations
 
@@ -92,11 +93,22 @@ status table.
   experimental for some strategies.
 - **Flood mission**: not implemented as a separate mission.
 
+### Platform / API
+
+- **Extension points are documented, not published as an SDK.** M61 documents
+  stable-ish in-repository paths for missions, strategies, metrics, and schema
+  changes. It does not promise semver-stable public API, crate publication, or
+  external plugin compatibility.
+- **Test-only extension fixtures are not supported features.** The M61 adapter,
+  strategy, and runner fixtures validate contracts but are not new real
+  missions or benchmark strategies.
+
 ## Readiness
 
 | Goal | Status | Blocker |
 |---|---|---|
 | Portable SITL verification | Ready | Run `sitl_agent`/`sitl_docs` targeted tests. |
+| In-repository extension work | Ready with M61 boundaries | Use `docs/EXTENSION_GUIDE.md`; external semver-stable plugin/API work remains out of scope. |
 | M48 live PX4 verification | Complete for local PX4 SIH | Captured in `results/m48_px4_sitl_2026-05-30/`; Gazebo/HIL/hardware remain out of scope. |
 | Real multi-agent PX4/SIH | Experimental local workflow with M59 gap and M60 hardening | Upload-only SIH evidence exists and `sitl_supervisor --connection --execute --reupload-on-failure --output-dir ... --run-id ...` can orchestrate controlled one-shot execute/reallocation foundation attempts with stable artifacts and exit codes; stepwise live loss detection, active-survivor mission replacement, PX4 CI, Gazebo/HIL, hardware, and a captured real failure-injection artifact remain future work. |
 | Large benchmark publication | Not ready | Default regression flake is fixed; benchmark baselines/results still need a fresh publication run. |
@@ -104,15 +116,19 @@ status table.
 
 ## Recommended Next Steps
 
-1. Use M60 `--output-dir` / `--run-id` for any new local PX4/SIH evidence so
+1. Use `docs/EXTENSION_GUIDE.md` when adding the next in-repository mission,
+   strategy, metric, or schema field. Keep the support matrix and regression
+   coverage in the same change.
+2. Use M60 `--output-dir` / `--run-id` for any new local PX4/SIH evidence so
    artifacts are repeatable and overwrite-safe.
-2. Implement the stepwise M59 follow-up if the project needs true live
+3. Implement the stepwise M59 follow-up if the project needs true live
    reallocation during active multi-agent execution.
-3. Capture a real local PX4/SIH M59 failure-injection artifact only after the
+4. Capture a real local PX4/SIH M59 failure-injection artifact only after the
    stepwise/live boundary is implemented or explicitly out of scope.
-4. Refresh benchmark baselines/results before using them as publication claims.
-5. Keep README, `docs/SITL_SETUP.md`, `docs/REPLAY.md`, and this file in sync
-   when M48 live verification changes state.
+5. Refresh benchmark baselines/results before using them as publication claims.
+6. Keep README, `docs/EXTENSION_GUIDE.md`, `docs/SITL_SETUP.md`,
+   `docs/REPLAY.md`, and this file in sync when extension or SITL evidence
+   changes state.
 
 ## How to Verify This Status
 
@@ -122,6 +138,15 @@ PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
 
 PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
   /home/formi/.local/bin/runlim cargo test -p swarm-examples --test sitl_docs
+
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  /home/formi/.local/bin/runlim cargo test -p swarm-types adapter
+
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  /home/formi/.local/bin/runlim cargo test -p swarm-alloc strategy
+
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  /home/formi/.local/bin/runlim cargo test -p swarm-sim extension_fixture
 
 PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
   /home/formi/.local/bin/runlim cargo test -p swarm-comms --features mavlink-transport
@@ -141,6 +166,8 @@ two-instance PX4 SIH upload-only check, inspect
 `results/m55_multi_agent_px4_sih_2026-05-30/`. M58 adds live execute supervisor
 code and portable fake/CLI coverage; M59 adds a partial failed-agent mission
 replacement foundation and portable fake coverage. M60 adds local supervisor
-artifact/exit-code/report hardening. Do not extend any existing result to
-Gazebo, HIL, real hardware, real PX4/SIH failure/reallocation, or stepwise
-active-survivor replacement without new code/evidence.
+artifact/exit-code/report hardening. M61 adds the extension guide and
+test-only extension contract checks. Do not extend any existing result to
+Gazebo, HIL, real hardware, real PX4/SIH failure/reallocation, stepwise
+active-survivor replacement, or semver-stable external API without new
+code/evidence.

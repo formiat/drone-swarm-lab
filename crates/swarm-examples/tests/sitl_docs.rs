@@ -1,6 +1,7 @@
 const README: &str = include_str!("../../../README.md");
 const SITL_SETUP: &str = include_str!("../../../docs/SITL_SETUP.md");
 const HARDWARE_READINESS: &str = include_str!("../../../docs/HARDWARE_READINESS.md");
+const EXTENSION_GUIDE: &str = include_str!("../../../docs/EXTENSION_GUIDE.md");
 const REPLAY: &str = include_str!("../../../docs/REPLAY.md");
 const STATUS: &str = include_str!("../../../docs/STATUS.md");
 
@@ -95,6 +96,7 @@ fn sitl_docs_explain_portable_and_manual_boundaries() {
         "Hardware Readiness Boundary",
         "docs/HARDWARE_READINESS.md",
         "--allow-hardware-candidate",
+        "docs/EXTENSION_GUIDE.md",
     ] {
         assert!(README.contains(required), "README missing {required}");
     }
@@ -145,6 +147,7 @@ fn sitl_docs_explain_portable_and_manual_boundaries() {
         "MockAgentController",
         "SupervisorMetrics",
         "scenarios/sitl.px4-golden.json",
+        "docs/EXTENSION_GUIDE.md",
     ] {
         assert!(REPLAY.contains(required), "Replay doc missing {required}");
     }
@@ -167,7 +170,51 @@ fn sitl_docs_explain_portable_and_manual_boundaries() {
         "scenarios/sitl.multi-agent.execute.config.json",
         "Default regression determinism sweep passed after fixes",
         "results/m56_regression_determinism_2026-05-30",
+        "M61 Platform / API Stabilization",
+        "docs/EXTENSION_GUIDE.md",
+        "semver-stable public API",
     ] {
         assert!(STATUS.contains(required), "Status doc missing {required}");
     }
+}
+
+#[test]
+fn extension_guide_documents_platform_extension_boundaries() {
+    for required in [
+        "TaskKind",
+        "MissionAdapter",
+        "StrategyRegistry",
+        "RunMetrics",
+        "AggregateMetrics",
+        "schema_version",
+        "sitl_event_log.v1",
+        "sitl_run_report.v1",
+        "sitl_multi_agent_run_report.v1",
+        "multi_sitl.v1",
+        "not semver-stable",
+        "stable-ish extension points",
+        "Add A Mission",
+        "Add A Strategy",
+        "Add A Metric",
+        "Schema Version Policy",
+        "Minimal Test-Only Extension Path",
+    ] {
+        assert!(
+            EXTENSION_GUIDE.contains(required),
+            "Extension guide missing {required}"
+        );
+    }
+
+    for required in ["docs/EXTENSION_GUIDE.md", "not semver-stable"] {
+        assert!(README.contains(required), "README missing {required}");
+    }
+
+    for required in ["docs/EXTENSION_GUIDE.md", "schema policy"] {
+        assert!(REPLAY.contains(required), "Replay doc missing {required}");
+    }
+
+    assert!(
+        SITL_SETUP.contains("docs/EXTENSION_GUIDE.md"),
+        "SITL setup doc missing extension guide link"
+    );
 }

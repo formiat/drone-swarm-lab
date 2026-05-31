@@ -320,6 +320,11 @@ When `--reupload-on-failure` is enabled, the common log can also include
 `survivor_mission_update_started`, and
 `survivor_mission_update_completed`.
 
+For schema and extension-policy details shared with scenario/replay/report
+changes, see [`docs/EXTENSION_GUIDE.md`](EXTENSION_GUIDE.md). The SITL schemas
+documented here are stable-ish for in-repository research workflows, not a
+semver-stable external API.
+
 M59's mission update policy is `mission_replacement`: a pending survivor
 receives a deterministic replacement mission containing its still-unfinished
 task subset followed by recovered tasks. This is intentionally not named

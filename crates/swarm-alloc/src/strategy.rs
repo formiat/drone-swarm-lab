@@ -85,3 +85,64 @@ impl Default for StrategyRegistry {
         reg
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{AllocationAgent, AllocationTask};
+    use swarm_types::{AgentId, TaskId};
+
+    #[derive(Default)]
+    struct TestExtensionStrategy;
+
+    impl Allocator for TestExtensionStrategy {
+        fn allocate(
+            &mut self,
+            tasks: &[AllocationTask<'_>],
+            agents: &[AllocationAgent],
+        ) -> Vec<(TaskId, AgentId)> {
+            match (tasks.first(), agents.first()) {
+                (Some(task), Some(agent)) => vec![(task.task.id.clone(), agent.id.clone())],
+                _ => Vec::new(),
+            }
+        }
+    }
+
+    impl Strategy for TestExtensionStrategy {
+        fn name(&self) -> &'static str {
+            "test-extension"
+        }
+
+        fn description(&self) -> &'static str {
+            "Test-only extension strategy"
+        }
+    }
+
+    #[test]
+    fn empty_strategy_registry_is_valid() {
+        let registry = StrategyRegistry::new();
+
+        assert!(registry.strategies().is_empty());
+        assert_eq!(registry.iter().count(), 0);
+    }
+
+    #[test]
+    fn custom_strategy_can_be_registered_without_mutating_default_registry() {
+        let mut registry = StrategyRegistry::new();
+        registry.register(Box::new(TestExtensionStrategy));
+
+        let names: Vec<_> = registry.iter().map(|strategy| strategy.name()).collect();
+        assert_eq!(names, vec!["test-extension"]);
+        assert_eq!(
+            registry.strategies()[0].description(),
+            "Test-only extension strategy"
+        );
+
+        let default_names: Vec<_> = StrategyRegistry::default()
+            .iter()
+            .map(|strategy| strategy.name())
+            .collect();
+        assert!(default_names.contains(&"greedy"));
+        assert!(!default_names.contains(&"test-extension"));
+    }
+}

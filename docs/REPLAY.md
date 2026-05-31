@@ -34,6 +34,11 @@ Each simulation run can optionally produce an `EventLog` — a JSON file contain
 
 Event logs without `schema_version` default to `"0.2"` and are fully backward compatible with the v0.1 format (which only had the first 8 event types).
 
+For extension work, use [`docs/EXTENSION_GUIDE.md`](EXTENSION_GUIDE.md) as the
+schema policy checklist. Prefer additive replay events or defaulted fields.
+Only bump the replay schema when old logs cannot remain meaningful and covered
+by compatibility tests.
+
 ## SITL Event Log Schema
 
 SITL/PX4 runs use a separate compact event log because MAVLink protocol events
@@ -194,6 +199,11 @@ the report's `events_summary` field, so reviewers can compare
 stdout. The report also includes `task_ownership`, `final_status`, and
 `limitations` while keeping `overall_status` and `known_limitations` for
 compatibility.
+
+M61 documents the extension boundary for replay/report fields in
+[`docs/EXTENSION_GUIDE.md`](EXTENSION_GUIDE.md). New mission-specific replay
+events should be added only when generic task, safety, SAR, inspection,
+mapping, or SITL events cannot explain the runtime transition.
 
 The captured M48 PX4 SIH replay is stored at
 `results/m48_px4_sitl_2026-05-30/single-agent.sitl-log.json` with a compact

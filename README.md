@@ -242,6 +242,7 @@ cargo run -p swarm-examples --bin replay -- \
 |---|---|---|---|
 | Benchmark (smoke/quick/full) | ✅ Stable | M21 | `--output-dir`, `--report`, `BenchmarkManifest` |
 | Mission DSL | ✅ Stable | M19 | `schema_version: "0.1"`, validation API |
+| Platform Extension Guide | ✅ Stable-ish | M61 | `docs/EXTENSION_GUIDE.md` documents mission, strategy, metrics, crate boundary, and schema-version extension paths without promising semver-stable public API |
 | Safety Layer | ✅ Stable | M20 | `SafetyAllocator` wrapper, no-fly/geofence/separation |
 | SAR v2 | ✅ Stable | M14 | `BeliefMap`, sensor noise, confirmation scans |
 | CBBA Robustness | ✅ Stable | M15 | Convergence metrics, TSP ordering, retransmission |
@@ -271,6 +272,8 @@ cargo run -p swarm-examples --bin replay -- \
 **Test coverage:** 360+ tests, 10 crates, 18 JSON scenarios.
 
 > **Project Status:** For an honest audit of what is fully complete vs partially complete, see [`docs/STATUS.md`](docs/STATUS.md).
+
+> **Extension Status:** [`docs/EXTENSION_GUIDE.md`](docs/EXTENSION_GUIDE.md) documents the current stable-ish in-repository extension points for missions, allocation strategies, metrics, crate boundaries, and schema versioning. It is not semver-stable public API and does not change the hardware/non-goals boundary.
 
 ---
 
@@ -544,6 +547,14 @@ See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known l
 | `swarm-safety` | Safety layer: geofence, no-fly zones, separation constraints. |
 | `swarm-examples` | Runnable binaries: `strategy_comparison`, `regression_runner`, `sitl_agent`, `replay`. |
 
+The intended extension surfaces are documented in
+[`docs/EXTENSION_GUIDE.md`](docs/EXTENSION_GUIDE.md). Use `swarm-types`
+(`TaskKind`, `MissionAdapter`, `RunState`), `swarm-alloc`
+(`Allocator`, `Strategy`, `StrategyRegistry`), `swarm-metrics`
+(`RunMetrics`, `AggregateMetrics`), and the documented scenario/replay/report
+schemas for in-repository extensions. These are stable-ish research extension
+points, not a published semver-stable SDK.
+
 ---
 
 ## Milestones Overview
@@ -588,6 +599,7 @@ See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known l
 | M58 | ✅ | Live Multi-Agent PX4/SIH Execute Orchestration: `sitl_supervisor --connection --execute`, per-agent safety/hardware gates, sequential local PX4/SIH agent execution, common event log, structured multi-agent run report, and portable fake-controller/CLI coverage |
 | M59 | ⚠️ Partial foundation | Live PX4/SIH Failure & Reallocation foundation: explicit `--reupload-on-failure`, runtime release/reassignment events, pending survivor mission replacement planning, report reallocation metrics, and portable fake live-controller coverage; full stepwise live loop, active-survivor abort/clear/upload/execute, and manual real PX4/SIH failure artifact remain separate |
 | M60 | ✅ | PX4/SIH Supervisor Hardening: repeatable local `sitl_supervisor` run layout with `--output-dir` / `--run-id`, explicit `--force` overwrite policy, stable exit codes, report summary fields, replay summaries, and docs/tests for troubleshooting; not hardware readiness |
+| M61 | ✅ | Platform / API Stabilization: `docs/EXTENSION_GUIDE.md`, crate-boundary notes, schema-version policy, docs sync, and test-only mission/strategy/runner extension fixtures; not semver-stable public API |
 
 ---
 
@@ -596,6 +608,7 @@ See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known l
 | Document | Description |
 |---|---|
 | [`docs/BENCHMARK_RESULTS.md`](docs/BENCHMARK_RESULTS.md) | Real benchmark numbers and analysis |
+| [`docs/EXTENSION_GUIDE.md`](docs/EXTENSION_GUIDE.md) | Mission, strategy, metrics, crate-boundary, and schema-version extension guide |
 | [`docs/SCENARIO_DSL.md`](docs/SCENARIO_DSL.md) | Scenario suite format and validation |
 | [`docs/REPLAY.md`](docs/REPLAY.md) | Replay event log schema and CLI usage |
 | [`docs/SITL_SETUP.md`](docs/SITL_SETUP.md) | Mock, dry-run, and experimental PX4 SITL setup |
