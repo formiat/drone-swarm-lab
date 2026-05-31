@@ -109,7 +109,7 @@ pub enum Event {
         bundle_size: usize,
         tick: u64,
     },
-    // M30: Wildfire / Flood Mapping
+    // M30: Wildfire Mapping
     AgentObservation {
         agent_id: AgentId,
         zone_id: String,

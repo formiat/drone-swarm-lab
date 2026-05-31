@@ -53,7 +53,7 @@ cargo run --bin replay -- --log results/replay/*.json --summary
 cargo run --bin replay -- --log results/replay/*.json --tick 50
 ```
 
-### 6. Run wildfire / flood mapping benchmark
+### 6. Run wildfire mapping benchmark
 
 ```bash
 cargo run -p swarm-examples --bin strategy_comparison -- \
@@ -240,7 +240,7 @@ cargo run -p swarm-examples --bin replay -- \
 
 | Feature | Status | Since | Notes |
 |---|---|---|---|
-| Benchmark (smoke/quick/full) | ✅ Stable | M21/M62 | `--output-dir`, `--report`, `BenchmarkManifest`; current 500-seed release baseline in `results/all_500_jobs14_m62_release/` |
+| Benchmark (smoke/quick/full) | ✅ Stable | M21/M62/M63 | `--output-dir`, `--report`, `BenchmarkManifest`; M62 500-seed release baseline is historical evidence for commit `81260ca7afa114a5d9add7b832f6c5d7875b88cd` in `results/all_500_jobs14_m62_release/` |
 | Mission DSL | ✅ Stable | M19 | `schema_version: "0.1"`, validation API |
 | Platform Extension Guide | ✅ Stable-ish | M61 | `docs/EXTENSION_GUIDE.md` documents mission, strategy, metrics, crate boundary, and schema-version extension paths without promising semver-stable public API |
 | Safety Layer | ✅ Stable | M20 | `SafetyAllocator` wrapper, no-fly/geofence/separation |
@@ -258,13 +258,13 @@ cargo run -p swarm-examples --bin replay -- \
 | Replay / Debuggability | ✅ Stable | M23 | `replay` CLI, ASCII visualization |
 | Mission Semantics | ✅ Stable | M33 | `TaskKind`, 6 concrete adapters, `AdapterRegistry`, adapter-driven completion/scoring in runner and allocator |
 | Planner Quality | ✅ Stable | M34 | `RoutePlanner` trait, 2-opt, battery-aware feasibility v2 (ordered-subset feasibility, battery model v2 integration, meaningful runner metrics) |
-| Dynamic Mission Correctness | ✅ Stable | M35 | Mission-specific success semantics (SAR=targets-found, inspection=coverage-threshold, wildfire=mapped-ratio), SAR unsupported reasons (cbba=delayed-reconvergence, centralized=static-pre-plan), support matrix tests |
+| Dynamic Mission Correctness | ✅ Stable | M35/M63 | Mission-specific success semantics (SAR=targets-found, inspection=coverage-threshold, wildfire=mapped-ratio threshold plus failure/unassigned guards), SAR unsupported reasons (cbba=delayed-reconvergence, centralized=static-pre-plan), support matrix tests |
 | Regression Harness v2 | ✅ Stable | M36 | Calibrated thresholds, portability fixes, wildfire/realism suites, failure delta output, and repeated release determinism sweep for `jobs=1/4/14` |
 | Realism Scenario Pack | ✅ Stable | M37 | Realism profiles (light/medium/heavy), scenario JSONs, battery model metadata, baseline vs realism comparison |
-| Wildfire v2 | ⚠️ Partial | M38 | Spatial spread, wind influence, zone expansion, high-priority metrics, replay integration, scenario JSONs; flood not implemented as separate mission |
+| Wildfire v2 | ⚠️ Partial | M38/M63 | Spatial spread, wind influence, zone expansion, high-priority metrics, replay integration, scenario JSONs; flood remains future work and is not implemented as a separate mission |
 | Decision / Audit Report | ✅ Stable | M39b | Status audit, README honesty update, benchmark docs marked historical |
 | Regression Repair | ✅ Stable | M39a | Unified regression entrypoints, wildfire/realism repair, runtime ordering fixes, SAR scan completion fix, and repeated default regression sweep |
-| Wildfire / Flood Mapping | ✅ Stable | M30 | `TaskKind::MappingZone`, `WildfireState`, hazard zones, dynamic threat |
+| Wildfire Mapping | ✅ Stable | M30/M63 | `TaskKind::MappingZone`, `WildfireState`, hazard zones, dynamic threat; flood is future work and is not implemented as a separate mission |
 | Simulation Realism | ✅ Stable | M31 | Battery model v2, altitude sensor penalty, wind drift, pose noise, comms jitter, time-gated no-fly zones, `--realism` preset |
 | Reporting & Metrics | ✅ Stable | M32 | Per-row mission/scenario in exports, mission-scoped profiles, merged `all` benchmark id, wildfire/planner metrics, realism metadata in manifest |
 | Real PX4 | 🧪 Experimental | M49/M58/M59 | Feature-gated single-agent PX4 SITL report/replay plumbing, local multi-agent PX4/SIH execute supervisor plumbing, pre-upload safety validation, arm/takeoff/start, telemetry-to-task progress mapping, controlled `--reupload-on-failure` active-survivor mission replacement, structured final reports, compact SITL event summaries, public `scenarios/sitl.px4-golden.json`, `scenarios/sitl.multi-agent.execute.config.json`, and captured single-agent/upload-only/execute/failure SIH evidence; still not hardware-ready |
@@ -296,10 +296,12 @@ Exit code is `0` if all suites pass, `1` if any threshold is violated. Failure o
 
 Current status note: the default regression entrypoints passed the repeated
 release sweep at `jobs=1/4/14`. The captured sweep is in
-`results/m56_regression_determinism_2026-05-30/`. The current simulation
-benchmark refresh is the M62 500-seed release baseline in
-`results/all_500_jobs14_m62_release/`; use it as validation evidence, not as a
-publication-grade 1000-seed statistical run.
+`results/m56_regression_determinism_2026-05-30/`. The latest committed full
+simulation benchmark refresh is the M62 500-seed release baseline in
+`results/all_500_jobs14_m62_release/`; after M63 it is treated as historical
+validation evidence for commit `81260ca7afa114a5d9add7b832f6c5d7875b88cd`, not
+as current-HEAD evidence unless it is rerun. Use it as validation evidence, not
+as a publication-grade 1000-seed statistical run.
 
 ### Portable SITL Checks (M50)
 
@@ -445,7 +447,7 @@ instances and operator-controlled endpoints. Captured local artifacts are in
 | `wildfire_medium_dynamic_greedy` | wildfire | medium-dynamic | greedy | smoke | task_completion_rate ≥ 0.60 |
 | `realism_coverage_smoke` | coverage | ideal-no-failures | greedy | smoke | success_rate ≥ 0.75 (realism preset) |
 
-**Modes:** `smoke` = 1 seed; `quick` = 10 seeds. **SAR and wildfire** use `task_completion_rate` (not `success_rate`) because M35 changed success semantics to mission-specific definitions.
+**Modes:** `smoke` = 1 seed; `quick` = 10 seeds. **SAR and wildfire** use `task_completion_rate` (not `success_rate`) because M35 changed success semantics to mission-specific definitions. For wildfire, `success=true` requires `mapped_zone_count / total_zone_count >= wildfire_success_threshold` (default `0.8`), all expected failures detected, and `max_task_unassigned_ticks <= max_unassigned_ticks`; task completion can still be `1.000` when this stricter mapped-ratio predicate is false.
 
 ### Threshold Policy
 
@@ -541,7 +543,7 @@ See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known l
 | `swarm-runtime` | Membership, failure detection, task registry, coordinator, `AgentNode`. |
 | `swarm-alloc` | Greedy, auction, connectivity-aware, centralized, CBBA allocation strategies. |
 | `swarm-sim` | Deterministic clock, scenario model, generic scenario runner, DSL loader, JSON/CSV export. |
-| `swarm-scenarios` | Scenario builders: Coverage, Emergency Mesh, SAR, Infrastructure Inspection, Wildfire / Flood Mapping. |
+| `swarm-scenarios` | Scenario builders: Coverage, Emergency Mesh, SAR, Infrastructure Inspection, Wildfire Mapping; flood remains future work. |
 | `swarm-metrics` | Per-run and aggregate metrics. |
 | `swarm-replay` | Event log, replay engine, summary CLI, ASCII visualization. |
 | `swarm-safety` | Safety layer: geofence, no-fly zones, separation constraints. |
@@ -588,7 +590,7 @@ points, not a published semver-stable SDK.
 | M27 | ✅ | Mission Semantics Layer: `TaskKind`, `MissionAdapter`, `RunState` |
 | M28 | ✅ | Planner Quality Upgrade: `RoutePlanner`, 2-opt, battery-aware feasibility |
 | M29 | ✅ | Stress & Regression Harness: `RegressionSuite`, baseline artifacts, threshold checking |
-| M30 | ✅ | New Mission Prototype: Wildfire / Flood Mapping with `TaskKind::MappingZone`, hazard zones, dynamic threat |
+| M30 | ✅ | New Mission Prototype: Wildfire Mapping with `TaskKind::MappingZone`, hazard zones, dynamic threat; flood remains future work |
 | M31 | ✅ | Simulation Realism Foundation: battery model v2, altitude sensor penalty, wind drift, pose noise, comms jitter, time-gated no-fly zones |
 | M32 | ✅ | Benchmark Identity Hardening: per-row mission/scenario in exports, mission-scoped profiles, merged `all` benchmark id, realism metadata in manifest |
 | M33 | ✅ | Mission Semantics Integration: 6 concrete adapters, `AdapterRegistry`, adapter-driven completion/scoring in runner and allocator, DSL kind validation |
@@ -600,7 +602,8 @@ points, not a published semver-stable SDK.
 | M59 | ✅ | Live PX4/SIH Failure & Reallocation: explicit `--reupload-on-failure`, stepwise active-agent polling, runtime release/reassignment events, active-survivor mission replacement, report reallocation metrics, portable fake live-controller coverage, and captured controlled PX4/SIH failure artifact |
 | M60 | ✅ | PX4/SIH Supervisor Hardening: repeatable local `sitl_supervisor` run layout with `--output-dir` / `--run-id`, explicit `--force` overwrite policy, stable exit codes, report summary fields, replay summaries, and docs/tests for troubleshooting; not hardware readiness |
 | M61 | ✅ | Platform / API Stabilization: `docs/EXTENSION_GUIDE.md`, crate-boundary notes, schema-version policy, docs sync, and test-only mission/strategy/runner extension fixtures; not semver-stable public API |
-| M62 | ✅ | Benchmark / Baseline Refresh: 500-seed release `--mission all --jobs 14` validation baseline for current HEAD in `results/all_500_jobs14_m62_release/`; not a publication-grade 1000-seed run |
+| M62 | ✅ | Benchmark / Baseline Refresh: 500-seed release `--mission all --jobs 14` validation baseline captured for commit `81260ca7afa114a5d9add7b832f6c5d7875b88cd` in `results/all_500_jobs14_m62_release/`; after M63 this is historical evidence unless rerun on current HEAD; not a publication-grade 1000-seed run |
+| M63 | ✅ | Evidence Cleanup / Status Honesty: no benchmark rerun; M62 pack marked as historical evidence for `81260ca7afa114a5d9add7b832f6c5d7875b88cd`, flood moved to future work, wildfire success predicate documented/tested, and M58/M59 replay artifacts covered by sanity tests |
 
 ---
 
@@ -677,9 +680,10 @@ Realism typically degrades mission metrics relative to ideal conditions:
 
 Battery model metadata (`hover_drain_per_tick`, `climb_drain_per_meter`, `cruise_drain_per_meter`, `reserve_fraction`) is now included in `BenchmarkManifest` for reproducibility.
 
-## Wildfire / Flood v2 (M38)
+## Wildfire v2 (M38)
 
 Wildfire is now a first-class mission with rich dynamic behavior and metrics.
+Flood is future work and is not implemented as a separate mission in M63.
 
 ### Profiles
 

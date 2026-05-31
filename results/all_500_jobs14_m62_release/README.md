@@ -3,6 +3,10 @@
 This directory contains the M62 simulation benchmark refresh for commit
 `81260ca7afa114a5d9add7b832f6c5d7875b88cd`.
 
+M63 did not rerun this benchmark. Treat this directory as historical validation
+evidence for that commit, not as current-HEAD evidence, unless a future
+benchmark refresh explicitly regenerates it.
+
 ## Run Metadata
 
 - Date: 2026-05-31
@@ -27,6 +31,7 @@ This directory contains the M62 simulation benchmark refresh for commit
 
 ## Notes
 
-This is a current-HEAD validation baseline, not a publication-grade 1000-seed
+This is a historical 500-seed validation baseline for commit
+`81260ca7afa114a5d9add7b832f6c5d7875b88cd`, not a publication-grade 1000-seed
 statistical run. It also does not replace PX4/SIH evidence: it only evaluates
 simulation behavior.

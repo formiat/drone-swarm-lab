@@ -30,7 +30,7 @@ pub struct ReplaySummary {
     pub cbba_convergence_ticks: Vec<u64>,
     pub messages_sent: u64,
     pub messages_dropped: u64,
-    // v0.38 Wildfire / Flood v2
+    // v0.38 Wildfire v2
     pub zones_mapped: usize,
     pub hazard_updates: usize,
     pub observations: usize,

@@ -1,5 +1,8 @@
 use std::process::Command;
 
+const M62_MANIFEST: &str =
+    include_str!("../../../results/all_500_jobs14_m62_release/manifest.json");
+
 fn run_strategy_comparison(args: &[&str]) -> std::process::Output {
     let mut cmd = Command::new("cargo");
     cmd.args([
@@ -12,6 +15,24 @@ fn run_strategy_comparison(args: &[&str]) -> std::process::Output {
     ]);
     cmd.args(args);
     cmd.output().expect("Failed to execute strategy_comparison")
+}
+
+#[test]
+fn m62_benchmark_manifest_identity_is_historical() {
+    let manifest: serde_json::Value = serde_json::from_str(M62_MANIFEST).unwrap();
+
+    assert_eq!(
+        manifest["git_commit"],
+        "81260ca7afa114a5d9add7b832f6c5d7875b88cd"
+    );
+    assert_eq!(manifest["seed_range_start"], 0);
+    assert_eq!(manifest["seed_range_end"], 500);
+    assert_eq!(manifest["jobs"], 14);
+    assert_eq!(manifest["build_profile"], "release");
+    assert_eq!(
+        manifest["command_line"],
+        "target/release/strategy_comparison --seeds 500 --mission all --jobs 14 --output-dir results/all_500_jobs14_m62_release"
+    );
 }
 
 #[test]

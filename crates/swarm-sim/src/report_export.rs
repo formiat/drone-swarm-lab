@@ -89,11 +89,11 @@ pub fn export_json(report: &ComparisonReport) -> Result<String, serde_json::Erro
                     avg_wasted_travel: metrics.avg_wasted_travel,
                     avg_return_reserve: metrics.avg_return_reserve,
                     avg_infeasible_routes: metrics.avg_infeasible_routes,
-                    // v0.30 Wildfire / Flood Mapping metrics
+                    // v0.30 Wildfire Mapping metrics
                     avg_hazard_zones_mapped: metrics.avg_hazard_zones_mapped,
                     avg_priority_updates: metrics.avg_priority_updates,
                     avg_final_threat_level: metrics.avg_final_threat_level,
-                    // v0.38 Wildfire / Flood v2
+                    // v0.38 Wildfire v2
                     avg_high_priority_zones_mapped: metrics.avg_high_priority_zones_mapped,
                     avg_time_to_map_first_high_risk: metrics.avg_time_to_map_first_high_risk,
                     avg_zone_observations: metrics.avg_zone_observations,
@@ -161,11 +161,11 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
         "avg_wasted_travel",
         "avg_return_reserve",
         "avg_infeasible_routes",
-        // v0.30 Wildfire / Flood Mapping metrics
+        // v0.30 Wildfire Mapping metrics
         "avg_hazard_zones_mapped",
         "avg_priority_updates",
         "avg_final_threat_level",
-        // v0.38 Wildfire / Flood v2
+        // v0.38 Wildfire v2
         "avg_high_priority_zones_mapped",
         "avg_time_to_map_first_high_risk",
         "avg_zone_observations",
@@ -228,11 +228,11 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
                     format!("{:.3}", m.avg_wasted_travel).as_str(),
                     format!("{:.3}", m.avg_return_reserve).as_str(),
                     format!("{:.3}", m.avg_infeasible_routes).as_str(),
-                    // v0.30 Wildfire / Flood Mapping metrics
+                    // v0.30 Wildfire Mapping metrics
                     format!("{:.3}", m.avg_hazard_zones_mapped).as_str(),
                     format!("{:.3}", m.avg_priority_updates).as_str(),
                     format!("{:.3}", m.avg_final_threat_level).as_str(),
-                    // v0.38 Wildfire / Flood v2
+                    // v0.38 Wildfire v2
                     format!("{:.3}", m.avg_high_priority_zones_mapped).as_str(),
                     format!("{:.3}", m.avg_time_to_map_first_high_risk).as_str(),
                     format!("{:.3}", m.avg_zone_observations).as_str(),
@@ -305,11 +305,11 @@ struct ReportRow {
     avg_wasted_travel: f64,
     avg_return_reserve: f64,
     avg_infeasible_routes: f64,
-    // v0.30 Wildfire / Flood Mapping metrics
+    // v0.30 Wildfire Mapping metrics
     avg_hazard_zones_mapped: f64,
     avg_priority_updates: f64,
     avg_final_threat_level: f64,
-    // v0.38 Wildfire / Flood v2
+    // v0.38 Wildfire v2
     avg_high_priority_zones_mapped: f64,
     avg_time_to_map_first_high_risk: f64,
     avg_zone_observations: f64,

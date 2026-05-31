@@ -4,6 +4,9 @@ const HARDWARE_READINESS: &str = include_str!("../../../docs/HARDWARE_READINESS.
 const EXTENSION_GUIDE: &str = include_str!("../../../docs/EXTENSION_GUIDE.md");
 const REPLAY: &str = include_str!("../../../docs/REPLAY.md");
 const STATUS: &str = include_str!("../../../docs/STATUS.md");
+const BENCHMARK_RESULTS: &str = include_str!("../../../docs/BENCHMARK_RESULTS.md");
+const M62_RESULT_README: &str =
+    include_str!("../../../results/all_500_jobs14_m62_release/README.md");
 
 #[test]
 fn sitl_docs_explain_portable_and_manual_boundaries() {
@@ -175,6 +178,70 @@ fn sitl_docs_explain_portable_and_manual_boundaries() {
         "semver-stable public API",
     ] {
         assert!(STATUS.contains(required), "Status doc missing {required}");
+    }
+}
+
+#[test]
+fn m63_status_honesty_docs_mark_historical_benchmark_and_flood_scope() {
+    let benchmark_commit = "81260ca7afa114a5d9add7b832f6c5d7875b88cd";
+
+    for (name, doc) in [
+        ("README", README),
+        ("STATUS", STATUS),
+        ("BENCHMARK_RESULTS", BENCHMARK_RESULTS),
+        ("M62_RESULT_README", M62_RESULT_README),
+    ] {
+        assert!(
+            doc.contains(benchmark_commit),
+            "{name} missing benchmark commit {benchmark_commit}"
+        );
+    }
+
+    for required in [
+        "historical validation",
+        "evidence for that commit",
+        "current-HEAD evidence",
+        "unless a future",
+        "benchmark refresh",
+        "regenerates it",
+    ] {
+        assert!(
+            M62_RESULT_README.contains(required),
+            "M62 result README missing {required}"
+        );
+    }
+
+    for required in [
+        "flood remains future work",
+        "not implemented as a separate mission",
+        "Wildfire Mapping",
+    ] {
+        assert!(README.contains(required), "README missing {required}");
+    }
+    assert!(
+        !README.contains("Wildfire / Flood"),
+        "README should not contain active Wildfire / Flood wording"
+    );
+
+    for required in [
+        "M63 Evidence Cleanup / Status Honesty",
+        "future work; not implemented as a separate mission",
+        "mapped_zone_count / total_zone_count >= wildfire_success_threshold",
+        "Completion = 1.000",
+    ] {
+        assert!(STATUS.contains(required), "STATUS missing {required}");
+    }
+
+    for required in [
+        "Historical M62 Run",
+        "historical evidence for the commit above",
+        "mapped_zone_count / total_zone_count >= wildfire_success_threshold",
+        "It is not equivalent to mission success",
+    ] {
+        assert!(
+            BENCHMARK_RESULTS.contains(required),
+            "benchmark results doc missing {required}"
+        );
     }
 }
 

@@ -14,7 +14,7 @@ pub struct HazardZone {
     pub priority: u8,
 }
 
-/// Configuration for a wildfire / flood mapping scenario.
+/// Configuration for a wildfire mapping scenario.
 pub struct WildfireConfig {
     pub seed: u64,
     pub agent_count: u32,

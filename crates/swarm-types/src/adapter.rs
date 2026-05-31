@@ -86,7 +86,7 @@ impl MissionAdapter for InspectionAdapter {
     }
 }
 
-/// Adapter for wildfire / flood mapping missions (zone mapping).
+/// Adapter for wildfire mapping missions.
 #[derive(Clone, Debug, Default)]
 pub struct WildfireAdapter;
 

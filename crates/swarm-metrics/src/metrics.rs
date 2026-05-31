@@ -103,14 +103,14 @@ pub struct RunMetrics {
     pub avg_return_reserve: f64,
     #[serde(default)]
     pub infeasible_routes: u64,
-    // v0.30 Wildfire / Flood Mapping metrics
+    // v0.30 Wildfire Mapping metrics
     #[serde(default)]
     pub hazard_zones_mapped: u64,
     #[serde(default)]
     pub priority_updates: u64,
     #[serde(default)]
     pub final_avg_threat_level: f64,
-    // v0.38 Wildfire / Flood v2
+    // v0.38 Wildfire v2
     #[serde(default)]
     pub high_priority_zones_mapped: u64,
     #[serde(default)]
@@ -193,14 +193,14 @@ pub struct AggregateMetrics {
     pub avg_return_reserve: f64,
     #[serde(default)]
     pub avg_infeasible_routes: f64,
-    // v0.30 Wildfire / Flood Mapping metrics
+    // v0.30 Wildfire Mapping metrics
     #[serde(default)]
     pub avg_hazard_zones_mapped: f64,
     #[serde(default)]
     pub avg_priority_updates: f64,
     #[serde(default)]
     pub avg_final_threat_level: f64,
-    // v0.38 Wildfire / Flood v2
+    // v0.38 Wildfire v2
     #[serde(default)]
     pub avg_high_priority_zones_mapped: f64,
     #[serde(default)]
@@ -266,11 +266,11 @@ impl AggregateMetrics {
                 avg_wasted_travel: 0.0,
                 avg_return_reserve: 0.0,
                 avg_infeasible_routes: 0.0,
-                // v0.30 Wildfire / Flood Mapping metrics
+                // v0.30 Wildfire Mapping metrics
                 avg_hazard_zones_mapped: 0.0,
                 avg_priority_updates: 0.0,
                 avg_final_threat_level: 0.0,
-                // v0.38 Wildfire / Flood v2
+                // v0.38 Wildfire v2
                 avg_high_priority_zones_mapped: 0.0,
                 avg_time_to_map_first_high_risk: 0.0,
                 avg_zone_observations: 0.0,
@@ -321,11 +321,11 @@ impl AggregateMetrics {
         let total_wasted_travel: f64 = runs.iter().map(|run| run.avg_wasted_travel).sum();
         let total_return_reserve: f64 = runs.iter().map(|run| run.avg_return_reserve).sum();
         let total_infeasible_routes: u64 = runs.iter().map(|run| run.infeasible_routes).sum();
-        // v0.30 Wildfire / Flood Mapping metrics
+        // v0.30 Wildfire Mapping metrics
         let total_hazard_zones_mapped: u64 = runs.iter().map(|run| run.hazard_zones_mapped).sum();
         let total_priority_updates: u64 = runs.iter().map(|run| run.priority_updates).sum();
         let total_final_threat_level: f64 = runs.iter().map(|run| run.final_avg_threat_level).sum();
-        // v0.38 Wildfire / Flood v2
+        // v0.38 Wildfire v2
         let total_high_priority_zones_mapped: u64 =
             runs.iter().map(|run| run.high_priority_zones_mapped).sum();
         let total_time_to_map_first_high_risk: u64 = runs
@@ -400,11 +400,11 @@ impl AggregateMetrics {
             avg_wasted_travel: total_wasted_travel / n,
             avg_return_reserve: total_return_reserve / n,
             avg_infeasible_routes: total_infeasible_routes as f64 / n,
-            // v0.30 Wildfire / Flood Mapping metrics
+            // v0.30 Wildfire Mapping metrics
             avg_hazard_zones_mapped: total_hazard_zones_mapped as f64 / n,
             avg_priority_updates: total_priority_updates as f64 / n,
             avg_final_threat_level: total_final_threat_level / n,
-            // v0.38 Wildfire / Flood v2
+            // v0.38 Wildfire v2
             avg_high_priority_zones_mapped: total_high_priority_zones_mapped as f64 / n,
             avg_time_to_map_first_high_risk: if time_to_map_first_high_risk_count > 0.0 {
                 total_time_to_map_first_high_risk as f64 / time_to_map_first_high_risk_count
@@ -544,7 +544,7 @@ impl fmt::Display for AggregateMetrics {
             "avg_infeasible_routes: {:.3}",
             self.avg_infeasible_routes
         )?;
-        // v0.30 Wildfire / Flood Mapping metrics
+        // v0.30 Wildfire Mapping metrics
         writeln!(
             f,
             "avg_hazard_zones_mapped: {:.3}",
@@ -556,7 +556,7 @@ impl fmt::Display for AggregateMetrics {
             "avg_final_threat_level: {:.3}",
             self.avg_final_threat_level
         )?;
-        // v0.38 Wildfire / Flood v2
+        // v0.38 Wildfire v2
         writeln!(
             f,
             "avg_high_priority_zones_mapped: {:.3}",
@@ -657,11 +657,11 @@ mod tests {
             avg_wasted_travel: 0.0,
             avg_return_reserve: 0.0,
             infeasible_routes: 0,
-            // v0.30 Wildfire / Flood Mapping metrics
+            // v0.30 Wildfire Mapping metrics
             hazard_zones_mapped: 0,
             priority_updates: 0,
             final_avg_threat_level: 0.0,
-            // v0.38 Wildfire / Flood v2
+            // v0.38 Wildfire v2
             high_priority_zones_mapped: 0,
             time_to_map_first_high_risk: None,
             threat_level_over_time: vec![],

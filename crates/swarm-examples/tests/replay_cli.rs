@@ -1,9 +1,28 @@
 use std::process::Command;
 
+use swarm_examples::sitl_observability::{SitlEvent, SitlEventLog, SitlEventLogMode};
+
+const M58_SITL_LOG: &str = include_str!(
+    "../../../results/m58_multi_agent_px4_sih_execute_2026-05-31/m58-multi-agent-px4-sih-execute/events.sitl-log.json"
+);
+const M58_REPLAY_SUMMARY: &str = include_str!(
+    "../../../results/m58_multi_agent_px4_sih_execute_2026-05-31/m58-multi-agent-px4-sih-execute/replay-summary.txt"
+);
+const M59_SITL_LOG: &str = include_str!(
+    "../../../results/m59_px4_sih_failure_reallocation_2026-05-31/m59-px4-sih-failure-reallocation/events.sitl-log.json"
+);
+const M59_REPLAY_SUMMARY: &str = include_str!(
+    "../../../results/m59_px4_sih_failure_reallocation_2026-05-31/m59-px4-sih-failure-reallocation/replay-summary.txt"
+);
+
 fn run_replay(args: &[&str]) -> std::process::Output {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_replay"));
     cmd.args(args);
     cmd.output().expect("Failed to execute replay")
+}
+
+fn parse_committed_sitl_log(content: &str) -> SitlEventLog {
+    serde_json::from_str(content).expect("committed SITL event log should parse")
 }
 
 fn create_test_replay_log(path: &std::path::Path) {
@@ -154,4 +173,139 @@ fn replay_cli_sitl_summary_invalid_log_exits_error() {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("Failed to read SITL replay log"));
+}
+
+#[test]
+fn committed_m58_m59_sitl_summaries_have_expected_categories() {
+    for (summary, run_id, final_status) in [
+        (
+            M58_REPLAY_SUMMARY,
+            "m58-multi-agent-px4-sih-execute",
+            "final_status=completed",
+        ),
+        (
+            M59_REPLAY_SUMMARY,
+            "m59-px4-sih-failure-reallocation",
+            "final_status=completed_with_reallocation",
+        ),
+    ] {
+        assert!(summary.contains(run_id), "summary missing run id {run_id}");
+        assert!(
+            summary.contains("Multi-agent:"),
+            "summary missing multi-agent category"
+        );
+        assert!(
+            summary.contains("Multi-agent events:"),
+            "summary missing multi-agent event category"
+        );
+        assert!(
+            summary.contains(final_status),
+            "summary missing final status {final_status}"
+        );
+    }
+
+    for required in [
+        "agent_lost=1",
+        "task_released=2",
+        "task_reassigned=2",
+        "tasks_recovered=2",
+        "survivor_mission_updates=1",
+    ] {
+        assert!(
+            M59_REPLAY_SUMMARY.contains(required),
+            "M59 summary missing {required}"
+        );
+    }
+}
+
+#[test]
+fn committed_m58_m59_sitl_event_logs_parse_and_keep_expected_events() {
+    let m58 = parse_committed_sitl_log(M58_SITL_LOG);
+    assert_eq!(m58.schema_version, "sitl_event_log.v1");
+    assert_eq!(m58.mode, SitlEventLogMode::ConnectionExecute);
+    assert!(m58.events.iter().any(|event| matches!(
+        event,
+        SitlEvent::MultiAgentRunStarted { agent_count: 2, .. }
+    )));
+    assert_eq!(
+        m58.events
+            .iter()
+            .filter(|event| matches!(event, SitlEvent::MultiAgentAgentStarted { .. }))
+            .count(),
+        2
+    );
+    assert_eq!(
+        m58.events
+            .iter()
+            .filter(|event| matches!(event, SitlEvent::MultiAgentTaskCompleted { .. }))
+            .count(),
+        4
+    );
+    assert!(m58.events.iter().any(|event| matches!(
+        event,
+        SitlEvent::MultiAgentRunFinished {
+            overall_status,
+            ..
+        } if overall_status == "completed"
+    )));
+
+    let m59 = parse_committed_sitl_log(M59_SITL_LOG);
+    assert_eq!(m59.schema_version, "sitl_event_log.v1");
+    assert_eq!(m59.mode, SitlEventLogMode::ConnectionExecute);
+    for expected in [
+        "agent_lost",
+        "task_released",
+        "task_reassigned",
+        "survivor_mission_update_started",
+        "survivor_mission_update_completed",
+        "reallocation_completed",
+    ] {
+        let present = m59.events.iter().any(|event| {
+            matches!(
+                (expected, event),
+                ("agent_lost", SitlEvent::AgentLost { .. })
+                    | ("task_released", SitlEvent::TaskReleased { .. })
+                    | ("task_reassigned", SitlEvent::TaskReassigned { .. })
+                    | (
+                        "survivor_mission_update_started",
+                        SitlEvent::SurvivorMissionUpdateStarted { .. }
+                    )
+                    | (
+                        "survivor_mission_update_completed",
+                        SitlEvent::SurvivorMissionUpdateCompleted { .. }
+                    )
+                    | (
+                        "reallocation_completed",
+                        SitlEvent::ReallocationCompleted { .. }
+                    )
+            )
+        });
+        assert!(present, "M59 event log missing {expected}");
+    }
+}
+
+#[test]
+fn committed_m59_replacement_completion_seq_matches_replacement_mission() {
+    let log = parse_committed_sitl_log(M59_SITL_LOG);
+
+    for (task_id, expected_seq) in [("wp-0", 2), ("wp-1", 3)] {
+        assert!(log.events.iter().any(|event| matches!(
+            event,
+            SitlEvent::MultiAgentMissionItemSent {
+                agent_id,
+                seq,
+                task_id: Some(sent_task_id),
+                ..
+            } if agent_id == "agent-1" && sent_task_id == task_id && *seq == expected_seq
+        )));
+        assert!(log.events.iter().any(|event| matches!(
+            event,
+            SitlEvent::MultiAgentTaskCompleted {
+                agent_id,
+                seq,
+                task_id: completed_task_id,
+                ..
+            } if agent_id == "agent-1" && completed_task_id == task_id && *seq == expected_seq
+        )));
+    }
 }

@@ -118,28 +118,49 @@ fn support_matrix_inspection_perimeter_success_aligns_with_coverage() {
 #[test]
 fn support_matrix_wildfire_small_static_is_supported() {
     let config = WildfireProfile::SmallStatic.config(42);
+    let zone_count = config.zones.len() as f64;
     let (scenario, run_config) = build_wildfire_scenario(&config);
+    let threshold = run_config.wildfire_success_threshold;
+    let max_unassigned_ticks = run_config.max_unassigned_ticks;
     let metrics = ScenarioRunner::run(&scenario, run_config);
-    // Wildfire small-static should map all zones with greedy.
     assert!(
         metrics.unsupported_reason.is_none(),
         "wildfire small-static + greedy should not have unsupported_reason"
+    );
+    let mapped_ratio = metrics.hazard_zones_mapped as f64 / zone_count;
+    let expected_success =
+        mapped_ratio >= threshold && metrics.max_task_unassigned_ticks <= max_unassigned_ticks;
+    assert_eq!(
+        metrics.success, expected_success,
+        "wildfire small-static success predicate mismatch: mapped_ratio={mapped_ratio:.3}, threshold={threshold:.3}, max_task_unassigned_ticks={}",
+        metrics.max_task_unassigned_ticks
     );
 }
 
 #[test]
 fn support_matrix_wildfire_medium_dynamic_completion_consistency() {
     let config = WildfireProfile::MediumDynamic.config(42);
+    let zone_count = config.zones.len() as f64;
     let (scenario, mut run_config) = build_wildfire_scenario(&config);
     run_config.wildfire_success_threshold = 0.8;
+    let threshold = run_config.wildfire_success_threshold;
+    let max_unassigned_ticks = run_config.max_unassigned_ticks;
     let metrics = ScenarioRunner::run(&scenario, run_config);
-    // With mission-specific success semantics, wildfire success depends on:
-    // 1. mapped_ratio >= threshold
-    // 2. max_task_unassigned_ticks <= max_unassigned_ticks
-    // Medium-dynamic may have high unassigned time due to priority changes.
     assert!(
         metrics.unsupported_reason.is_none(),
         "wildfire medium-dynamic should not have unsupported_reason"
+    );
+    let mapped_ratio = metrics.hazard_zones_mapped as f64 / zone_count;
+    let expected_success =
+        mapped_ratio >= threshold && metrics.max_task_unassigned_ticks <= max_unassigned_ticks;
+    assert_eq!(
+        metrics.success, expected_success,
+        "wildfire medium-dynamic success predicate mismatch: mapped_ratio={mapped_ratio:.3}, threshold={threshold:.3}, max_task_unassigned_ticks={}",
+        metrics.max_task_unassigned_ticks
+    );
+    assert!(
+        metrics.all_tasks_assigned,
+        "wildfire medium-dynamic should keep task assignment/completion separate from success"
     );
 }
 

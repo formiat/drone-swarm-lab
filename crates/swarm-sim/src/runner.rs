@@ -126,14 +126,14 @@ pub struct PartitionEvent {
     pub agents: (AgentId, AgentId),
 }
 
-/// Runtime state for wildfire / flood mapping missions.
+/// Runtime state for wildfire mapping missions.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct WildfireState {
     pub zones: Vec<WildfireZone>,
     pub mapped_zone_ids: std::collections::HashSet<String>,
     pub update_interval_ticks: u64,
     pub enable_dynamic_threat: bool,
-    // v0.38 Wildfire / Flood v2
+    // v0.38 Wildfire v2
     #[serde(default)]
     pub enable_zone_expansion: bool,
     #[serde(default)]
@@ -484,10 +484,10 @@ impl ScenarioRunner {
         // v0.33 Adapter registry for mission-semantic completion checks
         let adapter_registry = AdapterRegistry::new();
 
-        // v0.30 Wildfire / Flood Mapping metrics
+        // v0.30 Wildfire Mapping metrics
         let mut wildfire_state = config.wildfire_state;
         let mut priority_updates: u64 = 0;
-        // v0.38 Wildfire / Flood v2 metrics
+        // v0.38 Wildfire v2 metrics
         let mut high_priority_zones_mapped: u64 = 0;
         let mut time_to_map_first_high_risk: Option<u64> = None;
         let mut threat_level_over_time: Vec<f64> = Vec::new();
@@ -906,7 +906,7 @@ impl ScenarioRunner {
                 coverage_over_time.push(grid_state.coverage_fraction());
             }
 
-            // v0.30: Wildfire / Flood Mapping zone observation logic
+            // v0.30: Wildfire Mapping zone observation logic
             if let Some(ref mut wildfire_state) = wildfire_state {
                 for (node, agent_id) in &mut nodes {
                     if crashed_agents.contains(agent_id) {
@@ -1678,7 +1678,7 @@ impl ScenarioRunner {
                 avg_wasted_travel,
                 avg_return_reserve,
                 infeasible_routes,
-                // v0.30 Wildfire / Flood Mapping metrics
+                // v0.30 Wildfire Mapping metrics
                 hazard_zones_mapped: wildfire_state
                     .as_ref()
                     .map_or(0, |w| w.mapped_zone_ids.len() as u64),
@@ -1690,7 +1690,7 @@ impl ScenarioRunner {
                         w.zones.iter().map(|z| z.threat_level).sum::<f64>() / w.zones.len() as f64
                     }
                 }),
-                // v0.38 Wildfire / Flood v2
+                // v0.38 Wildfire v2
                 high_priority_zones_mapped,
                 time_to_map_first_high_risk,
                 threat_level_over_time,

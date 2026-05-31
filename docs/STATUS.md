@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-31
 **HEAD commit:** see `git rev-parse HEAD`
-**Last audit:** M62 Benchmark / Baseline Refresh
+**Last audit:** M63 Evidence Cleanup / Status Honesty
 
 This document is the current status summary for the repository. It supersedes
 the older M39b-only audit and should be read together with the README current
@@ -18,7 +18,7 @@ status table.
 | M35 Dynamic Mission Correctness | Partial | Mission-specific success semantics are implemented; SAR CBBA and SAR centralized remain explicitly unsupported. |
 | M36 Regression Harness v2 | Complete | Regression infrastructure exists; repeated release sweeps passed for `regression_runner` and `strategy_comparison --regression` at `jobs=1/4/14`. |
 | M37 Realism Scenario Pack | Complete | Light/medium/heavy profiles and scenario metadata exist; this is not a calibrated research study. |
-| M38 Wildfire v2 | Partial | Wildfire dynamic threat work exists; flood is still not a separate mission. |
+| M38 Wildfire v2 | Partial | Wildfire dynamic threat work exists; flood remains future work and is not a separate mission. |
 | M39a Regression Repair | Complete | Runtime ordering and SAR scan-completion fixes removed the reproduced default regression flake; sweep artifacts are in `results/m56_regression_determinism_2026-05-30/`. |
 | M39b Decision / Audit Report | Complete | Historical audit and README honesty pass. |
 | M43 SITL Contract & Dry-Run Foundation | Complete | `--mock`, `--dry-run`, `--connection`, typed errors, connection classes, and waypoint extraction are implemented. |
@@ -37,7 +37,8 @@ status table.
 | M59 Live PX4/SIH Failure & Reallocation | Complete as controlled local SITL workflow | `--reupload-on-failure` detects a failed active live agent, emits runtime release/reassignment events, aborts/replaces an active survivor mission, writes report `reallocation` metrics and replay summary counters, and has fake-controller coverage. A controlled PX4/SIH failure artifact is captured in `results/m59_px4_sih_failure_reallocation_2026-05-31/`. |
 | M60 PX4/SIH Supervisor Hardening | Complete for local workflow hardening | `sitl_supervisor` now supports `--output-dir`, `--run-id`, and `--force`, refuses artifact overwrites by default, returns stable exit codes, writes replay summaries for output-dir runs, and extends `sitl_multi_agent_run_report.v1` with `task_ownership`, `events_summary`, `final_status`, and `limitations`. This hardens repeatable local PX4/SIH research runs, not hardware readiness. |
 | M61 Platform / API Stabilization | Complete as in-repository extension guidance | `docs/EXTENSION_GUIDE.md` documents mission, strategy, metrics, crate boundaries, schema-version policy, and test-only extension fixtures. It is a stable-ish in-repository guide, not a semver-stable published API or hardware-readiness claim. |
-| M62 Benchmark / Baseline Refresh | Complete as 500-seed validation baseline | Release `strategy_comparison --seeds 500 --mission all --jobs 14` completed for current HEAD. Artifacts are in `results/all_500_jobs14_m62_release/`; this is current validation evidence, not a publication-grade 1000-seed statistical run. |
+| M62 Benchmark / Baseline Refresh | Complete as historical 500-seed validation baseline | Release `strategy_comparison --seeds 500 --mission all --jobs 14` completed for commit `81260ca7afa114a5d9add7b832f6c5d7875b88cd`. Artifacts are in `results/all_500_jobs14_m62_release/`; after M63 this is historical validation evidence unless rerun on current HEAD, not a publication-grade 1000-seed statistical run. |
+| M63 Evidence Cleanup / Status Honesty | Complete without benchmark rerun | README/status/benchmark docs mark the M62 pack as historical evidence for `81260ca7afa114a5d9add7b832f6c5d7875b88cd`, flood is future work, wildfire success semantics are documented/tested, and committed M58/M59 SITL artifacts have targeted replay/event sanity tests. |
 
 ## Current Known Limitations
 
@@ -80,14 +81,16 @@ status table.
   `regression_runner` and `strategy_comparison --regression` at `jobs=1/4/14`
   with repeated runs. Artifacts are in
   `results/m56_regression_determinism_2026-05-30/`.
-- **M62 refreshed simulation benchmark evidence for current HEAD.** The
-  500-seed release baseline is in `results/all_500_jobs14_m62_release/` and is
-  summarized in `docs/BENCHMARK_RESULTS.md`.
+- **M62 refreshed simulation benchmark evidence for commit
+  `81260ca7afa114a5d9add7b832f6c5d7875b88cd`.** The 500-seed release baseline
+  is in `results/all_500_jobs14_m62_release/` and is summarized in
+  `docs/BENCHMARK_RESULTS.md`. M63 did not rerun the benchmark, so the pack is
+  historical evidence rather than current-HEAD evidence.
 - **1000-seed benchmark is still not an M48 substitute.** It can evaluate
   simulation behavior, but live PX4 SITL requires the M48 manual run.
-- **Publication-level benchmark remains separate.** M62 is a validation
-  baseline; a future publication claim should use a 1000-seed run after SAR,
-  wildfire, and CBBA interpretation questions are resolved.
+- **Publication-level benchmark remains separate.** M62 is a historical
+  validation baseline; a future publication claim should use a fresh 1000-seed
+  run after SAR, wildfire, and CBBA interpretation questions are resolved.
 
 ### Algorithmic
 
@@ -96,7 +99,13 @@ status table.
   with dynamic belief search.
 - **Inspection perimeter**: constrained by battery/time and intentionally
   experimental for some strategies.
-- **Flood mission**: not implemented as a separate mission.
+- **Flood mission**: future work; not implemented as a separate mission.
+- **Wildfire success semantics**: `success=true` requires
+  `mapped_zone_count / total_zone_count >= wildfire_success_threshold` (default
+  `0.8`), all expected failures detected, and
+  `max_task_unassigned_ticks <= max_unassigned_ticks`. This is intentionally
+  stricter than task completion, so wildfire benchmark rows can show
+  `Completion = 1.000` while `Success < 1.000`.
 
 ### Platform / API
 
@@ -116,7 +125,7 @@ status table.
 | In-repository extension work | Ready with M61 boundaries | Use `docs/EXTENSION_GUIDE.md`; external semver-stable plugin/API work remains out of scope. |
 | M48 live PX4 verification | Complete for local PX4 SIH | Captured in `results/m48_px4_sitl_2026-05-30/`; Gazebo/HIL/hardware remain out of scope. |
 | Real multi-agent PX4/SIH | Experimental local workflow with M60 hardening | Upload-only, execute, and controlled failure/reallocation SIH evidence exists. `sitl_supervisor --connection --execute --reupload-on-failure --output-dir ... --run-id ...` can produce stable artifacts and exit codes for local runs; automated PX4 CI, Gazebo/HIL, hardware, broader failure modes, and production safety remain future work. |
-| Large benchmark publication | Not ready | M62 gives a fresh 500-seed validation baseline; publication-level evidence still needs a 1000-seed run and interpretation of SAR/wildfire/CBBA rows. |
+| Large benchmark publication | Not ready | M62 gives a historical 500-seed validation baseline for commit `81260ca7afa114a5d9add7b832f6c5d7875b88cd`; current-head publication-level evidence still needs a fresh run and interpretation of SAR/wildfire/CBBA rows. |
 | Hardware experiment | Not product-ready | Requires external safety process; see `docs/HARDWARE_READINESS.md`. |
 
 ## Recommended Next Steps
@@ -130,8 +139,9 @@ status table.
    modes, repeated failure recovery, or automated PX4/SIH orchestration.
 4. Inspect M62 SAR, wildfire, and CBBA benchmark interpretation gaps before
    making publication-level algorithm claims.
-5. Run a 1000-seed release benchmark only after those interpretation gaps are
-   resolved or explicitly marked unsupported.
+5. Rerun the benchmark only when refreshing current-head evidence; use 1000
+   seeds only after those interpretation gaps are resolved or explicitly marked
+   unsupported.
 6. Keep README, `docs/BENCHMARK_RESULTS.md`, `docs/EXTENSION_GUIDE.md`, `docs/SITL_SETUP.md`,
    `docs/REPLAY.md`, and this file in sync when extension or SITL evidence
    changes state.
@@ -154,14 +164,6 @@ PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
 PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
   /home/formi/.local/bin/runlim cargo test -p swarm-sim extension_fixture
 
-cargo build --release -p swarm-examples --bin strategy_comparison
-
-target/release/strategy_comparison \
-  --seeds 500 \
-  --mission all \
-  --jobs 14 \
-  --output-dir results/m62_rerun_local
-
 PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
   /home/formi/.local/bin/runlim cargo test -p swarm-comms --features mavlink-transport
 
@@ -181,7 +183,9 @@ two-instance PX4 SIH upload-only check, inspect
 `results/m58_multi_agent_px4_sih_execute_2026-05-31/` and
 `results/m59_px4_sih_failure_reallocation_2026-05-31/`. M60 adds local
 supervisor artifact/exit-code/report hardening. M61 adds the extension guide
-and test-only extension contract checks. M62 adds a current 500-seed release
-simulation benchmark baseline. Do not extend any existing result to Gazebo,
-HIL, real hardware, automated PX4 CI, semver-stable external API, or
-publication-level algorithm claims without new code/evidence.
+and test-only extension contract checks. M62 adds a 500-seed release simulation
+benchmark baseline for commit `81260ca7afa114a5d9add7b832f6c5d7875b88cd`; M63
+marks it historical because no current-HEAD rerun was performed. Do not extend
+any existing result to Gazebo, HIL, real hardware, automated PX4 CI,
+semver-stable external API, or publication-level algorithm claims without new
+code/evidence.

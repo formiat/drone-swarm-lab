@@ -37,8 +37,7 @@ fn strategy_comparison_wildfire_smoke() {
 }
 
 #[test]
-fn wildfire_small_static_all_strategies_pass() {
-    // Verify that all strategies achieve success_rate == 1.0 on small-static
+fn wildfire_small_static_reports_completion_separately_from_success() {
     let output = Command::new("cargo")
         .args([
             "run",
@@ -55,18 +54,40 @@ fn wildfire_small_static_all_strategies_pass() {
         .expect("failed to execute strategy_comparison");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    // Check that small-static rows have success_rate 1.000
-    for line in stdout.lines() {
-        if line.contains("small-static") {
-            // The success rate column is at a fixed position in the markdown table.
-            // For simplicity, just check that the line contains "1.000".
-            assert!(
-                line.contains("1.000"),
-                "Expected success_rate 1.000 for small-static, got line: {}",
-                line
-            );
-        }
+    assert!(
+        output.status.success(),
+        "Expected exit code 0. stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let mut saw_small_static = false;
+    let mut saw_success_completion_mismatch = false;
+    for line in stdout
+        .lines()
+        .filter(|line| line.contains("wildfire/small-static"))
+    {
+        saw_small_static = true;
+        let columns: Vec<_> = line.split('|').map(str::trim).collect();
+        let success = columns
+            .get(6)
+            .expect("success column should be present in wildfire row");
+        let completion = columns
+            .get(7)
+            .expect("completion column should be present in wildfire row");
+        assert_eq!(
+            *completion, "1.000",
+            "Expected task completion 1.000 for small-static, got line: {line}"
+        );
+        saw_success_completion_mismatch |= success != completion;
     }
+    assert!(
+        saw_small_static,
+        "Expected small-static profile in stdout:\n{stdout}"
+    );
+    assert!(
+        saw_success_completion_mismatch,
+        "Expected at least one small-static row where success differs from completion"
+    );
 }
 
 #[test]

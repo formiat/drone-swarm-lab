@@ -1,20 +1,24 @@
 # Benchmark Results
 
-This document records the current M62 simulation benchmark refresh for the
-repository HEAD. It supersedes the older M32b benchmark report as the default
-benchmark reference, but it is still a 500-seed validation baseline rather than
-a publication-grade 1000-seed statistical run.
+This document records the M62 simulation benchmark refresh for commit
+`81260ca7afa114a5d9add7b832f6c5d7875b88cd`. M63 did not rerun the benchmark, so
+`results/all_500_jobs14_m62_release/` is now historical validation evidence,
+not current-HEAD evidence. It supersedes the older M32b benchmark report as the
+latest committed full benchmark pack, but it is still a 500-seed validation
+baseline rather than a publication-grade 1000-seed statistical run.
 
 For live PX4/SIH evidence, see `docs/STATUS.md` and the `results/m48_*`,
 `results/m55_*`, `results/m58_*`, and `results/m59_*` artifacts. Simulation
 benchmark results must not be used as a substitute for PX4/SIH or hardware
 validation.
 
-## Current Run
+## Historical M62 Run
 
 - **Date:** 2026-05-31
 - **Benchmark run id:** `2026-05-31T023230Z_all_500_custom`
 - **Benchmark git commit:** `81260ca7afa114a5d9add7b832f6c5d7875b88cd`
+- **Evidence status after M63:** historical evidence for the commit above;
+  rerun before using it as current-HEAD evidence
 - **Build profile:** release
 - **Mode:** custom 500 seeds, all built-in simulation missions
 - **Jobs:** 14 Rayon worker jobs
@@ -68,7 +72,8 @@ Historical validation packs are preserved in:
 | M62 refresh | release | 500 | 14 | 16:07.34 | 92264 KB | `results/all_500_jobs14_m62_release/` |
 
 The M62 500-seed release runtime scales close to the seed-count increase from
-the M62 200-seed run while covering the current codebase and 38 profiles.
+the M62 200-seed run while covering the codebase at commit
+`81260ca7afa114a5d9add7b832f6c5d7875b88cd` and 38 profiles.
 
 ## Mission-Level Summary
 
@@ -132,9 +137,13 @@ Values below are averaged across all profiles of each mission for a strategy.
 
 6. **Wildfire success is low despite full task completion.** Non-CBBA
    strategies average 0.247 success, CBBA averages 0.127, and all strategies
-   report 1.000 completion. This suggests the current wildfire success
-   threshold is stricter than task assignment/completion and should be reported
-   as such.
+   report 1.000 completion. This is expected under the M35/M63 wildfire success
+   predicate: `success=true` requires
+   `mapped_zone_count / total_zone_count >= wildfire_success_threshold` (default
+   `0.8`), all expected failures detected, and
+   `max_task_unassigned_ticks <= max_unassigned_ticks`. Task completion only
+   says tasks were assigned/completed; it does not guarantee enough distinct
+   hazard zones were mapped to satisfy the stricter mission success predicate.
 
 ## Notable Rows
 
@@ -182,13 +191,22 @@ Values below are averaged across all profiles of each mission for a strategy.
 | greedy | wildfire/medium-dynamic | 0.230 | 1.000 | 3.970 | 116.000 | 1.000 |
 | greedy | wildfire/small-static | 0.246 | 1.000 | 1.498 | 0.000 | 0.500 |
 
+For wildfire rows, `Completion = 1.000` means the task-completion floor passed.
+It is not equivalent to mission success. Mission success is computed from the
+mapped-zone ratio and the failure/unassigned guards described above, which is
+why `Success` remains below `Completion` in the M62 pack.
+
 ## Next Steps
 
-1. Inspect the SAR and wildfire success predicates before turning this baseline
-   into a publication claim.
-2. Decide whether CBBA coverage under high-loss/high-latency failures should be
+1. Treat `results/all_500_jobs14_m62_release/` as historical evidence for
+   commit `81260ca7afa114a5d9add7b832f6c5d7875b88cd` until a current-HEAD rerun
+   is performed.
+2. Inspect the SAR success predicate before turning this baseline into a
+   publication claim; wildfire success semantics are now documented as a
+   mapped-ratio predicate with failure/unassigned guards.
+3. Decide whether CBBA coverage under high-loss/high-latency failures should be
    explicitly unsupported or fixed.
-3. If publication-level evidence is needed, run
+4. If publication-level evidence is needed, run
    `--seeds 1000 --mission all --jobs 14` after the above interpretation work.
-4. Keep this document aligned with `README.md`, `docs/STATUS.md`, and the
+5. Keep this document aligned with `README.md`, `docs/STATUS.md`, and the
    committed `results/all_500_jobs14_m62_release/` artifact.
