@@ -210,14 +210,21 @@ impl SitlTaskProgress {
     }
 
     pub fn completed_task_ids(&self) -> Vec<String> {
+        self.completed_waypoints()
+            .into_iter()
+            .map(|(_, task_id)| task_id)
+            .collect()
+    }
+
+    pub fn completed_waypoints(&self) -> Vec<(u16, String)> {
         self.seq_to_task_id
-            .values()
-            .filter(|task_id| {
+            .iter()
+            .filter(|(_, task_id)| {
                 self.task_status_by_id
                     .get(*task_id)
                     .is_some_and(|status| matches!(status, TaskStatus::Completed))
             })
-            .cloned()
+            .map(|(seq, task_id)| (*seq, task_id.clone()))
             .collect()
     }
 
@@ -499,5 +506,9 @@ mod tests {
             .unwrap();
 
         assert_eq!(progress.completed_task_ids(), vec!["wp-0", "wp-1"]);
+        assert_eq!(
+            progress.completed_waypoints(),
+            vec![(0, "wp-0".to_owned()), (1, "wp-1".to_owned())]
+        );
     }
 }

@@ -167,6 +167,12 @@ pub struct AgentProgress {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CompletedWaypoint {
+    pub seq: u16,
+    pub task_id: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LiveAgentRun {
     pub agent_id: String,
     pub connection_string: String,
@@ -175,6 +181,7 @@ pub struct LiveAgentRun {
     pub lifecycle: MultiAgentLifecycle,
     pub mission_item_count: usize,
     pub completed_task_count: usize,
+    pub completed_waypoints: Vec<CompletedWaypoint>,
     pub completed_task_ids: Vec<String>,
     pub final_status: String,
     pub error: Option<String>,
@@ -216,6 +223,9 @@ pub trait LiveAgentController {
     fn completed_task_count(&self) -> usize {
         0
     }
+    fn completed_waypoints(&self) -> Vec<CompletedWaypoint> {
+        Vec::new()
+    }
     fn completed_task_ids(&self) -> Vec<String> {
         Vec::new()
     }
@@ -226,7 +236,7 @@ pub struct Px4AgentController {
     agent: MultiAgentSitlManifestAgent,
     lifecycle: SitlConnectionLifecycle,
     state: Option<Px4AgentState>,
-    completed_task_ids: Vec<String>,
+    completed_waypoints: Vec<CompletedWaypoint>,
     finished_run: Option<LiveAgentRun>,
 }
 
@@ -247,7 +257,7 @@ impl Px4AgentController {
             agent,
             lifecycle,
             state: None,
-            completed_task_ids: Vec::new(),
+            completed_waypoints: Vec::new(),
             finished_run: None,
         }
     }
@@ -286,8 +296,9 @@ impl Px4AgentController {
     fn failed_run(
         &self,
         error: impl Into<String>,
-        completed_task_ids: Vec<String>,
+        completed_waypoints: Vec<CompletedWaypoint>,
     ) -> LiveAgentRun {
+        let completed_task_ids = task_ids_from_completed_waypoints(&completed_waypoints);
         LiveAgentRun {
             agent_id: self.agent.agent_id.clone(),
             connection_string: self.agent.connection_string.clone(),
@@ -295,7 +306,8 @@ impl Px4AgentController {
             component_id: self.agent.component_id,
             lifecycle: self.agent.lifecycle,
             mission_item_count: self.agent.waypoint_count,
-            completed_task_count: completed_task_ids.len(),
+            completed_task_count: completed_waypoints.len(),
+            completed_waypoints,
             completed_task_ids,
             final_status: "failed".to_owned(),
             error: Some(error.into()),
@@ -305,8 +317,9 @@ impl Px4AgentController {
     fn run_from_progress_report(
         &self,
         report: crate::sitl_progress::SitlMissionProgressReport,
-        completed_task_ids: Vec<String>,
+        completed_waypoints: Vec<CompletedWaypoint>,
     ) -> LiveAgentRun {
+        let completed_task_ids = task_ids_from_completed_waypoints(&completed_waypoints);
         LiveAgentRun {
             agent_id: self.agent.agent_id.clone(),
             connection_string: self.agent.connection_string.clone(),
@@ -314,21 +327,22 @@ impl Px4AgentController {
             component_id: self.agent.component_id,
             lifecycle: self.agent.lifecycle,
             mission_item_count: self.agent.waypoint_count,
-            completed_task_count: completed_task_ids.len(),
+            completed_task_count: completed_waypoints.len(),
+            completed_waypoints,
             completed_task_ids,
             final_status: live_progress_status_name(report.final_status).to_owned(),
             error: report.failure_reason,
         }
     }
 
-    fn merge_completed_task_ids(&mut self, task_ids: Vec<String>) {
-        self.completed_task_ids.extend(task_ids);
-        dedup_strings_preserve_order(&mut self.completed_task_ids);
+    fn merge_completed_waypoints(&mut self, waypoints: Vec<CompletedWaypoint>) {
+        self.completed_waypoints.extend(waypoints);
+        dedup_completed_waypoints_preserve_order(&mut self.completed_waypoints);
     }
 
     fn merge_completed_from_state(&mut self) {
         if let Some(state) = &self.state {
-            self.merge_completed_task_ids(state.progress.completed_task_ids());
+            self.merge_completed_waypoints(completed_waypoints_from_progress(&state.progress));
         }
     }
 
@@ -344,7 +358,7 @@ impl Px4AgentController {
             Ok(transport) => transport,
             Err(error) => {
                 self.finished_run =
-                    Some(self.failed_run(error.to_string(), self.completed_task_ids.clone()));
+                    Some(self.failed_run(error.to_string(), self.completed_waypoints.clone()));
                 return Ok(());
             }
         };
@@ -357,7 +371,7 @@ impl Px4AgentController {
             lifecycle_options.clone(),
         ) {
             self.finished_run =
-                Some(self.failed_run(error.to_string(), self.completed_task_ids.clone()));
+                Some(self.failed_run(error.to_string(), self.completed_waypoints.clone()));
             return Ok(());
         }
 
@@ -379,13 +393,13 @@ impl Px4AgentController {
         let Some(state) = self.state.as_mut() else {
             return Ok(Some(self.failed_run(
                 "live PX4 controller was polled before start",
-                self.completed_task_ids.clone(),
+                self.completed_waypoints.clone(),
             )));
         };
 
         let now = state.started_at.elapsed();
         if now.saturating_sub(state.last_heartbeat_at) >= self.lifecycle.telemetry_timeout {
-            let completed_task_ids = state.progress.completed_task_ids();
+            let completed_waypoints = completed_waypoints_from_progress(&state.progress);
             let report = state
                 .progress
                 .apply_event(swarm_comms::MavlinkTelemetryEvent::Disconnected, now)
@@ -397,21 +411,21 @@ impl Px4AgentController {
             };
             let abort = state.transport.abort_mission(&state.lifecycle_options);
             let report = append_abort_to_report(report, abort);
-            self.merge_completed_task_ids(completed_task_ids);
-            let run = self.run_from_progress_report(report, self.completed_task_ids.clone());
+            self.merge_completed_waypoints(completed_waypoints);
+            let run = self.run_from_progress_report(report, self.completed_waypoints.clone());
             self.state = None;
             return Ok(Some(run));
         }
         if now.saturating_sub(state.last_progress_at) >= self.lifecycle.no_progress_timeout {
-            let completed_task_ids = state.progress.completed_task_ids();
+            let completed_waypoints = completed_waypoints_from_progress(&state.progress);
             let report = state.progress.mark_no_progress_timeout(format!(
                 "no mission progress before {:?}",
                 self.lifecycle.no_progress_timeout
             ));
             let abort = state.transport.abort_mission(&state.lifecycle_options);
             let report = append_abort_to_report(report, abort);
-            self.merge_completed_task_ids(completed_task_ids);
-            let run = self.run_from_progress_report(report, self.completed_task_ids.clone());
+            self.merge_completed_waypoints(completed_waypoints);
+            let run = self.run_from_progress_report(report, self.completed_waypoints.clone());
             self.state = None;
             return Ok(Some(run));
         }
@@ -447,18 +461,18 @@ impl Px4AgentController {
 
         match progress_update {
             crate::sitl_progress::SitlProgressUpdate::Completed(report) => {
-                let completed_task_ids = state.progress.completed_task_ids();
-                self.merge_completed_task_ids(completed_task_ids);
-                let run = self.run_from_progress_report(report, self.completed_task_ids.clone());
+                let completed_waypoints = completed_waypoints_from_progress(&state.progress);
+                self.merge_completed_waypoints(completed_waypoints);
+                let run = self.run_from_progress_report(report, self.completed_waypoints.clone());
                 self.state = None;
                 Ok(Some(run))
             }
             crate::sitl_progress::SitlProgressUpdate::Failed(report) => {
-                let completed_task_ids = state.progress.completed_task_ids();
+                let completed_waypoints = completed_waypoints_from_progress(&state.progress);
                 let abort = state.transport.abort_mission(&state.lifecycle_options);
                 let report = append_abort_to_report(report, abort);
-                self.merge_completed_task_ids(completed_task_ids);
-                let run = self.run_from_progress_report(report, self.completed_task_ids.clone());
+                self.merge_completed_waypoints(completed_waypoints);
+                let run = self.run_from_progress_report(report, self.completed_waypoints.clone());
                 self.state = None;
                 Ok(Some(run))
             }
@@ -517,7 +531,7 @@ impl LiveAgentController for Px4AgentController {
                     format!(
                         "mission replacement failed after abort_result={abort_result:?}: {error}"
                     ),
-                    self.completed_task_ids.clone(),
+                    self.completed_waypoints.clone(),
                 ));
                 self.state = None;
                 return Ok(());
@@ -550,16 +564,20 @@ impl LiveAgentController for Px4AgentController {
     }
 
     fn completed_task_count(&self) -> usize {
-        self.completed_task_ids().len()
+        self.completed_waypoints().len()
+    }
+
+    fn completed_waypoints(&self) -> Vec<CompletedWaypoint> {
+        let mut completed = self.completed_waypoints.clone();
+        if let Some(state) = &self.state {
+            completed.extend(completed_waypoints_from_progress(&state.progress));
+        }
+        dedup_completed_waypoints_preserve_order(&mut completed);
+        completed
     }
 
     fn completed_task_ids(&self) -> Vec<String> {
-        let mut completed = self.completed_task_ids.clone();
-        if let Some(state) = &self.state {
-            completed.extend(state.progress.completed_task_ids());
-        }
-        dedup_strings_preserve_order(&mut completed);
-        completed
+        task_ids_from_completed_waypoints(&self.completed_waypoints())
     }
 }
 
@@ -1128,6 +1146,9 @@ fn completed_task_ids_for_run(
     manifest: &MultiAgentSitlManifest,
     run: &LiveAgentRun,
 ) -> Vec<String> {
+    if !run.completed_waypoints.is_empty() {
+        return task_ids_from_completed_waypoints(&run.completed_waypoints);
+    }
     if !run.completed_task_ids.is_empty() {
         return run.completed_task_ids.clone();
     }
@@ -1141,6 +1162,43 @@ fn completed_task_ids_for_run(
                 .iter()
                 .take(run.completed_task_count)
                 .map(|waypoint| waypoint.task_id.clone())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[cfg(any(feature = "mavlink-transport", test))]
+fn completed_waypoints_for_run(
+    manifest: &MultiAgentSitlManifest,
+    run: &LiveAgentRun,
+) -> Vec<CompletedWaypoint> {
+    if !run.completed_waypoints.is_empty() {
+        return run.completed_waypoints.clone();
+    }
+    if !run.completed_task_ids.is_empty() {
+        return run
+            .completed_task_ids
+            .iter()
+            .filter_map(|task_id| manifest_waypoint_for_task_id(manifest, task_id))
+            .map(|waypoint| CompletedWaypoint {
+                seq: waypoint.seq,
+                task_id: waypoint.task_id.clone(),
+            })
+            .collect();
+    }
+    manifest
+        .agents
+        .iter()
+        .find(|agent| agent.agent_id == run.agent_id)
+        .map(|agent| {
+            agent
+                .waypoints
+                .iter()
+                .take(run.completed_task_count)
+                .map(|waypoint| CompletedWaypoint {
+                    seq: waypoint.seq,
+                    task_id: waypoint.task_id.clone(),
+                })
                 .collect()
         })
         .unwrap_or_default()
@@ -1219,6 +1277,42 @@ fn record_reallocation_output(
 fn dedup_strings_preserve_order(items: &mut Vec<String>) {
     let mut seen = HashSet::new();
     items.retain(|item| seen.insert(item.clone()));
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn completed_waypoints_from_progress(
+    progress: &crate::sitl_progress::SitlTaskProgress,
+) -> Vec<CompletedWaypoint> {
+    progress
+        .completed_waypoints()
+        .into_iter()
+        .map(|(seq, task_id)| CompletedWaypoint { seq, task_id })
+        .collect()
+}
+
+#[cfg(test)]
+fn completed_waypoints_from_items(items: &[SitlWaypointItem]) -> Vec<CompletedWaypoint> {
+    items
+        .iter()
+        .map(|waypoint| CompletedWaypoint {
+            seq: waypoint.seq,
+            task_id: waypoint.task_id.clone(),
+        })
+        .collect()
+}
+
+#[cfg(any(feature = "mavlink-transport", test))]
+fn task_ids_from_completed_waypoints(waypoints: &[CompletedWaypoint]) -> Vec<String> {
+    waypoints
+        .iter()
+        .map(|waypoint| waypoint.task_id.clone())
+        .collect()
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn dedup_completed_waypoints_preserve_order(waypoints: &mut Vec<CompletedWaypoint>) {
+    let mut seen = HashSet::new();
+    waypoints.retain(|waypoint| seen.insert(waypoint.task_id.clone()));
 }
 
 #[cfg(any(feature = "mavlink-transport", test))]
@@ -1523,7 +1617,8 @@ fn live_active_run_snapshots<C: LiveAgentController>(
                 .agents
                 .iter()
                 .find(|agent| agent.agent_id == *agent_id)?;
-            let completed_task_ids = controller.completed_task_ids();
+            let completed_waypoints = controller.completed_waypoints();
+            let completed_task_ids = task_ids_from_completed_waypoints(&completed_waypoints);
             Some(LiveAgentRun {
                 agent_id: agent.agent_id.clone(),
                 connection_string: agent.connection_string.clone(),
@@ -1531,7 +1626,8 @@ fn live_active_run_snapshots<C: LiveAgentController>(
                 component_id: agent.component_id,
                 lifecycle: agent.lifecycle,
                 mission_item_count: controller.mission_waypoints().len(),
-                completed_task_count: completed_task_ids.len(),
+                completed_task_count: completed_waypoints.len(),
+                completed_waypoints,
                 completed_task_ids,
                 final_status: "running".to_owned(),
                 error: None,
@@ -1562,11 +1658,8 @@ fn record_live_agent_run(
     manifest: &MultiAgentSitlManifest,
     run: &LiveAgentRun,
 ) {
-    let completed_task_ids = completed_task_ids_for_run(manifest, run);
-    for task_id in completed_task_ids {
-        let Some(waypoint) = manifest_waypoint_for_task_id(manifest, &task_id) else {
-            continue;
-        };
+    let completed_waypoints = completed_waypoints_for_run(manifest, run);
+    for waypoint in completed_waypoints {
         recorder.push_multi_agent_waypoint_reached(
             run.agent_id.clone(),
             waypoint.seq,
@@ -2317,11 +2410,8 @@ mod tests {
                     lifecycle: agent.lifecycle,
                     mission_item_count: agent.waypoint_count,
                     completed_task_count: agent.waypoint_count,
-                    completed_task_ids: agent
-                        .waypoints
-                        .iter()
-                        .map(|waypoint| waypoint.task_id.clone())
-                        .collect(),
+                    completed_waypoints: completed_waypoints_from_items(&agent.waypoints),
+                    completed_task_ids: agent.task_ids.clone(),
                     final_status: "completed".to_owned(),
                     error: None,
                 },
@@ -2343,11 +2433,14 @@ mod tests {
                     lifecycle: agent.lifecycle,
                     mission_item_count: agent.waypoint_count,
                     completed_task_count,
+                    completed_waypoints: completed_waypoints_from_items(
+                        &agent.waypoints[..completed_task_count.min(agent.waypoints.len())],
+                    ),
                     completed_task_ids: agent
-                        .waypoints
+                        .task_ids
                         .iter()
                         .take(completed_task_count)
-                        .map(|waypoint| waypoint.task_id.clone())
+                        .cloned()
                         .collect(),
                     final_status: "failed".to_owned(),
                     error: Some("fake live failure".to_owned()),
@@ -2405,6 +2498,7 @@ mod tests {
             self.run.mission_item_count = plan.waypoints.len();
             if self.run.final_status == "completed" {
                 self.run.completed_task_count = plan.waypoints.len();
+                self.run.completed_waypoints = completed_waypoints_from_items(&plan.waypoints);
                 self.run.completed_task_ids = plan.task_ids.clone();
             }
             Ok(())
@@ -2436,15 +2530,19 @@ mod tests {
         }
 
         fn completed_task_count(&self) -> usize {
-            self.completed_task_ids().len()
+            self.completed_waypoints().len()
         }
 
-        fn completed_task_ids(&self) -> Vec<String> {
+        fn completed_waypoints(&self) -> Vec<CompletedWaypoint> {
             if self.poll_count > self.finish_after_polls {
-                self.run.completed_task_ids.clone()
+                self.run.completed_waypoints.clone()
             } else {
                 Vec::new()
             }
+        }
+
+        fn completed_task_ids(&self) -> Vec<String> {
+            task_ids_from_completed_waypoints(&self.completed_waypoints())
         }
     }
 
@@ -2827,6 +2925,13 @@ mod tests {
                 ("agent-1".to_owned(), 1, "wp-0".to_owned())
             ]
         );
+        assert_eq!(
+            multi_agent_task_completed(&log),
+            vec![
+                ("agent-1".to_owned(), 0, "wp-1".to_owned()),
+                ("agent-1".to_owned(), 1, "wp-0".to_owned())
+            ]
+        );
 
         let report_json: SitlMultiAgentRunReport =
             serde_json::from_str(&std::fs::read_to_string(run_report).unwrap()).unwrap();
@@ -2872,6 +2977,14 @@ mod tests {
                 ("agent-1".to_owned(), 2, "wp-10".to_owned())
             ]
         );
+        assert_eq!(
+            multi_agent_task_completed(&log),
+            vec![
+                ("agent-1".to_owned(), 0, "wp-1".to_owned()),
+                ("agent-1".to_owned(), 1, "wp-2".to_owned()),
+                ("agent-1".to_owned(), 2, "wp-10".to_owned())
+            ]
+        );
     }
 
     #[test]
@@ -2911,6 +3024,14 @@ mod tests {
                 ("agent-0".to_owned(), 0, "wp-2".to_owned()),
                 ("agent-0".to_owned(), 1, "wp-10".to_owned()),
                 ("agent-1".to_owned(), 0, "wp-1".to_owned()),
+                ("agent-1".to_owned(), 0, "wp-1".to_owned()),
+                ("agent-1".to_owned(), 1, "wp-10".to_owned())
+            ]
+        );
+        assert_eq!(
+            multi_agent_task_completed(&log),
+            vec![
+                ("agent-0".to_owned(), 0, "wp-2".to_owned()),
                 ("agent-1".to_owned(), 0, "wp-1".to_owned()),
                 ("agent-1".to_owned(), 1, "wp-10".to_owned())
             ]
@@ -2972,6 +3093,23 @@ mod tests {
                     agent_id,
                     seq,
                     task_id: Some(task_id),
+                    ..
+                } => Some((agent_id.clone(), *seq, task_id.clone())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn multi_agent_task_completed(
+        log: &crate::sitl_observability::SitlEventLog,
+    ) -> Vec<(String, u16, String)> {
+        log.events
+            .iter()
+            .filter_map(|event| match event {
+                crate::sitl_observability::SitlEvent::MultiAgentTaskCompleted {
+                    agent_id,
+                    seq,
+                    task_id,
                     ..
                 } => Some((agent_id.clone(), *seq, task_id.clone())),
                 _ => None,

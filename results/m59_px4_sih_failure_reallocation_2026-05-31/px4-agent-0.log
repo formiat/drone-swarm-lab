@@ -36,8 +36,8 @@ INFO  [mavlink] mode: Custom, data rate: 400000 B/s on udp port 19450 remote por
 INFO  [logger] logger started (mode=all)
 INFO  [logger] Max log file size: 1024 MiB
 INFO  [logger] Start file log (type: full)
-INFO  [logger] [logger] ./log/2026-05-31/13_13_04.ulg
-INFO  [logger] Opened full log file: ./log/2026-05-31/13_13_04.ulg
+INFO  [logger] [logger] ./log/2026-05-31/13_43_17.ulg
+INFO  [logger] Opened full log file: ./log/2026-05-31/13_43_17.ulg
 INFO  [mavlink] MAVLink only on localhost (set param MAV_{i}_BROADCAST = 1 to enable network)
 INFO  [mavlink] MAVLink only on localhost (set param MAV_{i}_BROADCAST = 1 to enable network)
 INFO  [mavlink] MAVLink only on localhost (set param MAV_{i}_BROADCAST = 1 to enable network)
@@ -46,7 +46,6 @@ WARN  [health_and_arming_checks] Preflight Fail: no heading reference
 INFO  [tone_alarm] notify positive
 INFO  [commander] [32mReady for takeoff![0m
 INFO  [mavlink] partner IP: 127.0.0.1
-INFO  [tone_alarm] notify positive
 INFO  [commander] Armed by external command
 INFO  [tone_alarm] arming warning
 WARN  [navigator] Already higher than takeoff altitude

@@ -25,10 +25,10 @@ INFO  [simulator_sih] Simulation loop with 250 Hz (4000 us sim time interval)
 INFO  [simulator_sih] Simulation with 1.0x speedup. Loop with (4000 us wall time interval)
 INFO  [lockstep_scheduler] setting initial absolute time to 4000 us
 INFO  [commander] LED: open /dev/led0 failed (22)
-INFO  [tone_alarm] home set
 INFO  [vision_target_estimator] VTE for static target init
 INFO  [uxrce_dds_client] init UDP agent IP:127.0.0.1, port:8888
 INFO  [mavlink] mode: Normal, data rate: 4000000 B/s on udp port 18571 remote port 14550
+INFO  [tone_alarm] home set
 INFO  [mavlink] mode: Onboard, data rate: 4000000 B/s on udp port 14581 remote port 14541
 INFO  [mavlink] mode: Onboard, data rate: 4000 B/s on udp port 14281 remote port 14031
 INFO  [mavlink] mode: Gimbal, data rate: 400000 B/s on udp port 13031 remote port 13281
@@ -36,8 +36,8 @@ INFO  [mavlink] mode: Custom, data rate: 400000 B/s on udp port 19451 remote por
 INFO  [logger] logger started (mode=all)
 INFO  [logger] Max log file size: 1024 MiB
 INFO  [logger] Start file log (type: full)
-INFO  [logger] [logger] ./log/2026-05-31/13_13_10.ulg
-INFO  [logger] Opened full log file: ./log/2026-05-31/13_13_10.ulg
+INFO  [logger] [logger] ./log/2026-05-31/13_43_17.ulg
+INFO  [logger] Opened full log file: ./log/2026-05-31/13_43_17.ulg
 INFO  [mavlink] MAVLink only on localhost (set param MAV_{i}_BROADCAST = 1 to enable network)
 INFO  [mavlink] MAVLink only on localhost (set param MAV_{i}_BROADCAST = 1 to enable network)
 INFO  [mavlink] MAVLink only on localhost (set param MAV_{i}_BROADCAST = 1 to enable network)
@@ -54,7 +54,7 @@ INFO  [navigator] Executing Mission
 INFO  [navigator] Climb to 8.0 meters above home
 INFO  [commander] Takeoff detected
 INFO  [commander] Returning to launch
-INFO  [navigator] RTL: start return at 520 m (30 m above destination)
+INFO  [navigator] RTL: start return at 520 m (31 m above destination)
 INFO  [tone_alarm] notify positive
 WARN  [navigator] Already higher than takeoff altitude
 INFO  [navigator] Executing Mission

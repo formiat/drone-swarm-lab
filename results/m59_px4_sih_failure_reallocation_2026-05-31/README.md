@@ -51,8 +51,8 @@ cargo run -p swarm-examples --bin sitl_supervisor --features mavlink-transport -
 Failure injection:
 
 ```text
-2026-05-31T10:14:08-03:00 killing PX4 instance 0
-2026-05-31T10:14:08-03:00 kill signal sent
+2026-05-31T10:43:54-0300 killing PX4 instance 0
+2026-05-31T10:44:11-0300 kill signal sent
 ```
 
 Full stdout/stderr is in `supervisor-run.txt`.

@@ -93,13 +93,13 @@
     {
       "type": "task_released",
       "step": 12,
-      "task_id": "wp-1",
+      "task_id": "wp-0",
       "previous_agent_id": "agent-0"
     },
     {
       "type": "task_released",
       "step": 13,
-      "task_id": "wp-0",
+      "task_id": "wp-1",
       "previous_agent_id": "agent-0"
     },
     {
@@ -220,28 +220,28 @@
       "type": "multi_agent_waypoint_reached",
       "step": 28,
       "agent_id": "agent-1",
-      "seq": 0,
+      "seq": 2,
       "task_id": "wp-0"
     },
     {
       "type": "multi_agent_task_completed",
       "step": 29,
       "agent_id": "agent-1",
-      "seq": 0,
+      "seq": 2,
       "task_id": "wp-0"
     },
     {
       "type": "multi_agent_waypoint_reached",
       "step": 30,
       "agent_id": "agent-1",
-      "seq": 1,
+      "seq": 3,
       "task_id": "wp-1"
     },
     {
       "type": "multi_agent_task_completed",
       "step": 31,
       "agent_id": "agent-1",
-      "seq": 1,
+      "seq": 3,
       "task_id": "wp-1"
     },
     {

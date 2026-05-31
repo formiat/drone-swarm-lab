@@ -1,4 +1,5 @@
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.10s
+   Compiling swarm-examples v0.1.0 (/home/formi/Documents/RustProjects/drone/crates/swarm-examples)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.24s
      Running `target/debug/sitl_supervisor --connection --execute --scenario results/m59_px4_sih_failure_reallocation_2026-05-31/sitl.multi-agent.failure.scenario.json --config results/m59_px4_sih_failure_reallocation_2026-05-31/sitl.multi-agent.failure.onboard.config.json --allow-hardware-candidate --timeout 8 --telemetry-timeout 5 --no-progress-timeout 180 --reupload-on-failure --output-dir results/m59_px4_sih_failure_reallocation_2026-05-31 --run-id m59-px4-sih-failure-reallocation --force`
 Multi-Agent SITL Execute: agents=2 scenario=sitl_multi_agent_failure_reallocation_0 config=results/m59_px4_sih_failure_reallocation_2026-05-31/sitl.multi-agent.failure.onboard.config.json
 SITL Supervisor execute: agent=agent-0 system_id=1 component_id=1 connection=udpin:0.0.0.0:14540 waypoints=2
