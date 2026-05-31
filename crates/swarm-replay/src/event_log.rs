@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use swarm_types::{AgentId, Pose, TaskId, UrbanBusId, UrbanEdgeId, UrbanNodeId};
+use swarm_types::{AgentId, Pose, TaskId, UrbanBusId, UrbanEdgeId, UrbanNodeId, UrbanObstacleId};
 
 /// Schema version for the event log format.
 pub const EVENT_LOG_SCHEMA_VERSION: &str = "0.2";
@@ -153,6 +153,8 @@ pub enum Event {
         tick: u64,
         segment_index: Option<usize>,
         edge_id: Option<UrbanEdgeId>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        obstacle_id: Option<UrbanObstacleId>,
         pose: Pose,
         reason: String,
     },
@@ -325,6 +327,7 @@ mod tests {
                     tick: 11,
                     segment_index: Some(0),
                     edge_id: Some(edge_id),
+                    obstacle_id: None,
                     pose: Pose {
                         x: 1.0,
                         ..Default::default()
@@ -386,6 +389,63 @@ mod tests {
         assert!(json.contains("urban_patrol_completed"));
         assert!(json.contains("bus_observed"));
         assert!(json.contains("urban_search_completed"));
+    }
+
+    #[test]
+    fn legacy_urban_violation_without_obstacle_id_deserializes() {
+        let json = r#"{
+            "run_id": "legacy-urban",
+            "seed": 0,
+            "scenario_name": "urban_patrol_small_block",
+            "events": [
+                {
+                    "type": "urban_violation",
+                    "agent_id": "agent-0",
+                    "tick": 3,
+                    "segment_index": 0,
+                    "edge_id": "road-n0-n1",
+                    "pose": { "x": 1.0, "y": 2.0 },
+                    "reason": "ObstacleIntersection"
+                }
+            ]
+        }"#;
+
+        let log: EventLog = serde_json::from_str(json).unwrap();
+        assert_eq!(log.schema_version, "0.2");
+        match &log.events[0] {
+            Event::UrbanViolation { obstacle_id, .. } => {
+                assert_eq!(obstacle_id, &None);
+            }
+            event => panic!("expected UrbanViolation, got {event:?}"),
+        }
+    }
+
+    #[test]
+    fn urban_violation_obstacle_id_roundtrips() {
+        let log = EventLog {
+            schema_version: "0.2".to_owned(),
+            run_id: "urban-run".to_owned(),
+            seed: 0,
+            scenario_name: "urban_patrol_small_block".to_owned(),
+            events: vec![Event::UrbanViolation {
+                agent_id: AgentId::from("agent-0".to_owned()),
+                tick: 3,
+                segment_index: Some(0),
+                edge_id: Some(UrbanEdgeId::from("road-n0-n1".to_owned())),
+                obstacle_id: Some(UrbanObstacleId::from("building-center".to_owned())),
+                pose: Pose {
+                    x: 1.0,
+                    y: 2.0,
+                    ..Default::default()
+                },
+                reason: "ObstacleIntersection".to_owned(),
+            }],
+        };
+
+        let json = serde_json::to_string(&log).unwrap();
+        assert!(json.contains("building-center"));
+        let restored: EventLog = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored, log);
     }
 
     #[test]

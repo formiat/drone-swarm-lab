@@ -60,6 +60,99 @@ pub struct ReplaySnapshot {
     pub failed_agents: Vec<AgentId>,
 }
 
+/// Replay event category for timeline filtering.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum ReplayEventCategory {
+    Generic,
+    Urban,
+}
+
+impl ReplayEventCategory {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "generic" => Some(Self::Generic),
+            "urban" => Some(Self::Urban),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Generic => "generic",
+            Self::Urban => "urban",
+        }
+    }
+}
+
+/// Filters applied to text timeline output.
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
+pub struct ReplayTimelineFilter {
+    pub agent_id: Option<AgentId>,
+    pub category: Option<ReplayEventCategory>,
+}
+
+/// One formatted replay timeline item.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ReplayTimelineItem {
+    pub tick: u64,
+    pub category: ReplayEventCategory,
+    pub agent_id: Option<AgentId>,
+    pub event_name: &'static str,
+    pub details: String,
+}
+
+/// Build deterministic replay timeline items from an event log.
+pub fn timeline_items(log: &EventLog, filter: &ReplayTimelineFilter) -> Vec<ReplayTimelineItem> {
+    log.events
+        .iter()
+        .filter_map(|event| {
+            let category = event_category(event);
+            if filter.category.is_some_and(|wanted| wanted != category) {
+                return None;
+            }
+            let agent_id = event_agent_id(event);
+            if let Some(wanted_agent_id) = &filter.agent_id {
+                if agent_id.as_ref() != Some(wanted_agent_id) {
+                    return None;
+                }
+            }
+            Some(ReplayTimelineItem {
+                tick: event_tick(event),
+                category,
+                agent_id,
+                event_name: event_name(event),
+                details: event_details(event),
+            })
+        })
+        .collect()
+}
+
+/// Format a deterministic, line-oriented replay timeline.
+pub fn format_timeline(log: &EventLog, filter: &ReplayTimelineFilter) -> String {
+    let lines: Vec<String> = timeline_items(log, filter)
+        .into_iter()
+        .map(|item| {
+            let agent = item
+                .agent_id
+                .as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "-".to_owned());
+            format!(
+                "tick={tick:05} category={category} agent={agent} event={event} {details}",
+                tick = item.tick,
+                category = item.category.as_str(),
+                event = item.event_name,
+                details = item.details
+            )
+        })
+        .collect();
+    if lines.is_empty() {
+        "No timeline events matched the filter.\n".to_owned()
+    } else {
+        format!("{}\n", lines.join("\n"))
+    }
+}
+
 /// Replay an event log and produce the final reconstructed state.
 pub fn replay(log: &EventLog) -> ReplayState {
     let mut state = ReplayState::default();
@@ -284,6 +377,279 @@ pub fn snapshot_at_tick(log: &EventLog, target_tick: u64) -> ReplaySnapshot {
     snapshot
 }
 
+fn event_category(event: &Event) -> ReplayEventCategory {
+    match event {
+        Event::UrbanRoutePlanned { .. }
+        | Event::UrbanSegmentEntered { .. }
+        | Event::UrbanSegmentCompleted { .. }
+        | Event::UrbanViolation { .. }
+        | Event::UrbanPatrolCompleted { .. }
+        | Event::BusObserved { .. }
+        | Event::BusDetected { .. }
+        | Event::BusFalsePositive { .. }
+        | Event::UrbanSearchCompleted { .. } => ReplayEventCategory::Urban,
+        Event::TickStart { .. }
+        | Event::AgentFailed { .. }
+        | Event::TaskAssigned { .. }
+        | Event::TaskStarted { .. }
+        | Event::TaskCompleted { .. }
+        | Event::TaskExpired { .. }
+        | Event::MessageSent { .. }
+        | Event::MessageDropped { .. }
+        | Event::PartitionAdded { .. }
+        | Event::PartitionRemoved { .. }
+        | Event::PoseUpdated { .. }
+        | Event::SarScan { .. }
+        | Event::SarDetection { .. }
+        | Event::EdgeVisited { .. }
+        | Event::SafetyViolation { .. }
+        | Event::CbbaConverged { .. }
+        | Event::CbbaBundleUpdated { .. }
+        | Event::AgentObservation { .. }
+        | Event::HazardMapUpdated { .. }
+        | Event::TaskPriorityUpdated { .. } => ReplayEventCategory::Generic,
+    }
+}
+
+fn event_agent_id(event: &Event) -> Option<AgentId> {
+    match event {
+        Event::AgentFailed { agent_id, .. }
+        | Event::TaskAssigned { agent_id, .. }
+        | Event::TaskStarted { agent_id, .. }
+        | Event::TaskCompleted { agent_id, .. }
+        | Event::PoseUpdated { agent_id, .. }
+        | Event::SarScan { agent_id, .. }
+        | Event::SarDetection { agent_id, .. }
+        | Event::EdgeVisited { agent_id, .. }
+        | Event::SafetyViolation { agent_id, .. }
+        | Event::CbbaBundleUpdated { agent_id, .. }
+        | Event::AgentObservation { agent_id, .. }
+        | Event::UrbanRoutePlanned { agent_id, .. }
+        | Event::UrbanSegmentEntered { agent_id, .. }
+        | Event::UrbanSegmentCompleted { agent_id, .. }
+        | Event::UrbanViolation { agent_id, .. }
+        | Event::UrbanPatrolCompleted { agent_id, .. }
+        | Event::BusObserved { agent_id, .. }
+        | Event::BusDetected { agent_id, .. }
+        | Event::BusFalsePositive { agent_id, .. }
+        | Event::UrbanSearchCompleted { agent_id, .. } => Some(agent_id.clone()),
+        Event::MessageSent { from, .. }
+        | Event::MessageDropped { from, .. }
+        | Event::PartitionAdded { agent_a: from, .. }
+        | Event::PartitionRemoved { agent_a: from, .. } => Some(from.clone()),
+        Event::TickStart { .. }
+        | Event::TaskExpired { .. }
+        | Event::CbbaConverged { .. }
+        | Event::HazardMapUpdated { .. }
+        | Event::TaskPriorityUpdated { .. } => None,
+    }
+}
+
+fn event_tick(event: &Event) -> u64 {
+    match event {
+        Event::TickStart { tick }
+        | Event::AgentFailed { tick, .. }
+        | Event::TaskAssigned { tick, .. }
+        | Event::TaskStarted { tick, .. }
+        | Event::TaskCompleted { tick, .. }
+        | Event::TaskExpired { tick, .. }
+        | Event::MessageSent { tick, .. }
+        | Event::MessageDropped { tick, .. }
+        | Event::PartitionAdded { tick, .. }
+        | Event::PartitionRemoved { tick, .. }
+        | Event::PoseUpdated { tick, .. }
+        | Event::SarScan { tick, .. }
+        | Event::SarDetection { tick, .. }
+        | Event::EdgeVisited { tick, .. }
+        | Event::SafetyViolation { tick, .. }
+        | Event::CbbaConverged { tick }
+        | Event::CbbaBundleUpdated { tick, .. }
+        | Event::AgentObservation { tick, .. }
+        | Event::HazardMapUpdated { tick, .. }
+        | Event::TaskPriorityUpdated { tick, .. }
+        | Event::UrbanRoutePlanned { tick, .. }
+        | Event::UrbanSegmentEntered { tick, .. }
+        | Event::UrbanSegmentCompleted { tick, .. }
+        | Event::UrbanViolation { tick, .. }
+        | Event::UrbanPatrolCompleted { tick, .. }
+        | Event::BusObserved { tick, .. }
+        | Event::BusDetected { tick, .. }
+        | Event::BusFalsePositive { tick, .. }
+        | Event::UrbanSearchCompleted { tick, .. } => *tick,
+    }
+}
+
+fn event_name(event: &Event) -> &'static str {
+    match event {
+        Event::TickStart { .. } => "TickStart",
+        Event::AgentFailed { .. } => "AgentFailed",
+        Event::TaskAssigned { .. } => "TaskAssigned",
+        Event::TaskStarted { .. } => "TaskStarted",
+        Event::TaskCompleted { .. } => "TaskCompleted",
+        Event::TaskExpired { .. } => "TaskExpired",
+        Event::MessageSent { .. } => "MessageSent",
+        Event::MessageDropped { .. } => "MessageDropped",
+        Event::PartitionAdded { .. } => "PartitionAdded",
+        Event::PartitionRemoved { .. } => "PartitionRemoved",
+        Event::PoseUpdated { .. } => "PoseUpdated",
+        Event::SarScan { .. } => "SarScan",
+        Event::SarDetection { .. } => "SarDetection",
+        Event::EdgeVisited { .. } => "EdgeVisited",
+        Event::SafetyViolation { .. } => "SafetyViolation",
+        Event::CbbaConverged { .. } => "CbbaConverged",
+        Event::CbbaBundleUpdated { .. } => "CbbaBundleUpdated",
+        Event::AgentObservation { .. } => "AgentObservation",
+        Event::HazardMapUpdated { .. } => "HazardMapUpdated",
+        Event::TaskPriorityUpdated { .. } => "TaskPriorityUpdated",
+        Event::UrbanRoutePlanned { .. } => "UrbanRoutePlanned",
+        Event::UrbanSegmentEntered { .. } => "UrbanSegmentEntered",
+        Event::UrbanSegmentCompleted { .. } => "UrbanSegmentCompleted",
+        Event::UrbanViolation { .. } => "UrbanViolation",
+        Event::UrbanPatrolCompleted { .. } => "UrbanPatrolCompleted",
+        Event::BusObserved { .. } => "BusObserved",
+        Event::BusDetected { .. } => "BusDetected",
+        Event::BusFalsePositive { .. } => "BusFalsePositive",
+        Event::UrbanSearchCompleted { .. } => "UrbanSearchCompleted",
+    }
+}
+
+fn event_details(event: &Event) -> String {
+    match event {
+        Event::TickStart { .. } => String::new(),
+        Event::AgentFailed { agent_id, .. } => format!("failed_agent={agent_id}"),
+        Event::TaskAssigned {
+            task_id, agent_id, ..
+        } => format!("task={task_id} assigned_to={agent_id}"),
+        Event::TaskStarted {
+            task_id, agent_id, ..
+        } => format!("task={task_id} started_by={agent_id}"),
+        Event::TaskCompleted {
+            task_id, agent_id, ..
+        } => format!("task={task_id} completed_by={agent_id}"),
+        Event::TaskExpired { task_id, .. } => format!("task={task_id}"),
+        Event::MessageSent {
+            from,
+            to,
+            payload_len,
+            ..
+        } => format!("from={from} to={to} payload_len={payload_len}"),
+        Event::MessageDropped {
+            from, to, reason, ..
+        } => format!("from={from} to={to} reason={reason:?}"),
+        Event::PartitionAdded {
+            agent_a, agent_b, ..
+        } => format!("agent_a={agent_a} agent_b={agent_b}"),
+        Event::PartitionRemoved {
+            agent_a, agent_b, ..
+        } => format!("agent_a={agent_a} agent_b={agent_b}"),
+        Event::PoseUpdated { pose, .. } => format_pose(*pose),
+        Event::SarScan { cell, detected, .. } => {
+            format!("cell=({}, {}) detected={detected}", cell.0, cell.1)
+        }
+        Event::SarDetection { target_pose, .. } => format!("target_{}", format_pose(*target_pose)),
+        Event::EdgeVisited { edge_id, .. } => format!("edge={edge_id}"),
+        Event::SafetyViolation {
+            violation_type, ..
+        } => format!("violation_type={violation_type:?}"),
+        Event::CbbaConverged { .. } => "converged=true".to_owned(),
+        Event::CbbaBundleUpdated { bundle_size, .. } => format!("bundle_size={bundle_size}"),
+        Event::AgentObservation { zone_id, .. } => format!("zone={zone_id}"),
+        Event::HazardMapUpdated {
+            zone_id,
+            new_threat_level,
+            new_priority,
+            ..
+        } => format!(
+            "zone={zone_id} threat={new_threat_level:.3} priority={new_priority}"
+        ),
+        Event::TaskPriorityUpdated {
+            task_id,
+            old_priority,
+            new_priority,
+            ..
+        } => format!("task={task_id} old_priority={old_priority} new_priority={new_priority}"),
+        Event::UrbanRoutePlanned {
+            edge_ids,
+            route_length_m,
+            ..
+        } => format!("edges={} route_length_m={route_length_m:.3}", edge_ids.len()),
+        Event::UrbanSegmentEntered {
+            segment_index,
+            edge_id,
+            from,
+            to,
+            ..
+        } => format!("segment={segment_index} edge={edge_id} from={from} to={to}"),
+        Event::UrbanSegmentCompleted {
+            segment_index,
+            edge_id,
+            ..
+        } => format!("segment={segment_index} edge={edge_id}"),
+        Event::UrbanViolation {
+            segment_index,
+            edge_id,
+            obstacle_id,
+            pose,
+            reason,
+            ..
+        } => format!(
+            "segment={segment} edge={edge} obstacle={obstacle} {pose} reason={reason}",
+            segment = optional_usize(*segment_index),
+            edge = optional_display(edge_id.as_ref()),
+            obstacle = optional_display(obstacle_id.as_ref()),
+            pose = format_pose(*pose)
+        ),
+        Event::UrbanPatrolCompleted {
+            route_length_m,
+            distance_travelled_m,
+            ..
+        } => format!(
+            "route_length_m={route_length_m:.3} distance_travelled_m={distance_travelled_m:.3}"
+        ),
+        Event::BusObserved {
+            bus_id,
+            distance_m,
+            detector_seed,
+            ..
+        } => format!("bus={bus_id} distance_m={distance_m:.3} detector_seed={detector_seed}"),
+        Event::BusDetected {
+            bus_id,
+            distance_m,
+            detector_seed,
+            ..
+        } => format!("bus={bus_id} distance_m={distance_m:.3} detector_seed={detector_seed}"),
+        Event::BusFalsePositive { detector_seed, .. } => {
+            format!("detector_seed={detector_seed}")
+        }
+        Event::UrbanSearchCompleted {
+            detected,
+            bus_id,
+            reason,
+            distance_travelled_m,
+            ..
+        } => format!(
+            "detected={detected} bus={bus} reason={reason} distance_travelled_m={distance_travelled_m:.3}",
+            bus = optional_display(bus_id.as_ref())
+        ),
+    }
+}
+
+fn optional_display<T: ToString>(value: Option<&T>) -> String {
+    value
+        .map(ToString::to_string)
+        .unwrap_or_else(|| "-".to_owned())
+}
+
+fn optional_usize(value: Option<usize>) -> String {
+    value
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "-".to_owned())
+}
+
+fn format_pose(pose: Pose) -> String {
+    format!("pose=({:.3},{:.3},{:.3})", pose.x, pose.y, pose.z)
+}
+
 /// Render an ASCII grid snapshot.
 ///
 /// Agents are rendered as 'A', failed agents as 'X', empty cells as '.'.
@@ -484,6 +850,7 @@ mod tests {
             tick: 11,
             segment_index: Some(0),
             edge_id: Some(edge_id),
+            obstacle_id: None,
             pose: Pose::default(),
             reason: "test".to_owned(),
         });
@@ -545,6 +912,70 @@ mod tests {
         assert_eq!(summary.urban_search_completions, 2);
         assert_eq!(summary.urban_search_time_to_detection_ticks, vec![13]);
         assert_eq!(summary.urban_search_no_detection_count, 1);
+    }
+
+    #[test]
+    fn timeline_output_is_deterministic() {
+        let log = timeline_fixture();
+        let timeline = format_timeline(&log, &ReplayTimelineFilter::default());
+
+        assert!(timeline.contains("tick=00000 category=generic agent=- event=TickStart"));
+        assert!(timeline.contains(
+            "tick=00000 category=urban agent=agent-0 event=UrbanRoutePlanned edges=1 route_length_m=20.000"
+        ));
+        assert!(timeline.contains(
+            "tick=00001 category=urban agent=agent-0 event=UrbanSegmentCompleted segment=0 edge=road-n0-n1"
+        ));
+        let first_urban = timeline.find("UrbanRoutePlanned").unwrap();
+        let completed = timeline.find("UrbanSegmentCompleted").unwrap();
+        assert!(first_urban < completed);
+    }
+
+    #[test]
+    fn timeline_filter_by_agent() {
+        let log = timeline_fixture();
+        let timeline = format_timeline(
+            &log,
+            &ReplayTimelineFilter {
+                agent_id: Some(AgentId::from("agent-1".to_owned())),
+                category: None,
+            },
+        );
+
+        assert!(timeline.contains("agent=agent-1"));
+        assert!(timeline.contains("PoseUpdated"));
+        assert!(!timeline.contains("agent=agent-0"));
+    }
+
+    #[test]
+    fn timeline_filter_by_urban_category() {
+        let log = timeline_fixture();
+        let timeline = format_timeline(
+            &log,
+            &ReplayTimelineFilter {
+                agent_id: None,
+                category: Some(ReplayEventCategory::Urban),
+            },
+        );
+
+        assert!(timeline.contains("category=urban"));
+        assert!(timeline.contains("UrbanRoutePlanned"));
+        assert!(!timeline.contains("PoseUpdated"));
+        assert!(!timeline.contains("TickStart"));
+    }
+
+    #[test]
+    fn timeline_reports_empty_filter() {
+        let log = timeline_fixture();
+        let timeline = format_timeline(
+            &log,
+            &ReplayTimelineFilter {
+                agent_id: Some(AgentId::from("missing".to_owned())),
+                category: Some(ReplayEventCategory::Urban),
+            },
+        );
+
+        assert_eq!(timeline, "No timeline events matched the filter.\n");
     }
 
     #[test]
@@ -613,5 +1044,35 @@ mod tests {
         let grid = render_ascii_grid(&snapshot, (0.0, 10.0, 0.0, 10.0), 5);
         assert!(grid.contains('A'));
         assert!(grid.contains('.'));
+    }
+
+    fn timeline_fixture() -> EventLog {
+        let mut builder = EventLogBuilder::new("urban", 0, "urban_patrol_small_block");
+        let agent_0 = AgentId::from("agent-0".to_owned());
+        let agent_1 = AgentId::from("agent-1".to_owned());
+        let edge_id = UrbanEdgeId::from("road-n0-n1".to_owned());
+        builder.push(Event::TickStart { tick: 0 });
+        builder.push(Event::UrbanRoutePlanned {
+            agent_id: agent_0.clone(),
+            tick: 0,
+            edge_ids: vec![edge_id.clone()],
+            route_length_m: 20.0,
+        });
+        builder.push(Event::PoseUpdated {
+            agent_id: agent_1,
+            pose: Pose {
+                x: 10.0,
+                y: 10.0,
+                ..Default::default()
+            },
+            tick: 0,
+        });
+        builder.push(Event::UrbanSegmentCompleted {
+            agent_id: agent_0,
+            tick: 1,
+            segment_index: 0,
+            edge_id,
+        });
+        builder.build()
     }
 }

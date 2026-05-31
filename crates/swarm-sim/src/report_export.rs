@@ -115,6 +115,11 @@ pub fn export_json(report: &ComparisonReport) -> Result<String, serde_json::Erro
                     avg_distance_before_detection: metrics.avg_distance_before_detection,
                     search_success_without_violation_rate: metrics
                         .search_success_without_violation_rate,
+                    // v0.67 Urban Replay / Analysis
+                    avg_urban_min_agent_separation_m: metrics.avg_urban_min_agent_separation_m,
+                    avg_urban_separation_violation_count: metrics
+                        .avg_urban_separation_violation_count,
+                    avg_urban_route_conflict_count: metrics.avg_urban_route_conflict_count,
                 });
             }
         }
@@ -204,6 +209,10 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
         "avg_false_positive_count",
         "avg_distance_before_detection",
         "search_success_without_violation_rate",
+        // v0.67 Urban Replay / Analysis
+        "avg_urban_min_agent_separation_m",
+        "avg_urban_separation_violation_count",
+        "avg_urban_route_conflict_count",
     ])?;
 
     for strategy_name in &report.strategy_names {
@@ -288,6 +297,10 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
                     format!("{:.3}", m.avg_false_positive_count).as_str(),
                     format!("{:.3}", m.avg_distance_before_detection).as_str(),
                     format!("{:.3}", m.search_success_without_violation_rate).as_str(),
+                    // v0.67 Urban Replay / Analysis
+                    format!("{:.3}", m.avg_urban_min_agent_separation_m).as_str(),
+                    format!("{:.3}", m.avg_urban_separation_violation_count).as_str(),
+                    format!("{:.3}", m.avg_urban_route_conflict_count).as_str(),
                 ])?;
             }
         }
@@ -382,6 +395,10 @@ struct ReportRow {
     avg_false_positive_count: f64,
     avg_distance_before_detection: f64,
     search_success_without_violation_rate: f64,
+    // v0.67 Urban Replay / Analysis
+    avg_urban_min_agent_separation_m: f64,
+    avg_urban_separation_violation_count: f64,
+    avg_urban_route_conflict_count: f64,
 }
 
 /// Benchmark run manifest for reproducibility.
@@ -546,13 +563,13 @@ pub fn generate_focused_report(reports: &[(String, crate::ComparisonReport)]) ->
                 }
             }
             "urban-patrol" => {
-                out.push_str("| Strategy | Profile | Success | Completion | UrbanRouteLength | UrbanPlanned | UrbanViolations | UrbanCompleted | PatrolCompleted | TimeToLoop | Distance | RouteEfficiency | Replans |\n");
-                out.push_str("|---|---|---|---|---|---|---|---|---|---|---|---|---|\n");
+                out.push_str("| Strategy | Profile | Success | Completion | UrbanRouteLength | UrbanPlanned | UrbanViolations | UrbanCompleted | PatrolCompleted | TimeToLoop | Distance | RouteEfficiency | Replans | MinSeparation | SeparationViolations | RouteConflicts |\n");
+                out.push_str("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n");
                 for strategy in &report.strategy_names {
                     for profile in &report.profile_names {
                         if let Some(m) = report.results.get(&(strategy.clone(), profile.clone())) {
                             out.push_str(&format!(
-                                "| {} | {} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} |\n",
+                                "| {} | {} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} |\n",
                                 strategy,
                                 profile,
                                 m.success_rate,
@@ -565,20 +582,23 @@ pub fn generate_focused_report(reports: &[(String, crate::ComparisonReport)]) ->
                                 m.avg_urban_time_to_complete_loop,
                                 m.avg_urban_distance_travelled_m,
                                 m.avg_urban_route_efficiency,
-                                m.avg_urban_replan_count
+                                m.avg_urban_replan_count,
+                                m.avg_urban_min_agent_separation_m,
+                                m.avg_urban_separation_violation_count,
+                                m.avg_urban_route_conflict_count
                             ));
                         }
                     }
                 }
             }
             "urban-search" => {
-                out.push_str("| Strategy | Profile | Success | BusDetected | TimeToBus | FalsePositives | DistanceBeforeBus | SearchSuccessNoViolation | UrbanViolations | RouteEfficiency |\n");
-                out.push_str("|---|---|---|---|---|---|---|---|---|---|\n");
+                out.push_str("| Strategy | Profile | Success | BusDetected | TimeToBus | FalsePositives | DistanceBeforeBus | SearchSuccessNoViolation | UrbanViolations | RouteEfficiency | MinSeparation | SeparationViolations | RouteConflicts |\n");
+                out.push_str("|---|---|---|---|---|---|---|---|---|---|---|---|---|\n");
                 for strategy in &report.strategy_names {
                     for profile in &report.profile_names {
                         if let Some(m) = report.results.get(&(strategy.clone(), profile.clone())) {
                             out.push_str(&format!(
-                                "| {} | {} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} |\n",
+                                "| {} | {} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} |\n",
                                 strategy,
                                 profile,
                                 m.success_rate,
@@ -588,7 +608,10 @@ pub fn generate_focused_report(reports: &[(String, crate::ComparisonReport)]) ->
                                 m.avg_distance_before_detection,
                                 m.search_success_without_violation_rate,
                                 m.avg_urban_violation_count,
-                                m.avg_urban_route_efficiency
+                                m.avg_urban_route_efficiency,
+                                m.avg_urban_min_agent_separation_m,
+                                m.avg_urban_separation_violation_count,
+                                m.avg_urban_route_conflict_count
                             ));
                         }
                     }
@@ -919,6 +942,9 @@ fn compare_aggregate_metrics(
     compare_field!(avg_false_positive_count);
     compare_field!(avg_distance_before_detection);
     compare_field!(search_success_without_violation_rate);
+    compare_field!(avg_urban_min_agent_separation_m);
+    compare_field!(avg_urban_separation_violation_count);
+    compare_field!(avg_urban_route_conflict_count);
     compare_field!(mission);
     compare_field!(scenario);
 

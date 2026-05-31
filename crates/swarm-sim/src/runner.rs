@@ -1761,6 +1761,9 @@ impl ScenarioRunner {
                 false_positive_count: 0,
                 distance_before_detection: 0.0,
                 search_success_without_violation: false,
+                urban_min_agent_separation_m: None,
+                urban_separation_violation_count: 0,
+                urban_route_conflict_count: 0,
             },
             event_log,
         )
@@ -2483,6 +2486,10 @@ fn push_urban_violation_event(
         | UrbanViolation::BlockedEdge { edge_id }
         | UrbanViolation::ObstacleIntersection { edge_id, .. } => Some(edge_id.clone()),
     };
+    let obstacle_id = match violation {
+        UrbanViolation::ObstacleIntersection { obstacle_id, .. } => Some(obstacle_id.clone()),
+        UrbanViolation::MissingEdge { .. } | UrbanViolation::BlockedEdge { .. } => None,
+    };
     let segment_index = edge_id.as_ref().and_then(|id| {
         route
             .segments
@@ -2500,6 +2507,7 @@ fn push_urban_violation_event(
         tick,
         segment_index,
         edge_id,
+        obstacle_id,
         pose,
         reason: format!("{violation:?}"),
     });
@@ -2703,6 +2711,9 @@ fn urban_patrol_metrics(
         false_positive_count: 0,
         distance_before_detection: 0.0,
         search_success_without_violation: false,
+        urban_min_agent_separation_m: None,
+        urban_separation_violation_count: 0,
+        urban_route_conflict_count: 0,
     }
 }
 

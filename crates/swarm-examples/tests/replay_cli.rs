@@ -73,6 +73,15 @@ fn create_urban_replay_log(path: &std::path::Path) {
         edge_ids: vec![edge_id.clone()],
         route_length_m: 20.0,
     });
+    builder.push(Event::PoseUpdated {
+        agent_id: AgentId::from("agent-1".to_owned()),
+        pose: Pose {
+            x: 5.0,
+            y: 5.0,
+            ..Default::default()
+        },
+        tick: 0,
+    });
     builder.push(Event::UrbanSegmentEntered {
         agent_id: agent_id.clone(),
         tick: 0,
@@ -217,6 +226,104 @@ fn replay_cli_summary_outputs_urban_counts() {
     assert!(stdout.contains("Bus false positives: 1"));
     assert!(stdout.contains("Urban search completions: 1"));
     assert!(stdout.contains("Urban search detection ticks: [10]"));
+}
+
+#[test]
+fn replay_cli_timeline_outputs_urban_events() {
+    let tmp_dir = tempfile::TempDir::new().unwrap();
+    let log_path = tmp_dir.path().join("urban.replay.json");
+    create_urban_replay_log(&log_path);
+    let output = run_replay(&["--log", log_path.to_str().unwrap(), "--timeline"]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "replay --timeline failed: {}",
+        stderr
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("=== Timeline ==="));
+    assert!(stdout.contains("UrbanRoutePlanned"));
+    assert!(stdout.contains("UrbanSegmentCompleted"));
+    assert!(stdout.contains("BusDetected"));
+}
+
+#[test]
+fn replay_cli_timeline_filters_by_agent() {
+    let tmp_dir = tempfile::TempDir::new().unwrap();
+    let log_path = tmp_dir.path().join("urban.replay.json");
+    create_urban_replay_log(&log_path);
+    let output = run_replay(&[
+        "--log",
+        log_path.to_str().unwrap(),
+        "--timeline",
+        "--agent",
+        "agent-1",
+    ]);
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("agent=agent-1"));
+    assert!(stdout.contains("PoseUpdated"));
+    assert!(!stdout.contains("agent=agent-0"));
+}
+
+#[test]
+fn replay_cli_timeline_filters_by_urban_category() {
+    let tmp_dir = tempfile::TempDir::new().unwrap();
+    let log_path = tmp_dir.path().join("urban.replay.json");
+    create_urban_replay_log(&log_path);
+    let output = run_replay(&[
+        "--log",
+        log_path.to_str().unwrap(),
+        "--timeline",
+        "--category",
+        "urban",
+    ]);
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("category=urban"));
+    assert!(stdout.contains("UrbanRoutePlanned"));
+    assert!(!stdout.contains("PoseUpdated"));
+}
+
+#[test]
+fn replay_cli_timeline_rejects_unknown_category() {
+    let tmp_dir = tempfile::TempDir::new().unwrap();
+    let log_path = tmp_dir.path().join("urban.replay.json");
+    create_urban_replay_log(&log_path);
+    let output = run_replay(&[
+        "--log",
+        log_path.to_str().unwrap(),
+        "--timeline",
+        "--category",
+        "bad",
+    ]);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Unknown replay category"));
+}
+
+#[test]
+fn replay_cli_timeline_filters_reject_sitl_summary() {
+    let tmp_dir = tempfile::TempDir::new().unwrap();
+    let log_path = tmp_dir.path().join("sitl-log.json");
+    create_test_sitl_log(&log_path);
+
+    let output = run_replay(&["--sitl-summary", log_path.to_str().unwrap(), "--timeline"]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("cannot be combined"));
+}
+
+#[test]
+fn replay_cli_timeline_filters_require_timeline() {
+    let tmp_dir = tempfile::TempDir::new().unwrap();
+    let log_path = tmp_dir.path().join("urban.replay.json");
+    create_urban_replay_log(&log_path);
+    let output = run_replay(&["--log", log_path.to_str().unwrap(), "--agent", "agent-0"]);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("require --timeline"));
 }
 
 #[test]

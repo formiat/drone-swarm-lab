@@ -51,6 +51,9 @@ cargo run --bin replay -- --log results/replay/*.json --summary
 
 # ASCII snapshot at tick 50
 cargo run --bin replay -- --log results/replay/*.json --tick 50
+
+# Filtered event timeline
+cargo run --bin replay -- --log results/replay/*.json --timeline --category urban
 ```
 
 ### 6. Run wildfire mapping benchmark
@@ -255,11 +258,12 @@ cargo run -p swarm-examples --bin replay -- \
 | PX4/SIH Supervisor Hardening | ✅ Stable local workflow | M60 | `sitl_supervisor --output-dir`, `--run-id`, `--force`, checked artifact overwrite policy, stable exit codes, `task_ownership` / `events_summary` / `final_status` / `limitations` in `sitl_multi_agent_run_report.v1`, and replay summary artifacts for repeatable local PX4/SIH runs |
 | Hardware Readiness Boundary | ✅ Stable | M53 | `docs/HARDWARE_READINESS.md`, connection classes, and `--allow-hardware-candidate` guard remote/wildcard/serial hardware candidates; this documents the boundary, not hardware readiness |
 | Supervisor Controller Boundary | ✅ Stable | M57 | `sitl_supervisor` mock orchestration is split into a testable internal supervisor module with `AgentController`, `MockAgentController`, fake-controller coverage, and assertable `SupervisorMetrics`; M58 adds the separate live PX4/SIH execute controller path |
-| Replay / Debuggability | ✅ Stable | M23 | `replay` CLI, ASCII visualization |
+| Replay / Debuggability | ✅ Stable | M23/M67 | `replay` CLI, ASCII visualization, deterministic timeline output, and optional `--agent` / `--category urban` filters |
 | Mission Semantics | ✅ Stable | M33 | `TaskKind`, 6 concrete adapters, `AdapterRegistry`, adapter-driven completion/scoring in runner and allocator |
 | Urban Foundations | ✅ Stable substrate | M64 | Road-graph-first Urban substrate: `UrbanMap`, deterministic Dijkstra route-loop planning, AABB static obstacle judge, `urban-patrol` DSL validation, `scenarios/urban.patrol.json`, and Urban metrics skeleton |
 | Urban Patrol | ✅ Simulation v0 | M65 | One drone follows an ordered road-graph block loop, completes before timeout, records Urban replay events and exports patrol metrics; simulation-only, with no lidar, dynamic obstacles, multi-agent deconfliction, PX4/SITL export, hardware claim, or UI |
 | Urban Search | ✅ Simulation v1 | M66 | One scout follows the Urban road graph and stops on a deterministic mocked bus detector hit; includes `urban-search` DSL validation, `scenarios/urban.search.json`, replay events, regression thresholds, and bus-detection/time/false-positive/distance metrics; still no lidar/raycast, dynamic obstacles, real perception, PX4/SITL export, hardware claim, or UI |
+| Urban Replay / Analysis | ✅ Diagnostic tooling | M67 | Urban replay logs now support route-trace and judge-report artifacts under benchmark packs, timeline filtering, `UrbanViolation.obstacle_id`, a two-agent analysis fixture in `scenarios/urban.multi-agent.json`, and aggregate separation/conflict metrics; still diagnostic only, with no avoidance or physical simulation |
 | Planner Quality | ✅ Stable | M34 | `RoutePlanner` trait, 2-opt, battery-aware feasibility v2 (ordered-subset feasibility, battery model v2 integration, meaningful runner metrics) |
 | Dynamic Mission Correctness | ✅ Stable | M35/M63 | Mission-specific success semantics (SAR=targets-found, inspection=coverage-threshold, wildfire=mapped-ratio threshold plus failure/unassigned guards), SAR unsupported reasons (cbba=delayed-reconvergence, centralized=static-pre-plan), support matrix tests |
 | Regression Harness v2 | ✅ Stable | M36 | Calibrated thresholds, portability fixes, wildfire/realism suites, failure delta output, and repeated release determinism sweep for `jobs=1/4/14` |
@@ -272,7 +276,7 @@ cargo run -p swarm-examples --bin replay -- \
 | Reporting & Metrics | ✅ Stable | M32 | Per-row mission/scenario in exports, mission-scoped profiles, merged `all` benchmark id, wildfire/planner metrics, realism metadata in manifest |
 | Real PX4 | 🧪 Experimental | M49/M58/M59 | Feature-gated single-agent PX4 SITL report/replay plumbing, local multi-agent PX4/SIH execute supervisor plumbing, pre-upload safety validation, arm/takeoff/start, telemetry-to-task progress mapping, controlled `--reupload-on-failure` active-survivor mission replacement, structured final reports, compact SITL event summaries, public `scenarios/sitl.px4-golden.json`, `scenarios/sitl.multi-agent.execute.config.json`, and captured single-agent/upload-only/execute/failure SIH evidence; still not hardware-ready |
 
-**Test coverage:** 380+ tests, 10 crates, 21 JSON scenarios.
+**Test coverage:** 380+ tests, 10 crates, 22 JSON scenarios.
 
 > **Project Status:** For an honest audit of what is fully complete vs partially complete, see [`docs/STATUS.md`](docs/STATUS.md).
 
@@ -545,10 +549,10 @@ See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known l
 | `swarm-comms` | Transport trait, in-memory network, UDP transport, MAVLink transport (optional). |
 | `swarm-runtime` | Membership, failure detection, task registry, coordinator, `AgentNode`. |
 | `swarm-alloc` | Greedy, auction, connectivity-aware, centralized, CBBA allocation strategies. |
-| `swarm-sim` | Deterministic clock, scenario model, generic scenario runner, DSL loader, JSON/CSV export. |
+| `swarm-sim` | Deterministic clock, scenario model, generic scenario runner, DSL loader, JSON/CSV export, Urban replay analysis artifacts. |
 | `swarm-scenarios` | Scenario builders: Coverage, Emergency Mesh, SAR, Infrastructure Inspection, Wildfire Mapping, Urban Patrol, Urban Search; flood remains future work. |
-| `swarm-metrics` | Per-run and aggregate metrics, including Urban route planning, patrol completion, and mocked bus-search detection/time/false-positive/distance fields. |
-| `swarm-replay` | Event log, replay engine, summary CLI, ASCII visualization. |
+| `swarm-metrics` | Per-run and aggregate metrics, including Urban route planning, patrol completion, mocked bus-search detection/time/false-positive/distance fields, and diagnostic separation/conflict fields. |
+| `swarm-replay` | Event log, replay engine, summary/timeline CLI, ASCII visualization. |
 | `swarm-safety` | Safety layer: geofence, no-fly zones, separation constraints. |
 | `swarm-examples` | Runnable binaries: `strategy_comparison`, `regression_runner`, `sitl_agent`, `replay`. |
 
@@ -610,6 +614,7 @@ points, not a published semver-stable SDK.
 | M64 | ✅ | Urban Foundations: road graph model, deterministic Dijkstra route planning, route-loop expansion, AABB static obstacle judge, `urban-patrol` DSL fixture, and Urban metrics skeleton |
 | M65 | ✅ | Urban Patrol v0: one scout follows the ordered `urban-patrol` road-graph loop, completes when all planned segments are traversed without judge violations before timeout, emits Urban replay events, and exports patrol completion/time/distance/efficiency metrics; simulation-only |
 | M66 | ✅ | Urban Search v1: one scout follows the Urban road-graph loop, evaluates a deterministic mocked bus detector, stops on bus detection, emits bus observation/detection/false-positive/search-completion replay events, exports search metrics, validates `urban-search` DSL, and adds a smoke regression gate; simulation-only |
+| M67 | ✅ | Urban Replay / Analysis: replay timeline filters, additive `UrbanViolation.obstacle_id`, route-trace and judge-report artifacts in benchmark packs, two-agent analysis fixture, and diagnostic Urban separation/conflict metrics; no benchmark rerun and no avoidance/control behavior change |
 
 ---
 
@@ -667,7 +672,7 @@ Pre-configured scenario suites with realism presets are available in `scenarios/
 | `scenarios/inspection.realism.json` | Inspection | medium |
 | `scenarios/wildfire.realism.json` | Wildfire | medium |
 
-### Urban Patrol And Search Scenarios
+### Urban Patrol, Search, And Analysis Scenarios
 
 M65 makes `scenarios/urban.patrol.json` an executable deterministic
 simulation fixture. One scout follows the ordered road-graph loop
@@ -691,8 +696,26 @@ runner stops on the first real bus detection and reports `bus_detected`,
 `time_to_detect_bus`, `false_positive_count`, `distance_before_detection`, and
 `search_success_without_violation`.
 
+M67 adds diagnostic analysis around those replay logs. When a benchmark pack is
+generated with `--replay-log`, Urban runs also write
+`urban_analysis/*.route-trace.json`, `*.route-trace.csv`,
+`*.judge-report.json`, `*.judge-report.csv`, and an
+`urban_analysis/manifest.json`. The route trace records planned edges, entered
+and completed route segments, pose samples, and segment status. The judge
+report records Urban violation type, tick, segment, pose, reason, and optional
+`obstacle_id`. Aggregate reports also include diagnostic
+`avg_urban_min_agent_separation_m`,
+`avg_urban_separation_violation_count`, and
+`avg_urban_route_conflict_count` fields when Urban replay evidence is present.
+
+`scenarios/urban.multi-agent.json` is an M67 two-agent analysis fixture. It is
+meant for replay/analysis and separation-conflict checks only; it does not add
+multi-agent Urban control, route deconfliction, or avoidance. Use
+`replay --timeline --category urban` to inspect Urban events and
+`replay --timeline --agent agent-0` to inspect one agent's event stream.
+
 This remains simulation-only: it does not implement lidar/raycast, dynamic
-obstacles, multi-agent route conflicts, real perception, PX4/SITL export,
+obstacles, multi-agent route deconfliction, real perception, PX4/SITL export,
 hardware readiness, or a visual UI.
 
 Load a realism scenario directly:

@@ -8,11 +8,14 @@ latest committed full benchmark pack, but it is still a 500-seed validation
 baseline rather than a publication-grade 1000-seed statistical run.
 
 M64 adds Urban foundation code and documentation, M65 adds Urban Patrol v0
-simulation semantics, and M66 adds Urban Search v1 with a deterministic mocked
-bus detector, replay events, search metrics, and a smoke regression gate. These
-milestones do not refresh benchmark evidence. `scenarios/urban.patrol.json` and
-`scenarios/urban.search.json` are deterministic Urban fixtures for
-smoke/regression checks, not benchmark baselines or publication runs.
+simulation semantics, M66 adds Urban Search v1 with a deterministic mocked bus
+detector, replay events, search metrics, and a smoke regression gate, and M67
+adds Urban replay/analysis diagnostics. These milestones do not refresh
+benchmark evidence. `scenarios/urban.patrol.json`, `scenarios/urban.search.json`,
+and `scenarios/urban.multi-agent.json` are deterministic Urban fixtures for
+smoke/regression/analysis checks, not benchmark baselines or publication runs.
+M67 route-trace, judge-report, and timeline tooling should be treated as
+diagnostic evidence, not as a new algorithmic benchmark result.
 
 For live PX4/SIH evidence, see `docs/STATUS.md` and the `results/m48_*`,
 `results/m55_*`, `results/m58_*`, and `results/m59_*` artifacts. Simulation
@@ -56,6 +59,11 @@ Generated artifacts:
 - `results/all_500_jobs14_m62_release/results.json` - machine-readable aggregate data
 - `results/all_500_jobs14_m62_release/results.csv` - tabular aggregate data
 - `results/all_500_jobs14_m62_release/table.md` - full Markdown table
+
+The M62 pack predates M67, so it does not contain `urban_analysis/` route-trace
+or judge-report artifacts and does not include the newer diagnostic Urban
+separation/conflict metrics. Generate a new pack with `--replay-log` on current
+HEAD if those diagnostics are needed for Urban work.
 
 Historical validation packs are preserved in:
 

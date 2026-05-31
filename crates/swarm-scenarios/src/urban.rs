@@ -13,6 +13,7 @@ pub struct UrbanConfig {
 #[derive(Clone, Debug, PartialEq)]
 pub enum UrbanProfile {
     PatrolSmallBlock,
+    MultiAgentSmallBlock,
     SearchStaticBus,
     SearchOutOfRange,
     SearchFalsePositive,
@@ -23,6 +24,7 @@ impl UrbanProfile {
     pub fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "patrol-small-block" | "patrolsmallblock" => Some(Self::PatrolSmallBlock),
+            "multi-agent-small-block" | "multiagentsmallblock" => Some(Self::MultiAgentSmallBlock),
             "search-static-bus" | "searchstaticbus" => Some(Self::SearchStaticBus),
             "search-out-of-range" | "searchoutofrange" => Some(Self::SearchOutOfRange),
             "search-false-positive" | "searchfalsepositive" => Some(Self::SearchFalsePositive),
@@ -32,7 +34,7 @@ impl UrbanProfile {
 
     pub fn config(&self, seed: u64) -> UrbanConfig {
         match self {
-            Self::PatrolSmallBlock => UrbanConfig {
+            Self::PatrolSmallBlock | Self::MultiAgentSmallBlock => UrbanConfig {
                 seed,
                 max_ticks: 120,
             },
@@ -58,6 +60,10 @@ impl UrbanStandardProfiles {
 
     pub fn patrol_profile_names() -> Vec<&'static str> {
         vec!["patrol-small-block"]
+    }
+
+    pub fn multi_agent_profile_names() -> Vec<&'static str> {
+        vec!["multi-agent-small-block"]
     }
 
     pub fn search_profile_names() -> Vec<&'static str> {
@@ -182,6 +188,31 @@ pub fn build_urban_patrol_scenario(config: &UrbanConfig) -> (Scenario, RunConfig
     (scenario, run_config)
 }
 
+pub fn build_urban_multi_agent_scenario(config: &UrbanConfig) -> (Scenario, RunConfig) {
+    let (mut scenario, run_config) = build_urban_patrol_scenario(config);
+    scenario.name = "urban_multi_agent_small_block".to_owned();
+    scenario.agents.push(Agent {
+        id: AgentId::from("agent-1".to_owned()),
+        role: Role::Scout,
+        health: Health::Alive,
+        pose: Pose {
+            x: 1.0,
+            y: 0.0,
+            ..Default::default()
+        },
+        capabilities: vec![],
+        current_task: None,
+        battery: 100.0,
+        comms_range: 1000.0,
+        generation: 1,
+        speed: 2.0,
+        max_range: 1000.0,
+        battery_drain_rate: 0.0,
+        battery_model: None,
+    });
+    (scenario, run_config)
+}
+
 pub fn build_urban_search_scenario(
     config: &UrbanConfig,
     profile: UrbanProfile,
@@ -223,6 +254,17 @@ pub fn build_urban_search_scenario(
                 1.0,
             ),
             UrbanProfile::PatrolSmallBlock => (
+                "urban_search_static_bus",
+                Pose {
+                    x: 4.0,
+                    y: 0.0,
+                    ..Default::default()
+                },
+                0.1,
+                1.0,
+                0.0,
+            ),
+            UrbanProfile::MultiAgentSmallBlock => (
                 "urban_search_static_bus",
                 Pose {
                     x: 4.0,
@@ -314,6 +356,21 @@ mod tests {
         assert!(metrics.urban_patrol_completed);
         assert_eq!(metrics.urban_time_to_complete_loop, Some(40));
         assert_eq!(metrics.urban_violation_count, 0);
+    }
+
+    #[test]
+    fn urban_multi_agent_fixture_is_valid_for_analysis() {
+        let (scenario, run_config) =
+            build_urban_multi_agent_scenario(&UrbanProfile::MultiAgentSmallBlock.config(42));
+        assert_eq!(scenario.name, "urban_multi_agent_small_block");
+        assert_eq!(scenario.agents.len(), 2);
+        assert!(
+            UrbanStandardProfiles::multi_agent_profile_names().contains(&"multi-agent-small-block")
+        );
+        let urban_state = run_config.urban_state.unwrap();
+        let route =
+            swarm_sim::expand_route_loop(&urban_state.map, &urban_state.route_loop).unwrap();
+        assert!(swarm_sim::judge_route(&urban_state.map, &route).is_empty());
     }
 
     #[test]

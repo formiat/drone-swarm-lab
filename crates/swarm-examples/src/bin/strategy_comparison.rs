@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use serde::Serialize;
 use swarm_alloc::{
     AllocationAgent, AllocationTask, AuctionAllocator, CbbaAllocator, CentralizedPlanner,
     ConnectivityAwareAllocator, GreedyAllocator, Strategy,
@@ -871,10 +872,117 @@ fn write_benchmark_pack(
             let json = serde_json::to_string_pretty(log)?;
             std::fs::write(path, json)?;
         }
+        write_urban_analysis_artifacts(output_dir, replay_logs)?;
     }
 
     println!("Benchmark pack written to {}", output_dir);
     Ok(())
+}
+
+#[derive(Serialize)]
+struct UrbanAnalysisManifest {
+    schema_version: String,
+    separation_threshold_m: f64,
+    artifacts: Vec<UrbanAnalysisManifestEntry>,
+}
+
+#[derive(Serialize)]
+struct UrbanAnalysisManifestEntry {
+    replay_log_index: usize,
+    run_id: String,
+    scenario_name: String,
+    route_trace_json: String,
+    route_trace_csv: String,
+    judge_report_json: String,
+    judge_report_csv: String,
+    event_counts: swarm_sim::UrbanEventCounts,
+    separation_summary: swarm_sim::UrbanSeparationSummary,
+}
+
+fn write_urban_analysis_artifacts(
+    output_dir: &str,
+    replay_logs: &[swarm_replay::EventLog],
+) -> Result<(), Box<dyn std::error::Error>> {
+    const SEPARATION_THRESHOLD_M: f64 = 5.0;
+
+    let analysis_dir = format!("{output_dir}/urban_analysis");
+    let mut artifacts = Vec::new();
+    for (index, log) in replay_logs.iter().enumerate() {
+        let event_counts = swarm_sim::count_urban_events(log);
+        if !has_non_pose_urban_events(&event_counts) {
+            continue;
+        }
+
+        std::fs::create_dir_all(&analysis_dir)?;
+        let safe_run_id = format!("{index:03}_{}", log.run_id.replace(['/', '\\', ':'], "_"));
+        let route_trace = swarm_sim::build_urban_route_trace(log);
+        let judge_report = swarm_sim::build_urban_judge_report(log);
+        let separation_summary =
+            swarm_sim::measure_urban_separation(&route_trace, SEPARATION_THRESHOLD_M);
+
+        let route_trace_json = format!("urban_analysis/{safe_run_id}.route-trace.json");
+        let route_trace_csv = format!("urban_analysis/{safe_run_id}.route-trace.csv");
+        let judge_report_json = format!("urban_analysis/{safe_run_id}.judge-report.json");
+        let judge_report_csv = format!("urban_analysis/{safe_run_id}.judge-report.csv");
+
+        swarm_sim::write_urban_route_trace_json(
+            &route_trace,
+            format!("{output_dir}/{route_trace_json}"),
+        )?;
+        swarm_sim::write_urban_route_trace_csv(
+            &route_trace,
+            format!("{output_dir}/{route_trace_csv}"),
+        )?;
+        swarm_sim::write_urban_judge_report_json(
+            &judge_report,
+            format!("{output_dir}/{judge_report_json}"),
+        )?;
+        swarm_sim::write_urban_judge_report_csv(
+            &judge_report,
+            format!("{output_dir}/{judge_report_csv}"),
+        )?;
+
+        artifacts.push(UrbanAnalysisManifestEntry {
+            replay_log_index: index,
+            run_id: log.run_id.clone(),
+            scenario_name: log.scenario_name.clone(),
+            route_trace_json,
+            route_trace_csv,
+            judge_report_json,
+            judge_report_csv,
+            event_counts,
+            separation_summary,
+        });
+    }
+
+    if artifacts.is_empty() {
+        return Ok(());
+    }
+
+    let manifest = UrbanAnalysisManifest {
+        schema_version: "urban_analysis.v1".to_owned(),
+        separation_threshold_m: SEPARATION_THRESHOLD_M,
+        artifacts,
+    };
+    std::fs::write(
+        format!("{analysis_dir}/manifest.json"),
+        serde_json::to_string_pretty(&manifest)?,
+    )?;
+    println!("Urban analysis artifacts written to {analysis_dir}");
+    Ok(())
+}
+
+fn has_non_pose_urban_events(counts: &swarm_sim::UrbanEventCounts) -> bool {
+    counts.route_planned
+        + counts.segment_entered
+        + counts.segment_completed
+        + counts.violation
+        + counts.patrol_completed
+        + counts.bus_observed
+        + counts.bus_detected
+        + counts.bus_false_positive
+        + counts.search_completed
+        > 0
 }
 
 fn merge_reports(reports: &[swarm_sim::ComparisonReport]) -> swarm_sim::ComparisonReport {

@@ -107,7 +107,7 @@ M65 v0 does not infer or silently teleport from an arbitrary `agent.pose`. M65
 v0 has no replanning, so `urban_replan_count = 0`.
 
 Urban Patrol itself does not implement lidar/raycast, bus detection, dynamic
-obstacles, multi-agent route conflicts, arbitrary polygons, PX4/SITL export,
+obstacles, multi-agent route deconfliction, arbitrary polygons, PX4/SITL export,
 hardware readiness, or a visual UI.
 
 ## Urban Search
@@ -136,6 +136,18 @@ mission.
 This is a mocked detector, not lidar/raycast, computer vision, dynamic
 traffic, physical obstacle avoidance, PX4/SITL export, hardware readiness, or
 visualization.
+
+## Urban Multi-Agent Analysis Fixture
+
+M67 adds `scenarios/urban.multi-agent.json` as a deterministic two-agent Urban
+analysis fixture. It uses the same `urban-patrol` mission and road-graph
+contract, but includes two scout agents so replay analysis can measure
+inter-agent separation and route conflicts from trace data.
+
+This fixture is not a new control mode. It does not implement route
+deconfliction, collision avoidance, dynamic obstacles, physical simulation,
+PX4/SITL export, hardware readiness, or visualization. Its purpose is to keep
+the Urban replay/analysis schema portable and testable.
 
 ## Minimal Example
 
@@ -184,7 +196,7 @@ for err in &errors {
 
 ## Available Scenarios
 
-The repository includes 21 pre-built scenario files in `scenarios/`:
+The repository includes 22 pre-built scenario files in `scenarios/`:
 
 - `coverage.ideal.json` — 5 agents, 3 tasks, ideal network
 - `coverage.safety.json` — coverage with no-fly zone
@@ -199,6 +211,7 @@ The repository includes 21 pre-built scenario files in `scenarios/`:
 - `sitl.waypoints.json` — SITL waypoints, 1 agent
 - `urban.patrol.json` — M65 Urban Patrol road-graph simulation fixture
 - `urban.search.json` — M66 Urban Search static-bus simulation fixture
+- `urban.multi-agent.json` — M67 two-agent Urban replay-analysis fixture
 
 ## Export / Import
 

@@ -90,4 +90,31 @@ mod tests {
         assert_eq!(metrics.time_to_detect_bus, Some(2));
         assert!(metrics.search_success_without_violation);
     }
+
+    #[test]
+    fn urban_multi_agent_scenario_loads_and_measures_route() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../scenarios/urban.multi-agent.json"
+        );
+        let suite = swarm_sim::load_scenario_suite(path).expect("urban multi-agent scenario loads");
+        assert_eq!(suite.name, "Urban Multi-Agent Small Block");
+        let entry = &suite.scenarios[0];
+        assert_eq!(entry.mission, "urban-patrol");
+        assert_eq!(entry.profile, "multi-agent-small-block");
+        assert_eq!(entry.scenario.agents.len(), 2);
+        let errors = swarm_sim::validate_entry(entry);
+        assert!(
+            errors.is_empty(),
+            "urban multi-agent scenario must validate: {errors:?}"
+        );
+        let urban_state = entry
+            .run_config
+            .urban_state
+            .as_ref()
+            .expect("urban_state exists");
+        let route =
+            swarm_sim::expand_route_loop(&urban_state.map, &urban_state.route_loop).unwrap();
+        assert!(swarm_sim::judge_route(&urban_state.map, &route).is_empty());
+    }
 }

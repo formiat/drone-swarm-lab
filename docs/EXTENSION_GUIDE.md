@@ -89,10 +89,10 @@ Internal or experimental:
 
 ### Urban Mission Path
 
-M64 adds an Urban foundation, M65 adds the first Urban Patrol simulation, and
-M66 adds Urban Search v1 with a deterministic mocked bus detector. Future Urban
-work should reuse this road-graph path instead of starting with arbitrary
-polygons:
+M64 adds an Urban foundation, M65 adds the first Urban Patrol simulation, M66
+adds Urban Search v1 with a deterministic mocked bus detector, and M67 adds
+diagnostic replay/analysis tooling. Future Urban work should reuse this
+road-graph path instead of starting with arbitrary polygons:
 
 - shared types live in `crates/swarm-types/src/urban.rs`;
 - deterministic Dijkstra planning and the initial judge live in
@@ -107,6 +107,8 @@ polygons:
 - `scenarios/urban.patrol.json` is the portable fixture for catalog tests;
 - `scenarios/urban.search.json` is the portable fixture for mocked bus-search
   catalog and regression tests;
+- `scenarios/urban.multi-agent.json` is the portable two-agent analysis
+  fixture for replay route traces, judge reports, and separation metrics;
 - metrics report route planning and patrol execution fields:
   `urban_route_length_m`, `urban_route_planned`,
   `urban_violation_count`, `urban_route_completed`,
@@ -117,16 +119,27 @@ polygons:
   `false_positive_count`, `distance_before_detection`, and
   `search_success_without_violation`, plus aggregate report fields with the
   same semantics;
+- M67 diagnostic metrics add `urban_min_agent_separation_m`,
+  `urban_separation_violation_count`, and `urban_route_conflict_count`, plus
+  aggregate report fields. These are measured from replay traces and are not
+  route-deconfliction or avoidance guarantees;
 - replay logs expose `UrbanRoutePlanned`, `UrbanSegmentEntered`,
   `UrbanSegmentCompleted`, `UrbanViolation`, `UrbanPatrolCompleted`,
   `BusObserved`, `BusDetected`, `BusFalsePositive`, and
   `UrbanSearchCompleted`.
+- M67 benchmark packs with Urban replay logs can emit
+  `urban_analysis/*.route-trace.json`, `*.route-trace.csv`,
+  `*.judge-report.json`, `*.judge-report.csv`, and
+  `urban_analysis/manifest.json`;
+- the replay CLI supports `--timeline`, `--agent <agent-id>`, and
+  `--category urban` for deterministic event inspection.
 
 This is intentionally a mission-level substrate. The M66 detector is mocked and
-distance/probability based. Do not add real lidar/raycast, dynamic obstacles,
-multi-agent route deconfliction, PX4/SITL export, hardware claims, visual UI,
-or arbitrary polygon dependencies as part of this path. Those belong to later
-milestones with their own tests and docs.
+distance/probability based. The M67 two-agent fixture is diagnostic only. Do
+not add real lidar/raycast, dynamic obstacles, multi-agent route deconfliction,
+PX4/SITL export, hardware claims, visual UI, or arbitrary polygon dependencies
+as part of this path. Those belong to later milestones with their own tests and
+docs.
 
 ## Add A Strategy
 

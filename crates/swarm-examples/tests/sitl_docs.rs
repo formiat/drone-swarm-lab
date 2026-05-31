@@ -295,10 +295,15 @@ fn m64_docs_describe_urban_foundation_boundaries() {
         "UrbanMap",
         "scenarios/urban.patrol.json",
         "scenarios/urban.search.json",
+        "scenarios/urban.multi-agent.json",
         "start_node",
         "0.01m",
         "AABB static obstacle judge",
         "mocked bus detector",
+        "Urban Replay / Analysis",
+        "route-trace",
+        "judge-report",
+        "--timeline",
         "lidar",
         "dynamic obstacles",
         "multi-agent deconfliction",
@@ -310,10 +315,12 @@ fn m64_docs_describe_urban_foundation_boundaries() {
     for required in [
         "M65 Urban Patrol v0",
         "M66 Urban Search v1",
+        "M67 Urban Replay / Analysis",
         "simulation-only",
         "ordered road-graph patrol",
         "mocked bus detector",
         "zero Urban judge violations",
+        "diagnostic tooling",
     ] {
         assert!(STATUS.contains(required), "STATUS missing {required}");
     }
@@ -326,7 +333,10 @@ fn m64_docs_describe_urban_foundation_boundaries() {
         "TaskKind::Waypoint",
         "M65",
         "M66",
+        "M67",
         "urban_search_state",
+        "Urban Multi-Agent Analysis Fixture",
+        "scenarios/urban.multi-agent.json",
         "detector.seed",
         "Completion means",
         "start_node",
@@ -346,6 +356,9 @@ fn m64_docs_describe_urban_foundation_boundaries() {
         "urban_patrol_completed",
         "bus_detected",
         "UrbanSearchCompleted",
+        "urban_min_agent_separation_m",
+        "urban_analysis/manifest.json",
+        "--category urban",
         "arbitrary polygon dependencies",
     ] {
         assert!(
@@ -359,11 +372,15 @@ fn m64_docs_describe_urban_foundation_boundaries() {
         "UrbanSegmentEntered",
         "UrbanSegmentCompleted",
         "UrbanViolation",
+        "obstacle_id",
         "UrbanPatrolCompleted",
         "BusObserved",
         "BusDetected",
         "BusFalsePositive",
         "UrbanSearchCompleted",
+        "--timeline",
+        "--category urban",
+        "urban_analysis/manifest.json",
     ] {
         assert!(REPLAY.contains(required), "Replay doc missing {required}");
     }

@@ -158,6 +158,13 @@ pub struct RunMetrics {
     pub distance_before_detection: f64,
     #[serde(default)]
     pub search_success_without_violation: bool,
+    // v0.67 Urban Replay / Analysis
+    #[serde(default)]
+    pub urban_min_agent_separation_m: Option<f64>,
+    #[serde(default)]
+    pub urban_separation_violation_count: u64,
+    #[serde(default)]
+    pub urban_route_conflict_count: u64,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -274,6 +281,13 @@ pub struct AggregateMetrics {
     pub avg_distance_before_detection: f64,
     #[serde(default)]
     pub search_success_without_violation_rate: f64,
+    // v0.67 Urban Replay / Analysis
+    #[serde(default)]
+    pub avg_urban_min_agent_separation_m: f64,
+    #[serde(default)]
+    pub avg_urban_separation_violation_count: f64,
+    #[serde(default)]
+    pub avg_urban_route_conflict_count: f64,
 }
 
 fn percentile_of_sorted(sorted: &[u64], p: f64) -> f64 {
@@ -356,6 +370,10 @@ impl AggregateMetrics {
                 avg_false_positive_count: 0.0,
                 avg_distance_before_detection: 0.0,
                 search_success_without_violation_rate: 0.0,
+                // v0.67 Urban Replay / Analysis
+                avg_urban_min_agent_separation_m: 0.0,
+                avg_urban_separation_violation_count: 0.0,
+                avg_urban_route_conflict_count: 0.0,
             };
         }
 
@@ -455,6 +473,21 @@ impl AggregateMetrics {
             .iter()
             .filter(|run| run.search_success_without_violation)
             .count() as f64;
+        // v0.67 Urban Replay / Analysis
+        let total_urban_min_agent_separation_m: f64 = runs
+            .iter()
+            .filter_map(|run| run.urban_min_agent_separation_m)
+            .sum();
+        let urban_min_agent_separation_count = runs
+            .iter()
+            .filter(|run| run.urban_min_agent_separation_m.is_some())
+            .count() as f64;
+        let total_urban_separation_violation_count: u64 = runs
+            .iter()
+            .map(|run| run.urban_separation_violation_count)
+            .sum();
+        let total_urban_route_conflict_count: u64 =
+            runs.iter().map(|run| run.urban_route_conflict_count).sum();
         let mut convergence_ticks: Vec<u64> = runs
             .iter()
             .filter_map(|run| run.cbba_convergence_tick)
@@ -558,6 +591,14 @@ impl AggregateMetrics {
             avg_false_positive_count: total_false_positive_count as f64 / n,
             avg_distance_before_detection: total_distance_before_detection / n,
             search_success_without_violation_rate: search_success_without_violation_count / n,
+            // v0.67 Urban Replay / Analysis
+            avg_urban_min_agent_separation_m: if urban_min_agent_separation_count > 0.0 {
+                total_urban_min_agent_separation_m / urban_min_agent_separation_count
+            } else {
+                0.0
+            },
+            avg_urban_separation_violation_count: total_urban_separation_violation_count as f64 / n,
+            avg_urban_route_conflict_count: total_urban_route_conflict_count as f64 / n,
         }
     }
 }
@@ -784,6 +825,22 @@ impl fmt::Display for AggregateMetrics {
             "search_success_without_violation_rate: {:.3}",
             self.search_success_without_violation_rate
         )?;
+        // v0.67 Urban Replay / Analysis
+        writeln!(
+            f,
+            "avg_urban_min_agent_separation_m: {:.3}",
+            self.avg_urban_min_agent_separation_m
+        )?;
+        writeln!(
+            f,
+            "avg_urban_separation_violation_count: {:.3}",
+            self.avg_urban_separation_violation_count
+        )?;
+        writeln!(
+            f,
+            "avg_urban_route_conflict_count: {:.3}",
+            self.avg_urban_route_conflict_count
+        )?;
         // v0.31 Report identity
         writeln!(f, "mission: {}", self.mission)?;
         write!(f, "scenario: {}", self.scenario)
@@ -900,6 +957,9 @@ mod tests {
             false_positive_count: 0,
             distance_before_detection: 0.0,
             search_success_without_violation: false,
+            urban_min_agent_separation_m: None,
+            urban_separation_violation_count: 0,
+            urban_route_conflict_count: 0,
         }
     }
 
@@ -1020,6 +1080,9 @@ mod tests {
         runs[0].urban_distance_travelled_m = 40.0;
         runs[0].urban_route_efficiency = 1.0;
         runs[0].urban_replan_count = 0;
+        runs[0].urban_min_agent_separation_m = Some(3.0);
+        runs[0].urban_separation_violation_count = 1;
+        runs[0].urban_route_conflict_count = 2;
         runs[1].urban_route_planned = true;
         runs[1].urban_route_length_m = 20.0;
         runs[1].urban_violation_count = 2;
@@ -1029,6 +1092,9 @@ mod tests {
         runs[1].urban_distance_travelled_m = 20.0;
         runs[1].urban_route_efficiency = 1.0;
         runs[1].urban_replan_count = 1;
+        runs[1].urban_min_agent_separation_m = Some(5.0);
+        runs[1].urban_separation_violation_count = 3;
+        runs[1].urban_route_conflict_count = 4;
 
         let metrics = AggregateMetrics::from_runs(&runs);
 
@@ -1041,6 +1107,35 @@ mod tests {
         assert_eq!(metrics.avg_urban_distance_travelled_m, 30.0);
         assert_eq!(metrics.avg_urban_route_efficiency, 1.0);
         assert_eq!(metrics.avg_urban_replan_count, 0.5);
+        assert_eq!(metrics.avg_urban_min_agent_separation_m, 4.0);
+        assert_eq!(metrics.avg_urban_separation_violation_count, 2.0);
+        assert_eq!(metrics.avg_urban_route_conflict_count, 3.0);
+    }
+
+    #[test]
+    fn urban_analysis_metric_fields_default_from_legacy_json() {
+        let mut run_json = serde_json::to_value(run(true, None)).unwrap();
+        let run_object = run_json.as_object_mut().unwrap();
+        run_object.remove("urban_min_agent_separation_m");
+        run_object.remove("urban_separation_violation_count");
+        run_object.remove("urban_route_conflict_count");
+
+        let run_metrics: RunMetrics = serde_json::from_value(run_json).unwrap();
+        assert_eq!(run_metrics.urban_min_agent_separation_m, None);
+        assert_eq!(run_metrics.urban_separation_violation_count, 0);
+        assert_eq!(run_metrics.urban_route_conflict_count, 0);
+
+        let mut aggregate_json =
+            serde_json::to_value(AggregateMetrics::from_runs(&[run(true, None)])).unwrap();
+        let aggregate_object = aggregate_json.as_object_mut().unwrap();
+        aggregate_object.remove("avg_urban_min_agent_separation_m");
+        aggregate_object.remove("avg_urban_separation_violation_count");
+        aggregate_object.remove("avg_urban_route_conflict_count");
+
+        let aggregate_metrics: AggregateMetrics = serde_json::from_value(aggregate_json).unwrap();
+        assert_eq!(aggregate_metrics.avg_urban_min_agent_separation_m, 0.0);
+        assert_eq!(aggregate_metrics.avg_urban_separation_violation_count, 0.0);
+        assert_eq!(aggregate_metrics.avg_urban_route_conflict_count, 0.0);
     }
 
     #[test]

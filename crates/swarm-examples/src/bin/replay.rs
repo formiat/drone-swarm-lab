@@ -8,6 +8,9 @@ fn main() {
     let mut tick: Option<u64> = None;
     let mut follow = false;
     let mut sitl_summary_path: Option<String> = None;
+    let mut timeline = false;
+    let mut agent_filter: Option<String> = None;
+    let mut category_filter: Option<String> = None;
 
     let mut i = 1;
     while i < args.len() {
@@ -26,6 +29,19 @@ fn main() {
                 }
             }
             "--follow" => follow = true,
+            "--timeline" => timeline = true,
+            "--agent" => {
+                i += 1;
+                if i < args.len() {
+                    agent_filter = Some(args[i].clone());
+                }
+            }
+            "--category" => {
+                i += 1;
+                if i < args.len() {
+                    category_filter = Some(args[i].clone());
+                }
+            }
             "--sitl-summary" => {
                 i += 1;
                 if i < args.len() {
@@ -38,9 +54,16 @@ fn main() {
     }
 
     if let Some(path) = sitl_summary_path {
-        if log_path.is_some() || summary || tick.is_some() || follow {
+        if log_path.is_some()
+            || summary
+            || tick.is_some()
+            || follow
+            || timeline
+            || agent_filter.is_some()
+            || category_filter.is_some()
+        {
             eprintln!(
-                "--sitl-summary cannot be combined with --log, --summary, --tick, or --follow"
+                "--sitl-summary cannot be combined with --log, --summary, --tick, --follow, --timeline, --agent, or --category"
             );
             std::process::exit(1);
         }
@@ -65,6 +88,22 @@ fn main() {
             eprintln!("Usage: replay --log <path> [--summary] [--tick N] [--follow] | replay --sitl-summary <path>");
             std::process::exit(1);
         }
+    };
+
+    if (agent_filter.is_some() || category_filter.is_some()) && !timeline {
+        eprintln!("--agent and --category require --timeline");
+        std::process::exit(1);
+    }
+
+    let category = match category_filter.as_deref() {
+        Some(value) => match swarm_replay::ReplayEventCategory::parse(value) {
+            Some(category) => Some(category),
+            None => {
+                eprintln!("Unknown replay category '{value}'. Valid categories: generic, urban");
+                std::process::exit(1);
+            }
+        },
+        None => None,
     };
 
     let log = match swarm_replay::read_from_file(Path::new(&path)) {
@@ -155,6 +194,15 @@ fn main() {
         }
     }
 
+    if timeline {
+        let filter = swarm_replay::ReplayTimelineFilter {
+            agent_id: agent_filter.map(swarm_types::AgentId::from),
+            category,
+        };
+        println!("\n=== Timeline ===");
+        print!("{}", swarm_replay::format_timeline(&log, &filter));
+    }
+
     if follow {
         let max_tick = log
             .events
@@ -190,8 +238,8 @@ fn main() {
         }
     }
 
-    if !summary && tick.is_none() && !follow {
-        eprintln!("No action specified. Use --summary, --tick N, or --follow.");
+    if !summary && tick.is_none() && !follow && !timeline {
+        eprintln!("No action specified. Use --summary, --tick N, --follow, or --timeline.");
         std::process::exit(1);
     }
 }
