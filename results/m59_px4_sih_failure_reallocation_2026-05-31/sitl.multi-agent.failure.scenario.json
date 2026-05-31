@@ -1,0 +1,114 @@
+{
+  "schema_version": "0.1",
+  "name": "SITL Multi-Agent Failure Reallocation",
+  "description": "Controlled local PX4/SIH failure-reallocation fixture for M59",
+  "scenarios": [
+    {
+      "mission": "sitl",
+      "profile": "multi-agent-failure",
+      "scenario": {
+        "name": "sitl_multi_agent_failure_reallocation_0",
+        "seed": 0,
+        "agents": [
+          {
+            "id": "agent-0",
+            "role": "scout",
+            "health": "alive",
+            "pose": { "x": 0.0, "y": 0.0, "z": 0.0 },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 1000.0,
+            "generation": 1,
+            "speed": 0.0,
+            "max_range": 1000.0,
+            "battery_drain_rate": 0.0
+          },
+          {
+            "id": "agent-1",
+            "role": "scout",
+            "health": "alive",
+            "pose": { "x": 5.0, "y": 0.0, "z": 0.0 },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 1000.0,
+            "generation": 1,
+            "speed": 0.0,
+            "max_range": 1000.0,
+            "battery_drain_rate": 0.0
+          }
+        ],
+        "tasks": [
+          {
+            "id": "wp-0",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": { "x": 180.0, "y": 60.0, "z": 8.0 },
+            "grid_cell": null
+          },
+          {
+            "id": "wp-1",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": { "x": 220.0, "y": 90.0, "z": 8.0 },
+            "grid_cell": null
+          },
+          {
+            "id": "wp-2",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": { "x": 140.0, "y": -80.0, "z": 8.0 },
+            "grid_cell": null
+          },
+          {
+            "id": "wp-3",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": { "x": 190.0, "y": -120.0, "z": 8.0 },
+            "grid_cell": null
+          }
+        ],
+        "ground_nodes": [],
+        "base_station": null
+      },
+      "run_config": {
+        "max_ticks": 50,
+        "timeout_ticks": 3,
+        "max_unassigned_ticks": 10,
+        "packet_loss_rate": 0.0,
+        "latency_ticks": 0,
+        "latency_per_hop": 0,
+        "failures": [],
+        "dynamic_tasks": [],
+        "partition_events": [],
+        "gossip_interval_ticks": 999,
+        "base_id": null,
+        "enable_movement": false,
+        "tick_duration_ms": 100,
+        "grid_state": null,
+        "enable_cbba": false
+      }
+    }
+  ]
+}

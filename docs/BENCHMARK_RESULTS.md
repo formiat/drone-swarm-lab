@@ -6,8 +6,9 @@ benchmark reference, but it is still a 500-seed validation baseline rather than
 a publication-grade 1000-seed statistical run.
 
 For live PX4/SIH evidence, see `docs/STATUS.md` and the `results/m48_*`,
-`results/m55_*`, and SITL supervisor artifacts. Simulation benchmark results
-must not be used as a substitute for PX4/SIH or hardware validation.
+`results/m55_*`, `results/m58_*`, and `results/m59_*` artifacts. Simulation
+benchmark results must not be used as a substitute for PX4/SIH or hardware
+validation.
 
 ## Current Run
 

@@ -93,8 +93,8 @@ SITL event types are serialized in `snake_case`:
 | `agent_lost` | Runtime/mock reallocation detected a lost agent | `step`, `agent_id` |
 | `task_released` | Task was released from a lost agent | `step`, `task_id`, `previous_agent_id` |
 | `task_reassigned` | Released task was reassigned to a survivor | `step`, `task_id`, `from_agent_id`, `to_agent_id`, `latency_ticks` |
-| `survivor_mission_update_started` | Pending survivor mission replacement was planned after foundation failed-agent reallocation | `step`, `agent_id`, `policy`, `task_ids` |
-| `survivor_mission_update_completed` | Pending survivor mission replacement was installed in the controller state | `step`, `agent_id`, `policy`, `task_ids`, `mission_item_count` |
+| `survivor_mission_update_started` | Survivor mission replacement was planned after failed-agent reallocation | `step`, `agent_id`, `policy`, `task_ids` |
+| `survivor_mission_update_completed` | Survivor mission replacement was installed in the controller state | `step`, `agent_id`, `policy`, `task_ids`, `mission_item_count` |
 | `reallocation_completed` | Reallocation summary for a failed agent | `step`, `failed_agent_id`, `reassignment_count`, `tasks_recovered`, `latency_ticks` |
 | `run_completed` | Successful terminal status | `step`, `status` |
 
@@ -102,14 +102,14 @@ Reallocation events are schema/API/runtime covered and are produced by the mock
 multi-agent supervisor flow. M58 adds a live multi-agent PX4 supervisor path
 that writes common run-start/run-finished events, per-agent mission/task/failure
 events with explicit `agent_id`, and aggregate per-agent report artifacts. M59
-currently adds partial `--reupload-on-failure` foundation handling with pending
-survivor mission replacement events and reallocation metrics in the run report.
-The M59 update policy value is `mission_replacement`, not supplementary upload.
-The current live supervisor is still one-shot/sequential; a stepwise loop that
-detects active-run loss and replaces an already-running survivor mission remains
-follow-up work. The per-agent event variants keep repeated waypoint `seq`
-values unambiguous across agents. Real PX4/SIH failure injection still needs a
-captured manual artifact before it is evidence for simulator behavior.
+adds controlled `--reupload-on-failure` handling with active-survivor mission
+replacement events and reallocation metrics in the run report. The M59 update
+policy value is `mission_replacement`, not supplementary upload. The current
+live supervisor starts agents sequentially and polls active agents stepwise in
+one process. The per-agent event variants keep repeated waypoint `seq` values
+unambiguous across agents. Captured local PX4/SIH evidence is stored in
+`results/m58_multi_agent_px4_sih_execute_2026-05-31/` and
+`results/m59_px4_sih_failure_reallocation_2026-05-31/`.
 
 M57 keeps these replay semantics stable while moving mock supervisor execution
 behind an internal supervisor/controller boundary. `MockAgentController` still
@@ -187,7 +187,7 @@ events include `agent_id`, so a common log can reconstruct mappings such as
 `seq=0`. The detailed per-agent final state is in the
 `sitl_multi_agent_run_report.v1` report. With `--reupload-on-failure`, the
 report includes a `reallocation` section and the common event log includes the
-pending-survivor mission replacement events listed above.
+survivor mission replacement events listed above.
 
 M60 adds an output-dir replay contract for the supervisor. A run with
 `--output-dir target/sitl --run-id local-multi-agent-sih` writes
@@ -210,6 +210,9 @@ The captured M48 PX4 SIH replay is stored at
 summary in `results/m48_px4_sitl_2026-05-30/replay-summary.txt`.
 The captured mock supervisor reallocation replay is stored at
 `results/m54_multi_agent_supervisor_2026-05-30/multi-supervisor.sitl-log.json`.
+The captured M58/M59 live multi-agent PX4/SIH replay artifacts are stored under
+`results/m58_multi_agent_px4_sih_execute_2026-05-31/` and
+`results/m59_px4_sih_failure_reallocation_2026-05-31/`.
 
 ## Replay CLI
 

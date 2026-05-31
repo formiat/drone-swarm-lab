@@ -209,6 +209,18 @@ impl SitlTaskProgress {
             .count()
     }
 
+    pub fn completed_task_ids(&self) -> Vec<String> {
+        self.seq_to_task_id
+            .values()
+            .filter(|task_id| {
+                self.task_status_by_id
+                    .get(*task_id)
+                    .is_some_and(|status| matches!(status, TaskStatus::Completed))
+            })
+            .cloned()
+            .collect()
+    }
+
     pub fn failed_count(&self) -> usize {
         self.task_status_by_id
             .values()
@@ -468,5 +480,24 @@ mod tests {
             report.failure_reason,
             Some("no mission progress before timeout".to_owned())
         );
+    }
+
+    #[test]
+    fn completed_task_ids_follow_mission_order() {
+        let mut progress = progress();
+        progress
+            .apply_event(
+                MavlinkTelemetryEvent::WaypointReached { seq: 1 },
+                Duration::from_secs(1),
+            )
+            .unwrap();
+        progress
+            .apply_event(
+                MavlinkTelemetryEvent::WaypointReached { seq: 0 },
+                Duration::from_secs(2),
+            )
+            .unwrap();
+
+        assert_eq!(progress.completed_task_ids(), vec!["wp-0", "wp-1"]);
     }
 }

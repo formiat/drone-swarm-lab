@@ -1,0 +1,10 @@
+SITL run: m59-px4-sih-failure-reallocation
+Scenario: sitl_multi_agent_failure_reallocation_0 | Agent: supervisor | Mode: connection_execute
+Events: 35
+Upload: clear=0 count=3 requested=0 sent=8 ack_accepted=0 ack_rejected=0
+Commands: sent=0 ack_accepted=0 ack_rejected=0
+Telemetry: heartbeat=0 current_seq=0 waypoint_reached=4 task_completed=4
+Failures: aborts=0 disconnected=0 failures=1 final_status=completed_with_reallocation
+Reallocation: agent_lost=1 task_released=2 task_reassigned=2 completed=1 tasks_recovered=2 latency_ticks=0 survivor_mission_updates=1
+Multi-agent: started=1 finished=1 agents_started=2 agents_finished=2 agent_count=2
+Multi-agent events: mission_count=3 mission_items=8 current_seq=0 waypoint_reached=4 task_completed=4 failures=1

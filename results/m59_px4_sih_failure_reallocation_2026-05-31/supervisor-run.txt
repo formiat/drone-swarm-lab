@@ -1,0 +1,12 @@
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.10s
+     Running `target/debug/sitl_supervisor --connection --execute --scenario results/m59_px4_sih_failure_reallocation_2026-05-31/sitl.multi-agent.failure.scenario.json --config results/m59_px4_sih_failure_reallocation_2026-05-31/sitl.multi-agent.failure.onboard.config.json --allow-hardware-candidate --timeout 8 --telemetry-timeout 5 --no-progress-timeout 180 --reupload-on-failure --output-dir results/m59_px4_sih_failure_reallocation_2026-05-31 --run-id m59-px4-sih-failure-reallocation --force`
+Multi-Agent SITL Execute: agents=2 scenario=sitl_multi_agent_failure_reallocation_0 config=results/m59_px4_sih_failure_reallocation_2026-05-31/sitl.multi-agent.failure.onboard.config.json
+SITL Supervisor execute: agent=agent-0 system_id=1 component_id=1 connection=udpin:0.0.0.0:14540 waypoints=2
+SITL Supervisor execute: agent=agent-1 system_id=2 component_id=1 connection=udpin:0.0.0.0:14541 waypoints=2
+SITL Supervisor execute result: agent=agent-0 status=disconnected completed_tasks=0/2
+SITL Supervisor execute error: agent=agent-0 error=telemetry disconnected; abort_result=AckTimeout
+SITL Supervisor execute result: agent=agent-1 status=completed completed_tasks=4/4
+SITL supervisor replay log written: results/m59_px4_sih_failure_reallocation_2026-05-31/m59-px4-sih-failure-reallocation/events.sitl-log.json
+SITL supervisor run report written: results/m59_px4_sih_failure_reallocation_2026-05-31/m59-px4-sih-failure-reallocation/run-report.json
+Multi-agent SITL manifest written: results/m59_px4_sih_failure_reallocation_2026-05-31/m59-px4-sih-failure-reallocation/manifest.json
+SITL supervisor replay summary written: results/m59_px4_sih_failure_reallocation_2026-05-31/m59-px4-sih-failure-reallocation/replay-summary.txt

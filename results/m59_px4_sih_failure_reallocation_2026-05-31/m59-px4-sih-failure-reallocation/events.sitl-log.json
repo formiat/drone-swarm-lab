@@ -1,0 +1,265 @@
+{
+  "schema_version": "sitl_event_log.v1",
+  "run_id": "m59-px4-sih-failure-reallocation",
+  "scenario_path": "results/m59_px4_sih_failure_reallocation_2026-05-31/sitl.multi-agent.failure.scenario.json",
+  "scenario_name": "sitl_multi_agent_failure_reallocation_0",
+  "mission": "sitl",
+  "profile": "multi-agent-failure",
+  "agent_id": "supervisor",
+  "connection_string": null,
+  "mode": "connection_execute",
+  "events": [
+    {
+      "type": "multi_agent_run_started",
+      "step": 0,
+      "agent_count": 2,
+      "scenario": "sitl_multi_agent_failure_reallocation_0"
+    },
+    {
+      "type": "multi_agent_mission_count_sent",
+      "step": 1,
+      "agent_id": "agent-0",
+      "count": 2
+    },
+    {
+      "type": "multi_agent_mission_item_sent",
+      "step": 2,
+      "agent_id": "agent-0",
+      "seq": 0,
+      "task_id": "wp-0"
+    },
+    {
+      "type": "multi_agent_mission_item_sent",
+      "step": 3,
+      "agent_id": "agent-0",
+      "seq": 1,
+      "task_id": "wp-1"
+    },
+    {
+      "type": "multi_agent_agent_started",
+      "step": 4,
+      "agent_id": "agent-0",
+      "connection_string": "udpin:0.0.0.0:14540",
+      "system_id": 1,
+      "component_id": 1
+    },
+    {
+      "type": "multi_agent_mission_count_sent",
+      "step": 5,
+      "agent_id": "agent-1",
+      "count": 2
+    },
+    {
+      "type": "multi_agent_mission_item_sent",
+      "step": 6,
+      "agent_id": "agent-1",
+      "seq": 0,
+      "task_id": "wp-2"
+    },
+    {
+      "type": "multi_agent_mission_item_sent",
+      "step": 7,
+      "agent_id": "agent-1",
+      "seq": 1,
+      "task_id": "wp-3"
+    },
+    {
+      "type": "multi_agent_agent_started",
+      "step": 8,
+      "agent_id": "agent-1",
+      "connection_string": "udpin:0.0.0.0:14541",
+      "system_id": 2,
+      "component_id": 1
+    },
+    {
+      "type": "multi_agent_failure",
+      "step": 9,
+      "agent_id": "agent-0",
+      "status": "disconnected",
+      "error": "telemetry disconnected; abort_result=AckTimeout"
+    },
+    {
+      "type": "multi_agent_agent_finished",
+      "step": 10,
+      "agent_id": "agent-0",
+      "final_status": "disconnected",
+      "completed_task_count": 0
+    },
+    {
+      "type": "agent_lost",
+      "step": 11,
+      "agent_id": "agent-0"
+    },
+    {
+      "type": "task_released",
+      "step": 12,
+      "task_id": "wp-1",
+      "previous_agent_id": "agent-0"
+    },
+    {
+      "type": "task_released",
+      "step": 13,
+      "task_id": "wp-0",
+      "previous_agent_id": "agent-0"
+    },
+    {
+      "type": "task_reassigned",
+      "step": 14,
+      "task_id": "wp-0",
+      "from_agent_id": "agent-0",
+      "to_agent_id": "agent-1",
+      "latency_ticks": 0
+    },
+    {
+      "type": "task_reassigned",
+      "step": 15,
+      "task_id": "wp-1",
+      "from_agent_id": "agent-0",
+      "to_agent_id": "agent-1",
+      "latency_ticks": 0
+    },
+    {
+      "type": "reallocation_completed",
+      "step": 16,
+      "failed_agent_id": "agent-0",
+      "reassignment_count": 2,
+      "tasks_recovered": [
+        "wp-0",
+        "wp-1"
+      ],
+      "latency_ticks": 0
+    },
+    {
+      "type": "survivor_mission_update_started",
+      "step": 17,
+      "agent_id": "agent-1",
+      "policy": "mission_replacement",
+      "task_ids": [
+        "wp-2",
+        "wp-3",
+        "wp-0",
+        "wp-1"
+      ]
+    },
+    {
+      "type": "multi_agent_mission_count_sent",
+      "step": 18,
+      "agent_id": "agent-1",
+      "count": 4
+    },
+    {
+      "type": "multi_agent_mission_item_sent",
+      "step": 19,
+      "agent_id": "agent-1",
+      "seq": 0,
+      "task_id": "wp-2"
+    },
+    {
+      "type": "multi_agent_mission_item_sent",
+      "step": 20,
+      "agent_id": "agent-1",
+      "seq": 1,
+      "task_id": "wp-3"
+    },
+    {
+      "type": "multi_agent_mission_item_sent",
+      "step": 21,
+      "agent_id": "agent-1",
+      "seq": 2,
+      "task_id": "wp-0"
+    },
+    {
+      "type": "multi_agent_mission_item_sent",
+      "step": 22,
+      "agent_id": "agent-1",
+      "seq": 3,
+      "task_id": "wp-1"
+    },
+    {
+      "type": "survivor_mission_update_completed",
+      "step": 23,
+      "agent_id": "agent-1",
+      "policy": "mission_replacement",
+      "task_ids": [
+        "wp-2",
+        "wp-3",
+        "wp-0",
+        "wp-1"
+      ],
+      "mission_item_count": 4
+    },
+    {
+      "type": "multi_agent_waypoint_reached",
+      "step": 24,
+      "agent_id": "agent-1",
+      "seq": 0,
+      "task_id": "wp-2"
+    },
+    {
+      "type": "multi_agent_task_completed",
+      "step": 25,
+      "agent_id": "agent-1",
+      "seq": 0,
+      "task_id": "wp-2"
+    },
+    {
+      "type": "multi_agent_waypoint_reached",
+      "step": 26,
+      "agent_id": "agent-1",
+      "seq": 1,
+      "task_id": "wp-3"
+    },
+    {
+      "type": "multi_agent_task_completed",
+      "step": 27,
+      "agent_id": "agent-1",
+      "seq": 1,
+      "task_id": "wp-3"
+    },
+    {
+      "type": "multi_agent_waypoint_reached",
+      "step": 28,
+      "agent_id": "agent-1",
+      "seq": 0,
+      "task_id": "wp-0"
+    },
+    {
+      "type": "multi_agent_task_completed",
+      "step": 29,
+      "agent_id": "agent-1",
+      "seq": 0,
+      "task_id": "wp-0"
+    },
+    {
+      "type": "multi_agent_waypoint_reached",
+      "step": 30,
+      "agent_id": "agent-1",
+      "seq": 1,
+      "task_id": "wp-1"
+    },
+    {
+      "type": "multi_agent_task_completed",
+      "step": 31,
+      "agent_id": "agent-1",
+      "seq": 1,
+      "task_id": "wp-1"
+    },
+    {
+      "type": "multi_agent_agent_finished",
+      "step": 32,
+      "agent_id": "agent-1",
+      "final_status": "completed",
+      "completed_task_count": 4
+    },
+    {
+      "type": "multi_agent_run_finished",
+      "step": 33,
+      "overall_status": "completed_with_reallocation"
+    },
+    {
+      "type": "run_completed",
+      "step": 34,
+      "status": "completed_with_reallocation"
+    }
+  ]
+}

@@ -1,0 +1,155 @@
+{
+  "schema_version": "sitl_event_log.v1",
+  "run_id": "m58-multi-agent-px4-sih-execute",
+  "scenario_path": "scenarios/sitl.multi-agent.json",
+  "scenario_name": "sitl_multi_agent_0",
+  "mission": "sitl",
+  "profile": "multi-agent",
+  "agent_id": "supervisor",
+  "connection_string": null,
+  "mode": "connection_execute",
+  "events": [
+    {
+      "type": "multi_agent_run_started",
+      "step": 0,
+      "agent_count": 2,
+      "scenario": "sitl_multi_agent_0"
+    },
+    {
+      "type": "multi_agent_mission_count_sent",
+      "step": 1,
+      "agent_id": "agent-0",
+      "count": 2
+    },
+    {
+      "type": "multi_agent_mission_item_sent",
+      "step": 2,
+      "agent_id": "agent-0",
+      "seq": 0,
+      "task_id": "wp-0"
+    },
+    {
+      "type": "multi_agent_mission_item_sent",
+      "step": 3,
+      "agent_id": "agent-0",
+      "seq": 1,
+      "task_id": "wp-1"
+    },
+    {
+      "type": "multi_agent_agent_started",
+      "step": 4,
+      "agent_id": "agent-0",
+      "connection_string": "udpin:0.0.0.0:14540",
+      "system_id": 1,
+      "component_id": 1
+    },
+    {
+      "type": "multi_agent_mission_count_sent",
+      "step": 5,
+      "agent_id": "agent-1",
+      "count": 2
+    },
+    {
+      "type": "multi_agent_mission_item_sent",
+      "step": 6,
+      "agent_id": "agent-1",
+      "seq": 0,
+      "task_id": "wp-2"
+    },
+    {
+      "type": "multi_agent_mission_item_sent",
+      "step": 7,
+      "agent_id": "agent-1",
+      "seq": 1,
+      "task_id": "wp-3"
+    },
+    {
+      "type": "multi_agent_agent_started",
+      "step": 8,
+      "agent_id": "agent-1",
+      "connection_string": "udpin:0.0.0.0:14541",
+      "system_id": 2,
+      "component_id": 1
+    },
+    {
+      "type": "multi_agent_waypoint_reached",
+      "step": 9,
+      "agent_id": "agent-0",
+      "seq": 0,
+      "task_id": "wp-0"
+    },
+    {
+      "type": "multi_agent_task_completed",
+      "step": 10,
+      "agent_id": "agent-0",
+      "seq": 0,
+      "task_id": "wp-0"
+    },
+    {
+      "type": "multi_agent_waypoint_reached",
+      "step": 11,
+      "agent_id": "agent-0",
+      "seq": 1,
+      "task_id": "wp-1"
+    },
+    {
+      "type": "multi_agent_task_completed",
+      "step": 12,
+      "agent_id": "agent-0",
+      "seq": 1,
+      "task_id": "wp-1"
+    },
+    {
+      "type": "multi_agent_agent_finished",
+      "step": 13,
+      "agent_id": "agent-0",
+      "final_status": "completed",
+      "completed_task_count": 2
+    },
+    {
+      "type": "multi_agent_waypoint_reached",
+      "step": 14,
+      "agent_id": "agent-1",
+      "seq": 0,
+      "task_id": "wp-2"
+    },
+    {
+      "type": "multi_agent_task_completed",
+      "step": 15,
+      "agent_id": "agent-1",
+      "seq": 0,
+      "task_id": "wp-2"
+    },
+    {
+      "type": "multi_agent_waypoint_reached",
+      "step": 16,
+      "agent_id": "agent-1",
+      "seq": 1,
+      "task_id": "wp-3"
+    },
+    {
+      "type": "multi_agent_task_completed",
+      "step": 17,
+      "agent_id": "agent-1",
+      "seq": 1,
+      "task_id": "wp-3"
+    },
+    {
+      "type": "multi_agent_agent_finished",
+      "step": 18,
+      "agent_id": "agent-1",
+      "final_status": "completed",
+      "completed_task_count": 2
+    },
+    {
+      "type": "multi_agent_run_finished",
+      "step": 19,
+      "overall_status": "completed"
+    },
+    {
+      "type": "run_completed",
+      "step": 20,
+      "status": "completed"
+    }
+  ]
+}

@@ -1,0 +1,114 @@
+{
+  "schema_version": "multi_sitl_manifest.v1",
+  "scenario_path": "results/m59_px4_sih_failure_reallocation_2026-05-31/sitl.multi-agent.failure.scenario.json",
+  "scenario_name": "sitl_multi_agent_failure_reallocation_0",
+  "mission": "sitl",
+  "profile": "multi-agent-failure",
+  "agents_count": 2,
+  "agents": [
+    {
+      "agent_id": "agent-0",
+      "system_id": 1,
+      "component_id": 1,
+      "connection_string": "udpin:0.0.0.0:14540",
+      "start_delay_ms": 0,
+      "lifecycle": "execute",
+      "task_ids": [
+        "wp-0",
+        "wp-1"
+      ],
+      "waypoint_count": 2,
+      "waypoints": [
+        {
+          "seq": 0,
+          "task_id": "wp-0",
+          "x": 180.0,
+          "y": 60.0,
+          "z": 8.0
+        },
+        {
+          "seq": 1,
+          "task_id": "wp-1",
+          "x": 220.0,
+          "y": 90.0,
+          "z": 8.0
+        }
+      ],
+      "standalone_command": [
+        "cargo",
+        "run",
+        "-p",
+        "swarm-examples",
+        "--bin",
+        "sitl_agent",
+        "--features",
+        "mavlink-transport",
+        "--",
+        "--scenario",
+        "results/m59_px4_sih_failure_reallocation_2026-05-31/sitl.multi-agent.failure.scenario.json",
+        "--agent-id",
+        "agent-0",
+        "--multi-agent-config",
+        "results/m59_px4_sih_failure_reallocation_2026-05-31/sitl.multi-agent.failure.onboard.config.json",
+        "--connection",
+        "udpin:0.0.0.0:14540",
+        "--execute"
+      ]
+    },
+    {
+      "agent_id": "agent-1",
+      "system_id": 2,
+      "component_id": 1,
+      "connection_string": "udpin:0.0.0.0:14541",
+      "start_delay_ms": 250,
+      "lifecycle": "execute",
+      "task_ids": [
+        "wp-2",
+        "wp-3"
+      ],
+      "waypoint_count": 2,
+      "waypoints": [
+        {
+          "seq": 0,
+          "task_id": "wp-2",
+          "x": 140.0,
+          "y": -80.0,
+          "z": 8.0
+        },
+        {
+          "seq": 1,
+          "task_id": "wp-3",
+          "x": 190.0,
+          "y": -120.0,
+          "z": 8.0
+        }
+      ],
+      "standalone_command": [
+        "cargo",
+        "run",
+        "-p",
+        "swarm-examples",
+        "--bin",
+        "sitl_agent",
+        "--features",
+        "mavlink-transport",
+        "--",
+        "--scenario",
+        "results/m59_px4_sih_failure_reallocation_2026-05-31/sitl.multi-agent.failure.scenario.json",
+        "--agent-id",
+        "agent-1",
+        "--multi-agent-config",
+        "results/m59_px4_sih_failure_reallocation_2026-05-31/sitl.multi-agent.failure.onboard.config.json",
+        "--connection",
+        "udpin:0.0.0.0:14541",
+        "--execute"
+      ]
+    }
+  ],
+  "ownership_summary": {
+    "total_pose_tasks": 4,
+    "assigned_task_count": 4,
+    "unassigned_pose_tasks": [],
+    "duplicate_task_ids": []
+  }
+}

@@ -1,0 +1,17 @@
+   Compiling swarm-comms v0.1.0 (/home/formi/Documents/RustProjects/drone/crates/swarm-comms)
+   Compiling swarm-alloc v0.1.0 (/home/formi/Documents/RustProjects/drone/crates/swarm-alloc)
+   Compiling swarm-runtime v0.1.0 (/home/formi/Documents/RustProjects/drone/crates/swarm-runtime)
+   Compiling swarm-sim v0.1.0 (/home/formi/Documents/RustProjects/drone/crates/swarm-sim)
+   Compiling swarm-scenarios v0.1.0 (/home/formi/Documents/RustProjects/drone/crates/swarm-scenarios)
+   Compiling swarm-examples v0.1.0 (/home/formi/Documents/RustProjects/drone/crates/swarm-examples)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.09s
+     Running `target/debug/sitl_supervisor --connection --execute --scenario scenarios/sitl.multi-agent.json --config results/m58_multi_agent_px4_sih_execute_2026-05-31/sitl.multi-agent.execute.onboard.config.json --allow-hardware-candidate --timeout 8 --telemetry-timeout 20 --no-progress-timeout 120 --output-dir results/m58_multi_agent_px4_sih_execute_2026-05-31 --run-id m58-multi-agent-px4-sih-execute --force`
+Multi-Agent SITL Execute: agents=2 scenario=sitl_multi_agent_0 config=results/m58_multi_agent_px4_sih_execute_2026-05-31/sitl.multi-agent.execute.onboard.config.json
+SITL Supervisor execute: agent=agent-0 system_id=1 component_id=1 connection=udpin:0.0.0.0:14540 waypoints=2
+SITL Supervisor execute: agent=agent-1 system_id=2 component_id=1 connection=udpin:0.0.0.0:14541 waypoints=2
+SITL Supervisor execute result: agent=agent-0 status=completed completed_tasks=2/2
+SITL Supervisor execute result: agent=agent-1 status=completed completed_tasks=2/2
+SITL supervisor replay log written: results/m58_multi_agent_px4_sih_execute_2026-05-31/m58-multi-agent-px4-sih-execute/events.sitl-log.json
+SITL supervisor run report written: results/m58_multi_agent_px4_sih_execute_2026-05-31/m58-multi-agent-px4-sih-execute/run-report.json
+Multi-agent SITL manifest written: results/m58_multi_agent_px4_sih_execute_2026-05-31/m58-multi-agent-px4-sih-execute/manifest.json
+SITL supervisor replay summary written: results/m58_multi_agent_px4_sih_execute_2026-05-31/m58-multi-agent-px4-sih-execute/replay-summary.txt

@@ -1,0 +1,120 @@
+{
+  "schema_version": "sitl_multi_agent_run_report.v1",
+  "run_id": "m59-px4-sih-failure-reallocation",
+  "scenario_path": "results/m59_px4_sih_failure_reallocation_2026-05-31/sitl.multi-agent.failure.scenario.json",
+  "scenario_name": "sitl_multi_agent_failure_reallocation_0",
+  "config_path": "results/m59_px4_sih_failure_reallocation_2026-05-31/sitl.multi-agent.failure.onboard.config.json",
+  "mission": "sitl",
+  "profile": "multi-agent-failure",
+  "mode": "connection_execute",
+  "agents": [
+    {
+      "agent_id": "agent-0",
+      "connection_string": "udpin:0.0.0.0:14540",
+      "system_id": 1,
+      "component_id": 1,
+      "lifecycle": "execute",
+      "mission_item_count": 2,
+      "completed_task_count": 0,
+      "final_status": "disconnected",
+      "error": "telemetry disconnected; abort_result=AckTimeout"
+    },
+    {
+      "agent_id": "agent-1",
+      "connection_string": "udpin:0.0.0.0:14541",
+      "system_id": 2,
+      "component_id": 1,
+      "lifecycle": "execute",
+      "mission_item_count": 4,
+      "completed_task_count": 4,
+      "final_status": "completed",
+      "error": null
+    }
+  ],
+  "total_completed_tasks": 4,
+  "failed_agents": 1,
+  "aborted_agents": 0,
+  "overall_status": "completed_with_reallocation",
+  "event_log_path": "results/m59_px4_sih_failure_reallocation_2026-05-31/m59-px4-sih-failure-reallocation/events.sitl-log.json",
+  "task_ownership": {
+    "total_pose_tasks": 4,
+    "assigned_task_count": 4,
+    "unassigned_pose_tasks": [],
+    "duplicate_task_ids": []
+  },
+  "events_summary": {
+    "run_id": "m59-px4-sih-failure-reallocation",
+    "scenario_name": "sitl_multi_agent_failure_reallocation_0",
+    "agent_id": "supervisor",
+    "mode": "connection_execute",
+    "total_events": 35,
+    "connection_opened": 0,
+    "heartbeat_seen": 0,
+    "mission_clear_sent": 0,
+    "mission_count_sent": 3,
+    "mission_item_requested": 0,
+    "mission_item_sent": 8,
+    "mission_ack_accepted": 0,
+    "mission_ack_rejected": 0,
+    "commands_sent": 0,
+    "command_ack_accepted": 0,
+    "command_ack_rejected": 0,
+    "current_seq_changed": 0,
+    "waypoint_reached": 4,
+    "task_completed": 4,
+    "abort_requested": 0,
+    "disconnected": 0,
+    "failures": 1,
+    "agent_lost": 1,
+    "task_released": 2,
+    "task_reassigned": 2,
+    "reallocation_completed": 1,
+    "tasks_recovered": 2,
+    "reallocation_latency_ticks": 0,
+    "survivor_mission_update_started": 1,
+    "survivor_mission_update_completed": 1,
+    "survivor_mission_updates": 1,
+    "multi_agent_run_started": 1,
+    "multi_agent_run_finished": 1,
+    "multi_agent_agent_started": 2,
+    "multi_agent_agent_finished": 2,
+    "multi_agent_mission_count_sent": 3,
+    "multi_agent_mission_item_sent": 8,
+    "multi_agent_current_seq_changed": 0,
+    "multi_agent_waypoint_reached": 4,
+    "multi_agent_task_completed": 4,
+    "multi_agent_failures": 1,
+    "multi_agent_agent_count": 2,
+    "final_status": "completed_with_reallocation"
+  },
+  "final_status": "completed_with_reallocation",
+  "reallocation": {
+    "lost_agent_count": 1,
+    "released_tasks": [
+      "wp-0",
+      "wp-1"
+    ],
+    "reassigned_tasks": [
+      "wp-0",
+      "wp-1"
+    ],
+    "reassignment_count": 2,
+    "tasks_recovered": [
+      "wp-0",
+      "wp-1"
+    ],
+    "reallocation_latency_ticks": 0,
+    "survivor_mission_updates": 1,
+    "final_completed_after_reallocation": 4
+  },
+  "limitations": [
+    "local PX4/SIH endpoints only unless --allow-hardware-candidate is explicit",
+    "agents are started sequentially and polled stepwise in one supervisor process",
+    "failed-agent reallocation uses controlled local active-survivor mission replacement; Gazebo, HIL, and hardware are not claimed"
+  ],
+  "known_limitations": [
+    "local PX4/SIH endpoints only unless --allow-hardware-candidate is explicit",
+    "agents are started sequentially and polled stepwise in one supervisor process",
+    "failed-agent reallocation uses controlled local active-survivor mission replacement; Gazebo, HIL, and hardware are not claimed"
+  ]
+}
