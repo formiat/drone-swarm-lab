@@ -149,8 +149,8 @@ This is intentionally a mission-level substrate. The M66 detector is mocked and
 distance/probability based. The M67 two-agent fixture is diagnostic only. The
 M68 corridor-aware planner is a route scoring extension, not physical
 avoidance. Do not add real lidar/raycast, dynamic obstacles, multi-agent route
-deconfliction, PX4/SITL export, hardware claims, visual UI, or arbitrary
-polygon dependencies as part of this path. Those belong to later milestones
+deconfliction, PX4/SITL export, hardware claims, visual UI, or arbitrary polygon dependencies
+as part of this path. Those belong to later milestones
 with their own tests and docs.
 
 ## Add A Strategy

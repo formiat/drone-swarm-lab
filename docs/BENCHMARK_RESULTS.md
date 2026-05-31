@@ -1,11 +1,13 @@
 # Benchmark Results
 
-This document records the M62 simulation benchmark refresh for commit
-`81260ca7afa114a5d9add7b832f6c5d7875b88cd`. M63 did not rerun the benchmark, so
-`results/all_500_jobs14_m62_release/` is now historical validation evidence,
-not current-HEAD evidence. It supersedes the older M32b benchmark report as the
-latest committed full benchmark pack, but it is still a 500-seed validation
-baseline rather than a publication-grade 1000-seed statistical run.
+This document records the current M69 simulation benchmark refresh and the
+older historical M62 baseline.
+
+The latest committed full release benchmark pack is
+`results/all_1000_jobs14_m69_release/`, generated from benchmark code commit
+`5d1d3cd17cacba7482c1d9b93eb5acc107af8f71`. The older
+`results/all_500_jobs14_m62_release/` pack remains historical validation
+evidence for commit `81260ca7afa114a5d9add7b832f6c5d7875b88cd`.
 
 M64 adds Urban foundation code and documentation, M65 adds Urban Patrol v0
 simulation semantics, M66 adds Urban Search v1 with a deterministic mocked bus
@@ -22,13 +24,79 @@ M68 adds one small algorithmic delta for Urban route planning:
 to lower `urban_route_risk_score` on `scenarios/urban.corridor-delta.json`.
 That fixture is not a full benchmark refresh. Treat
 `results/m68_urban_corridor_delta/` as current-head before/after algorithm
-evidence only; M69 is still the place for broader 500/1000-seed benchmark
-claims.
+evidence only.
+
+M69 has now captured a 1000-seed release run for the built-in `--mission all`
+benchmark suite. Current `--mission all` covers coverage, emergency-mesh, SAR,
+inspection, and wildfire. Urban scenario-suite fixtures are not part of this
+entrypoint yet, so Urban evidence remains the separate M68 artifact.
 
 For live PX4/SIH evidence, see `docs/STATUS.md` and the `results/m48_*`,
 `results/m55_*`, `results/m58_*`, and `results/m59_*` artifacts. Simulation
 benchmark results must not be used as a substitute for PX4/SIH or hardware
 validation.
+
+## M69 Current 1000-Seed Run
+
+- **Date:** 2026-05-31
+- **Benchmark run id:** `2026-05-31T193356Z_all_1000_full`
+- **Benchmark code commit:** `5d1d3cd17cacba7482c1d9b93eb5acc107af8f71`
+- **Build profile:** release
+- **Mode:** custom 1000 seeds, built-in `--mission all` simulation suite
+- **Jobs:** 14 Rayon worker jobs
+- **Scenario runs:** `1000 seeds * 5 strategies * 38 profiles = 190000`
+- **Aggregated rows:** 190
+- **Runtime:** 28 min 55.25 sec
+- **Peak RSS:** 207684 KB
+- **Output pack:** `results/all_1000_jobs14_m69_release/`
+- **Regression gate:** `target/release/regression_runner --jobs 14` passed
+
+Command:
+
+```bash
+cargo build --release -p swarm-examples --bin strategy_comparison --bin regression_runner
+
+/usr/bin/time -f 'RUN_TIME=%E\nPEAK_RSS_KB=%M' \
+  /home/formi/.local/bin/runlim \
+  target/release/strategy_comparison \
+    --seeds 1000 \
+    --mission all \
+    --jobs 14 \
+    --output-dir results/all_1000_jobs14_m69_release
+```
+
+Generated artifacts:
+
+- `results/all_1000_jobs14_m69_release/manifest.json` - run metadata
+- `results/all_1000_jobs14_m69_release/results.json` - machine-readable aggregate data
+- `results/all_1000_jobs14_m69_release/results.csv` - tabular aggregate data
+- `results/all_1000_jobs14_m69_release/table.md` - full Markdown table
+- `results/all_1000_jobs14_m69_release/run.log` - captured stdout and runtime/RSS lines
+
+Mission-level summary:
+
+| Mission | Rows | AvgSuccess | AvgCompletion | PerfectRows | WeakRows |
+|---|---:|---:|---:|---:|---:|
+| coverage | 120 | 0.950 | 1.000 | 113 | 7 |
+| emergency-mesh | 25 | 0.499 | 0.659 | 1 | 24 |
+| inspection | 15 | 1.000 | 0.907 | 15 | 0 |
+| sar | 10 | 0.001 | 0.803 | 0 | 10 |
+| wildfire | 20 | 0.219 | 1.000 | 0 | 20 |
+
+Interpretation:
+
+- Coverage is stable for auction, centralized, connectivity-aware, and greedy;
+  CBBA still has known weak rows under heavy/high-latency failure cases.
+- Centralized remains an oracle-like upper bound for emergency-mesh completion.
+- Inspection success is stable, but completion/conflict behavior still varies
+  by strategy and profile.
+- SAR success remains intentionally low despite high completion in several
+  rows, because SAR success depends on target detection semantics, not only
+  task completion.
+- Wildfire completion remains high while success remains lower because success
+  uses mapped-ratio plus failure/unassigned guards.
+- This pack is simulation evidence only. It does not replace PX4/SIH evidence
+  and does not include Urban scenario-suite fixtures.
 
 ## Historical M62 Run
 
@@ -129,14 +197,17 @@ Historical validation packs are preserved in:
 | M32b validation | release | 500 | 14 | 14:50.67 | 76232 KB | `results/all_500_jobs14_m32b_release/` |
 | M62 refresh | release | 200 | 14 | 6:21.94 | 43096 KB | `results/all_200_jobs14_m62_release/` |
 | M62 refresh | release | 500 | 14 | 16:07.34 | 92264 KB | `results/all_500_jobs14_m62_release/` |
+| M69 refresh | release | 1000 | 14 | 28:55.25 | 207684 KB | `results/all_1000_jobs14_m69_release/` |
 
-The M62 500-seed release runtime scales close to the seed-count increase from
-the M62 200-seed run while covering the codebase at commit
-`81260ca7afa114a5d9add7b832f6c5d7875b88cd` and 38 profiles.
+The M69 1000-seed run is the current release benchmark pack. The M62 rows are
+preserved for historical runtime comparison only.
 
-## Mission-Level Summary
+## Historical M62 Mission-Level Summary
 
-Values below are averaged across all profiles of each mission for a strategy.
+Values below are from the historical M62 500-seed pack and are averaged across
+all profiles of each mission for a strategy. For current M69 summary numbers,
+use the M69 section above and the full `results/all_1000_jobs14_m69_release/`
+artifact.
 
 | Mission | Strategy | Profiles | Success | Completion | Availability | Conflicts |
 |---|---|---:|---:|---:|---:|---:|
@@ -257,17 +328,14 @@ why `Success` remains below `Completion` in the M62 pack.
 
 ## Next Steps
 
-1. Treat `results/all_500_jobs14_m62_release/` as historical evidence for
-   commit `81260ca7afa114a5d9add7b832f6c5d7875b88cd` until a current-HEAD rerun
-   is performed.
-2. Inspect the SAR success predicate before turning this baseline into a
-   publication claim; wildfire success semantics are now documented as a
-   mapped-ratio predicate with failure/unassigned guards.
-3. Decide whether CBBA coverage under high-loss/high-latency failures should be
-   explicitly unsupported or fixed.
-4. Treat M68 corridor-aware evidence as a small current-head algorithm delta,
-   not as a replacement for M69 benchmark refresh.
-5. If publication-level evidence is needed, run
-   `--seeds 1000 --mission all --jobs 14` after the above interpretation work.
+1. Treat `results/all_1000_jobs14_m69_release/` as current release simulation
+   benchmark evidence for the built-in benchmark suite.
+2. Treat `results/all_500_jobs14_m62_release/` as historical evidence for
+   commit `81260ca7afa114a5d9add7b832f6c5d7875b88cd`.
+3. Do not present M69 as PX4/SITL, hardware, or Urban scenario-suite evidence.
+4. Inspect SAR, wildfire, emergency-mesh, and CBBA weak rows before making
+   publication-level algorithm claims.
+5. If broader Urban claims are needed, add Urban scenario suites to an explicit
+   benchmark entrypoint instead of assuming `--mission all` already covers them.
 6. Keep this document aligned with `README.md`, `docs/STATUS.md`, and the
-   committed `results/all_500_jobs14_m62_release/` artifact.
+   committed M69/M62 result artifacts.

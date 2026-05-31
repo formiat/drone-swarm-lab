@@ -243,7 +243,7 @@ cargo run -p swarm-examples --bin replay -- \
 
 | Feature | Status | Since | Notes |
 |---|---|---|---|
-| Benchmark (smoke/quick/full) | ✅ Stable | M21/M62/M63 | `--output-dir`, `--report`, `BenchmarkManifest`; M62 500-seed release baseline is historical evidence for commit `81260ca7afa114a5d9add7b832f6c5d7875b88cd` in `results/all_500_jobs14_m62_release/` |
+| Benchmark (smoke/quick/full) | ✅ Stable | M21/M62/M63/M69 | `--output-dir`, `--report`, `BenchmarkManifest`; M69 current-head 1000-seed release benchmark is in `results/all_1000_jobs14_m69_release/`; M62 500-seed baseline remains historical evidence for commit `81260ca7afa114a5d9add7b832f6c5d7875b88cd` |
 | Mission DSL | ✅ Stable | M19 | `schema_version: "0.1"`, validation API |
 | Platform Extension Guide | ✅ Stable-ish | M61 | `docs/EXTENSION_GUIDE.md` documents mission, strategy, metrics, crate boundary, and schema-version extension paths without promising semver-stable public API |
 | Safety Layer | ✅ Stable | M20 | `SafetyAllocator` wrapper, no-fly/geofence/separation |
@@ -305,11 +305,11 @@ Exit code is `0` if all suites pass, `1` if any threshold is violated. Failure o
 Current status note: the default regression entrypoints passed the repeated
 release sweep at `jobs=1/4/14`. The captured sweep is in
 `results/m56_regression_determinism_2026-05-30/`. The latest committed full
-simulation benchmark refresh is the M62 500-seed release baseline in
-`results/all_500_jobs14_m62_release/`; after M63 it is treated as historical
-validation evidence for commit `81260ca7afa114a5d9add7b832f6c5d7875b88cd`, not
-as current-HEAD evidence unless it is rerun. Use it as validation evidence, not
-as a publication-grade 1000-seed statistical run.
+simulation benchmark refresh is the M69 1000-seed release run in
+`results/all_1000_jobs14_m69_release/`. The older M62 500-seed release baseline
+in `results/all_500_jobs14_m62_release/` remains historical validation evidence
+for commit `81260ca7afa114a5d9add7b832f6c5d7875b88cd`. Use these simulation
+runs as benchmark evidence, not as PX4/SITL or hardware evidence.
 
 ### Portable SITL Checks (M50)
 
@@ -620,6 +620,7 @@ points, not a published semver-stable SDK.
 | M66 | ✅ | Urban Search v1: one scout follows the Urban road-graph loop, evaluates a deterministic mocked bus detector, stops on bus detection, emits bus observation/detection/false-positive/search-completion replay events, exports search metrics, validates `urban-search` DSL, and adds a smoke regression gate; simulation-only |
 | M67 | ✅ | Urban Replay / Analysis: replay timeline filters, additive `UrbanViolation.obstacle_id`, route-trace and judge-report artifacts in benchmark packs, two-agent analysis fixture, and diagnostic Urban separation/conflict metrics; no benchmark rerun and no avoidance/control behavior change |
 | M68 | ✅ | Algorithm Depth: `corridor-aware` Urban planner uses corridor width and obstacle-clearance risk to choose a lower-risk route on `scenarios/urban.corridor-delta.json`; docs/support matrix/report exports include the route-risk delta; CBBA/SAR weak rows remain explicitly unsupported/analysis-only |
+| M69 | ✅ | Benchmark Refresh / Research Evidence: release `--seeds 1000 --mission all --jobs 14` benchmark captured for code commit `5d1d3cd17cacba7482c1d9b93eb5acc107af8f71` in `results/all_1000_jobs14_m69_release/`; regression runner passed at `--jobs 14`; current `--mission all` covers coverage/emergency-mesh/SAR/inspection/wildfire, while Urban remains separate M68 scenario-suite evidence |
 
 ---
 

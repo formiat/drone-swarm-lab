@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-31
 **HEAD commit:** see `git rev-parse HEAD`
-**Last audit:** M67 Urban Replay / Analysis
+**Last audit:** M69 Benchmark Refresh / Research Evidence
 
 This document is the current status summary for the repository. It supersedes
 the older M39b-only audit and should be read together with the README current
@@ -44,6 +44,7 @@ status table.
 | M66 Urban Search v1 | Complete as simulation-only mission | One scout follows the Urban road graph and evaluates a deterministic mocked bus detector. `urban-search` DSL validation, `scenarios/urban.search.json`, bus observation/detection/false-positive/search-completion replay events, bus detection/time/false-positive/distance metrics, focused reports, and a smoke regression gate are implemented. Lidar/raycast, dynamic obstacles, real perception, multi-agent deconfliction, PX4/SITL export, hardware claims, visual UI, and publication benchmark evidence remain future work. |
 | M67 Urban Replay / Analysis | Complete as diagnostic tooling | Simulation replay now supports deterministic timeline output with `--agent` / `--category urban` filters, additive `UrbanViolation.obstacle_id`, route-trace and judge-report JSON/CSV artifacts for Urban benchmark packs, a two-agent analysis fixture in `scenarios/urban.multi-agent.json`, suite-mode replay artifact generation, and diagnostic Urban separation/conflict aggregate metrics populated from replay-enabled Urban traces. This adds observability only; it does not add avoidance, multi-agent Urban control, real perception, lidar/raycast, PX4/SITL export, hardware claims, or a benchmark rerun. |
 | M68 Algorithm Depth On Urban + Existing Missions | Complete as small Urban planner delta | `planner: "corridor-aware"` is implemented for Urban route loops, `urban_route_risk_score` is exported, `scenarios/urban.corridor-delta.json` compares Dijkstra against the corridor-aware planner, and docs/support matrix explain the lower-risk/longer-route tradeoff. This is not a full benchmark refresh and does not change CBBA/SAR unsupported status. |
+| M69 Benchmark Refresh / Research Evidence | Complete for built-in simulation suite | Release `strategy_comparison --seeds 1000 --mission all --jobs 14` completed for code commit `5d1d3cd17cacba7482c1d9b93eb5acc107af8f71`. Artifacts are in `results/all_1000_jobs14_m69_release/`; runtime was 28:55.25 with peak RSS 207684 KB. `regression_runner --jobs 14` passed. The current `--mission all` suite covers coverage, emergency-mesh, SAR, inspection, and wildfire; Urban scenario-suite evidence remains separate in `results/m68_urban_corridor_delta/`. |
 
 ## Current Known Limitations
 
@@ -86,16 +87,18 @@ status table.
   `regression_runner` and `strategy_comparison --regression` at `jobs=1/4/14`
   with repeated runs. Artifacts are in
   `results/m56_regression_determinism_2026-05-30/`.
-- **M62 refreshed simulation benchmark evidence for commit
-  `81260ca7afa114a5d9add7b832f6c5d7875b88cd`.** The 500-seed release baseline
-  is in `results/all_500_jobs14_m62_release/` and is summarized in
-  `docs/BENCHMARK_RESULTS.md`. M63 did not rerun the benchmark, so the pack is
-  historical evidence rather than current-HEAD evidence.
-- **1000-seed benchmark is still not an M48 substitute.** It can evaluate
-  simulation behavior, but live PX4 SITL requires the M48 manual run.
-- **Publication-level benchmark remains separate.** M62 is a historical
-  validation baseline; a future publication claim should use a fresh 1000-seed
-  run after SAR, wildfire, and CBBA interpretation questions are resolved.
+- **M69 refreshed current-head simulation benchmark evidence.** The 1000-seed
+  release benchmark for code commit `5d1d3cd17cacba7482c1d9b93eb5acc107af8f71`
+  is in `results/all_1000_jobs14_m69_release/` and is summarized in
+  `docs/BENCHMARK_RESULTS.md`.
+- **M62 remains historical simulation evidence.** The 500-seed release baseline
+  is preserved in `results/all_500_jobs14_m62_release/` for commit
+  `81260ca7afa114a5d9add7b832f6c5d7875b88cd`.
+- **The 1000-seed benchmark is still not an M48 substitute.** It evaluates
+  simulation behavior only; live PX4 SITL requires local PX4/SIH runs.
+- **Urban is not part of current `--mission all`.** M69 covers the built-in
+  coverage/emergency-mesh/SAR/inspection/wildfire benchmark suite. Urban
+  algorithm evidence remains the separate M68 scenario-suite artifact.
 
 ### Algorithmic
 
@@ -150,10 +153,10 @@ status table.
 |---|---|---|
 | Portable SITL verification | Ready | Run `sitl_agent`/`sitl_docs` targeted tests. |
 | In-repository extension work | Ready with M61 boundaries | Use `docs/EXTENSION_GUIDE.md`; external semver-stable plugin/API work remains out of scope. |
-| Urban algorithm work | Ready for M69 benchmark refresh | M68 provides a corridor-aware planner delta and route-risk metric. Broader benchmark evidence, dynamic obstacles, richer judging, route deconfliction, and avoidance remain future work. |
+| Urban algorithm work | Has M68 local delta; not in full benchmark yet | M68 provides a corridor-aware planner delta and route-risk metric. The current M69 `--mission all` benchmark does not include Urban scenario suites; dynamic obstacles, richer judging, route deconfliction, and avoidance remain future work. |
 | M48 live PX4 verification | Complete for local PX4 SIH | Captured in `results/m48_px4_sitl_2026-05-30/`; Gazebo/HIL/hardware remain out of scope. |
 | Real multi-agent PX4/SIH | Experimental local workflow with M60 hardening | Upload-only, execute, and controlled failure/reallocation SIH evidence exists. `sitl_supervisor --connection --execute --reupload-on-failure --output-dir ... --run-id ...` can produce stable artifacts and exit codes for local runs; automated PX4 CI, Gazebo/HIL, hardware, broader failure modes, and production safety remain future work. |
-| Large benchmark publication | Not ready | M62 gives a historical 500-seed validation baseline for commit `81260ca7afa114a5d9add7b832f6c5d7875b88cd`; current-head publication-level evidence still needs a fresh run and interpretation of SAR/wildfire/CBBA rows. |
+| Large benchmark publication | Evidence captured, interpretation still needed | M69 provides a current-head 1000-seed release simulation pack, but publication claims still need explicit interpretation of SAR/wildfire/CBBA weak rows and must not be presented as PX4/SITL or hardware evidence. |
 | Hardware experiment | Not product-ready | Requires external safety process; see `docs/HARDWARE_READINESS.md`. |
 
 ## Recommended Next Steps
@@ -165,13 +168,12 @@ status table.
    artifacts are repeatable and overwrite-safe.
 3. Expand the local M59 workflow only if the project needs broader failure
    modes, repeated failure recovery, or automated PX4/SIH orchestration.
-4. Inspect M62 SAR, wildfire, and CBBA benchmark interpretation gaps before
-   making publication-level algorithm claims.
-5. Use M68 corridor-delta only as small algorithm evidence; run M69 benchmark
-   refresh before claiming broader Urban planner superiority.
-6. Rerun the benchmark only when refreshing current-head evidence; use 1000
-   seeds only after those interpretation gaps are resolved or explicitly marked
-   unsupported.
+4. Inspect M69 SAR, wildfire, emergency-mesh, and CBBA benchmark interpretation
+   gaps before making publication-level algorithm claims.
+5. Use M68 corridor-delta only as small Urban algorithm evidence; add Urban to
+   a future full benchmark entrypoint only if broader Urban claims are needed.
+6. Move to the M70 decision: either prepare SITL/export boundary work or keep
+   deepening simulation/algorithm evidence based on the M69 gaps.
 7. Keep README, `docs/BENCHMARK_RESULTS.md`, `docs/EXTENSION_GUIDE.md`,
    `docs/SITL_SETUP.md`, `docs/SCENARIO_DSL.md`, `docs/REPLAY.md`, and this
    file in sync when extension, Urban analysis, or SITL evidence changes state.
