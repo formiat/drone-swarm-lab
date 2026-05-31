@@ -165,6 +165,17 @@ fn support_matrix_wildfire_medium_dynamic_completion_consistency() {
 }
 
 #[test]
+fn support_matrix_urban_corridor_delta_is_explicit() {
+    let baseline = classify_support("urban-patrol", "corridor-delta-dijkstra", "greedy");
+    assert_eq!(baseline.status, SupportStatus::Supported);
+    assert_eq!(baseline.reason, SupportReason::StableBaseline);
+
+    let corridor = classify_support("urban-patrol", "corridor-delta-corridor-aware", "greedy");
+    assert_eq!(corridor.status, SupportStatus::Experimental);
+    assert_eq!(corridor.reason, SupportReason::CorridorPlannerExperimental);
+}
+
+#[test]
 fn support_matrix_emergency_mesh_connectivity_aware_is_experimental() {
     let support = classify_support("emergency-mesh", "ideal", "connectivity-aware");
     assert_eq!(support.status, SupportStatus::Experimental);

@@ -17,6 +17,7 @@ pub enum SupportReason {
     DynamicThreatDrift,
     RelayPlacementExperimental,
     ProfileConstrained,
+    CorridorPlannerExperimental,
     MissingEvidence,
 }
 
@@ -52,6 +53,16 @@ pub fn classify_support(mission: &str, profile: &str, strategy: &str) -> Support
         ("wildfire", "medium-dynamic", "greedy") => (
             SupportStatus::Experimental,
             SupportReason::DynamicThreatDrift,
+        ),
+        ("urban-patrol", "patrol-small-block", "greedy") => {
+            (SupportStatus::Supported, SupportReason::StableBaseline)
+        }
+        ("urban-patrol", "corridor-delta-dijkstra", "greedy") => {
+            (SupportStatus::Supported, SupportReason::StableBaseline)
+        }
+        ("urban-patrol", "corridor-delta-corridor-aware", "greedy") => (
+            SupportStatus::Experimental,
+            SupportReason::CorridorPlannerExperimental,
         ),
         ("urban-search", "search-static-bus", "greedy") => {
             (SupportStatus::Supported, SupportReason::StableBaseline)
@@ -95,5 +106,12 @@ mod tests {
         let entry = classify_support("emergency-mesh", "ideal", "connectivity-aware");
         assert_eq!(entry.status, SupportStatus::Experimental);
         assert_eq!(entry.reason, SupportReason::RelayPlacementExperimental);
+    }
+
+    #[test]
+    fn urban_corridor_aware_is_experimental_until_benchmark_refresh() {
+        let entry = classify_support("urban-patrol", "corridor-delta-corridor-aware", "greedy");
+        assert_eq!(entry.status, SupportStatus::Experimental);
+        assert_eq!(entry.reason, SupportReason::CorridorPlannerExperimental);
     }
 }

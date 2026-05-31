@@ -17,6 +17,14 @@ smoke/regression/analysis checks, not benchmark baselines or publication runs.
 M67 route-trace, judge-report, and timeline tooling should be treated as
 diagnostic evidence, not as a new algorithmic benchmark result.
 
+M68 adds one small algorithmic delta for Urban route planning:
+`planner: "corridor-aware"` uses corridor width and static-obstacle clearance
+to lower `urban_route_risk_score` on `scenarios/urban.corridor-delta.json`.
+That fixture is not a full benchmark refresh. Treat
+`results/m68_urban_corridor_delta/` as current-head before/after algorithm
+evidence only; M69 is still the place for broader 500/1000-seed benchmark
+claims.
+
 For live PX4/SIH evidence, see `docs/STATUS.md` and the `results/m48_*`,
 `results/m55_*`, `results/m58_*`, and `results/m59_*` artifacts. Simulation
 benchmark results must not be used as a substitute for PX4/SIH or hardware
@@ -64,6 +72,30 @@ The M62 pack predates M67, so it does not contain `urban_analysis/` route-trace
 or judge-report artifacts and does not include the newer diagnostic Urban
 separation/conflict metrics. Generate a new pack with `--replay-log` on current
 HEAD if those diagnostics are needed for Urban work.
+
+## M68 Urban Corridor Delta
+
+M68 compares two `urban-patrol` profiles over the same deterministic road
+graph:
+
+- `corridor-delta-dijkstra`: baseline shortest-path planner;
+- `corridor-delta-corridor-aware`: experimental planner that adds route-risk
+  penalty from `corridor_width_m` and AABB obstacle clearance.
+
+Expected interpretation:
+
+- Dijkstra should choose the shorter narrow shortcut;
+- corridor-aware should choose the longer safer detour;
+- `avg_urban_route_risk_score` should be lower for corridor-aware;
+- `avg_urban_route_length_m` and `avg_urban_time_to_complete_loop` can be
+  higher for corridor-aware because the planner trades route length for lower
+  static route risk.
+
+This delta is intentionally small and scenario-local. It does not prove
+general Urban superiority, multi-agent deconfliction, lidar/CV behavior,
+physical collision avoidance, PX4/SITL behavior, or hardware readiness.
+Unsupported pairs such as SAR+CBBA and SAR+centralized remain unsupported with
+their existing reasons; M68 does not implement failure-triggered gossip burst.
 
 Historical validation packs are preserved in:
 
@@ -221,7 +253,9 @@ why `Success` remains below `Completion` in the M62 pack.
    mapped-ratio predicate with failure/unassigned guards.
 3. Decide whether CBBA coverage under high-loss/high-latency failures should be
    explicitly unsupported or fixed.
-4. If publication-level evidence is needed, run
+4. Treat M68 corridor-aware evidence as a small current-head algorithm delta,
+   not as a replacement for M69 benchmark refresh.
+5. If publication-level evidence is needed, run
    `--seeds 1000 --mission all --jobs 14` after the above interpretation work.
-5. Keep this document aligned with `README.md`, `docs/STATUS.md`, and the
+6. Keep this document aligned with `README.md`, `docs/STATUS.md`, and the
    committed `results/all_500_jobs14_m62_release/` artifact.

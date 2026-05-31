@@ -76,7 +76,7 @@ an explicit schema policy update and compatibility tests.
 | `inspection` | `run_config.enable_movement` | Must be `true`; tasks must have `edge_id` |
 | `cbba-stress` | `run_config.enable_cbba` | Must be `true`; `gossip_interval_ticks <= 5` |
 | `sitl` | tasks with `pose` | At least one task must have a `pose` |
-| `urban-patrol` | `run_config.urban_state` | Must include `UrbanMap`, route loop, Dijkstra planner, valid node/edge refs, and waypoint placeholder tasks; M65 runner follows the planned route in order |
+| `urban-patrol` | `run_config.urban_state` | Must include `UrbanMap`, route loop, valid Urban planner, valid node/edge refs, and waypoint placeholder tasks; M65/M68 runner follows the planned route in order |
 | `urban-search` | `run_config.urban_state`, `run_config.urban_search_state` | Reuses the Urban road graph and start contract, then validates bus targets and deterministic mocked detector config; M66 runner stops on real bus detection or times out |
 | `safety` | `run_config.safety_config` | Must have `safety_config` with geofence or no-fly zones |
 
@@ -95,7 +95,8 @@ executable one-agent patrol simulation. The DSL uses
   Dijkstra shortest paths.
 - `start_node` — optional but validated when present; in M65 it must exist in
   the map and match `route_loop.nodes[0]`.
-- `planner` — currently must be `"dijkstra"`.
+- `planner` — optional planner selector. Supported values are `"dijkstra"`
+  and `"corridor-aware"`. Missing values default to `"dijkstra"`.
 
 The fixture still uses `TaskKind::Waypoint` placeholder tasks for compatibility,
 but Urban Patrol completion is now route-based rather than task-assignment
@@ -114,7 +115,7 @@ hardware readiness, or a visual UI.
 
 M66 adds `urban-search` as a simulation-only search mission on top of the
 Urban Patrol road graph. It uses the same `run_config.urban_state` map,
-`route_loop`, `start_node`, and `"dijkstra"` planner constraints, plus
+`route_loop`, `start_node`, and Urban planner constraints, plus
 `run_config.urban_search_state`:
 
 - `buses[]` — mocked bus targets with `id`, `pose`, and optional
@@ -151,6 +152,21 @@ This fixture is not a new control mode. It does not implement route
 deconfliction, collision avoidance, dynamic obstacles, physical simulation,
 PX4/SITL export, hardware readiness, or visualization. Its purpose is to keep
 the Urban replay/analysis schema portable and testable.
+
+## Urban Corridor Delta
+
+M68 adds `scenarios/urban.corridor-delta.json` as a small algorithmic
+before/after fixture. It keeps the same road graph and compares:
+
+- `corridor-delta-dijkstra` with `planner: "dijkstra"`;
+- `corridor-delta-corridor-aware` with `planner: "corridor-aware"`.
+
+The corridor-aware planner remains road-graph based. It does not simulate
+lidar/raycast or physical collision avoidance. It uses existing
+`map.edges[].corridor_width_m` plus static AABB obstacle clearance to penalize
+narrow or low-clearance road segments. The expected metric delta is lower
+`urban_route_risk_score` for the corridor-aware profile, with a possible
+increase in route length and completion time.
 
 ## Minimal Example
 
@@ -199,7 +215,7 @@ for err in &errors {
 
 ## Available Scenarios
 
-The repository includes 22 pre-built scenario files in `scenarios/`:
+The repository includes pre-built scenario files in `scenarios/`, including:
 
 - `coverage.ideal.json` — 5 agents, 3 tasks, ideal network
 - `coverage.safety.json` — coverage with no-fly zone
@@ -215,6 +231,7 @@ The repository includes 22 pre-built scenario files in `scenarios/`:
 - `urban.patrol.json` — M65 Urban Patrol road-graph simulation fixture
 - `urban.search.json` — M66 Urban Search static-bus simulation fixture
 - `urban.multi-agent.json` — M67 two-agent Urban replay-analysis fixture
+- `urban.corridor-delta.json` — M68 Dijkstra vs corridor-aware planner delta
 
 ## Export / Import
 

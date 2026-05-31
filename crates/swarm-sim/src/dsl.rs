@@ -201,10 +201,10 @@ pub fn validate_mission_specific(entry: &ScenarioSuiteEntry) -> Vec<ValidationEr
         }
         "urban-patrol" => match &entry.run_config.urban_state {
             Some(urban_state) => {
-                if urban_state.planner != "dijkstra" {
+                if let Err(error) = crate::urban::UrbanPlannerMode::parse(&urban_state.planner) {
                     errors.push(ValidationError {
                         field: "run_config.urban_state.planner".to_owned(),
-                        message: "Urban planner must be 'dijkstra' in M65".to_owned(),
+                        message: error.to_string(),
                     });
                 }
                 if !entry
@@ -230,7 +230,11 @@ pub fn validate_mission_specific(entry: &ScenarioSuiteEntry) -> Vec<ValidationEr
                         message: error.message,
                     });
                 }
-                match crate::urban::expand_route_loop(&urban_state.map, &urban_state.route_loop) {
+                match crate::urban::expand_route_loop_with_planner_name(
+                    &urban_state.map,
+                    &urban_state.route_loop,
+                    &urban_state.planner,
+                ) {
                     Ok(route) => {
                         match crate::urban::route_start_node(
                             &urban_state.map,
@@ -265,10 +269,11 @@ pub fn validate_mission_specific(entry: &ScenarioSuiteEntry) -> Vec<ValidationEr
         "urban-search" => {
             match &entry.run_config.urban_state {
                 Some(urban_state) => {
-                    if urban_state.planner != "dijkstra" {
+                    if let Err(error) = crate::urban::UrbanPlannerMode::parse(&urban_state.planner)
+                    {
                         errors.push(ValidationError {
                             field: "run_config.urban_state.planner".to_owned(),
-                            message: "Urban planner must be 'dijkstra' in M66".to_owned(),
+                            message: error.to_string(),
                         });
                     }
                     if !entry
@@ -294,8 +299,11 @@ pub fn validate_mission_specific(entry: &ScenarioSuiteEntry) -> Vec<ValidationEr
                             message: error.message,
                         });
                     }
-                    match crate::urban::expand_route_loop(&urban_state.map, &urban_state.route_loop)
-                    {
+                    match crate::urban::expand_route_loop_with_planner_name(
+                        &urban_state.map,
+                        &urban_state.route_loop,
+                        &urban_state.planner,
+                    ) {
                         Ok(route) => {
                             match crate::urban::route_start_node(
                                 &urban_state.map,

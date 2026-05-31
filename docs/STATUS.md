@@ -43,6 +43,7 @@ status table.
 | M65 Urban Patrol v0 | Complete as simulation-only mission | One scout follows the ordered `urban-patrol` road-graph loop and succeeds only after traversing every planned segment before timeout with zero Urban judge violations. The runner emits Urban replay events and reports patrol completion/time/distance/efficiency metrics. M65 itself has no bus detection; M66 adds mocked bus search separately. Lidar/raycast, dynamic obstacles, multi-agent route deconfliction, PX4/SITL export, hardware claims, visual UI, and publication benchmark evidence remain future work. |
 | M66 Urban Search v1 | Complete as simulation-only mission | One scout follows the Urban road graph and evaluates a deterministic mocked bus detector. `urban-search` DSL validation, `scenarios/urban.search.json`, bus observation/detection/false-positive/search-completion replay events, bus detection/time/false-positive/distance metrics, focused reports, and a smoke regression gate are implemented. Lidar/raycast, dynamic obstacles, real perception, multi-agent deconfliction, PX4/SITL export, hardware claims, visual UI, and publication benchmark evidence remain future work. |
 | M67 Urban Replay / Analysis | Complete as diagnostic tooling | Simulation replay now supports deterministic timeline output with `--agent` / `--category urban` filters, additive `UrbanViolation.obstacle_id`, route-trace and judge-report JSON/CSV artifacts for Urban benchmark packs, a two-agent analysis fixture in `scenarios/urban.multi-agent.json`, suite-mode replay artifact generation, and diagnostic Urban separation/conflict aggregate metrics populated from replay-enabled Urban traces. This adds observability only; it does not add avoidance, multi-agent Urban control, real perception, lidar/raycast, PX4/SITL export, hardware claims, or a benchmark rerun. |
+| M68 Algorithm Depth On Urban + Existing Missions | Complete as small Urban planner delta | `planner: "corridor-aware"` is implemented for Urban route loops, `urban_route_risk_score` is exported, `scenarios/urban.corridor-delta.json` compares Dijkstra against the corridor-aware planner, and docs/support matrix explain the lower-risk/longer-route tradeoff. This is not a full benchmark refresh and does not change CBBA/SAR unsupported status. |
 
 ## Current Known Limitations
 
@@ -127,6 +128,11 @@ status table.
   analysis artifacts for the fixture. The separation/conflict metrics are
   diagnostic measurements from replay traces, not a route-deconfliction or
   collision avoidance system.
+- **Urban Corridor-Aware Planner**: M68 adds `planner: "corridor-aware"` as an
+  experimental mission-level route planner. It penalizes narrow corridors and
+  low static-obstacle clearance to reduce `urban_route_risk_score` on the
+  deterministic corridor-delta fixture. It is not lidar, physical collision
+  avoidance, dynamic traffic handling, PX4/SITL export, or hardware evidence.
 
 ### Platform / API
 
@@ -144,7 +150,7 @@ status table.
 |---|---|---|
 | Portable SITL verification | Ready | Run `sitl_agent`/`sitl_docs` targeted tests. |
 | In-repository extension work | Ready with M61 boundaries | Use `docs/EXTENSION_GUIDE.md`; external semver-stable plugin/API work remains out of scope. |
-| Urban analysis work | Ready for M68+ follow-up | M67 provides timeline filters, route trace and judge report artifacts, obstacle ids, a two-agent analysis fixture, and diagnostic separation/conflict metrics. Dynamic obstacles, richer judging, route deconfliction, and avoidance remain future work. |
+| Urban algorithm work | Ready for M69 benchmark refresh | M68 provides a corridor-aware planner delta and route-risk metric. Broader benchmark evidence, dynamic obstacles, richer judging, route deconfliction, and avoidance remain future work. |
 | M48 live PX4 verification | Complete for local PX4 SIH | Captured in `results/m48_px4_sitl_2026-05-30/`; Gazebo/HIL/hardware remain out of scope. |
 | Real multi-agent PX4/SIH | Experimental local workflow with M60 hardening | Upload-only, execute, and controlled failure/reallocation SIH evidence exists. `sitl_supervisor --connection --execute --reupload-on-failure --output-dir ... --run-id ...` can produce stable artifacts and exit codes for local runs; automated PX4 CI, Gazebo/HIL, hardware, broader failure modes, and production safety remain future work. |
 | Large benchmark publication | Not ready | M62 gives a historical 500-seed validation baseline for commit `81260ca7afa114a5d9add7b832f6c5d7875b88cd`; current-head publication-level evidence still needs a fresh run and interpretation of SAR/wildfire/CBBA rows. |
@@ -161,10 +167,12 @@ status table.
    modes, repeated failure recovery, or automated PX4/SIH orchestration.
 4. Inspect M62 SAR, wildfire, and CBBA benchmark interpretation gaps before
    making publication-level algorithm claims.
-5. Rerun the benchmark only when refreshing current-head evidence; use 1000
+5. Use M68 corridor-delta only as small algorithm evidence; run M69 benchmark
+   refresh before claiming broader Urban planner superiority.
+6. Rerun the benchmark only when refreshing current-head evidence; use 1000
    seeds only after those interpretation gaps are resolved or explicitly marked
    unsupported.
-6. Keep README, `docs/BENCHMARK_RESULTS.md`, `docs/EXTENSION_GUIDE.md`,
+7. Keep README, `docs/BENCHMARK_RESULTS.md`, `docs/EXTENSION_GUIDE.md`,
    `docs/SITL_SETUP.md`, `docs/SCENARIO_DSL.md`, `docs/REPLAY.md`, and this
    file in sync when extension, Urban analysis, or SITL evidence changes state.
 

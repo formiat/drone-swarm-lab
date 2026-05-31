@@ -159,4 +159,51 @@ mod tests {
             "two-agent fixture should produce route-conflict measurements"
         );
     }
+
+    #[test]
+    fn urban_corridor_delta_scenario_loads_and_improves_risk() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../scenarios/urban.corridor-delta.json"
+        );
+        let suite = swarm_sim::load_scenario_suite(path).expect("urban corridor scenario loads");
+        assert_eq!(suite.name, "Urban Corridor Planner Delta");
+        assert_eq!(suite.scenarios.len(), 2);
+
+        let baseline = suite
+            .scenarios
+            .iter()
+            .find(|entry| entry.profile == "corridor-delta-dijkstra")
+            .expect("dijkstra profile exists");
+        let corridor = suite
+            .scenarios
+            .iter()
+            .find(|entry| entry.profile == "corridor-delta-corridor-aware")
+            .expect("corridor-aware profile exists");
+
+        for entry in [baseline, corridor] {
+            let errors = swarm_sim::validate_entry(entry);
+            assert!(
+                errors.is_empty(),
+                "urban corridor scenario must validate: {errors:?}"
+            );
+        }
+
+        let baseline_metrics =
+            swarm_sim::ScenarioRunner::run(&baseline.scenario, baseline.run_config.clone());
+        let corridor_metrics =
+            swarm_sim::ScenarioRunner::run(&corridor.scenario, corridor.run_config.clone());
+
+        assert!(baseline_metrics.success);
+        assert!(corridor_metrics.success);
+        assert_eq!(baseline_metrics.urban_violation_count, 0);
+        assert_eq!(corridor_metrics.urban_violation_count, 0);
+        assert!(corridor_metrics.urban_route_length_m > baseline_metrics.urban_route_length_m);
+        assert!(
+            corridor_metrics.urban_route_risk_score < baseline_metrics.urban_route_risk_score,
+            "corridor-aware risk {} should be below dijkstra risk {}",
+            corridor_metrics.urban_route_risk_score,
+            baseline_metrics.urban_route_risk_score
+        );
+    }
 }

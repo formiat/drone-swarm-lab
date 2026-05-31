@@ -436,8 +436,12 @@ impl ScenarioRunner {
 
         let mut inspection_state = config.inspection_state;
         let urban_state = config.urban_state.clone();
-        let (urban_route_planned, urban_route_length_m, urban_violation_count) =
-            compute_urban_foundation_metrics(&urban_state);
+        let (
+            urban_route_planned,
+            urban_route_length_m,
+            urban_route_risk_score,
+            urban_violation_count,
+        ) = compute_urban_foundation_metrics(&urban_state);
         let urban_route_completed = false;
         let mut allocator = SafetyAllocator {
             inner: allocator,
@@ -1748,6 +1752,7 @@ impl ScenarioRunner {
                 wind: config.wind,
                 // v0.64 Urban Foundations
                 urban_route_length_m,
+                urban_route_risk_score,
                 urban_route_planned,
                 urban_violation_count,
                 urban_route_completed,
@@ -1777,8 +1782,11 @@ impl ScenarioRunner {
         let Some(urban_state) = config.urban_state.clone() else {
             unreachable!("run_urban_patrol is called only for urban_state runs");
         };
-        let route = match crate::urban::expand_route_loop(&urban_state.map, &urban_state.route_loop)
-        {
+        let route = match crate::urban::expand_route_loop_with_planner_name(
+            &urban_state.map,
+            &urban_state.route_loop,
+            &urban_state.planner,
+        ) {
             Ok(route) => route,
             Err(error) => {
                 return (
@@ -1787,6 +1795,7 @@ impl ScenarioRunner {
                         0,
                         false,
                         false,
+                        0.0,
                         0.0,
                         1,
                         false,
@@ -1812,6 +1821,7 @@ impl ScenarioRunner {
                     false,
                     true,
                     route.total_length_m,
+                    crate::urban::route_risk_score(&urban_state.map, &route),
                     0,
                     false,
                     None,
@@ -1838,6 +1848,7 @@ impl ScenarioRunner {
                         false,
                         true,
                         route.total_length_m,
+                        crate::urban::route_risk_score(&urban_state.map, &route),
                         0,
                         false,
                         None,
@@ -1858,6 +1869,7 @@ impl ScenarioRunner {
                     false,
                     true,
                     route.total_length_m,
+                    crate::urban::route_risk_score(&urban_state.map, &route),
                     0,
                     false,
                     None,
@@ -1914,6 +1926,7 @@ impl ScenarioRunner {
                     false,
                     true,
                     route.total_length_m,
+                    crate::urban::route_risk_score(&urban_state.map, &route),
                     static_violations.len() as u64,
                     false,
                     None,
@@ -2032,6 +2045,7 @@ impl ScenarioRunner {
         }
 
         let route_efficiency = route_efficiency(route.total_length_m, total_distance_travelled);
+        let route_risk_score = crate::urban::route_risk_score(&urban_state.map, &route);
 
         let metrics = urban_patrol_metrics(
             scenario,
@@ -2039,6 +2053,7 @@ impl ScenarioRunner {
             completed,
             true,
             route.total_length_m,
+            route_risk_score,
             0,
             completed,
             completion_tick,
@@ -2065,6 +2080,7 @@ impl ScenarioRunner {
                     false,
                     false,
                     0.0,
+                    0.0,
                     1,
                     None,
                     0,
@@ -2075,8 +2091,11 @@ impl ScenarioRunner {
                 log_builder.map(|builder| builder.build()),
             );
         };
-        let route = match crate::urban::expand_route_loop(&urban_state.map, &urban_state.route_loop)
-        {
+        let route = match crate::urban::expand_route_loop_with_planner_name(
+            &urban_state.map,
+            &urban_state.route_loop,
+            &urban_state.planner,
+        ) {
             Ok(route) => route,
             Err(error) => {
                 return (
@@ -2085,6 +2104,7 @@ impl ScenarioRunner {
                         0,
                         false,
                         false,
+                        0.0,
                         0.0,
                         1,
                         None,
@@ -2110,6 +2130,7 @@ impl ScenarioRunner {
                     false,
                     true,
                     route.total_length_m,
+                    crate::urban::route_risk_score(&urban_state.map, &route),
                     0,
                     None,
                     0,
@@ -2136,6 +2157,7 @@ impl ScenarioRunner {
                         false,
                         true,
                         route.total_length_m,
+                        crate::urban::route_risk_score(&urban_state.map, &route),
                         0,
                         None,
                         0,
@@ -2156,6 +2178,7 @@ impl ScenarioRunner {
                     false,
                     true,
                     route.total_length_m,
+                    crate::urban::route_risk_score(&urban_state.map, &route),
                     0,
                     None,
                     0,
@@ -2203,6 +2226,7 @@ impl ScenarioRunner {
                     false,
                     true,
                     route.total_length_m,
+                    crate::urban::route_risk_score(&urban_state.map, &route),
                     static_violations.len() as u64,
                     None,
                     0,
@@ -2246,6 +2270,7 @@ impl ScenarioRunner {
                     true,
                     true,
                     route.total_length_m,
+                    crate::urban::route_risk_score(&urban_state.map, &route),
                     0,
                     Some(0),
                     false_positive_count,
@@ -2363,6 +2388,7 @@ impl ScenarioRunner {
                         true,
                         true,
                         route.total_length_m,
+                        crate::urban::route_risk_score(&urban_state.map, &route),
                         0,
                         Some(tick),
                         false_positive_count,
@@ -2394,6 +2420,7 @@ impl ScenarioRunner {
                 false,
                 true,
                 route.total_length_m,
+                crate::urban::route_risk_score(&urban_state.map, &route),
                 0,
                 None,
                 false_positive_count,
@@ -2406,16 +2433,25 @@ impl ScenarioRunner {
     }
 }
 
-fn compute_urban_foundation_metrics(urban_state: &Option<UrbanState>) -> (bool, f64, u64) {
+fn compute_urban_foundation_metrics(urban_state: &Option<UrbanState>) -> (bool, f64, f64, u64) {
     let Some(urban_state) = urban_state else {
-        return (false, 0.0, 0);
+        return (false, 0.0, 0.0, 0);
     };
-    match crate::urban::expand_route_loop(&urban_state.map, &urban_state.route_loop) {
+    match crate::urban::expand_route_loop_with_planner_name(
+        &urban_state.map,
+        &urban_state.route_loop,
+        &urban_state.planner,
+    ) {
         Ok(route) => {
             let violations = crate::urban::judge_route(&urban_state.map, &route);
-            (true, route.total_length_m, violations.len() as u64)
+            (
+                true,
+                route.total_length_m,
+                crate::urban::route_risk_score(&urban_state.map, &route),
+                violations.len() as u64,
+            )
         }
-        Err(_) => (false, 0.0, 1),
+        Err(_) => (false, 0.0, 0.0, 1),
     }
 }
 
@@ -2772,6 +2808,7 @@ fn urban_patrol_metrics(
     success: bool,
     urban_route_planned: bool,
     urban_route_length_m: f64,
+    urban_route_risk_score: f64,
     urban_violation_count: u64,
     urban_patrol_completed: bool,
     urban_time_to_complete_loop: Option<u64>,
@@ -2875,6 +2912,7 @@ fn urban_patrol_metrics(
         realism_profile: None,
         wind: None,
         urban_route_length_m,
+        urban_route_risk_score,
         urban_route_planned,
         urban_violation_count,
         urban_route_completed: urban_patrol_completed,
@@ -2901,6 +2939,7 @@ fn urban_search_metrics(
     bus_detected: bool,
     urban_route_planned: bool,
     urban_route_length_m: f64,
+    urban_route_risk_score: f64,
     urban_violation_count: u64,
     time_to_detect_bus: Option<u64>,
     false_positive_count: u64,
@@ -2916,6 +2955,7 @@ fn urban_search_metrics(
         search_success_without_violation,
         urban_route_planned,
         urban_route_length_m,
+        urban_route_risk_score,
         urban_violation_count,
         false,
         None,

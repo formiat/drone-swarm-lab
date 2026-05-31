@@ -264,6 +264,7 @@ cargo run -p swarm-examples --bin replay -- \
 | Urban Patrol | ✅ Simulation v0 | M65 | One drone follows an ordered road-graph block loop, completes before timeout, records Urban replay events and exports patrol metrics; simulation-only, with no lidar, dynamic obstacles, multi-agent deconfliction, PX4/SITL export, hardware claim, or UI |
 | Urban Search | ✅ Simulation v1 | M66 | One scout follows the Urban road graph and stops on a deterministic mocked bus detector hit; includes `urban-search` DSL validation, `scenarios/urban.search.json`, replay events, regression thresholds, and bus-detection/time/false-positive/distance metrics; still no lidar/raycast, dynamic obstacles, real perception, PX4/SITL export, hardware claim, or UI |
 | Urban Replay / Analysis | ✅ Diagnostic tooling | M67 | Urban replay logs now support route-trace and judge-report artifacts under benchmark packs, timeline filtering, `UrbanViolation.obstacle_id`, a two-agent analysis fixture in `scenarios/urban.multi-agent.json`, and aggregate separation/conflict metrics; still diagnostic only, with no avoidance or physical simulation |
+| Urban Corridor Planner | 🧪 Experimental algorithm delta | M68 | Adds `planner: "corridor-aware"` for Urban route loops, route-risk metrics, `scenarios/urban.corridor-delta.json`, and a small before/after evidence pack; this is mission-level planning, not physical avoidance or PX4 proof |
 | Planner Quality | ✅ Stable | M34 | `RoutePlanner` trait, 2-opt, battery-aware feasibility v2 (ordered-subset feasibility, battery model v2 integration, meaningful runner metrics) |
 | Dynamic Mission Correctness | ✅ Stable | M35/M63 | Mission-specific success semantics (SAR=targets-found, inspection=coverage-threshold, wildfire=mapped-ratio threshold plus failure/unassigned guards), SAR unsupported reasons (cbba=delayed-reconvergence, centralized=static-pre-plan), support matrix tests |
 | Regression Harness v2 | ✅ Stable | M36 | Calibrated thresholds, portability fixes, wildfire/realism suites, failure delta output, and repeated release determinism sweep for `jobs=1/4/14` |
@@ -524,6 +525,9 @@ See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known l
 | inspection (perimeter) | greedy, auction, connectivity-aware | experimental | Battery/time constraint limits coverage; success rate ~0–0.4 |
 | inspection (perimeter) | centralized | experimental | Static plan; moderate coverage |
 | inspection (perimeter) | cbba | experimental | Allocation gap (`max_bundle_size`); bundle-slot fix (M26) improves coverage |
+| urban-patrol | greedy + dijkstra corridor-delta baseline | stable | M68 baseline profile uses shortest route over the same Urban road graph |
+| urban-patrol | greedy + corridor-aware corridor-delta | experimental | M68 lowers route-risk on the synthetic corridor fixture, with longer route/time tradeoff; broader benchmark refresh remains M69 |
+| urban-search | greedy | stable | Static mocked-bus search fixture with deterministic detector |
 
 **Status meanings:**
 - **stable** — success_rate > 0 across standard seeds; suitable for benchmarking.
@@ -615,6 +619,7 @@ points, not a published semver-stable SDK.
 | M65 | ✅ | Urban Patrol v0: one scout follows the ordered `urban-patrol` road-graph loop, completes when all planned segments are traversed without judge violations before timeout, emits Urban replay events, and exports patrol completion/time/distance/efficiency metrics; simulation-only |
 | M66 | ✅ | Urban Search v1: one scout follows the Urban road-graph loop, evaluates a deterministic mocked bus detector, stops on bus detection, emits bus observation/detection/false-positive/search-completion replay events, exports search metrics, validates `urban-search` DSL, and adds a smoke regression gate; simulation-only |
 | M67 | ✅ | Urban Replay / Analysis: replay timeline filters, additive `UrbanViolation.obstacle_id`, route-trace and judge-report artifacts in benchmark packs, two-agent analysis fixture, and diagnostic Urban separation/conflict metrics; no benchmark rerun and no avoidance/control behavior change |
+| M68 | ✅ | Algorithm Depth: `corridor-aware` Urban planner uses corridor width and obstacle-clearance risk to choose a lower-risk route on `scenarios/urban.corridor-delta.json`; docs/support matrix/report exports include the route-risk delta; CBBA/SAR weak rows remain explicitly unsupported/analysis-only |
 
 ---
 
@@ -716,6 +721,15 @@ multi-agent Urban control, route deconfliction, or avoidance. Use
 Running this fixture through `--scenario-suite ... --output-dir ... --replay-log ...`
 produces replay logs plus `urban_analysis/` artifacts with two-agent route
 traces, minimum separation, and route-conflict counts.
+
+M68 adds `scenarios/urban.corridor-delta.json`, a small before/after algorithm
+fixture over one road graph. The `corridor-delta-dijkstra` profile takes the
+shorter narrow shortcut. The `corridor-delta-corridor-aware` profile uses
+`planner: "corridor-aware"` and accepts a longer route with lower
+`urban_route_risk_score`, computed from corridor width and static-obstacle
+clearance. This is a planner-risk proxy for strategy comparison; it is not
+lidar, physical collision probability, dynamic obstacle avoidance, or PX4/SITL
+evidence.
 
 This remains simulation-only: it does not implement lidar/raycast, dynamic
 obstacles, multi-agent route deconfliction, real perception, PX4/SITL export,

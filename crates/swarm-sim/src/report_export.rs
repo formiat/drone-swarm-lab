@@ -99,6 +99,7 @@ pub fn export_json(report: &ComparisonReport) -> Result<String, serde_json::Erro
                     avg_zone_observations: metrics.avg_zone_observations,
                     // v0.64 Urban Foundations
                     avg_urban_route_length_m: metrics.avg_urban_route_length_m,
+                    avg_urban_route_risk_score: metrics.avg_urban_route_risk_score,
                     urban_route_planned_rate: metrics.urban_route_planned_rate,
                     avg_urban_violation_count: metrics.avg_urban_violation_count,
                     urban_route_completed_rate: metrics.urban_route_completed_rate,
@@ -194,6 +195,7 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
         "avg_zone_observations",
         // v0.64 Urban Foundations
         "avg_urban_route_length_m",
+        "avg_urban_route_risk_score",
         "urban_route_planned_rate",
         "avg_urban_violation_count",
         "urban_route_completed_rate",
@@ -282,6 +284,7 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
                     format!("{:.3}", m.avg_zone_observations).as_str(),
                     // v0.64 Urban Foundations
                     format!("{:.3}", m.avg_urban_route_length_m).as_str(),
+                    format!("{:.3}", m.avg_urban_route_risk_score).as_str(),
                     format!("{:.3}", m.urban_route_planned_rate).as_str(),
                     format!("{:.3}", m.avg_urban_violation_count).as_str(),
                     format!("{:.3}", m.urban_route_completed_rate).as_str(),
@@ -380,6 +383,7 @@ struct ReportRow {
     avg_zone_observations: f64,
     // v0.64 Urban Foundations
     avg_urban_route_length_m: f64,
+    avg_urban_route_risk_score: f64,
     urban_route_planned_rate: f64,
     avg_urban_violation_count: f64,
     urban_route_completed_rate: f64,
@@ -563,18 +567,21 @@ pub fn generate_focused_report(reports: &[(String, crate::ComparisonReport)]) ->
                 }
             }
             "urban-patrol" => {
-                out.push_str("| Strategy | Profile | Success | Completion | UrbanRouteLength | UrbanPlanned | UrbanViolations | UrbanCompleted | PatrolCompleted | TimeToLoop | Distance | RouteEfficiency | Replans | MinSeparation | SeparationViolations | RouteConflicts |\n");
-                out.push_str("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n");
+                out.push_str("| Strategy | Profile | Success | Completion | UrbanRouteLength | UrbanRisk | UrbanPlanned | UrbanViolations | UrbanCompleted | PatrolCompleted | TimeToLoop | Distance | RouteEfficiency | Replans | MinSeparation | SeparationViolations | RouteConflicts |\n");
+                out.push_str(
+                    "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n",
+                );
                 for strategy in &report.strategy_names {
                     for profile in &report.profile_names {
                         if let Some(m) = report.results.get(&(strategy.clone(), profile.clone())) {
                             out.push_str(&format!(
-                                "| {} | {} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} |\n",
+                                "| {} | {} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} |\n",
                                 strategy,
                                 profile,
                                 m.success_rate,
                                 m.avg_task_completion_rate,
                                 m.avg_urban_route_length_m,
+                                m.avg_urban_route_risk_score,
                                 m.urban_route_planned_rate,
                                 m.avg_urban_violation_count,
                                 m.urban_route_completed_rate,
@@ -929,6 +936,7 @@ fn compare_aggregate_metrics(
     compare_field!(avg_time_to_map_first_high_risk);
     compare_field!(avg_zone_observations);
     compare_field!(avg_urban_route_length_m);
+    compare_field!(avg_urban_route_risk_score);
     compare_field!(urban_route_planned_rate);
     compare_field!(avg_urban_violation_count);
     compare_field!(urban_route_completed_rate);
@@ -1039,6 +1047,7 @@ mod tests {
         metrics.mission = "urban-patrol".to_owned();
         metrics.scenario = "urban_patrol_small_block".to_owned();
         metrics.avg_urban_route_length_m = 80.0;
+        metrics.avg_urban_route_risk_score = 22.0;
         metrics.urban_route_planned_rate = 1.0;
         metrics.avg_urban_violation_count = 0.0;
         metrics.urban_route_completed_rate = 1.0;
@@ -1087,6 +1096,7 @@ mod tests {
         assert!(csv.contains("mission"));
         assert!(csv.contains("strategy"));
         assert!(csv.contains("avg_urban_route_length_m"));
+        assert!(csv.contains("avg_urban_route_risk_score"));
         assert!(csv.contains("urban_route_planned_rate"));
         assert!(csv.contains("avg_urban_violation_count"));
         assert!(csv.contains("urban_route_completed_rate"));
@@ -1158,6 +1168,7 @@ mod tests {
         let report = make_urban_report();
         let md = export_markdown(&report);
         assert!(md.contains("UrbanRouteLength"));
+        assert!(md.contains("UrbanRisk"));
         assert!(md.contains("UrbanPlanned"));
         assert!(md.contains("UrbanViolations"));
         assert!(md.contains("UrbanCompleted"));
@@ -1207,6 +1218,7 @@ mod tests {
         let focused = generate_focused_report(&[("urban-patrol".to_owned(), report)]);
         assert!(focused.contains("## urban-patrol"));
         assert!(focused.contains("UrbanRouteLength"));
+        assert!(focused.contains("UrbanRisk"));
         assert!(focused.contains("UrbanPlanned"));
         assert!(focused.contains("UrbanViolations"));
         assert!(focused.contains("UrbanCompleted"));

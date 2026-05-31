@@ -130,6 +130,9 @@ pub struct RunMetrics {
     // v0.64 Urban Foundations
     #[serde(default)]
     pub urban_route_length_m: f64,
+    // v0.68 Urban Algorithm Depth
+    #[serde(default)]
+    pub urban_route_risk_score: f64,
     #[serde(default)]
     pub urban_route_planned: bool,
     #[serde(default)]
@@ -253,6 +256,9 @@ pub struct AggregateMetrics {
     // v0.64 Urban Foundations
     #[serde(default)]
     pub avg_urban_route_length_m: f64,
+    // v0.68 Urban Algorithm Depth
+    #[serde(default)]
+    pub avg_urban_route_risk_score: f64,
     #[serde(default)]
     pub urban_route_planned_rate: f64,
     #[serde(default)]
@@ -355,6 +361,7 @@ impl AggregateMetrics {
                 scenario: String::new(),
                 // v0.64 Urban Foundations
                 avg_urban_route_length_m: 0.0,
+                avg_urban_route_risk_score: 0.0,
                 urban_route_planned_rate: 0.0,
                 avg_urban_violation_count: 0.0,
                 urban_route_completed_rate: 0.0,
@@ -436,6 +443,8 @@ impl AggregateMetrics {
         let total_zone_observations: u64 = runs.iter().map(|run| run.zone_observations).sum();
         // v0.64 Urban Foundations
         let total_urban_route_length_m: f64 = runs.iter().map(|run| run.urban_route_length_m).sum();
+        let total_urban_route_risk_score: f64 =
+            runs.iter().map(|run| run.urban_route_risk_score).sum();
         let urban_route_planned_count =
             runs.iter().filter(|run| run.urban_route_planned).count() as f64;
         let total_urban_violation_count: u64 =
@@ -568,6 +577,7 @@ impl AggregateMetrics {
             scenario: String::new(),
             // v0.64 Urban Foundations
             avg_urban_route_length_m: total_urban_route_length_m / n,
+            avg_urban_route_risk_score: total_urban_route_risk_score / n,
             urban_route_planned_rate: urban_route_planned_count / n,
             avg_urban_violation_count: total_urban_violation_count as f64 / n,
             urban_route_completed_rate: urban_route_completed_count / n,
@@ -764,6 +774,11 @@ impl fmt::Display for AggregateMetrics {
         )?;
         writeln!(
             f,
+            "avg_urban_route_risk_score: {:.3}",
+            self.avg_urban_route_risk_score
+        )?;
+        writeln!(
+            f,
             "urban_route_planned_rate: {:.3}",
             self.urban_route_planned_rate
         )?;
@@ -942,6 +957,7 @@ mod tests {
             wind: None,
             // v0.64 Urban Foundations
             urban_route_length_m: 0.0,
+            urban_route_risk_score: 0.0,
             urban_route_planned: false,
             urban_violation_count: 0,
             urban_route_completed: false,
@@ -1074,6 +1090,7 @@ mod tests {
         let mut runs = vec![run(false, None), run(false, None)];
         runs[0].urban_route_planned = true;
         runs[0].urban_route_length_m = 40.0;
+        runs[0].urban_route_risk_score = 12.0;
         runs[0].urban_violation_count = 0;
         runs[0].urban_route_completed = false;
         runs[0].urban_patrol_completed = false;
@@ -1085,6 +1102,7 @@ mod tests {
         runs[0].urban_route_conflict_count = 2;
         runs[1].urban_route_planned = true;
         runs[1].urban_route_length_m = 20.0;
+        runs[1].urban_route_risk_score = 4.0;
         runs[1].urban_violation_count = 2;
         runs[1].urban_route_completed = true;
         runs[1].urban_patrol_completed = true;
@@ -1099,6 +1117,7 @@ mod tests {
         let metrics = AggregateMetrics::from_runs(&runs);
 
         assert_eq!(metrics.avg_urban_route_length_m, 30.0);
+        assert_eq!(metrics.avg_urban_route_risk_score, 8.0);
         assert_eq!(metrics.urban_route_planned_rate, 1.0);
         assert_eq!(metrics.avg_urban_violation_count, 1.0);
         assert_eq!(metrics.urban_route_completed_rate, 0.5);
@@ -1119,8 +1138,10 @@ mod tests {
         run_object.remove("urban_min_agent_separation_m");
         run_object.remove("urban_separation_violation_count");
         run_object.remove("urban_route_conflict_count");
+        run_object.remove("urban_route_risk_score");
 
         let run_metrics: RunMetrics = serde_json::from_value(run_json).unwrap();
+        assert_eq!(run_metrics.urban_route_risk_score, 0.0);
         assert_eq!(run_metrics.urban_min_agent_separation_m, None);
         assert_eq!(run_metrics.urban_separation_violation_count, 0);
         assert_eq!(run_metrics.urban_route_conflict_count, 0);
@@ -1131,8 +1152,10 @@ mod tests {
         aggregate_object.remove("avg_urban_min_agent_separation_m");
         aggregate_object.remove("avg_urban_separation_violation_count");
         aggregate_object.remove("avg_urban_route_conflict_count");
+        aggregate_object.remove("avg_urban_route_risk_score");
 
         let aggregate_metrics: AggregateMetrics = serde_json::from_value(aggregate_json).unwrap();
+        assert_eq!(aggregate_metrics.avg_urban_route_risk_score, 0.0);
         assert_eq!(aggregate_metrics.avg_urban_min_agent_separation_m, 0.0);
         assert_eq!(aggregate_metrics.avg_urban_separation_violation_count, 0.0);
         assert_eq!(aggregate_metrics.avg_urban_route_conflict_count, 0.0);

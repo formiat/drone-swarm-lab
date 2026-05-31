@@ -95,10 +95,13 @@ diagnostic replay/analysis tooling. Future Urban work should reuse this
 road-graph path instead of starting with arbitrary polygons:
 
 - shared types live in `crates/swarm-types/src/urban.rs`;
-- deterministic Dijkstra planning and the initial judge live in
+- deterministic Dijkstra planning, experimental M68 corridor-aware planning,
+  and the initial judge live in
   `crates/swarm-sim/src/urban.rs`;
 - `run_config.urban_state` carries the road graph, route loop, optional
   `start_node`, and planner choice in Scenario DSL;
+- supported Urban planner values are `"dijkstra"` and the experimental
+  `"corridor-aware"` planner;
 - M65 validates `start_node` against `route_loop.nodes[0]` and requires the
   selected alive agent pose to start within `0.01m` of that node;
 - `run_config.urban_search_state` carries M66 bus targets and mocked detector
@@ -110,6 +113,9 @@ road-graph path instead of starting with arbitrary polygons:
 - `scenarios/urban.multi-agent.json` is the portable two-agent analysis
   fixture for replay route traces, judge reports, and separation metrics; it is
   intended to run through scenario-suite mode with replay enabled;
+- `scenarios/urban.corridor-delta.json` is the portable M68 before/after
+  fixture for comparing Dijkstra against the experimental corridor-aware
+  planner;
 - metrics report route planning and patrol execution fields:
   `urban_route_length_m`, `urban_route_planned`,
   `urban_violation_count`, `urban_route_completed`,
@@ -124,6 +130,10 @@ road-graph path instead of starting with arbitrary polygons:
   `urban_separation_violation_count`, and `urban_route_conflict_count`, plus
   aggregate report fields. These are measured from replay traces and are not
   route-deconfliction or avoidance guarantees;
+- M68 route-risk metrics add `urban_route_risk_score` and
+  `avg_urban_route_risk_score`. They are route-planning risk proxies based on
+  corridor width and AABB obstacle clearance, not physical collision
+  probabilities;
 - replay logs expose `UrbanRoutePlanned`, `UrbanSegmentEntered`,
   `UrbanSegmentCompleted`, `UrbanViolation`, `UrbanPatrolCompleted`,
   `BusObserved`, `BusDetected`, `BusFalsePositive`, and
@@ -136,11 +146,12 @@ road-graph path instead of starting with arbitrary polygons:
   `--category urban` for deterministic event inspection.
 
 This is intentionally a mission-level substrate. The M66 detector is mocked and
-distance/probability based. The M67 two-agent fixture is diagnostic only. Do
-not add real lidar/raycast, dynamic obstacles, multi-agent route deconfliction,
-PX4/SITL export, hardware claims, visual UI, or arbitrary polygon dependencies
-as part of this path. Those belong to later milestones with their own tests and
-docs.
+distance/probability based. The M67 two-agent fixture is diagnostic only. The
+M68 corridor-aware planner is a route scoring extension, not physical
+avoidance. Do not add real lidar/raycast, dynamic obstacles, multi-agent route
+deconfliction, PX4/SITL export, hardware claims, visual UI, or arbitrary
+polygon dependencies as part of this path. Those belong to later milestones
+with their own tests and docs.
 
 ## Add A Strategy
 

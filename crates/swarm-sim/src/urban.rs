@@ -11,6 +11,36 @@ use swarm_types::{
 };
 
 pub const URBAN_START_POSE_TOLERANCE_M: f64 = 0.01;
+const CORRIDOR_NEUTRAL_WIDTH_M: f64 = 6.0;
+const CLEARANCE_NEUTRAL_M: f64 = 8.0;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UrbanPlannerMode {
+    Dijkstra,
+    CorridorAware,
+}
+
+impl UrbanPlannerMode {
+    pub fn parse(input: &str) -> Result<Self, UrbanRouteError> {
+        match input.trim().to_ascii_lowercase().as_str() {
+            "dijkstra" => Ok(Self::Dijkstra),
+            "corridor-aware" | "corridor_aware" => Ok(Self::CorridorAware),
+            other => Err(UrbanRouteError::InvalidInput {
+                field: "planner".to_owned(),
+                message: format!(
+                    "Unknown urban planner '{other}'. Expected 'dijkstra' or 'corridor-aware'"
+                ),
+            }),
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Dijkstra => "dijkstra",
+            Self::CorridorAware => "corridor-aware",
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum UrbanRouteError {
@@ -66,6 +96,16 @@ pub fn plan_route(
     from: &UrbanNodeId,
     to: &UrbanNodeId,
 ) -> Result<UrbanPlannedRoute, UrbanRouteError> {
+    plan_route_with_mode(map, from, to, UrbanPlannerMode::Dijkstra)
+}
+
+/// Plan a deterministic path over unblocked Urban road graph edges.
+pub fn plan_route_with_mode(
+    map: &UrbanMap,
+    from: &UrbanNodeId,
+    to: &UrbanNodeId,
+    planner: UrbanPlannerMode,
+) -> Result<UrbanPlannedRoute, UrbanRouteError> {
     ensure_valid_route_inputs(map, from, to)?;
     if from == to {
         return Ok(UrbanPlannedRoute::default());
@@ -106,7 +146,8 @@ pub fn plan_route(
         }
 
         for edge in adjacency.get(&state.node).into_iter().flatten() {
-            let next_cost = state.cost + edge.cost;
+            let edge_cost = planner_edge_cost(map, edge, planner);
+            let next_cost = state.cost + edge_cost;
             let next_hops = state.hops + 1;
             let should_update = match dist.get(&edge.to) {
                 None => true,
@@ -120,7 +161,7 @@ pub fn plan_route(
                     from: edge.from.clone(),
                     to: edge.to.clone(),
                     length_m: edge.length_m,
-                    cost: edge.cost,
+                    cost: edge_cost,
                 };
                 dist.insert(edge.to.clone(), (next_cost, next_hops));
                 prev.insert(edge.to.clone(), (state.node.clone(), segment));
@@ -161,6 +202,25 @@ pub fn expand_route_loop(
     map: &UrbanMap,
     route_loop: &UrbanRouteLoop,
 ) -> Result<UrbanPlannedRoute, UrbanRouteError> {
+    expand_route_loop_with_planner(map, route_loop, UrbanPlannerMode::Dijkstra)
+}
+
+/// Expand an Urban route loop with a named planner from scenario DSL.
+pub fn expand_route_loop_with_planner_name(
+    map: &UrbanMap,
+    route_loop: &UrbanRouteLoop,
+    planner: &str,
+) -> Result<UrbanPlannedRoute, UrbanRouteError> {
+    let planner = UrbanPlannerMode::parse(planner)?;
+    expand_route_loop_with_planner(map, route_loop, planner)
+}
+
+/// Expand an Urban route loop with the selected planner.
+pub fn expand_route_loop_with_planner(
+    map: &UrbanMap,
+    route_loop: &UrbanRouteLoop,
+    planner: UrbanPlannerMode,
+) -> Result<UrbanPlannedRoute, UrbanRouteError> {
     if let Some(error) = map.validate().into_iter().next() {
         return Err(UrbanRouteError::InvalidInput {
             field: format!("map.{}", error.field),
@@ -183,7 +243,7 @@ pub fn expand_route_loop(
 
     let mut segments = Vec::new();
     for pair in loop_nodes.windows(2) {
-        let route = plan_route(map, &pair[0], &pair[1])?;
+        let route = plan_route_with_mode(map, &pair[0], &pair[1], planner)?;
         segments.extend(route.segments);
     }
     Ok(planned_route(segments))
@@ -265,6 +325,16 @@ pub fn judge_route(map: &UrbanMap, route: &UrbanPlannedRoute) -> Vec<UrbanViolat
         }
     }
     violations
+}
+
+/// Compute an additive route risk proxy from corridor width and obstacle clearance.
+pub fn route_risk_score(map: &UrbanMap, route: &UrbanPlannedRoute) -> f64 {
+    route
+        .segments
+        .iter()
+        .filter_map(|segment| map.edge(&segment.edge_id))
+        .map(|edge| edge_risk_score(map, edge))
+        .sum()
 }
 
 /// Interpolate a pose along a planned Urban route segment.
@@ -421,12 +491,111 @@ fn planned_route(segments: Vec<UrbanRouteSegment>) -> UrbanPlannedRoute {
     }
 }
 
+fn planner_edge_cost(map: &UrbanMap, edge: &UrbanEdge, planner: UrbanPlannerMode) -> f64 {
+    match planner {
+        UrbanPlannerMode::Dijkstra => edge.cost,
+        UrbanPlannerMode::CorridorAware => edge.cost + edge_risk_score(map, edge),
+    }
+}
+
+fn edge_risk_score(map: &UrbanMap, edge: &UrbanEdge) -> f64 {
+    let width_penalty = match edge.corridor_width_m {
+        Some(width) if width > 0.0 => CORRIDOR_NEUTRAL_WIDTH_M / width,
+        Some(_) => CORRIDOR_NEUTRAL_WIDTH_M,
+        None => 1.0,
+    };
+    let clearance_penalty = edge_clearance_m(map, edge)
+        .map(|clearance| ((CLEARANCE_NEUTRAL_M - clearance).max(0.0)) / CLEARANCE_NEUTRAL_M)
+        .unwrap_or(0.0);
+    edge.length_m * (width_penalty + clearance_penalty)
+}
+
+fn edge_clearance_m(map: &UrbanMap, edge: &UrbanEdge) -> Option<f64> {
+    let from = map.node(&edge.from).map(|node| node.pose)?;
+    let to = map.node(&edge.to).map(|node| node.pose)?;
+    map.static_obstacles
+        .iter()
+        .map(|obstacle| segment_aabb_clearance(from, to, obstacle.bounds))
+        .min_by(|a, b| a.total_cmp(b))
+}
+
 fn midpoint(from: Pose, to: Pose) -> Pose {
     Pose {
         x: (from.x + to.x) / 2.0,
         y: (from.y + to.y) / 2.0,
         z: (from.z + to.z) / 2.0,
     }
+}
+
+fn segment_aabb_clearance(from: Pose, to: Pose, bounds: swarm_types::Aabb) -> f64 {
+    if bounds.contains(&from) || bounds.contains(&to) || segment_intersects_aabb(from, to, bounds) {
+        return 0.0;
+    }
+
+    let mut clearance = point_aabb_distance(from, bounds).min(point_aabb_distance(to, bounds));
+    for corner in aabb_corners(bounds) {
+        clearance = clearance.min(point_segment_distance(corner, from, to));
+    }
+    clearance
+}
+
+fn point_aabb_distance(point: Pose, bounds: swarm_types::Aabb) -> f64 {
+    let dx = if point.x < bounds.min_x {
+        bounds.min_x - point.x
+    } else if point.x > bounds.max_x {
+        point.x - bounds.max_x
+    } else {
+        0.0
+    };
+    let dy = if point.y < bounds.min_y {
+        bounds.min_y - point.y
+    } else if point.y > bounds.max_y {
+        point.y - bounds.max_y
+    } else {
+        0.0
+    };
+    (dx * dx + dy * dy).sqrt()
+}
+
+fn aabb_corners(bounds: swarm_types::Aabb) -> [Pose; 4] {
+    [
+        Pose {
+            x: bounds.min_x,
+            y: bounds.min_y,
+            ..Default::default()
+        },
+        Pose {
+            x: bounds.min_x,
+            y: bounds.max_y,
+            ..Default::default()
+        },
+        Pose {
+            x: bounds.max_x,
+            y: bounds.min_y,
+            ..Default::default()
+        },
+        Pose {
+            x: bounds.max_x,
+            y: bounds.max_y,
+            ..Default::default()
+        },
+    ]
+}
+
+fn point_segment_distance(point: Pose, from: Pose, to: Pose) -> f64 {
+    let dx = to.x - from.x;
+    let dy = to.y - from.y;
+    let len_sq = dx * dx + dy * dy;
+    if len_sq <= f64::EPSILON {
+        return point.distance_to(&from);
+    }
+    let t = (((point.x - from.x) * dx + (point.y - from.y) * dy) / len_sq).clamp(0.0, 1.0);
+    let projected = Pose {
+        x: from.x + t * dx,
+        y: from.y + t * dy,
+        z: from.z + t * (to.z - from.z),
+    };
+    point.distance_to(&projected)
 }
 
 fn segment_intersects_aabb(from: Pose, to: Pose, bounds: swarm_types::Aabb) -> bool {
@@ -484,13 +653,17 @@ mod tests {
     }
 
     fn edge(id: &str, from: &str, to: &str, cost: f64) -> UrbanEdge {
+        edge_with_width(id, from, to, cost, 4.0)
+    }
+
+    fn edge_with_width(id: &str, from: &str, to: &str, cost: f64, width: f64) -> UrbanEdge {
         UrbanEdge {
             id: UrbanEdgeId::from(id.to_owned()),
             from: UrbanNodeId::from(from.to_owned()),
             to: UrbanNodeId::from(to.to_owned()),
             cost,
             length_m: cost,
-            corridor_width_m: Some(4.0),
+            corridor_width_m: Some(width),
             blocked: false,
         }
     }
@@ -511,6 +684,33 @@ mod tests {
                 edge("e02", "n0", "n2", 25.0),
             ],
             static_obstacles: vec![],
+        }
+    }
+
+    fn corridor_delta_map() -> UrbanMap {
+        UrbanMap {
+            nodes: vec![
+                node("start", 0.0, 0.0),
+                node("goal", 20.0, 0.0),
+                node("safe-a", 0.0, 10.0),
+                node("safe-b", 20.0, 10.0),
+            ],
+            edges: vec![
+                edge_with_width("narrow-shortcut", "start", "goal", 20.0, 1.5),
+                edge_with_width("safe-north-a", "start", "safe-a", 10.0, 8.0),
+                edge_with_width("safe-north-b", "safe-a", "safe-b", 20.0, 8.0),
+                edge_with_width("safe-north-c", "safe-b", "goal", 10.0, 8.0),
+            ],
+            static_obstacles: vec![UrbanStaticObstacle {
+                id: swarm_types::UrbanObstacleId::from("building-near-shortcut".to_owned()),
+                bounds: Aabb {
+                    min_x: 9.0,
+                    min_y: 2.0,
+                    max_x: 11.0,
+                    max_y: 4.0,
+                },
+                label: Some("building".to_owned()),
+            }],
         }
     }
 
@@ -581,6 +781,54 @@ mod tests {
                 &UrbanEdgeId::from("e12".to_owned())
             ]
         );
+    }
+
+    #[test]
+    fn urban_planner_mode_rejects_unknown_value() {
+        let err = UrbanPlannerMode::parse("shortest-and-magic").unwrap_err();
+        assert!(matches!(err, UrbanRouteError::InvalidInput { field, .. } if field == "planner"));
+    }
+
+    #[test]
+    fn corridor_aware_route_prefers_wider_lower_risk_detour() {
+        let map = corridor_delta_map();
+        let from = UrbanNodeId::from("start".to_owned());
+        let to = UrbanNodeId::from("goal".to_owned());
+        let dijkstra = plan_route_with_mode(&map, &from, &to, UrbanPlannerMode::Dijkstra).unwrap();
+        let corridor =
+            plan_route_with_mode(&map, &from, &to, UrbanPlannerMode::CorridorAware).unwrap();
+
+        assert_eq!(dijkstra.segments.len(), 1);
+        assert_eq!(
+            dijkstra.segments[0].edge_id,
+            UrbanEdgeId::from("narrow-shortcut".to_owned())
+        );
+        assert_eq!(
+            corridor
+                .segments
+                .iter()
+                .map(|segment| segment.edge_id.as_ref())
+                .collect::<Vec<_>>(),
+            vec!["safe-north-a", "safe-north-b", "safe-north-c"]
+        );
+        assert!(corridor.total_length_m > dijkstra.total_length_m);
+        assert!(route_risk_score(&map, &corridor) < route_risk_score(&map, &dijkstra));
+        assert!(judge_route(&map, &corridor).is_empty());
+    }
+
+    #[test]
+    fn corridor_aware_handles_missing_width_without_panic() {
+        let mut map = corridor_delta_map();
+        map.edges[0].corridor_width_m = None;
+        let route = plan_route_with_mode(
+            &map,
+            &UrbanNodeId::from("start".to_owned()),
+            &UrbanNodeId::from("goal".to_owned()),
+            UrbanPlannerMode::CorridorAware,
+        )
+        .unwrap();
+        assert!(!route.segments.is_empty());
+        assert!(route_risk_score(&map, &route).is_finite());
     }
 
     #[test]
