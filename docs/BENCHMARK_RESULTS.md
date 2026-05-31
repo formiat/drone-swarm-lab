@@ -82,14 +82,26 @@ graph:
 - `corridor-delta-corridor-aware`: experimental planner that adds route-risk
   penalty from `corridor_width_m` and AABB obstacle clearance.
 
-Expected interpretation:
+Captured artifact:
 
-- Dijkstra should choose the shorter narrow shortcut;
-- corridor-aware should choose the longer safer detour;
-- `avg_urban_route_risk_score` should be lower for corridor-aware;
-- `avg_urban_route_length_m` and `avg_urban_time_to_complete_loop` can be
-  higher for corridor-aware because the planner trades route length for lower
-  static route risk.
+- Output: `results/m68_urban_corridor_delta/`
+- Commit: `87e51a9331b65278f0f1fe5503958ca2ab35a998`
+- Command: `cargo run -p swarm-examples --bin strategy_comparison -- --scenario-suite scenarios/urban.corridor-delta.json --output-dir results/m68_urban_corridor_delta --replay-log results/m68_urban_corridor_delta/replay --jobs 4`
+- Dijkstra result: `avg_urban_route_length_m=40.000`,
+  `avg_urban_route_risk_score=190.000`,
+  `avg_urban_time_to_complete_loop=10.000`
+- Corridor-aware result: `avg_urban_route_length_m=80.000`,
+  `avg_urban_route_risk_score=70.000`,
+  `avg_urban_time_to_complete_loop=20.000`
+
+Interpretation:
+
+- Dijkstra chooses the shorter narrow shortcut;
+- corridor-aware chooses the longer safer detour;
+- `avg_urban_route_risk_score` is lower for corridor-aware;
+- `avg_urban_route_length_m` and `avg_urban_time_to_complete_loop` are higher
+  for corridor-aware because the planner trades route length for lower static
+  route risk.
 
 This delta is intentionally small and scenario-local. It does not prove
 general Urban superiority, multi-agent deconfliction, lidar/CV behavior,

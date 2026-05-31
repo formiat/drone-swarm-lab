@@ -1,0 +1,14 @@
+run_id,agent_id,record_type,tick,segment_index,edge_id,from,to,status,x,y,z
+urban_corridor_delta_dijkstra_0,agent-0,segment,0,0,narrow-shortcut,start,goal,completed,,,
+urban_corridor_delta_dijkstra_0,agent-0,segment,5,1,narrow-shortcut-back,goal,start,completed,,,
+urban_corridor_delta_dijkstra_0,agent-0,pose,0,,,,,,0.000,0.000,0.000
+urban_corridor_delta_dijkstra_0,agent-0,pose,1,,,,,,4.000,0.000,0.000
+urban_corridor_delta_dijkstra_0,agent-0,pose,2,,,,,,8.000,0.000,0.000
+urban_corridor_delta_dijkstra_0,agent-0,pose,3,,,,,,12.000,0.000,0.000
+urban_corridor_delta_dijkstra_0,agent-0,pose,4,,,,,,16.000,0.000,0.000
+urban_corridor_delta_dijkstra_0,agent-0,pose,5,,,,,,20.000,0.000,0.000
+urban_corridor_delta_dijkstra_0,agent-0,pose,6,,,,,,16.000,0.000,0.000
+urban_corridor_delta_dijkstra_0,agent-0,pose,7,,,,,,12.000,0.000,0.000
+urban_corridor_delta_dijkstra_0,agent-0,pose,8,,,,,,8.000,0.000,0.000
+urban_corridor_delta_dijkstra_0,agent-0,pose,9,,,,,,4.000,0.000,0.000
+urban_corridor_delta_dijkstra_0,agent-0,pose,10,,,,,,0.000,0.000,0.000

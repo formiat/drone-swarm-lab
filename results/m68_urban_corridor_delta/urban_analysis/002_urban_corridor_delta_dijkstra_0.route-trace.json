@@ -1,0 +1,139 @@
+{
+  "run_id": "urban_corridor_delta_dijkstra_0",
+  "scenario_name": "urban_corridor_delta_dijkstra",
+  "seed": 0,
+  "agents": [
+    {
+      "agent_id": "agent-0",
+      "planned_edge_ids": [
+        "narrow-shortcut",
+        "narrow-shortcut-back"
+      ],
+      "route_length_m": 40.0,
+      "segments": [
+        {
+          "segment_index": 0,
+          "edge_id": "narrow-shortcut",
+          "from": "start",
+          "to": "goal",
+          "status": "completed",
+          "entered_tick": 0,
+          "completed_tick": 5,
+          "violation_ticks": []
+        },
+        {
+          "segment_index": 1,
+          "edge_id": "narrow-shortcut-back",
+          "from": "goal",
+          "to": "start",
+          "status": "completed",
+          "entered_tick": 5,
+          "completed_tick": 10,
+          "violation_ticks": []
+        }
+      ],
+      "pose_trace": [
+        {
+          "tick": 0,
+          "pose": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "tick": 1,
+          "pose": {
+            "x": 4.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "tick": 2,
+          "pose": {
+            "x": 8.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "tick": 3,
+          "pose": {
+            "x": 12.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "tick": 4,
+          "pose": {
+            "x": 16.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "tick": 5,
+          "pose": {
+            "x": 20.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "tick": 6,
+          "pose": {
+            "x": 16.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "tick": 7,
+          "pose": {
+            "x": 12.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "tick": 8,
+          "pose": {
+            "x": 8.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "tick": 9,
+          "pose": {
+            "x": 4.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "tick": 10,
+          "pose": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        }
+      ]
+    }
+  ],
+  "event_counts": {
+    "route_planned": 1,
+    "segment_entered": 2,
+    "segment_completed": 2,
+    "violation": 0,
+    "patrol_completed": 1,
+    "bus_observed": 0,
+    "bus_detected": 0,
+    "bus_false_positive": 0,
+    "search_completed": 0,
+    "pose_updated": 11
+  }
+}

@@ -1,0 +1,276 @@
+{
+  "schema_version": "urban_analysis.v1",
+  "separation_threshold_m": 5.0,
+  "artifacts": [
+    {
+      "replay_log_index": 0,
+      "run_id": "urban_corridor_delta_dijkstra_0",
+      "scenario_name": "urban_corridor_delta_dijkstra",
+      "route_trace_json": "urban_analysis/000_urban_corridor_delta_dijkstra_0.route-trace.json",
+      "route_trace_csv": "urban_analysis/000_urban_corridor_delta_dijkstra_0.route-trace.csv",
+      "judge_report_json": "urban_analysis/000_urban_corridor_delta_dijkstra_0.judge-report.json",
+      "judge_report_csv": "urban_analysis/000_urban_corridor_delta_dijkstra_0.judge-report.csv",
+      "event_counts": {
+        "route_planned": 1,
+        "segment_entered": 2,
+        "segment_completed": 2,
+        "violation": 0,
+        "patrol_completed": 1,
+        "bus_observed": 0,
+        "bus_detected": 0,
+        "bus_false_positive": 0,
+        "search_completed": 0,
+        "pose_updated": 11
+      },
+      "separation_summary": {
+        "threshold_m": 5.0,
+        "separation_violation_count": 0,
+        "route_conflict_count": 0,
+        "conflicts": []
+      }
+    },
+    {
+      "replay_log_index": 1,
+      "run_id": "urban_corridor_delta_dijkstra_0",
+      "scenario_name": "urban_corridor_delta_dijkstra",
+      "route_trace_json": "urban_analysis/001_urban_corridor_delta_dijkstra_0.route-trace.json",
+      "route_trace_csv": "urban_analysis/001_urban_corridor_delta_dijkstra_0.route-trace.csv",
+      "judge_report_json": "urban_analysis/001_urban_corridor_delta_dijkstra_0.judge-report.json",
+      "judge_report_csv": "urban_analysis/001_urban_corridor_delta_dijkstra_0.judge-report.csv",
+      "event_counts": {
+        "route_planned": 1,
+        "segment_entered": 2,
+        "segment_completed": 2,
+        "violation": 0,
+        "patrol_completed": 1,
+        "bus_observed": 0,
+        "bus_detected": 0,
+        "bus_false_positive": 0,
+        "search_completed": 0,
+        "pose_updated": 11
+      },
+      "separation_summary": {
+        "threshold_m": 5.0,
+        "separation_violation_count": 0,
+        "route_conflict_count": 0,
+        "conflicts": []
+      }
+    },
+    {
+      "replay_log_index": 2,
+      "run_id": "urban_corridor_delta_dijkstra_0",
+      "scenario_name": "urban_corridor_delta_dijkstra",
+      "route_trace_json": "urban_analysis/002_urban_corridor_delta_dijkstra_0.route-trace.json",
+      "route_trace_csv": "urban_analysis/002_urban_corridor_delta_dijkstra_0.route-trace.csv",
+      "judge_report_json": "urban_analysis/002_urban_corridor_delta_dijkstra_0.judge-report.json",
+      "judge_report_csv": "urban_analysis/002_urban_corridor_delta_dijkstra_0.judge-report.csv",
+      "event_counts": {
+        "route_planned": 1,
+        "segment_entered": 2,
+        "segment_completed": 2,
+        "violation": 0,
+        "patrol_completed": 1,
+        "bus_observed": 0,
+        "bus_detected": 0,
+        "bus_false_positive": 0,
+        "search_completed": 0,
+        "pose_updated": 11
+      },
+      "separation_summary": {
+        "threshold_m": 5.0,
+        "separation_violation_count": 0,
+        "route_conflict_count": 0,
+        "conflicts": []
+      }
+    },
+    {
+      "replay_log_index": 3,
+      "run_id": "urban_corridor_delta_dijkstra_0",
+      "scenario_name": "urban_corridor_delta_dijkstra",
+      "route_trace_json": "urban_analysis/003_urban_corridor_delta_dijkstra_0.route-trace.json",
+      "route_trace_csv": "urban_analysis/003_urban_corridor_delta_dijkstra_0.route-trace.csv",
+      "judge_report_json": "urban_analysis/003_urban_corridor_delta_dijkstra_0.judge-report.json",
+      "judge_report_csv": "urban_analysis/003_urban_corridor_delta_dijkstra_0.judge-report.csv",
+      "event_counts": {
+        "route_planned": 1,
+        "segment_entered": 2,
+        "segment_completed": 2,
+        "violation": 0,
+        "patrol_completed": 1,
+        "bus_observed": 0,
+        "bus_detected": 0,
+        "bus_false_positive": 0,
+        "search_completed": 0,
+        "pose_updated": 11
+      },
+      "separation_summary": {
+        "threshold_m": 5.0,
+        "separation_violation_count": 0,
+        "route_conflict_count": 0,
+        "conflicts": []
+      }
+    },
+    {
+      "replay_log_index": 4,
+      "run_id": "urban_corridor_delta_dijkstra_0",
+      "scenario_name": "urban_corridor_delta_dijkstra",
+      "route_trace_json": "urban_analysis/004_urban_corridor_delta_dijkstra_0.route-trace.json",
+      "route_trace_csv": "urban_analysis/004_urban_corridor_delta_dijkstra_0.route-trace.csv",
+      "judge_report_json": "urban_analysis/004_urban_corridor_delta_dijkstra_0.judge-report.json",
+      "judge_report_csv": "urban_analysis/004_urban_corridor_delta_dijkstra_0.judge-report.csv",
+      "event_counts": {
+        "route_planned": 1,
+        "segment_entered": 2,
+        "segment_completed": 2,
+        "violation": 0,
+        "patrol_completed": 1,
+        "bus_observed": 0,
+        "bus_detected": 0,
+        "bus_false_positive": 0,
+        "search_completed": 0,
+        "pose_updated": 11
+      },
+      "separation_summary": {
+        "threshold_m": 5.0,
+        "separation_violation_count": 0,
+        "route_conflict_count": 0,
+        "conflicts": []
+      }
+    },
+    {
+      "replay_log_index": 5,
+      "run_id": "urban_corridor_delta_corridor_aware_0",
+      "scenario_name": "urban_corridor_delta_corridor_aware",
+      "route_trace_json": "urban_analysis/005_urban_corridor_delta_corridor_aware_0.route-trace.json",
+      "route_trace_csv": "urban_analysis/005_urban_corridor_delta_corridor_aware_0.route-trace.csv",
+      "judge_report_json": "urban_analysis/005_urban_corridor_delta_corridor_aware_0.judge-report.json",
+      "judge_report_csv": "urban_analysis/005_urban_corridor_delta_corridor_aware_0.judge-report.csv",
+      "event_counts": {
+        "route_planned": 1,
+        "segment_entered": 6,
+        "segment_completed": 6,
+        "violation": 0,
+        "patrol_completed": 1,
+        "bus_observed": 0,
+        "bus_detected": 0,
+        "bus_false_positive": 0,
+        "search_completed": 0,
+        "pose_updated": 21
+      },
+      "separation_summary": {
+        "threshold_m": 5.0,
+        "separation_violation_count": 0,
+        "route_conflict_count": 0,
+        "conflicts": []
+      }
+    },
+    {
+      "replay_log_index": 6,
+      "run_id": "urban_corridor_delta_corridor_aware_0",
+      "scenario_name": "urban_corridor_delta_corridor_aware",
+      "route_trace_json": "urban_analysis/006_urban_corridor_delta_corridor_aware_0.route-trace.json",
+      "route_trace_csv": "urban_analysis/006_urban_corridor_delta_corridor_aware_0.route-trace.csv",
+      "judge_report_json": "urban_analysis/006_urban_corridor_delta_corridor_aware_0.judge-report.json",
+      "judge_report_csv": "urban_analysis/006_urban_corridor_delta_corridor_aware_0.judge-report.csv",
+      "event_counts": {
+        "route_planned": 1,
+        "segment_entered": 6,
+        "segment_completed": 6,
+        "violation": 0,
+        "patrol_completed": 1,
+        "bus_observed": 0,
+        "bus_detected": 0,
+        "bus_false_positive": 0,
+        "search_completed": 0,
+        "pose_updated": 21
+      },
+      "separation_summary": {
+        "threshold_m": 5.0,
+        "separation_violation_count": 0,
+        "route_conflict_count": 0,
+        "conflicts": []
+      }
+    },
+    {
+      "replay_log_index": 7,
+      "run_id": "urban_corridor_delta_corridor_aware_0",
+      "scenario_name": "urban_corridor_delta_corridor_aware",
+      "route_trace_json": "urban_analysis/007_urban_corridor_delta_corridor_aware_0.route-trace.json",
+      "route_trace_csv": "urban_analysis/007_urban_corridor_delta_corridor_aware_0.route-trace.csv",
+      "judge_report_json": "urban_analysis/007_urban_corridor_delta_corridor_aware_0.judge-report.json",
+      "judge_report_csv": "urban_analysis/007_urban_corridor_delta_corridor_aware_0.judge-report.csv",
+      "event_counts": {
+        "route_planned": 1,
+        "segment_entered": 6,
+        "segment_completed": 6,
+        "violation": 0,
+        "patrol_completed": 1,
+        "bus_observed": 0,
+        "bus_detected": 0,
+        "bus_false_positive": 0,
+        "search_completed": 0,
+        "pose_updated": 21
+      },
+      "separation_summary": {
+        "threshold_m": 5.0,
+        "separation_violation_count": 0,
+        "route_conflict_count": 0,
+        "conflicts": []
+      }
+    },
+    {
+      "replay_log_index": 8,
+      "run_id": "urban_corridor_delta_corridor_aware_0",
+      "scenario_name": "urban_corridor_delta_corridor_aware",
+      "route_trace_json": "urban_analysis/008_urban_corridor_delta_corridor_aware_0.route-trace.json",
+      "route_trace_csv": "urban_analysis/008_urban_corridor_delta_corridor_aware_0.route-trace.csv",
+      "judge_report_json": "urban_analysis/008_urban_corridor_delta_corridor_aware_0.judge-report.json",
+      "judge_report_csv": "urban_analysis/008_urban_corridor_delta_corridor_aware_0.judge-report.csv",
+      "event_counts": {
+        "route_planned": 1,
+        "segment_entered": 6,
+        "segment_completed": 6,
+        "violation": 0,
+        "patrol_completed": 1,
+        "bus_observed": 0,
+        "bus_detected": 0,
+        "bus_false_positive": 0,
+        "search_completed": 0,
+        "pose_updated": 21
+      },
+      "separation_summary": {
+        "threshold_m": 5.0,
+        "separation_violation_count": 0,
+        "route_conflict_count": 0,
+        "conflicts": []
+      }
+    },
+    {
+      "replay_log_index": 9,
+      "run_id": "urban_corridor_delta_corridor_aware_0",
+      "scenario_name": "urban_corridor_delta_corridor_aware",
+      "route_trace_json": "urban_analysis/009_urban_corridor_delta_corridor_aware_0.route-trace.json",
+      "route_trace_csv": "urban_analysis/009_urban_corridor_delta_corridor_aware_0.route-trace.csv",
+      "judge_report_json": "urban_analysis/009_urban_corridor_delta_corridor_aware_0.judge-report.json",
+      "judge_report_csv": "urban_analysis/009_urban_corridor_delta_corridor_aware_0.judge-report.csv",
+      "event_counts": {
+        "route_planned": 1,
+        "segment_entered": 6,
+        "segment_completed": 6,
+        "violation": 0,
+        "patrol_completed": 1,
+        "bus_observed": 0,
+        "bus_detected": 0,
+        "bus_false_positive": 0,
+        "search_completed": 0,
+        "pose_updated": 21
+      },
+      "separation_summary": {
+        "threshold_m": 5.0,
+        "separation_violation_count": 0,
+        "route_conflict_count": 0,
+        "conflicts": []
+      }
+    }
+  ]
+}

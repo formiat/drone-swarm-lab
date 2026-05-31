@@ -1,0 +1,28 @@
+{
+  "timestamp": "2026-05-31T19:19:23.599640051+00:00",
+  "git_commit": "87e51a9331b65278f0f1fe5503958ca2ab35a998",
+  "command_line": "target/debug/strategy_comparison --scenario-suite scenarios/urban.corridor-delta.json --output-dir results/m68_urban_corridor_delta --replay-log results/m68_urban_corridor_delta/replay --jobs 4",
+  "suite_name": "urban-patrol",
+  "schema_version": "0.1",
+  "seed_range_start": 0,
+  "seed_range_end": 0,
+  "strategy_names": [
+    "greedy",
+    "auction",
+    "connectivity-aware",
+    "centralized",
+    "cbba"
+  ],
+  "profile_names": [
+    "urban-patrol/corridor-delta-dijkstra",
+    "urban-patrol/corridor-delta-corridor-aware"
+  ],
+  "metric_schema_version": "0.1",
+  "realism_profile": null,
+  "wind_enabled": false,
+  "pose_noise_m": 0.0,
+  "comms_jitter_ticks": 0,
+  "battery_model": null,
+  "jobs": 4,
+  "build_profile": "debug"
+}

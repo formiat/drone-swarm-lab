@@ -1,0 +1,207 @@
+{
+  "schema_version": "0.2",
+  "run_id": "urban_corridor_delta_dijkstra_0",
+  "seed": 0,
+  "scenario_name": "urban_corridor_delta_dijkstra",
+  "events": [
+    {
+      "type": "urban_route_planned",
+      "agent_id": "agent-0",
+      "tick": 0,
+      "edge_ids": [
+        "narrow-shortcut",
+        "narrow-shortcut-back"
+      ],
+      "route_length_m": 40.0
+    },
+    {
+      "type": "pose_updated",
+      "agent_id": "agent-0",
+      "pose": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "tick": 0
+    },
+    {
+      "type": "urban_segment_entered",
+      "agent_id": "agent-0",
+      "tick": 0,
+      "segment_index": 0,
+      "edge_id": "narrow-shortcut",
+      "from": "start",
+      "to": "goal"
+    },
+    {
+      "type": "tick_start",
+      "tick": 1
+    },
+    {
+      "type": "pose_updated",
+      "agent_id": "agent-0",
+      "pose": {
+        "x": 4.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "tick": 1
+    },
+    {
+      "type": "tick_start",
+      "tick": 2
+    },
+    {
+      "type": "pose_updated",
+      "agent_id": "agent-0",
+      "pose": {
+        "x": 8.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "tick": 2
+    },
+    {
+      "type": "tick_start",
+      "tick": 3
+    },
+    {
+      "type": "pose_updated",
+      "agent_id": "agent-0",
+      "pose": {
+        "x": 12.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "tick": 3
+    },
+    {
+      "type": "tick_start",
+      "tick": 4
+    },
+    {
+      "type": "pose_updated",
+      "agent_id": "agent-0",
+      "pose": {
+        "x": 16.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "tick": 4
+    },
+    {
+      "type": "tick_start",
+      "tick": 5
+    },
+    {
+      "type": "urban_segment_completed",
+      "agent_id": "agent-0",
+      "tick": 5,
+      "segment_index": 0,
+      "edge_id": "narrow-shortcut"
+    },
+    {
+      "type": "urban_segment_entered",
+      "agent_id": "agent-0",
+      "tick": 5,
+      "segment_index": 1,
+      "edge_id": "narrow-shortcut-back",
+      "from": "goal",
+      "to": "start"
+    },
+    {
+      "type": "pose_updated",
+      "agent_id": "agent-0",
+      "pose": {
+        "x": 20.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "tick": 5
+    },
+    {
+      "type": "tick_start",
+      "tick": 6
+    },
+    {
+      "type": "pose_updated",
+      "agent_id": "agent-0",
+      "pose": {
+        "x": 16.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "tick": 6
+    },
+    {
+      "type": "tick_start",
+      "tick": 7
+    },
+    {
+      "type": "pose_updated",
+      "agent_id": "agent-0",
+      "pose": {
+        "x": 12.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "tick": 7
+    },
+    {
+      "type": "tick_start",
+      "tick": 8
+    },
+    {
+      "type": "pose_updated",
+      "agent_id": "agent-0",
+      "pose": {
+        "x": 8.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "tick": 8
+    },
+    {
+      "type": "tick_start",
+      "tick": 9
+    },
+    {
+      "type": "pose_updated",
+      "agent_id": "agent-0",
+      "pose": {
+        "x": 4.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "tick": 9
+    },
+    {
+      "type": "tick_start",
+      "tick": 10
+    },
+    {
+      "type": "urban_segment_completed",
+      "agent_id": "agent-0",
+      "tick": 10,
+      "segment_index": 1,
+      "edge_id": "narrow-shortcut-back"
+    },
+    {
+      "type": "urban_patrol_completed",
+      "agent_id": "agent-0",
+      "tick": 10,
+      "route_length_m": 40.0,
+      "distance_travelled_m": 40.0
+    },
+    {
+      "type": "pose_updated",
+      "agent_id": "agent-0",
+      "pose": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "tick": 10
+    }
+  ]
+}
