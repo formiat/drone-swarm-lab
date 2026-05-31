@@ -1,0 +1,220 @@
+{
+  "name": "Urban Patrol Small Block",
+  "description": "M64 Urban Foundations fixture: one agent, road graph loop, AABB building, and a blocked diagonal edge.",
+  "scenarios": [
+    {
+      "mission": "urban-patrol",
+      "profile": "patrol-small-block",
+      "scenario": {
+        "name": "urban_patrol_small_block",
+        "seed": 0,
+        "agents": [
+          {
+            "id": "agent-0",
+            "role": "scout",
+            "health": "alive",
+            "pose": {
+              "x": 0.0,
+              "y": 0.0
+            },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 1000.0,
+            "generation": 1,
+            "speed": 2.0,
+            "max_range": 1000.0,
+            "battery_drain_rate": 0.0
+          }
+        ],
+        "tasks": [
+          {
+            "id": "urban-waypoint-n1",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": "scout",
+            "expires_at": null,
+            "pose": {
+              "x": 20.0,
+              "y": 0.0
+            },
+            "grid_cell": null,
+            "kind": "waypoint"
+          },
+          {
+            "id": "urban-waypoint-n2",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": "scout",
+            "expires_at": null,
+            "pose": {
+              "x": 20.0,
+              "y": 20.0
+            },
+            "grid_cell": null,
+            "kind": "waypoint"
+          },
+          {
+            "id": "urban-waypoint-n3",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": "scout",
+            "expires_at": null,
+            "pose": {
+              "x": 0.0,
+              "y": 20.0
+            },
+            "grid_cell": null,
+            "kind": "waypoint"
+          },
+          {
+            "id": "urban-waypoint-n0",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": "scout",
+            "expires_at": null,
+            "pose": {
+              "x": 0.0,
+              "y": 0.0
+            },
+            "grid_cell": null,
+            "kind": "waypoint"
+          }
+        ],
+        "ground_nodes": [],
+        "base_station": {
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "run_config": {
+        "max_ticks": 120,
+        "timeout_ticks": 3,
+        "max_unassigned_ticks": 120,
+        "packet_loss_rate": 0.0,
+        "latency_ticks": 0,
+        "latency_per_hop": 0,
+        "failures": [],
+        "dynamic_tasks": [],
+        "partition_events": [],
+        "gossip_interval_ticks": 999,
+        "base_id": null,
+        "enable_movement": true,
+        "tick_duration_ms": 1000,
+        "grid_state": null,
+        "enable_cbba": false,
+        "urban_state": {
+          "map": {
+            "nodes": [
+              {
+                "id": "n0",
+                "pose": {
+                  "x": 0.0,
+                  "y": 0.0
+                }
+              },
+              {
+                "id": "n1",
+                "pose": {
+                  "x": 20.0,
+                  "y": 0.0
+                }
+              },
+              {
+                "id": "n2",
+                "pose": {
+                  "x": 20.0,
+                  "y": 20.0
+                }
+              },
+              {
+                "id": "n3",
+                "pose": {
+                  "x": 0.0,
+                  "y": 20.0
+                }
+              }
+            ],
+            "edges": [
+              {
+                "id": "road-n0-n1",
+                "from": "n0",
+                "to": "n1",
+                "cost": 20.0,
+                "length_m": 20.0,
+                "corridor_width_m": 6.0,
+                "blocked": false
+              },
+              {
+                "id": "road-n1-n2",
+                "from": "n1",
+                "to": "n2",
+                "cost": 20.0,
+                "length_m": 20.0,
+                "corridor_width_m": 6.0,
+                "blocked": false
+              },
+              {
+                "id": "road-n2-n3",
+                "from": "n2",
+                "to": "n3",
+                "cost": 20.0,
+                "length_m": 20.0,
+                "corridor_width_m": 6.0,
+                "blocked": false
+              },
+              {
+                "id": "road-n3-n0",
+                "from": "n3",
+                "to": "n0",
+                "cost": 20.0,
+                "length_m": 20.0,
+                "corridor_width_m": 6.0,
+                "blocked": false
+              },
+              {
+                "id": "blocked-diagonal",
+                "from": "n0",
+                "to": "n2",
+                "cost": 15.0,
+                "length_m": 28.3,
+                "corridor_width_m": 6.0,
+                "blocked": true
+              }
+            ],
+            "static_obstacles": [
+              {
+                "id": "building-center",
+                "bounds": {
+                  "min_x": 8.0,
+                  "min_y": 8.0,
+                  "max_x": 12.0,
+                  "max_y": 12.0
+                },
+                "label": "building"
+              }
+            ]
+          },
+          "route_loop": {
+            "nodes": ["n0", "n1", "n2", "n3", "n0"]
+          },
+          "start_node": "n0",
+          "planner": "dijkstra"
+        }
+      }
+    }
+  ],
+  "schema_version": "0.1"
+}

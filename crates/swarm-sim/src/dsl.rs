@@ -199,6 +199,47 @@ pub fn validate_mission_specific(entry: &ScenarioSuiteEntry) -> Vec<ValidationEr
                 });
             }
         }
+        "urban-patrol" => match &entry.run_config.urban_state {
+            Some(urban_state) => {
+                if urban_state.planner != "dijkstra" {
+                    errors.push(ValidationError {
+                        field: "run_config.urban_state.planner".to_owned(),
+                        message: "Urban planner must be 'dijkstra' in M64".to_owned(),
+                    });
+                }
+                for error in urban_state.map.validate() {
+                    errors.push(ValidationError {
+                        field: format!("run_config.urban_state.map.{}", error.field),
+                        message: error.message,
+                    });
+                }
+                for error in urban_state.map.validate_route_loop(&urban_state.route_loop) {
+                    errors.push(ValidationError {
+                        field: format!("run_config.urban_state.{}", error.field),
+                        message: error.message,
+                    });
+                }
+                match crate::urban::expand_route_loop(&urban_state.map, &urban_state.route_loop) {
+                    Ok(route) => {
+                        let violations = crate::urban::judge_route(&urban_state.map, &route);
+                        for violation in violations {
+                            errors.push(ValidationError {
+                                field: "run_config.urban_state.route_loop".to_owned(),
+                                message: format!("Urban route judge violation: {violation:?}"),
+                            });
+                        }
+                    }
+                    Err(error) => errors.push(ValidationError {
+                        field: "run_config.urban_state.route_loop".to_owned(),
+                        message: error.to_string(),
+                    }),
+                }
+            }
+            None => errors.push(ValidationError {
+                field: "run_config.urban_state".to_owned(),
+                message: "Urban patrol mission requires urban_state".to_owned(),
+            }),
+        },
         _ => {}
     }
 
@@ -322,6 +363,7 @@ fn mission_allows_task_kind(mission: &str, kind: &swarm_types::TaskKind) -> bool
         "inspection" => matches!(kind, swarm_types::TaskKind::InspectionEdge),
         "wildfire" => matches!(kind, swarm_types::TaskKind::MappingZone),
         "sitl" => matches!(kind, swarm_types::TaskKind::Waypoint),
+        "urban-patrol" => matches!(kind, swarm_types::TaskKind::Waypoint),
         "coverage" => matches!(kind, swarm_types::TaskKind::CoverageCell),
         "emergency-mesh" => matches!(
             kind,
@@ -334,8 +376,12 @@ fn mission_allows_task_kind(mission: &str, kind: &swarm_types::TaskKind) -> bool
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runner::UrbanState;
     use crate::scenario::Scenario;
-    use swarm_types::{Agent, Health, Pose, Role, Task, TaskStatus};
+    use swarm_types::{
+        Agent, Health, Pose, Role, Task, TaskKind, TaskStatus, UrbanEdge, UrbanEdgeId, UrbanMap,
+        UrbanNode, UrbanNodeId, UrbanRouteLoop,
+    };
 
     fn make_minimal_entry() -> ScenarioSuiteEntry {
         ScenarioSuiteEntry {
@@ -399,6 +445,72 @@ mod tests {
                 ..Default::default()
             },
         }
+    }
+
+    fn make_urban_entry() -> ScenarioSuiteEntry {
+        let mut entry = make_minimal_entry();
+        entry.mission = "urban-patrol".to_owned();
+        entry.profile = "patrol-small-block".to_owned();
+        entry.scenario.name = "urban_patrol_small_block".to_owned();
+        entry.scenario.tasks[0].kind = Some(TaskKind::Waypoint);
+        entry.scenario.tasks[0].pose = Some(Pose {
+            x: 10.0,
+            y: 0.0,
+            ..Default::default()
+        });
+        entry.run_config.urban_state = Some(UrbanState {
+            map: UrbanMap {
+                nodes: vec![
+                    UrbanNode {
+                        id: UrbanNodeId::from("n0".to_owned()),
+                        pose: Pose {
+                            x: 0.0,
+                            y: 0.0,
+                            ..Default::default()
+                        },
+                    },
+                    UrbanNode {
+                        id: UrbanNodeId::from("n1".to_owned()),
+                        pose: Pose {
+                            x: 10.0,
+                            y: 0.0,
+                            ..Default::default()
+                        },
+                    },
+                ],
+                edges: vec![
+                    UrbanEdge {
+                        id: UrbanEdgeId::from("e01".to_owned()),
+                        from: UrbanNodeId::from("n0".to_owned()),
+                        to: UrbanNodeId::from("n1".to_owned()),
+                        cost: 10.0,
+                        length_m: 10.0,
+                        corridor_width_m: Some(4.0),
+                        blocked: false,
+                    },
+                    UrbanEdge {
+                        id: UrbanEdgeId::from("e10".to_owned()),
+                        from: UrbanNodeId::from("n1".to_owned()),
+                        to: UrbanNodeId::from("n0".to_owned()),
+                        cost: 10.0,
+                        length_m: 10.0,
+                        corridor_width_m: Some(4.0),
+                        blocked: false,
+                    },
+                ],
+                static_obstacles: vec![],
+            },
+            route_loop: UrbanRouteLoop {
+                nodes: vec![
+                    UrbanNodeId::from("n0".to_owned()),
+                    UrbanNodeId::from("n1".to_owned()),
+                    UrbanNodeId::from("n0".to_owned()),
+                ],
+            },
+            start_node: Some(UrbanNodeId::from("n0".to_owned())),
+            planner: "dijkstra".to_owned(),
+        });
+        entry
     }
 
     #[test]
@@ -644,6 +756,53 @@ mod tests {
                 && e.field != "scenario.tasks[1].kind"),
             "Emergency mesh should allow coverage + relay task kinds, got: {errors:?}"
         );
+    }
+
+    #[test]
+    fn validate_urban_patrol_accepts_valid_entry() {
+        let errors = validate_entry(&make_urban_entry());
+        assert!(
+            errors.is_empty(),
+            "Expected valid urban entry, got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn validate_urban_patrol_rejects_missing_urban_state() {
+        let mut entry = make_urban_entry();
+        entry.run_config.urban_state = None;
+        let errors = validate_entry(&entry);
+        assert!(errors
+            .iter()
+            .any(|error| error.field == "run_config.urban_state"));
+    }
+
+    #[test]
+    fn validate_urban_patrol_rejects_unknown_route_node() {
+        let mut entry = make_urban_entry();
+        entry
+            .run_config
+            .urban_state
+            .as_mut()
+            .unwrap()
+            .route_loop
+            .nodes
+            .push(UrbanNodeId::from("missing".to_owned()));
+        let errors = validate_entry(&entry);
+        assert!(errors
+            .iter()
+            .any(|error| error.field == "run_config.urban_state.route_loop.nodes[3]"));
+    }
+
+    #[test]
+    fn validate_urban_patrol_rejects_unknown_edge_endpoint() {
+        let mut entry = make_urban_entry();
+        entry.run_config.urban_state.as_mut().unwrap().map.edges[0].to =
+            UrbanNodeId::from("missing".to_owned());
+        let errors = validate_entry(&entry);
+        assert!(errors
+            .iter()
+            .any(|error| error.field == "run_config.urban_state.map.edges[0].to"));
     }
 
     #[test]

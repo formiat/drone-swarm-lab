@@ -30,6 +30,12 @@ Each simulation run can optionally produce an `EventLog` — a JSON file contain
 | `CbbaConverged` | CBBA reached consensus | `tick` |
 | `CbbaBundleUpdated` | CBBA bundle changed | `agent_id`, `bundle_size`, `tick` |
 
+M64 Urban Foundations does not add simulation replay event variants yet.
+Urban route planning and judge state are exposed through metrics and DSL
+validation first (`urban_route_planned`, `urban_violation_count`,
+`urban_route_length_m`, `urban_route_completed`). Route-progress replay events
+belong with M65 Urban Patrol semantics.
+
 ### Backward Compatibility
 
 Event logs without `schema_version` default to `"0.2"` and are fully backward compatible with the v0.1 format (which only had the first 8 event types).

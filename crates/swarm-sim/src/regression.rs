@@ -947,6 +947,7 @@ mod tests {
             avg_zone_observations: 0.0,
             mission: String::new(),
             scenario: String::new(),
+            ..AggregateMetrics::default()
         }
     }
 

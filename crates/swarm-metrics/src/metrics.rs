@@ -127,6 +127,15 @@ pub struct RunMetrics {
     pub realism_profile: Option<String>,
     #[serde(default)]
     pub wind: Option<(f64, f64, f64)>,
+    // v0.64 Urban Foundations
+    #[serde(default)]
+    pub urban_route_length_m: f64,
+    #[serde(default)]
+    pub urban_route_planned: bool,
+    #[serde(default)]
+    pub urban_violation_count: u64,
+    #[serde(default)]
+    pub urban_route_completed: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -212,6 +221,15 @@ pub struct AggregateMetrics {
     pub mission: String,
     #[serde(default)]
     pub scenario: String,
+    // v0.64 Urban Foundations
+    #[serde(default)]
+    pub avg_urban_route_length_m: f64,
+    #[serde(default)]
+    pub urban_route_planned_rate: f64,
+    #[serde(default)]
+    pub avg_urban_violation_count: f64,
+    #[serde(default)]
+    pub urban_route_completed_rate: f64,
 }
 
 fn percentile_of_sorted(sorted: &[u64], p: f64) -> f64 {
@@ -277,6 +295,11 @@ impl AggregateMetrics {
                 // v0.31 Report identity
                 mission: String::new(),
                 scenario: String::new(),
+                // v0.64 Urban Foundations
+                avg_urban_route_length_m: 0.0,
+                urban_route_planned_rate: 0.0,
+                avg_urban_violation_count: 0.0,
+                urban_route_completed_rate: 0.0,
             };
         }
 
@@ -337,6 +360,14 @@ impl AggregateMetrics {
             .filter(|run| run.time_to_map_first_high_risk.is_some())
             .count() as f64;
         let total_zone_observations: u64 = runs.iter().map(|run| run.zone_observations).sum();
+        // v0.64 Urban Foundations
+        let total_urban_route_length_m: f64 = runs.iter().map(|run| run.urban_route_length_m).sum();
+        let urban_route_planned_count =
+            runs.iter().filter(|run| run.urban_route_planned).count() as f64;
+        let total_urban_violation_count: u64 =
+            runs.iter().map(|run| run.urban_violation_count).sum();
+        let urban_route_completed_count =
+            runs.iter().filter(|run| run.urban_route_completed).count() as f64;
         let mut convergence_ticks: Vec<u64> = runs
             .iter()
             .filter_map(|run| run.cbba_convergence_tick)
@@ -415,6 +446,11 @@ impl AggregateMetrics {
             // v0.31 Report identity: populated by caller after aggregation
             mission: String::new(),
             scenario: String::new(),
+            // v0.64 Urban Foundations
+            avg_urban_route_length_m: total_urban_route_length_m / n,
+            urban_route_planned_rate: urban_route_planned_count / n,
+            avg_urban_violation_count: total_urban_violation_count as f64 / n,
+            urban_route_completed_rate: urban_route_completed_count / n,
         }
     }
 }
@@ -572,6 +608,27 @@ impl fmt::Display for AggregateMetrics {
             "avg_zone_observations: {:.3}",
             self.avg_zone_observations
         )?;
+        // v0.64 Urban Foundations
+        writeln!(
+            f,
+            "avg_urban_route_length_m: {:.3}",
+            self.avg_urban_route_length_m
+        )?;
+        writeln!(
+            f,
+            "urban_route_planned_rate: {:.3}",
+            self.urban_route_planned_rate
+        )?;
+        writeln!(
+            f,
+            "avg_urban_violation_count: {:.3}",
+            self.avg_urban_violation_count
+        )?;
+        writeln!(
+            f,
+            "urban_route_completed_rate: {:.3}",
+            self.urban_route_completed_rate
+        )?;
         // v0.31 Report identity
         writeln!(f, "mission: {}", self.mission)?;
         write!(f, "scenario: {}", self.scenario)
@@ -671,6 +728,11 @@ mod tests {
             // v0.37 Realism Scenario Pack
             realism_profile: None,
             wind: None,
+            // v0.64 Urban Foundations
+            urban_route_length_m: 0.0,
+            urban_route_planned: false,
+            urban_violation_count: 0,
+            urban_route_completed: false,
         }
     }
 
@@ -758,6 +820,26 @@ mod tests {
         assert_eq!(metrics.avg_time_to_find, 0.0);
         assert_eq!(metrics.avg_probability_of_detection, 0.0);
         assert_eq!(metrics.avg_targets_found, 0.0);
+    }
+
+    #[test]
+    fn aggregate_urban_fields() {
+        let mut runs = vec![run(false, None), run(false, None)];
+        runs[0].urban_route_planned = true;
+        runs[0].urban_route_length_m = 40.0;
+        runs[0].urban_violation_count = 0;
+        runs[0].urban_route_completed = false;
+        runs[1].urban_route_planned = true;
+        runs[1].urban_route_length_m = 20.0;
+        runs[1].urban_violation_count = 2;
+        runs[1].urban_route_completed = true;
+
+        let metrics = AggregateMetrics::from_runs(&runs);
+
+        assert_eq!(metrics.avg_urban_route_length_m, 30.0);
+        assert_eq!(metrics.urban_route_planned_rate, 1.0);
+        assert_eq!(metrics.avg_urban_violation_count, 1.0);
+        assert_eq!(metrics.urban_route_completed_rate, 0.5);
     }
 
     #[test]

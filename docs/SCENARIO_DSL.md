@@ -76,7 +76,28 @@ an explicit schema policy update and compatibility tests.
 | `inspection` | `run_config.enable_movement` | Must be `true`; tasks must have `edge_id` |
 | `cbba-stress` | `run_config.enable_cbba` | Must be `true`; `gossip_interval_ticks <= 5` |
 | `sitl` | tasks with `pose` | At least one task must have a `pose` |
+| `urban-patrol` | `run_config.urban_state` | Must include `UrbanMap`, route loop, Dijkstra planner, valid node/edge refs, and waypoint placeholder tasks |
 | `safety` | `run_config.safety_config` | Must have `safety_config` with geofence or no-fly zones |
+
+## Urban Foundations
+
+M64 adds `urban-patrol` as a foundation mission fixture. The DSL uses
+`run_config.urban_state` with:
+
+- `map.nodes[]` — road graph intersections with `id` and `pose`.
+- `map.edges[]` — directed road/corridor segments with `id`, `from`, `to`,
+  `cost`, `length_m`, optional `corridor_width_m`, and `blocked`.
+- `map.static_obstacles[]` — AABB-only static obstacles such as buildings or
+  no-fly rectangles.
+- `route_loop.nodes[]` — ordered graph node ids expanded through deterministic
+  Dijkstra shortest paths.
+- `planner` — currently must be `"dijkstra"`.
+
+The M64 fixture uses `TaskKind::Waypoint` placeholder tasks because full Urban
+Patrol progress/completion semantics are planned for M65. The DSL validates
+graph references and rejects invalid route loops with field-specific errors.
+It does not implement lidar/raycast, bus detection, dynamic obstacles,
+multi-agent route conflicts, arbitrary polygons, or PX4/SITL export.
 
 ## Minimal Example
 
@@ -125,7 +146,7 @@ for err in &errors {
 
 ## Available Scenarios
 
-The repository includes 12 pre-built scenario files in `scenarios/`:
+The repository includes 20 pre-built scenario files in `scenarios/`:
 
 - `coverage.ideal.json` — 5 agents, 3 tasks, ideal network
 - `coverage.safety.json` — coverage with no-fly zone
@@ -138,6 +159,7 @@ The repository includes 12 pre-built scenario files in `scenarios/`:
 - `emergency-mesh.ideal.json` — mesh network with relay
 - `cbba_stress.json` — CBBA convergence under packet loss
 - `sitl.waypoints.json` — SITL waypoints, 1 agent
+- `urban.patrol.json` — M64 Urban road-graph foundation fixture
 
 ## Export / Import
 

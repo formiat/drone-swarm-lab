@@ -3,6 +3,7 @@ const SITL_SETUP: &str = include_str!("../../../docs/SITL_SETUP.md");
 const HARDWARE_READINESS: &str = include_str!("../../../docs/HARDWARE_READINESS.md");
 const EXTENSION_GUIDE: &str = include_str!("../../../docs/EXTENSION_GUIDE.md");
 const REPLAY: &str = include_str!("../../../docs/REPLAY.md");
+const SCENARIO_DSL: &str = include_str!("../../../docs/SCENARIO_DSL.md");
 const STATUS: &str = include_str!("../../../docs/STATUS.md");
 const BENCHMARK_RESULTS: &str = include_str!("../../../docs/BENCHMARK_RESULTS.md");
 const M62_RESULT_README: &str =
@@ -284,4 +285,81 @@ fn extension_guide_documents_platform_extension_boundaries() {
         SITL_SETUP.contains("docs/EXTENSION_GUIDE.md"),
         "SITL setup doc missing extension guide link"
     );
+}
+
+#[test]
+fn m64_docs_describe_urban_foundation_boundaries() {
+    for required in [
+        "Urban Foundations",
+        "M64",
+        "UrbanMap",
+        "scenarios/urban.patrol.json",
+        "AABB static obstacle judge",
+        "no bus detector",
+        "lidar",
+        "dynamic obstacles",
+        "multi-agent deconfliction",
+        "PX4/SITL export",
+    ] {
+        assert!(README.contains(required), "README missing {required}");
+    }
+
+    for required in [
+        "M64 Urban Foundations",
+        "road-graph planning",
+        "urban_route_completed=false",
+        "no benchmark rerun",
+    ] {
+        assert!(STATUS.contains(required), "STATUS missing {required}");
+    }
+
+    for required in [
+        "urban-patrol",
+        "run_config.urban_state",
+        "Dijkstra",
+        "AABB-only static obstacles",
+        "TaskKind::Waypoint",
+        "M65",
+    ] {
+        assert!(
+            SCENARIO_DSL.contains(required),
+            "Scenario DSL doc missing {required}"
+        );
+    }
+
+    for required in [
+        "Urban Mission Path",
+        "crates/swarm-types/src/urban.rs",
+        "crates/swarm-sim/src/urban.rs",
+        "urban_route_planned",
+        "arbitrary polygon dependencies",
+    ] {
+        assert!(
+            EXTENSION_GUIDE.contains(required),
+            "Extension guide missing {required}"
+        );
+    }
+
+    for required in [
+        "M64 Urban Foundations does not add simulation replay event variants yet",
+        "urban_route_planned",
+        "M65 Urban Patrol semantics",
+    ] {
+        assert!(REPLAY.contains(required), "Replay doc missing {required}");
+    }
+
+    for forbidden in [
+        "bus detector implemented",
+        "lidar implemented",
+        "Urban Search complete",
+    ] {
+        assert!(
+            !README.contains(forbidden),
+            "README contains stale claim {forbidden}"
+        );
+        assert!(
+            !STATUS.contains(forbidden),
+            "STATUS contains stale claim {forbidden}"
+        );
+    }
 }

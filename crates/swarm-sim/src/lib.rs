@@ -6,6 +6,7 @@ pub mod report_export;
 pub mod runner;
 pub mod scenario;
 pub mod support_matrix;
+pub mod urban;
 
 pub use benchmark::{
     merged_benchmark_run_id, BenchmarkHarness, BenchmarkOptions, BenchmarkResult, ComparisonReport,
@@ -26,7 +27,8 @@ pub use report_export::{
 };
 pub use runner::{
     DynamicTaskEvent, FailureEvent, InspectionState, PartitionEvent, RunConfig, ScenarioRunner,
-    WildfireState, WildfireZone,
+    UrbanState, WildfireState, WildfireZone,
 };
 pub use scenario::Scenario;
 pub use support_matrix::{classify_support, SupportMatrixEntry, SupportReason, SupportStatus};
+pub use urban::{expand_route_loop, judge_route, plan_route, UrbanRouteError};

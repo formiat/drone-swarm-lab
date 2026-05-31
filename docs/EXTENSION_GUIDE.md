@@ -13,6 +13,7 @@ state machines, MAVLink details, and test-only helpers may still change.
 Use this guide when you want to add:
 
 - a new mission type;
+- a road-graph Urban mission extension built on the M64 foundation;
 - a new allocator or benchmark strategy;
 - a new metric and report field;
 - a replay or report schema field tied to one of those changes.
@@ -85,6 +86,26 @@ Internal or experimental:
 9. Add support-matrix and regression coverage.
    If a strategy/mission pair is intentionally unsupported, record an explicit
    unsupported reason instead of letting the run fail ambiguously.
+
+### Urban Mission Path
+
+M64 adds an Urban foundation that future Urban Patrol/Search work should reuse
+instead of starting with arbitrary polygons:
+
+- shared types live in `crates/swarm-types/src/urban.rs`;
+- deterministic Dijkstra planning and the initial judge live in
+  `crates/swarm-sim/src/urban.rs`;
+- `run_config.urban_state` carries the road graph, route loop and planner
+  choice in Scenario DSL;
+- `scenarios/urban.patrol.json` is the portable fixture for catalog tests;
+- metrics currently report route-planning skeleton fields:
+  `urban_route_length_m`, `urban_route_planned`,
+  `urban_violation_count`, and `urban_route_completed`.
+
+This is intentionally a mission-level substrate. Do not add lidar/raycast, bus
+detection, dynamic obstacles, multi-agent route deconfliction, PX4/SITL export,
+or arbitrary polygon dependencies as part of M64-style foundation work. Those
+belong to later milestones with their own tests and docs.
 
 ## Add A Strategy
 

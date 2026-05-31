@@ -15,6 +15,7 @@ use swarm_runtime::{AgentNode, Coordinator, GridState, NodeTickOutput};
 use swarm_safety::SafetyConfig;
 use swarm_types::{
     AdapterRegistry, AgentId, EdgeId, Health, InspectionGraph, Role, RunState, Task, TaskId,
+    UrbanMap, UrbanNodeId, UrbanRouteLoop,
 };
 
 use crate::{Clock, Scenario};
@@ -147,6 +148,17 @@ pub struct WildfireZone {
     pub priority: u8,
 }
 
+/// Runtime configuration for Urban road-graph foundation scenarios.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct UrbanState {
+    pub map: UrbanMap,
+    pub route_loop: UrbanRouteLoop,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_node: Option<UrbanNodeId>,
+    #[serde(default = "default_urban_planner")]
+    pub planner: String,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct RunConfig {
     pub max_ticks: u64,
@@ -186,6 +198,8 @@ pub struct RunConfig {
     pub inspection_state: Option<InspectionState>,
     #[serde(default)]
     pub wildfire_state: Option<WildfireState>,
+    #[serde(default)]
+    pub urban_state: Option<UrbanState>,
     /// Wind drift per tick as (vx, vy, vz) in m/tick. Applied after movement.
     #[serde(default)]
     pub wind: Option<(f64, f64, f64)>,
@@ -228,6 +242,10 @@ fn default_inspection_threshold() -> f64 {
     0.8
 }
 
+fn default_urban_planner() -> String {
+    "dijkstra".to_owned()
+}
+
 /// Compute mission-specific success and detect unsupported configurations.
 #[allow(clippy::too_many_arguments)]
 fn compute_mission_success(
@@ -241,6 +259,10 @@ fn compute_mission_success(
     grid_state: &Option<swarm_runtime::GridState>,
     inspection_state: &Option<InspectionState>,
     wildfire_state: &Option<WildfireState>,
+    urban_state: &Option<UrbanState>,
+    urban_route_planned: bool,
+    urban_violation_count: u64,
+    urban_route_completed: bool,
     _adapter_complete: bool,
 ) -> (bool, Option<String>) {
     let base_success = all_tasks_assigned
@@ -293,6 +315,12 @@ fn compute_mission_success(
             && all_expected_failures_detected
             && max_task_unassigned_ticks <= max_unassigned_ticks_config;
         return (wildfire_success, None);
+    }
+
+    if urban_state.is_some() {
+        let urban_success =
+            urban_route_planned && urban_violation_count == 0 && urban_route_completed;
+        return (urban_success, None);
     }
 
     // Default (coverage and other missions)
@@ -397,6 +425,10 @@ impl ScenarioRunner {
         mut log_builder: Option<swarm_replay::EventLogBuilder>,
     ) -> (RunMetrics, Option<swarm_replay::EventLog>) {
         let mut inspection_state = config.inspection_state;
+        let urban_state = config.urban_state.clone();
+        let (urban_route_planned, urban_route_length_m, urban_violation_count) =
+            compute_urban_foundation_metrics(&urban_state);
+        let urban_route_completed = false;
         let mut allocator = SafetyAllocator {
             inner: allocator,
             safety_config: config.safety_config.clone(),
@@ -1359,6 +1391,10 @@ impl ScenarioRunner {
             &grid_state,
             &inspection_state,
             &wildfire_state,
+            &urban_state,
+            urban_route_planned,
+            urban_violation_count,
+            urban_route_completed,
             adapter_complete,
         );
 
@@ -1700,9 +1736,27 @@ impl ScenarioRunner {
                 // v0.37 Realism Scenario Pack
                 realism_profile: config.realism_profile.clone(),
                 wind: config.wind,
+                // v0.64 Urban Foundations
+                urban_route_length_m,
+                urban_route_planned,
+                urban_violation_count,
+                urban_route_completed,
             },
             event_log,
         )
+    }
+}
+
+fn compute_urban_foundation_metrics(urban_state: &Option<UrbanState>) -> (bool, f64, u64) {
+    let Some(urban_state) = urban_state else {
+        return (false, 0.0, 0);
+    };
+    match crate::urban::expand_route_loop(&urban_state.map, &urban_state.route_loop) {
+        Ok(route) => {
+            let violations = crate::urban::judge_route(&urban_state.map, &route);
+            (true, route.total_length_m, violations.len() as u64)
+        }
+        Err(_) => (false, 0.0, 1),
     }
 }
 
@@ -1743,7 +1797,7 @@ mod tests {
     use swarm_alloc::{AllocationAgent, AllocationTask, Allocator};
     use swarm_types::{
         Agent, Capability, CellState, Health, InspectionEdge, Pose, Role, SearchGrid, SensorModel,
-        Task, TaskKind, TaskStatus,
+        Task, TaskKind, TaskStatus, UrbanEdge, UrbanEdgeId, UrbanNode,
     };
 
     fn scenario(seed: u64, agent_count: usize, task_count: usize) -> Scenario {
@@ -2176,6 +2230,116 @@ mod tests {
         assert!(
             metrics.cbba_rounds_to_convergence > 0,
             "CBBA did not converge"
+        );
+    }
+
+    #[test]
+    fn urban_foundation_metrics_report_planned_route_without_completion_claim() {
+        let n0 = UrbanNodeId::from("n0".to_owned());
+        let n1 = UrbanNodeId::from("n1".to_owned());
+        let n2 = UrbanNodeId::from("n2".to_owned());
+        let n3 = UrbanNodeId::from("n3".to_owned());
+        let mut scenario = scenario(0, 1, 0);
+        scenario.name = "urban-patrol".to_owned();
+        let run_config = RunConfig {
+            max_ticks: 20,
+            urban_state: Some(UrbanState {
+                map: UrbanMap {
+                    nodes: vec![
+                        UrbanNode {
+                            id: n0.clone(),
+                            pose: Pose {
+                                x: 0.0,
+                                y: 0.0,
+                                ..Default::default()
+                            },
+                        },
+                        UrbanNode {
+                            id: n1.clone(),
+                            pose: Pose {
+                                x: 20.0,
+                                y: 0.0,
+                                ..Default::default()
+                            },
+                        },
+                        UrbanNode {
+                            id: n2.clone(),
+                            pose: Pose {
+                                x: 20.0,
+                                y: 20.0,
+                                ..Default::default()
+                            },
+                        },
+                        UrbanNode {
+                            id: n3.clone(),
+                            pose: Pose {
+                                x: 0.0,
+                                y: 20.0,
+                                ..Default::default()
+                            },
+                        },
+                    ],
+                    edges: vec![
+                        UrbanEdge {
+                            id: UrbanEdgeId::from("road-n0-n1".to_owned()),
+                            from: n0.clone(),
+                            to: n1.clone(),
+                            cost: 20.0,
+                            length_m: 20.0,
+                            corridor_width_m: Some(4.0),
+                            blocked: false,
+                        },
+                        UrbanEdge {
+                            id: UrbanEdgeId::from("road-n1-n2".to_owned()),
+                            from: n1.clone(),
+                            to: n2.clone(),
+                            cost: 20.0,
+                            length_m: 20.0,
+                            corridor_width_m: Some(4.0),
+                            blocked: false,
+                        },
+                        UrbanEdge {
+                            id: UrbanEdgeId::from("road-n2-n3".to_owned()),
+                            from: n2.clone(),
+                            to: n3.clone(),
+                            cost: 20.0,
+                            length_m: 20.0,
+                            corridor_width_m: Some(4.0),
+                            blocked: false,
+                        },
+                        UrbanEdge {
+                            id: UrbanEdgeId::from("road-n3-n0".to_owned()),
+                            from: n3.clone(),
+                            to: n0.clone(),
+                            cost: 20.0,
+                            length_m: 20.0,
+                            corridor_width_m: Some(4.0),
+                            blocked: false,
+                        },
+                    ],
+                    static_obstacles: vec![],
+                },
+                route_loop: UrbanRouteLoop {
+                    nodes: vec![n0.clone(), n1, n2, n3, n0],
+                },
+                start_node: None,
+                planner: "dijkstra".to_owned(),
+            }),
+            ..config(vec![])
+        };
+
+        let metrics = ScenarioRunner::run(&scenario, run_config);
+
+        assert!(metrics.urban_route_planned);
+        assert_eq!(metrics.urban_route_length_m, 80.0);
+        assert_eq!(metrics.urban_violation_count, 0);
+        assert!(
+            !metrics.urban_route_completed,
+            "M64 should not claim Urban Patrol progress completion"
+        );
+        assert!(
+            !metrics.success,
+            "Urban Patrol success waits for M65 progress semantics"
         );
     }
 

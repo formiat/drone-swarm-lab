@@ -97,6 +97,11 @@ pub fn export_json(report: &ComparisonReport) -> Result<String, serde_json::Erro
                     avg_high_priority_zones_mapped: metrics.avg_high_priority_zones_mapped,
                     avg_time_to_map_first_high_risk: metrics.avg_time_to_map_first_high_risk,
                     avg_zone_observations: metrics.avg_zone_observations,
+                    // v0.64 Urban Foundations
+                    avg_urban_route_length_m: metrics.avg_urban_route_length_m,
+                    urban_route_planned_rate: metrics.urban_route_planned_rate,
+                    avg_urban_violation_count: metrics.avg_urban_violation_count,
+                    urban_route_completed_rate: metrics.urban_route_completed_rate,
                 });
             }
         }
@@ -169,6 +174,11 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
         "avg_high_priority_zones_mapped",
         "avg_time_to_map_first_high_risk",
         "avg_zone_observations",
+        // v0.64 Urban Foundations
+        "avg_urban_route_length_m",
+        "urban_route_planned_rate",
+        "avg_urban_violation_count",
+        "urban_route_completed_rate",
     ])?;
 
     for strategy_name in &report.strategy_names {
@@ -236,6 +246,11 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
                     format!("{:.3}", m.avg_high_priority_zones_mapped).as_str(),
                     format!("{:.3}", m.avg_time_to_map_first_high_risk).as_str(),
                     format!("{:.3}", m.avg_zone_observations).as_str(),
+                    // v0.64 Urban Foundations
+                    format!("{:.3}", m.avg_urban_route_length_m).as_str(),
+                    format!("{:.3}", m.urban_route_planned_rate).as_str(),
+                    format!("{:.3}", m.avg_urban_violation_count).as_str(),
+                    format!("{:.3}", m.urban_route_completed_rate).as_str(),
                 ])?;
             }
         }
@@ -313,6 +328,11 @@ struct ReportRow {
     avg_high_priority_zones_mapped: f64,
     avg_time_to_map_first_high_risk: f64,
     avg_zone_observations: f64,
+    // v0.64 Urban Foundations
+    avg_urban_route_length_m: f64,
+    urban_route_planned_rate: f64,
+    avg_urban_violation_count: f64,
+    urban_route_completed_rate: f64,
 }
 
 /// Benchmark run manifest for reproducibility.
@@ -787,6 +807,10 @@ fn compare_aggregate_metrics(
     compare_field!(avg_high_priority_zones_mapped);
     compare_field!(avg_time_to_map_first_high_risk);
     compare_field!(avg_zone_observations);
+    compare_field!(avg_urban_route_length_m);
+    compare_field!(urban_route_planned_rate);
+    compare_field!(avg_urban_violation_count);
+    compare_field!(urban_route_completed_rate);
     compare_field!(mission);
     compare_field!(scenario);
 
@@ -854,6 +878,7 @@ mod tests {
                 avg_zone_observations: 0.0,
                 mission: "sar".to_owned(),
                 scenario: "sar".to_owned(),
+                ..AggregateMetrics::default()
             },
         );
         ComparisonReport {
@@ -885,6 +910,10 @@ mod tests {
         assert!(csv.contains("benchmark_run_id"));
         assert!(csv.contains("mission"));
         assert!(csv.contains("strategy"));
+        assert!(csv.contains("avg_urban_route_length_m"));
+        assert!(csv.contains("urban_route_planned_rate"));
+        assert!(csv.contains("avg_urban_violation_count"));
+        assert!(csv.contains("urban_route_completed_rate"));
     }
 
     #[test]
