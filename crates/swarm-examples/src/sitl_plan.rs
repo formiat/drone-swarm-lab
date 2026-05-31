@@ -148,6 +148,8 @@ pub enum SitlError {
     },
     #[error("replay log write failed {path:?}: {message}")]
     ReplayLogWrite { path: PathBuf, message: String },
+    #[error("replay summary write failed {path:?}: {message}")]
+    ReplaySummaryWrite { path: PathBuf, message: String },
     #[error("multi-agent config read failed {path:?}: {message}")]
     MultiAgentConfigRead { path: PathBuf, message: String },
     #[error("multi-agent config parse failed {path:?}: {message}")]

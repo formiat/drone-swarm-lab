@@ -8,6 +8,7 @@ use swarm_examples::sitl_multi_agent::{
 };
 use swarm_examples::sitl_observability::{format_sitl_summary, read_sitl_event_log};
 use swarm_examples::sitl_plan::{load_sitl_suite, SitlError};
+use swarm_examples::sitl_report::SitlMultiAgentRunReport;
 use swarm_examples::sitl_supervisor::{
     run_live_supervisor, run_mock_supervisor, SupervisorLiveConfig, SupervisorMetrics,
     SupervisorMockConfig,
@@ -128,10 +129,7 @@ fn run() -> Result<(), SitlError> {
                 "completed" | "completed_with_reallocation"
             ) {
                 return Err(SitlError::ConnectionFailed {
-                    message: format!(
-                        "supervisor run finished with final_status '{}'",
-                        report.final_status
-                    ),
+                    message: report_failure_message(&report),
                 });
             }
         }
@@ -556,21 +554,17 @@ fn write_checked_file(
     path: &Path,
     contents: impl AsRef<[u8]>,
     force: bool,
+    map_error: fn(PathBuf, String) -> SitlError,
 ) -> Result<(), SitlError> {
     ensure_output_path_available(path, force)?;
     if let Some(parent) = path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
     {
-        std::fs::create_dir_all(parent).map_err(|error| SitlError::MultiAgentManifestWrite {
-            path: parent.to_path_buf(),
-            message: error.to_string(),
-        })?;
+        std::fs::create_dir_all(parent)
+            .map_err(|error| map_error(parent.to_path_buf(), error.to_string()))?;
     }
-    std::fs::write(path, contents).map_err(|error| SitlError::MultiAgentManifestWrite {
-        path: path.to_path_buf(),
-        message: error.to_string(),
-    })
+    std::fs::write(path, contents).map_err(|error| map_error(path.to_path_buf(), error.to_string()))
 }
 
 fn write_replay_summary_if_requested(paths: &OutputPaths, force: bool) -> Result<(), SitlError> {
@@ -578,13 +572,17 @@ fn write_replay_summary_if_requested(paths: &OutputPaths, force: bool) -> Result
     else {
         return Ok(());
     };
-    let log = read_sitl_event_log(replay_log_path).map_err(|error| SitlError::ReplayLogWrite {
-        path: replay_log_path.to_path_buf(),
-        message: error.to_string(),
-    })?;
+    let log =
+        read_sitl_event_log(replay_log_path).map_err(|error| SitlError::ReplaySummaryWrite {
+            path: summary_path.to_path_buf(),
+            message: format!(
+                "source event log {} read failed: {error}",
+                replay_log_path.display()
+            ),
+        })?;
     let summary =
         format_sitl_summary(&swarm_examples::sitl_observability::summarize_sitl_event_log(&log));
-    write_checked_file(summary_path, summary, force)?;
+    write_checked_file(summary_path, summary, force, replay_summary_write_error)?;
     eprintln!(
         "SITL supervisor replay summary written: {}",
         summary_path.display()
@@ -602,6 +600,7 @@ fn supervisor_exit_code(error: &SitlError) -> u8 {
         SitlError::FeatureMissing { .. } => 20,
         SitlError::RunReportWrite { .. }
         | SitlError::ReplayLogWrite { .. }
+        | SitlError::ReplaySummaryWrite { .. }
         | SitlError::MultiAgentManifestWrite { .. }
         | SitlError::OutputAlreadyExists { .. } => 40,
         SitlError::ConnectionFailed { message } => classify_connection_failure_exit_code(message),
@@ -611,7 +610,17 @@ fn supervisor_exit_code(error: &SitlError) -> u8 {
 
 fn classify_connection_failure_exit_code(message: &str) -> u8 {
     let lower = message.to_ascii_lowercase();
-    if lower.contains("heartbeat")
+    if lower.contains("endpoint")
+        || lower.contains("connection open")
+        || lower.contains("open failed")
+        || lower.contains("transport")
+        || lower.contains("connection refused")
+        || lower.contains("connection failed")
+        || lower.contains("failed to connect")
+        || lower.contains("unable to connect")
+    {
+        20
+    } else if lower.contains("heartbeat")
         || lower.contains("telemetry")
         || lower.contains("progress")
         || lower.contains("timeout")
@@ -635,6 +644,42 @@ fn classify_connection_failure_exit_code(message: &str) -> u8 {
     } else {
         20
     }
+}
+
+fn report_failure_message(report: &SitlMultiAgentRunReport) -> String {
+    let Some(agent) = report
+        .agents
+        .iter()
+        .find(|agent| agent.final_status != "completed")
+    else {
+        return format!(
+            "supervisor run finished with final_status '{}'",
+            report.final_status
+        );
+    };
+    format!(
+        "supervisor run finished with final_status '{}'; failed agent '{}' final_status '{}' error: {}",
+        report.final_status,
+        agent.agent_id,
+        agent.final_status,
+        agent
+            .error
+            .as_deref()
+            .unwrap_or("agent did not report an error")
+    )
+}
+
+#[cfg(test)]
+fn report_failure_exit_code(report: &SitlMultiAgentRunReport) -> u8 {
+    classify_connection_failure_exit_code(&report_failure_message(report))
+}
+
+fn manifest_write_error(path: PathBuf, message: String) -> SitlError {
+    SitlError::MultiAgentManifestWrite { path, message }
+}
+
+fn replay_summary_write_error(path: PathBuf, message: String) -> SitlError {
+    SitlError::ReplaySummaryWrite { path, message }
 }
 
 fn prints_usage(error: &SitlError) -> bool {
@@ -710,7 +755,102 @@ fn write_or_print_manifest(
         println!("{json}");
         return Ok(());
     };
-    write_checked_file(path, json, force)?;
+    write_checked_file(path, json, force, manifest_write_error)?;
     eprintln!("Multi-agent SITL manifest written: {}", path.display());
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    use swarm_examples::sitl_multi_agent::TaskOwnershipSummary;
+    use swarm_examples::sitl_observability::SitlEventLogSummary;
+    use swarm_examples::sitl_report::{
+        SitlMultiAgentAgentReport, SitlMultiAgentReallocationReport,
+    };
+
+    fn report_with_failed_agent(
+        final_status: &str,
+        agent_status: &str,
+        error: &str,
+    ) -> SitlMultiAgentRunReport {
+        SitlMultiAgentRunReport {
+            schema_version: "sitl_multi_agent_run_report.v1".to_owned(),
+            run_id: "run-m60-error-matrix".to_owned(),
+            scenario_path: PathBuf::from("scenario.json"),
+            scenario_name: "m60_error_matrix".to_owned(),
+            config_path: PathBuf::from("config.json"),
+            mission: "sitl".to_owned(),
+            profile: "multi-agent".to_owned(),
+            mode: "connection_execute".to_owned(),
+            agents: vec![SitlMultiAgentAgentReport {
+                agent_id: "agent-0".to_owned(),
+                connection_string: "udp:127.0.0.1:14550".to_owned(),
+                system_id: 1,
+                component_id: 1,
+                lifecycle: "execute".to_owned(),
+                mission_item_count: 2,
+                completed_task_count: usize::from(final_status == "partial_failed"),
+                final_status: agent_status.to_owned(),
+                error: Some(error.to_owned()),
+            }],
+            total_completed_tasks: usize::from(final_status == "partial_failed"),
+            failed_agents: 1,
+            aborted_agents: usize::from(agent_status == "aborted"),
+            overall_status: final_status.to_owned(),
+            event_log_path: Some(PathBuf::from("events.sitl-log.json")),
+            task_ownership: TaskOwnershipSummary::default(),
+            events_summary: SitlEventLogSummary::default(),
+            final_status: final_status.to_owned(),
+            reallocation: SitlMultiAgentReallocationReport::default(),
+            limitations: Vec::new(),
+            known_limitations: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn live_report_failure_exit_code_matrix_uses_agent_error() {
+        let cases = [
+            (
+                "failed",
+                "failed",
+                "connection open failed: endpoint udp:127.0.0.1:14550 unavailable",
+                20,
+            ),
+            (
+                "failed",
+                "failed",
+                "mission upload failed: MAV_MISSION_ERROR",
+                21,
+            ),
+            (
+                "failed",
+                "failed",
+                "command rejected: MAV_CMD_MISSION_START MAV_RESULT_DENIED",
+                21,
+            ),
+            ("failed", "failed", "heartbeat timeout before start", 22),
+            ("failed", "failed", "telemetry timeout after start", 22),
+            ("failed", "failed", "no mission progress before timeout", 22),
+            ("failed", "aborted", "abort failed: command rejected", 23),
+            (
+                "partial_failed",
+                "failed",
+                "agent completed one task then failed after start",
+                30,
+            ),
+        ];
+
+        for (final_status, agent_status, error, expected_code) in cases {
+            let report = report_with_failed_agent(final_status, agent_status, error);
+            assert_eq!(
+                report_failure_exit_code(&report),
+                expected_code,
+                "wrong exit code for error: {error}"
+            );
+            assert!(report_failure_message(&report).contains(error));
+        }
+    }
 }
