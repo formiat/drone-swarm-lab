@@ -240,7 +240,7 @@ cargo run -p swarm-examples --bin replay -- \
 
 | Feature | Status | Since | Notes |
 |---|---|---|---|
-| Benchmark (smoke/quick/full) | ✅ Stable | M21 | `--output-dir`, `--report`, `BenchmarkManifest` |
+| Benchmark (smoke/quick/full) | ✅ Stable | M21/M62 | `--output-dir`, `--report`, `BenchmarkManifest`; current 200-seed release baseline in `results/all_200_jobs14_m62_release/` |
 | Mission DSL | ✅ Stable | M19 | `schema_version: "0.1"`, validation API |
 | Platform Extension Guide | ✅ Stable-ish | M61 | `docs/EXTENSION_GUIDE.md` documents mission, strategy, metrics, crate boundary, and schema-version extension paths without promising semver-stable public API |
 | Safety Layer | ✅ Stable | M20 | `SafetyAllocator` wrapper, no-fly/geofence/separation |
@@ -296,8 +296,10 @@ Exit code is `0` if all suites pass, `1` if any threshold is violated. Failure o
 
 Current status note: the default regression entrypoints passed the repeated
 release sweep at `jobs=1/4/14`. The captured sweep is in
-`results/m56_regression_determinism_2026-05-30/`. Treat historical benchmark
-tables as historical until a fresh publication run updates them.
+`results/m56_regression_determinism_2026-05-30/`. The current simulation
+benchmark refresh is the M62 200-seed release baseline in
+`results/all_200_jobs14_m62_release/`; use it as validation evidence, not as a
+publication-grade 1000-seed statistical run.
 
 ### Portable SITL Checks (M50)
 
@@ -600,6 +602,7 @@ points, not a published semver-stable SDK.
 | M59 | ⚠️ Partial foundation | Live PX4/SIH Failure & Reallocation foundation: explicit `--reupload-on-failure`, runtime release/reassignment events, pending survivor mission replacement planning, report reallocation metrics, and portable fake live-controller coverage; full stepwise live loop, active-survivor abort/clear/upload/execute, and manual real PX4/SIH failure artifact remain separate |
 | M60 | ✅ | PX4/SIH Supervisor Hardening: repeatable local `sitl_supervisor` run layout with `--output-dir` / `--run-id`, explicit `--force` overwrite policy, stable exit codes, report summary fields, replay summaries, and docs/tests for troubleshooting; not hardware readiness |
 | M61 | ✅ | Platform / API Stabilization: `docs/EXTENSION_GUIDE.md`, crate-boundary notes, schema-version policy, docs sync, and test-only mission/strategy/runner extension fixtures; not semver-stable public API |
+| M62 | ✅ | Benchmark / Baseline Refresh: 200-seed release `--mission all --jobs 14` validation baseline for current HEAD in `results/all_200_jobs14_m62_release/`; not a publication-grade 1000-seed run |
 
 ---
 
