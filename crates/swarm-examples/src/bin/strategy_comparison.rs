@@ -589,20 +589,7 @@ fn main() {
 
     // Replay logs
     if let Some(dir) = &cli.replay_log_dir {
-        let path = Path::new(dir);
-        if !path.exists() {
-            std::fs::create_dir_all(path).expect("Failed to create replay log directory");
-        }
-        for log in &all_replay_logs {
-            let file_name = format!("{}.replay.json", log.run_id.replace('/', "_"));
-            let file_path = path.join(&file_name);
-            swarm_replay::write_to_file(log, &file_path).expect("Failed to write replay log");
-        }
-        println!(
-            "Replay logs saved to {} ({} files)",
-            dir,
-            all_replay_logs.len()
-        );
+        write_replay_logs_to_dir(dir, &all_replay_logs);
     }
 
     if let Some(dir) = &cli.output_dir {
@@ -699,6 +686,7 @@ fn run_from_suite(suite_path: &str, cli: &CliArgs) {
     let mut all_mission_names: Vec<String> = Vec::new();
     let mut all_profile_names: Vec<String> = Vec::new();
     let mut all_strategy_names: Vec<String> = Vec::new();
+    let mut all_replay_logs = Vec::new();
     let mut seed_min = u64::MAX;
     let mut seed_max = 0u64;
     let mut total_runs: u64 = 0;
@@ -733,11 +721,14 @@ fn run_from_suite(suite_path: &str, cli: &CliArgs) {
                 all_strategy_names.push(strategy_name.clone());
             }
             let key = (strategy_name, profile_key.clone());
-            let (metrics, _log) = swarm_sim::ScenarioRunner::run_with_log(
+            let (metrics, log) = swarm_sim::ScenarioRunner::run_with_log(
                 &scenario,
                 run_config.clone(),
                 SuiteStrategyWrapper(&mut *strategy),
             );
+            if let Some(log) = log {
+                all_replay_logs.push(log);
+            }
             results.entry(key).or_default().push(metrics);
             total_runs += 1;
         }
@@ -796,13 +787,17 @@ fn run_from_suite(suite_path: &str, cli: &CliArgs) {
             dir,
             &report,
             Some(&suite),
-            &[],
+            &all_replay_logs,
             profile_name.as_deref(),
             cli.jobs,
         ) {
             eprintln!("Failed to write benchmark pack: {}", e);
             std::process::exit(1);
         }
+    }
+
+    if let Some(dir) = &cli.replay_log_dir {
+        write_replay_logs_to_dir(dir, &all_replay_logs);
     }
 
     if let Some(path) = &cli.report_path {
@@ -879,6 +874,22 @@ fn write_benchmark_pack(
     Ok(())
 }
 
+fn write_replay_logs_to_dir(dir: &str, replay_logs: &[swarm_replay::EventLog]) {
+    let path = Path::new(dir);
+    if !path.exists() {
+        std::fs::create_dir_all(path).expect("Failed to create replay log directory");
+    }
+    for (index, log) in replay_logs.iter().enumerate() {
+        let file_name = format!(
+            "{index:03}_{}.replay.json",
+            sanitize_artifact_id(&log.run_id)
+        );
+        let file_path = path.join(&file_name);
+        swarm_replay::write_to_file(log, &file_path).expect("Failed to write replay log");
+    }
+    println!("Replay logs saved to {} ({} files)", dir, replay_logs.len());
+}
+
 #[derive(Serialize)]
 struct UrbanAnalysisManifest {
     schema_version: String,
@@ -903,8 +914,6 @@ fn write_urban_analysis_artifacts(
     output_dir: &str,
     replay_logs: &[swarm_replay::EventLog],
 ) -> Result<(), Box<dyn std::error::Error>> {
-    const SEPARATION_THRESHOLD_M: f64 = 5.0;
-
     let analysis_dir = format!("{output_dir}/urban_analysis");
     let mut artifacts = Vec::new();
     for (index, log) in replay_logs.iter().enumerate() {
@@ -914,11 +923,13 @@ fn write_urban_analysis_artifacts(
         }
 
         std::fs::create_dir_all(&analysis_dir)?;
-        let safe_run_id = format!("{index:03}_{}", log.run_id.replace(['/', '\\', ':'], "_"));
+        let safe_run_id = format!("{index:03}_{}", sanitize_artifact_id(&log.run_id));
         let route_trace = swarm_sim::build_urban_route_trace(log);
         let judge_report = swarm_sim::build_urban_judge_report(log);
-        let separation_summary =
-            swarm_sim::measure_urban_separation(&route_trace, SEPARATION_THRESHOLD_M);
+        let separation_summary = swarm_sim::measure_urban_separation(
+            &route_trace,
+            swarm_sim::URBAN_ANALYSIS_DEFAULT_SEPARATION_THRESHOLD_M,
+        );
 
         let route_trace_json = format!("urban_analysis/{safe_run_id}.route-trace.json");
         let route_trace_csv = format!("urban_analysis/{safe_run_id}.route-trace.csv");
@@ -961,7 +972,7 @@ fn write_urban_analysis_artifacts(
 
     let manifest = UrbanAnalysisManifest {
         schema_version: "urban_analysis.v1".to_owned(),
-        separation_threshold_m: SEPARATION_THRESHOLD_M,
+        separation_threshold_m: swarm_sim::URBAN_ANALYSIS_DEFAULT_SEPARATION_THRESHOLD_M,
         artifacts,
     };
     std::fs::write(
@@ -970,6 +981,10 @@ fn write_urban_analysis_artifacts(
     )?;
     println!("Urban analysis artifacts written to {analysis_dir}");
     Ok(())
+}
+
+fn sanitize_artifact_id(value: &str) -> String {
+    value.replace(['/', '\\', ':'], "_")
 }
 
 fn has_non_pose_urban_events(counts: &swarm_sim::UrbanEventCounts) -> bool {

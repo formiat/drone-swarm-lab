@@ -713,6 +713,9 @@ meant for replay/analysis and separation-conflict checks only; it does not add
 multi-agent Urban control, route deconfliction, or avoidance. Use
 `replay --timeline --category urban` to inspect Urban events and
 `replay --timeline --agent agent-0` to inspect one agent's event stream.
+Running this fixture through `--scenario-suite ... --output-dir ... --replay-log ...`
+produces replay logs plus `urban_analysis/` artifacts with two-agent route
+traces, minimum separation, and route-conflict counts.
 
 This remains simulation-only: it does not implement lidar/raycast, dynamic
 obstacles, multi-agent route deconfliction, real perception, PX4/SITL export,

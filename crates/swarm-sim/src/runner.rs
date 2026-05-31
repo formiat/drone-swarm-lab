@@ -1872,6 +1872,13 @@ impl ScenarioRunner {
             );
         }
 
+        let mut analysis_agent_states = urban_analysis_agent_states(
+            scenario,
+            &agent_id,
+            start_node.pose,
+            config.tick_duration_ms,
+        );
+
         if let Some(ref mut builder) = log_builder {
             builder.push(swarm_replay::Event::UrbanRoutePlanned {
                 agent_id: agent_id.clone(),
@@ -1888,6 +1895,9 @@ impl ScenarioRunner {
                 pose: start_node.pose,
                 tick: 0,
             });
+            for state in &analysis_agent_states {
+                push_urban_analysis_agent_started(builder, state, &urban_state.map, &route);
+            }
         }
 
         let static_violations = crate::urban::judge_route(&urban_state.map, &route);
@@ -2011,6 +2021,9 @@ impl ScenarioRunner {
                         tick,
                     });
                 }
+                for state in &mut analysis_agent_states {
+                    advance_urban_analysis_agent(builder, state, &urban_state.map, &route, tick);
+                }
             }
         }
 
@@ -2020,22 +2033,20 @@ impl ScenarioRunner {
 
         let route_efficiency = route_efficiency(route.total_length_m, total_distance_travelled);
 
-        (
-            urban_patrol_metrics(
-                scenario,
-                total_ticks,
-                completed,
-                true,
-                route.total_length_m,
-                0,
-                completed,
-                completion_tick,
-                total_distance_travelled,
-                route_efficiency,
-                None,
-            ),
-            log_builder.map(|builder| builder.build()),
-        )
+        let metrics = urban_patrol_metrics(
+            scenario,
+            total_ticks,
+            completed,
+            true,
+            route.total_length_m,
+            0,
+            completed,
+            completion_tick,
+            total_distance_travelled,
+            route_efficiency,
+            None,
+        );
+        finish_urban_run_metrics(metrics, log_builder)
     }
 
     fn run_urban_search(
@@ -2586,6 +2597,172 @@ fn current_urban_pose(
     route.segments.get(segment_index).and_then(|segment| {
         crate::urban::pose_along_segment(map, segment, distance_on_segment).ok()
     })
+}
+
+struct UrbanAnalysisAgentState {
+    agent_id: AgentId,
+    offset: swarm_types::Pose,
+    speed_m_per_tick: f64,
+    segment_index: usize,
+    distance_on_segment: f64,
+    completed: bool,
+    total_distance_travelled_m: f64,
+}
+
+fn urban_analysis_agent_states(
+    scenario: &Scenario,
+    primary_agent_id: &AgentId,
+    start_pose: swarm_types::Pose,
+    tick_duration_ms: u64,
+) -> Vec<UrbanAnalysisAgentState> {
+    scenario
+        .agents
+        .iter()
+        .filter(|agent| agent.health == Health::Alive && &agent.id != primary_agent_id)
+        .map(|agent| UrbanAnalysisAgentState {
+            agent_id: agent.id.clone(),
+            offset: swarm_types::Pose {
+                x: agent.pose.x - start_pose.x,
+                y: agent.pose.y - start_pose.y,
+                z: agent.pose.z - start_pose.z,
+            },
+            speed_m_per_tick: speed_m_per_tick(agent, tick_duration_ms),
+            segment_index: 0,
+            distance_on_segment: 0.0,
+            completed: false,
+            total_distance_travelled_m: 0.0,
+        })
+        .collect()
+}
+
+fn push_urban_analysis_agent_started(
+    builder: &mut swarm_replay::EventLogBuilder,
+    state: &UrbanAnalysisAgentState,
+    map: &UrbanMap,
+    route: &UrbanPlannedRoute,
+) {
+    builder.push(swarm_replay::Event::UrbanRoutePlanned {
+        agent_id: state.agent_id.clone(),
+        tick: 0,
+        edge_ids: route
+            .segments
+            .iter()
+            .map(|segment| segment.edge_id.clone())
+            .collect(),
+        route_length_m: route.total_length_m,
+    });
+    if let Some(pose) = current_urban_pose(map, route, 0, 0.0, false) {
+        builder.push(swarm_replay::Event::PoseUpdated {
+            agent_id: state.agent_id.clone(),
+            pose: offset_urban_analysis_pose(pose, state),
+            tick: 0,
+        });
+    }
+    if let Some(first_segment) = route.segments.first() {
+        push_segment_entered(builder, &state.agent_id, 0, 0, first_segment);
+    } else {
+        builder.push(swarm_replay::Event::UrbanPatrolCompleted {
+            agent_id: state.agent_id.clone(),
+            tick: 0,
+            route_length_m: route.total_length_m,
+            distance_travelled_m: 0.0,
+        });
+    }
+}
+
+fn advance_urban_analysis_agent(
+    builder: &mut swarm_replay::EventLogBuilder,
+    state: &mut UrbanAnalysisAgentState,
+    map: &UrbanMap,
+    route: &UrbanPlannedRoute,
+    tick: u64,
+) {
+    if state.completed {
+        return;
+    }
+
+    let mut remaining = state.speed_m_per_tick;
+    while remaining > 0.0 && state.segment_index < route.segments.len() {
+        let segment = &route.segments[state.segment_index];
+        let segment_remaining = (segment.length_m - state.distance_on_segment).max(0.0);
+        if remaining + f64::EPSILON >= segment_remaining {
+            state.total_distance_travelled_m += segment_remaining;
+            remaining -= segment_remaining;
+            state.distance_on_segment = segment.length_m;
+            builder.push(swarm_replay::Event::UrbanSegmentCompleted {
+                agent_id: state.agent_id.clone(),
+                tick,
+                segment_index: state.segment_index,
+                edge_id: segment.edge_id.clone(),
+            });
+            state.segment_index += 1;
+            if state.segment_index == route.segments.len() {
+                state.completed = true;
+                builder.push(swarm_replay::Event::UrbanPatrolCompleted {
+                    agent_id: state.agent_id.clone(),
+                    tick,
+                    route_length_m: route.total_length_m,
+                    distance_travelled_m: state.total_distance_travelled_m,
+                });
+                break;
+            }
+            state.distance_on_segment = 0.0;
+            push_segment_entered(
+                builder,
+                &state.agent_id,
+                tick,
+                state.segment_index,
+                &route.segments[state.segment_index],
+            );
+        } else {
+            state.distance_on_segment += remaining;
+            state.total_distance_travelled_m += remaining;
+            remaining = 0.0;
+        }
+    }
+
+    if let Some(pose) = current_urban_pose(
+        map,
+        route,
+        state.segment_index,
+        state.distance_on_segment,
+        state.completed,
+    ) {
+        builder.push(swarm_replay::Event::PoseUpdated {
+            agent_id: state.agent_id.clone(),
+            pose: offset_urban_analysis_pose(pose, state),
+            tick,
+        });
+    }
+}
+
+fn offset_urban_analysis_pose(
+    pose: swarm_types::Pose,
+    state: &UrbanAnalysisAgentState,
+) -> swarm_types::Pose {
+    swarm_types::Pose {
+        x: pose.x + state.offset.x,
+        y: pose.y + state.offset.y,
+        z: pose.z + state.offset.z,
+    }
+}
+
+fn finish_urban_run_metrics(
+    mut metrics: RunMetrics,
+    log_builder: Option<swarm_replay::EventLogBuilder>,
+) -> (RunMetrics, Option<swarm_replay::EventLog>) {
+    let event_log = log_builder.map(|builder| builder.build());
+    if let Some(log) = &event_log {
+        let trace = crate::urban_analysis::build_urban_route_trace(log);
+        let separation = crate::urban_analysis::measure_urban_separation(
+            &trace,
+            crate::urban_analysis::URBAN_ANALYSIS_DEFAULT_SEPARATION_THRESHOLD_M,
+        );
+        metrics.urban_min_agent_separation_m = separation.min_separation_m;
+        metrics.urban_separation_violation_count = separation.separation_violation_count;
+        metrics.urban_route_conflict_count = separation.route_conflict_count;
+    }
+    (metrics, event_log)
 }
 
 #[allow(clippy::too_many_arguments)]

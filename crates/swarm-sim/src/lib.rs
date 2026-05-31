@@ -42,5 +42,5 @@ pub use urban_analysis::{
     write_urban_route_trace_csv, write_urban_route_trace_json, UrbanAgentRouteTrace,
     UrbanEventCounts, UrbanJudgeReport, UrbanJudgeViolationRecord, UrbanPoseTracePoint,
     UrbanRouteConflict, UrbanRouteTrace, UrbanSegmentStatus, UrbanSeparationSummary,
-    UrbanTraceSegment,
+    UrbanTraceSegment, URBAN_ANALYSIS_DEFAULT_SEPARATION_THRESHOLD_M,
 };

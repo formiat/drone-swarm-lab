@@ -116,5 +116,47 @@ mod tests {
         let route =
             swarm_sim::expand_route_loop(&urban_state.map, &urban_state.route_loop).unwrap();
         assert!(swarm_sim::judge_route(&urban_state.map, &route).is_empty());
+
+        let (metrics, log) = swarm_sim::ScenarioRunner::run_with_log(
+            &entry.scenario,
+            entry.run_config.clone(),
+            swarm_alloc::GreedyAllocator,
+        );
+        let log = log.expect("urban multi-agent run should produce replay log");
+        let trace = swarm_sim::build_urban_route_trace(&log);
+        assert_eq!(trace.agents.len(), 2);
+        assert!(
+            trace
+                .agents
+                .iter()
+                .all(|agent| !agent.pose_trace.is_empty()),
+            "each analysis agent should have pose trace data"
+        );
+        let separation = swarm_sim::measure_urban_separation(
+            &trace,
+            swarm_sim::URBAN_ANALYSIS_DEFAULT_SEPARATION_THRESHOLD_M,
+        );
+        assert_eq!(
+            metrics.urban_min_agent_separation_m,
+            separation.min_separation_m
+        );
+        assert_eq!(
+            metrics.urban_separation_violation_count,
+            separation.separation_violation_count
+        );
+        assert_eq!(
+            metrics.urban_route_conflict_count,
+            separation.route_conflict_count
+        );
+        assert!(
+            separation
+                .min_separation_m
+                .is_some_and(|distance| distance > 0.0),
+            "two-agent fixture should produce a meaningful separation measurement"
+        );
+        assert!(
+            separation.route_conflict_count > 0,
+            "two-agent fixture should produce route-conflict measurements"
+        );
     }
 }

@@ -77,6 +77,61 @@ fn strategy_comparison_output_contains_results() {
 }
 
 #[test]
+fn strategy_comparison_suite_writes_multi_agent_urban_analysis_artifacts() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let output_dir = tmp.path().join("pack");
+    let replay_dir = tmp.path().join("replay");
+    let scenario_suite = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../scenarios/urban.multi-agent.json"
+    );
+
+    let output = run_strategy_comparison(&[
+        "--scenario-suite",
+        scenario_suite,
+        "--output-dir",
+        output_dir.to_str().unwrap(),
+        "--replay-log",
+        replay_dir.to_str().unwrap(),
+    ]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "strategy_comparison suite run failed: {stderr}"
+    );
+
+    let replay_count = std::fs::read_dir(&replay_dir).unwrap().count();
+    assert_eq!(
+        replay_count, 5,
+        "one replay log per strategy should be written"
+    );
+
+    let manifest_path = output_dir.join("urban_analysis").join("manifest.json");
+    assert!(manifest_path.exists(), "urban analysis manifest missing");
+    let manifest: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&manifest_path).unwrap()).unwrap();
+    let artifacts = manifest["artifacts"].as_array().unwrap();
+    assert_eq!(artifacts.len(), 5);
+    assert!(
+        artifacts.iter().all(
+            |artifact| artifact["separation_summary"]["min_separation_m"]
+                .as_f64()
+                .is_some_and(|distance| distance > 0.0)
+        ),
+        "each artifact should contain measured multi-agent separation"
+    );
+
+    let route_trace_path = output_dir.join(
+        artifacts[0]["route_trace_json"]
+            .as_str()
+            .expect("route trace path is recorded"),
+    );
+    let route_trace: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(route_trace_path).unwrap()).unwrap();
+    assert_eq!(route_trace["agents"].as_array().unwrap().len(), 2);
+}
+
+#[test]
 fn strategy_comparison_backward_compat_no_output_dir() {
     let tmp = tempfile::TempDir::new().unwrap();
     let json_path = tmp.path().join("bench_compat.json");

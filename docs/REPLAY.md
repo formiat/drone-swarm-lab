@@ -239,9 +239,9 @@ logs are written:
 
 | Artifact | Description |
 |---|---|
-| `urban_analysis/manifest.json` | Lists every Urban replay log with its derived route trace and judge report files. |
+| `urban_analysis/manifest.json` | Lists every Urban replay log with its derived route trace and judge report files, event counts, minimum inter-agent separation, and route-conflict counts. |
 | `urban_analysis/<run>.route-trace.json` / `.csv` | Planned Urban route, per-agent segment enter/complete state, pose samples, and segment status. |
-| `urban_analysis/<run>.judge-report.json` / `.csv` | Urban violation records, obstacle ids when present, event counts, minimum inter-agent separation, and route-conflict counts. |
+| `urban_analysis/<run>.judge-report.json` / `.csv` | Urban violation records and obstacle ids when present. Summary counts and separation/conflict measurements live in `urban_analysis/manifest.json`. |
 
 The two-agent fixture `scenarios/urban.multi-agent.json` exists to exercise
 analysis and separation metrics. It is not a multi-agent Urban control or

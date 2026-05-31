@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use swarm_replay::{Event, EventLog};
 use swarm_types::{AgentId, Pose, UrbanEdgeId, UrbanNodeId, UrbanObstacleId};
 
+pub const URBAN_ANALYSIS_DEFAULT_SEPARATION_THRESHOLD_M: f64 = 5.0;
+
 /// Text-artifact route trace reconstructed from an Urban replay log.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct UrbanRouteTrace {

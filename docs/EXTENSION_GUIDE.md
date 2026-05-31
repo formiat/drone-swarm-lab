@@ -108,7 +108,8 @@ road-graph path instead of starting with arbitrary polygons:
 - `scenarios/urban.search.json` is the portable fixture for mocked bus-search
   catalog and regression tests;
 - `scenarios/urban.multi-agent.json` is the portable two-agent analysis
-  fixture for replay route traces, judge reports, and separation metrics;
+  fixture for replay route traces, judge reports, and separation metrics; it is
+  intended to run through scenario-suite mode with replay enabled;
 - metrics report route planning and patrol execution fields:
   `urban_route_length_m`, `urban_route_planned`,
   `urban_violation_count`, `urban_route_completed`,

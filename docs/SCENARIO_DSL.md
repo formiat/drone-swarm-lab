@@ -143,6 +143,9 @@ M67 adds `scenarios/urban.multi-agent.json` as a deterministic two-agent Urban
 analysis fixture. It uses the same `urban-patrol` mission and road-graph
 contract, but includes two scout agents so replay analysis can measure
 inter-agent separation and route conflicts from trace data.
+When run through `strategy_comparison --scenario-suite ... --output-dir ... --replay-log ...`,
+the fixture produces replay logs and `urban_analysis/` artifacts containing two
+agent route traces plus manifest-level separation/conflict measurements.
 
 This fixture is not a new control mode. It does not implement route
 deconfliction, collision avoidance, dynamic obstacles, physical simulation,
