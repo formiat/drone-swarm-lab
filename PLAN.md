@@ -67,8 +67,9 @@ Notion-задача и GitLab/MR в запросе не указаны, поэт
 
 1. Add a size guard before moving code:
    - create a small repository-local check, for example `scripts/check-rs-file-lines.sh`;
+   - count each file independently, not via aggregate `xargs wc -l`, so the `wc` `total` row cannot affect the result;
    - fail on any `.rs` file above 2000 lines;
-   - report files above 1000 lines as warnings or as a configurable stricter mode;
+   - report files above 1000 lines as warnings and support a configurable stricter mode that turns those warnings into failures;
    - document the command in `README.md` or `docs/STATUS.md` only if it becomes part of regular maintenance.
 
 2. Split `crates/swarm-sim/src/runner.rs` into a `runner/` module directory:
@@ -144,9 +145,15 @@ Notion-задача и GitLab/MR в запросе не указаны, поэт
 Planned together with the main functional changes:
 
 - line-count guard:
-  - `rg --files -g '*.rs' | xargs wc -l | awk '$1 > 2000 {print; bad=1} END {exit bad}'`;
+  - hard fail for files above 2000 lines:
+    `rg --files -g '*.rs' | while IFS= read -r f; do printf '%s %s\n' "$(wc -l < "$f")" "$f"; done | awk '$1 > 2000 {print; bad=1} END {exit bad}'`;
+  - warning mode for files above 1000 lines:
+    `rg --files -g '*.rs' | while IFS= read -r f; do printf '%s %s\n' "$(wc -l < "$f")" "$f"; done | awk '$1 > 1000 {print}'`;
+  - strict variant for files above 1000 lines:
+    `rg --files -g '*.rs' | while IFS= read -r f; do printf '%s %s\n' "$(wc -l < "$f")" "$f"; done | awk '$1 > 1000 {print; bad=1} END {exit bad}'`;
 - formatting:
-  - `cargo fmt --all`;
+  - verification command: `cargo fmt --all --check`;
+  - developer action before committing Rust moves: `cargo fmt --all`;
 - linting:
   - `make clippy`;
 - focused crate tests after mandatory splits:
