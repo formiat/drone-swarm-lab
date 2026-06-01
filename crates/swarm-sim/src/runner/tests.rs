@@ -1,3 +1,6 @@
+#![allow(unused_imports)]
+#![allow(clippy::module_inception)]
+use super::*;
 #[cfg(test)]
 mod tests {
     use super::*;

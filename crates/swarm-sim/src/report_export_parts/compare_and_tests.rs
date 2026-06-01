@@ -1,4 +1,8 @@
-fn compare_aggregate_metrics(
+#![allow(unused_imports)]
+use super::*;
+use swarm_metrics::AggregateMetrics;
+
+pub(super) fn compare_aggregate_metrics(
     key: &(String, String),
     a: &AggregateMetrics,
     b: &AggregateMetrics,
@@ -86,6 +90,7 @@ fn compare_aggregate_metrics(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ComparisonReport;
     use std::collections::HashMap;
     use swarm_metrics::AggregateMetrics;
 

@@ -1,7 +1,12 @@
+#![allow(unused_imports)]
+#![allow(clippy::module_inception)]
+use super::*;
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::event_log::EventLogBuilder;
+    use crate::Event;
+    use crate::EventLog;
     use swarm_types::{AgentId, Pose, TaskId, UrbanEdgeId, UrbanNodeId};
 
     #[test]

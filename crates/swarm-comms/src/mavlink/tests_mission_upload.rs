@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+use super::*;
 #[cfg(all(test, feature = "mavlink-transport"))]
 mod mission_upload_tests {
     use super::*;

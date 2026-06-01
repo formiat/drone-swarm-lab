@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+use super::*;
 #[cfg(feature = "mavlink-transport")]
 pub fn arm_command(target_system: u8, target_component: u8) -> CommonMessage {
     command_long(
@@ -71,7 +73,7 @@ fn command_long(
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn send_command_and_wait_observed<C, O>(
+pub(super) fn send_command_and_wait_observed<C, O>(
     conn: &mut C,
     msg: CommonMessage,
     timeout: Duration,
@@ -140,7 +142,7 @@ fn command_id(msg: &CommonMessage) -> Option<common::MavCmd> {
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn wait_command_ack<C: MavlinkVehicleConnection>(
+pub(super) fn wait_command_ack<C: MavlinkVehicleConnection>(
     conn: &mut C,
     command: common::MavCmd,
     timeout: Duration,
@@ -170,7 +172,7 @@ fn wait_command_ack<C: MavlinkVehicleConnection>(
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn wait_for_post_start_heartbeat<C: MavlinkVehicleConnection>(
+pub(super) fn wait_for_post_start_heartbeat<C: MavlinkVehicleConnection>(
     conn: &mut C,
     timeout: Duration,
 ) -> Result<(), MavlinkLifecycleError> {
@@ -215,7 +217,7 @@ where
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn send_abort_command<C: MavlinkVehicleConnection>(
+pub(super) fn send_abort_command<C: MavlinkVehicleConnection>(
     conn: &mut C,
     options: &MissionLifecycleOptions,
 ) -> AbortCommandResult {
@@ -224,7 +226,7 @@ fn send_abort_command<C: MavlinkVehicleConnection>(
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn send_abort_command_observed<C, O>(
+pub(super) fn send_abort_command_observed<C, O>(
     conn: &mut C,
     options: &MissionLifecycleOptions,
     observer: &mut O,
@@ -263,7 +265,7 @@ where
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn attach_abort_result(
+pub(super) fn attach_abort_result(
     error: MavlinkLifecycleError,
     abort_result: AbortCommandResult,
 ) -> MavlinkLifecycleError {
@@ -295,7 +297,9 @@ fn mission_error_to_lifecycle_error(error: MavlinkMissionError) -> MavlinkLifecy
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn mission_error_to_telemetry_error(error: MavlinkMissionError) -> MavlinkTelemetryError {
+pub(super) fn mission_error_to_telemetry_error(
+    error: MavlinkMissionError,
+) -> MavlinkTelemetryError {
     match error {
         MavlinkMissionError::ReadFailed(message) => MavlinkTelemetryError::ReadFailed(message),
         other => MavlinkTelemetryError::ReadFailed(other.to_string()),
@@ -331,7 +335,7 @@ impl Transport for MavlinkTransport {
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn normalize_mavlink_connection_string(connection_string: &str) -> Cow<'_, str> {
+pub(super) fn normalize_mavlink_connection_string(connection_string: &str) -> Cow<'_, str> {
     let connection_string = connection_string.trim();
     if let Some(rest) = connection_string.strip_prefix("udp:") {
         return Cow::Owned(format!("udpin:{rest}"));
@@ -343,7 +347,7 @@ fn normalize_mavlink_connection_string(connection_string: &str) -> Cow<'_, str> 
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn reject_raw_transport_send(_msg: RawMessage) -> Result<(), MavlinkError> {
+pub(super) fn reject_raw_transport_send(_msg: RawMessage) -> Result<(), MavlinkError> {
     Err(MavlinkError::UnsupportedRawTransportSend)
 }
 

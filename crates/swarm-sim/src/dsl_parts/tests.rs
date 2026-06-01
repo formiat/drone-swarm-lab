@@ -1,8 +1,12 @@
+#![allow(unused_imports)]
+#![allow(clippy::module_inception)]
+use super::*;
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::runner::UrbanState;
     use crate::scenario::Scenario;
+    use crate::RunConfig;
     use swarm_types::{
         Agent, Health, Pose, Role, Task, TaskKind, TaskStatus, UrbanBus, UrbanBusId,
         UrbanDetectorConfig, UrbanEdge, UrbanEdgeId, UrbanMap, UrbanNode, UrbanNodeId,

@@ -1,5 +1,7 @@
+#![allow(unused_imports)]
+use super::*;
 impl ScenarioRunner {
-    fn run_internal<A: Allocator>(
+    pub(super) fn run_internal<A: Allocator>(
         scenario: &Scenario,
         config: RunConfig,
         allocator: A,
@@ -1351,5 +1353,4 @@ impl ScenarioRunner {
             event_log,
         )
     }
-
 }

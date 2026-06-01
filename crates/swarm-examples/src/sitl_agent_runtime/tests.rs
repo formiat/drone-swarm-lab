@@ -1,3 +1,6 @@
+#![allow(unused_imports)]
+#![allow(clippy::module_inception)]
+use super::*;
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -85,17 +88,17 @@ mod tests {
             scenario_name: "sitl_waypoints_test".to_owned(),
             mission: "sitl".to_owned(),
             profile: "waypoints".to_owned(),
-            coordinate_frame: swarm_examples::sitl_plan::SitlCoordinateFrame::LocalSimulation,
+            coordinate_frame: crate::sitl_plan::SitlCoordinateFrame::LocalSimulation,
             altitude_source: "pose.z".to_owned(),
             waypoints: vec![
-                swarm_examples::sitl_plan::SitlWaypointItem {
+                crate::sitl_plan::SitlWaypointItem {
                     seq: 0,
                     task_id: "wp-0".to_owned(),
                     x: 10.0,
                     y: 20.0,
                     z: 3.0,
                 },
-                swarm_examples::sitl_plan::SitlWaypointItem {
+                crate::sitl_plan::SitlWaypointItem {
                     seq: 1,
                     task_id: "wp-1".to_owned(),
                     x: 30.0,
@@ -119,9 +122,9 @@ mod tests {
     }
 
     #[cfg(feature = "mavlink-transport")]
-    fn completed_progress_report() -> swarm_examples::sitl_progress::SitlMissionProgressReport {
-        swarm_examples::sitl_progress::SitlMissionProgressReport {
-            final_status: swarm_examples::sitl_progress::SitlMissionFinalStatus::Completed,
+    fn completed_progress_report() -> crate::sitl_progress::SitlMissionProgressReport {
+        crate::sitl_progress::SitlMissionProgressReport {
+            final_status: crate::sitl_progress::SitlMissionFinalStatus::Completed,
             total_tasks: 2,
             completed_count: 2,
             failed_count: 0,
@@ -173,11 +176,9 @@ mod tests {
             .events
             .iter()
             .filter_map(|event| match event {
-                swarm_examples::sitl_observability::SitlEvent::MissionItemSent {
-                    seq,
-                    task_id,
-                    ..
-                } => Some((*seq, task_id.clone())),
+                crate::sitl_observability::SitlEvent::MissionItemSent { seq, task_id, .. } => {
+                    Some((*seq, task_id.clone()))
+                }
                 _ => None,
             })
             .collect();
@@ -218,7 +219,7 @@ mod tests {
     struct FakeGoldenPathDriver {
         start_result: Result<SitlMissionStartReport, SitlExecutionFailure>,
         telemetry_result:
-            Result<swarm_examples::sitl_progress::SitlMissionProgressReport, SitlExecutionFailure>,
+            Result<crate::sitl_progress::SitlMissionProgressReport, SitlExecutionFailure>,
         upload_calls: usize,
         telemetry_calls: usize,
         last_upload_waypoint_count: Option<usize>,
@@ -230,7 +231,7 @@ mod tests {
         fn new(
             start_result: Result<SitlMissionStartReport, SitlExecutionFailure>,
             telemetry_result: Result<
-                swarm_examples::sitl_progress::SitlMissionProgressReport,
+                crate::sitl_progress::SitlMissionProgressReport,
                 SitlExecutionFailure,
             >,
         ) -> Self {
@@ -264,8 +265,7 @@ mod tests {
             _lifecycle: &LifecycleArgs,
             _lifecycle_options: &swarm_comms::MissionLifecycleOptions,
             mission_item_count: usize,
-        ) -> Result<swarm_examples::sitl_progress::SitlMissionProgressReport, SitlExecutionFailure>
-        {
+        ) -> Result<crate::sitl_progress::SitlMissionProgressReport, SitlExecutionFailure> {
             self.telemetry_calls += 1;
             self.last_telemetry_mission_item_count = Some(mission_item_count);
             self.telemetry_result.clone()
@@ -544,8 +544,8 @@ mod tests {
     #[test]
     #[cfg(feature = "mavlink-transport")]
     fn telemetry_failure_keeps_progress_counts_and_abort_result() {
-        let progress_report = swarm_examples::sitl_progress::SitlMissionProgressReport {
-            final_status: swarm_examples::sitl_progress::SitlMissionFinalStatus::TimedOutNoProgress,
+        let progress_report = crate::sitl_progress::SitlMissionProgressReport {
+            final_status: crate::sitl_progress::SitlMissionFinalStatus::TimedOutNoProgress,
             total_tasks: 2,
             completed_count: 1,
             failed_count: 1,
@@ -611,7 +611,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(report.completed_count, 2);
-        let summary = swarm_examples::sitl_observability::summarize_sitl_event_log(recorder.log());
+        let summary = crate::sitl_observability::summarize_sitl_event_log(recorder.log());
         assert_eq!(summary.waypoint_reached, 2);
         assert_eq!(summary.task_completed, 2);
         let final_waypoint_task_id =
@@ -621,10 +621,8 @@ mod tests {
                 .iter()
                 .rev()
                 .find_map(|event| match event {
-                    swarm_examples::sitl_observability::SitlEvent::WaypointReached {
-                        seq,
-                        task_id,
-                        ..
+                    crate::sitl_observability::SitlEvent::WaypointReached {
+                        seq, task_id, ..
                     } if *seq == 1 => Some(task_id.clone()),
                     _ => None,
                 });
@@ -659,17 +657,15 @@ mod tests {
         )
         .unwrap();
 
-        let summary = swarm_examples::sitl_observability::summarize_sitl_event_log(recorder.log());
+        let summary = crate::sitl_observability::summarize_sitl_event_log(recorder.log());
         assert_eq!(summary.current_seq_changed, 2);
         let current_seq_events: Vec<_> = recorder
             .log()
             .events
             .iter()
             .filter_map(|event| match event {
-                swarm_examples::sitl_observability::SitlEvent::CurrentSeqChanged {
-                    seq,
-                    task_id,
-                    ..
+                crate::sitl_observability::SitlEvent::CurrentSeqChanged {
+                    seq, task_id, ..
                 } => Some((*seq, task_id.clone())),
                 _ => None,
             })
@@ -713,7 +709,7 @@ mod tests {
         };
         assert_eq!(
             report.final_status,
-            swarm_examples::sitl_progress::SitlMissionFinalStatus::TimedOutNoProgress
+            crate::sitl_progress::SitlMissionFinalStatus::TimedOutNoProgress
         );
         assert_eq!(report.completed_count, 1);
         assert_eq!(report.failed_count, 1);
@@ -747,7 +743,7 @@ mod tests {
         };
         assert_eq!(
             report.final_status,
-            swarm_examples::sitl_progress::SitlMissionFinalStatus::Disconnected
+            crate::sitl_progress::SitlMissionFinalStatus::Disconnected
         );
         assert_eq!(report.completed_count, 0);
         assert_eq!(report.failed_count, 2);

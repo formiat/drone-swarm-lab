@@ -1,25 +1,27 @@
+#![allow(unused_imports)]
+use super::*;
 #[cfg(feature = "mavlink-transport")]
 #[derive(Debug, thiserror::Error)]
-enum SitlTelemetryLoopError {
+pub(super) enum SitlTelemetryLoopError {
     #[error("SITL progress mapping failed: {0}")]
-    Progress(#[from] swarm_examples::sitl_progress::SitlProgressError),
+    Progress(#[from] crate::sitl_progress::SitlProgressError),
     #[error("SITL telemetry failed: {0}")]
     Telemetry(#[from] swarm_comms::MavlinkTelemetryError),
     #[error("SITL telemetry failure: report={report:?}; abort_result={abort_result:?}")]
     Failed {
-        report: swarm_examples::sitl_progress::SitlMissionProgressReport,
+        report: crate::sitl_progress::SitlMissionProgressReport,
         abort_result: swarm_comms::AbortCommandResult,
     },
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn run_telemetry_progress_loop(
+pub(super) fn run_telemetry_progress_loop(
     transport: &mut swarm_comms::MavlinkTransport,
     plan: &SitlPlan,
     lifecycle: &LifecycleArgs,
     lifecycle_options: &swarm_comms::MissionLifecycleOptions,
     recorder: Option<&mut SitlEventRecorder>,
-) -> Result<swarm_examples::sitl_progress::SitlMissionProgressReport, SitlTelemetryLoopError> {
+) -> Result<crate::sitl_progress::SitlMissionProgressReport, SitlTelemetryLoopError> {
     let mut runtime = MavlinkTelemetryRuntime {
         transport,
         started_at: Instant::now(),
@@ -34,7 +36,7 @@ fn run_telemetry_progress_loop(
 }
 
 #[cfg(feature = "mavlink-transport")]
-trait SitlTelemetryRuntime {
+pub(super) trait SitlTelemetryRuntime {
     fn poll_telemetry_event(
         &mut self,
     ) -> Result<Option<swarm_comms::MavlinkTelemetryEvent>, swarm_comms::MavlinkTelemetryError>;
@@ -78,13 +80,13 @@ impl SitlTelemetryRuntime for MavlinkTelemetryRuntime<'_> {
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn run_telemetry_progress_loop_with_runtime<R: SitlTelemetryRuntime>(
+pub(super) fn run_telemetry_progress_loop_with_runtime<R: SitlTelemetryRuntime>(
     runtime: &mut R,
     plan: &SitlPlan,
     lifecycle: &LifecycleArgs,
     lifecycle_options: &swarm_comms::MissionLifecycleOptions,
     mut recorder: Option<&mut SitlEventRecorder>,
-) -> Result<swarm_examples::sitl_progress::SitlMissionProgressReport, SitlTelemetryLoopError> {
+) -> Result<crate::sitl_progress::SitlMissionProgressReport, SitlTelemetryLoopError> {
     let mut monitor = SitlTelemetryMonitor::from_plan(plan, lifecycle)?;
 
     loop {
@@ -166,7 +168,7 @@ fn record_telemetry_step(
             }
             let task_id = match step {
                 SitlTelemetryLoopStep::Continue(
-                    swarm_examples::sitl_progress::SitlProgressUpdate::Current { task_id, .. },
+                    crate::sitl_progress::SitlProgressUpdate::Current { task_id, .. },
                 ) => Some(task_id.clone()),
                 _ => None,
             };
@@ -196,7 +198,7 @@ fn sitl_task_id_for_seq(plan: &SitlPlan, seq: u16) -> Option<String> {
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn sitl_task_ids_by_seq(plan: &SitlPlan) -> BTreeMap<u16, String> {
+pub(super) fn sitl_task_ids_by_seq(plan: &SitlPlan) -> BTreeMap<u16, String> {
     plan.waypoints
         .iter()
         .map(|waypoint| (waypoint.seq, waypoint.task_id.clone()))
@@ -206,7 +208,7 @@ fn sitl_task_ids_by_seq(plan: &SitlPlan) -> BTreeMap<u16, String> {
 #[cfg(feature = "mavlink-transport")]
 fn record_telemetry_failure(
     recorder: Option<&mut SitlEventRecorder>,
-    report: &swarm_examples::sitl_progress::SitlMissionProgressReport,
+    report: &crate::sitl_progress::SitlMissionProgressReport,
     abort_result: &swarm_comms::AbortCommandResult,
 ) {
     let Some(recorder) = recorder else {
@@ -215,7 +217,7 @@ fn record_telemetry_failure(
     let status = progress_final_status_name(report.final_status);
     if matches!(
         report.final_status,
-        swarm_examples::sitl_progress::SitlMissionFinalStatus::Disconnected
+        crate::sitl_progress::SitlMissionFinalStatus::Disconnected
     ) {
         recorder.push_disconnected(
             report
@@ -236,22 +238,20 @@ fn record_telemetry_failure(
 
 #[cfg(feature = "mavlink-transport")]
 fn progress_final_status_name(
-    status: swarm_examples::sitl_progress::SitlMissionFinalStatus,
+    status: crate::sitl_progress::SitlMissionFinalStatus,
 ) -> &'static str {
     match status {
-        swarm_examples::sitl_progress::SitlMissionFinalStatus::Completed => "completed",
-        swarm_examples::sitl_progress::SitlMissionFinalStatus::Failed => "failed",
-        swarm_examples::sitl_progress::SitlMissionFinalStatus::Disconnected => "disconnected",
-        swarm_examples::sitl_progress::SitlMissionFinalStatus::Rejected => "rejected",
-        swarm_examples::sitl_progress::SitlMissionFinalStatus::TimedOutNoProgress => {
-            "timed_out_no_progress"
-        }
+        crate::sitl_progress::SitlMissionFinalStatus::Completed => "completed",
+        crate::sitl_progress::SitlMissionFinalStatus::Failed => "failed",
+        crate::sitl_progress::SitlMissionFinalStatus::Disconnected => "disconnected",
+        crate::sitl_progress::SitlMissionFinalStatus::Rejected => "rejected",
+        crate::sitl_progress::SitlMissionFinalStatus::TimedOutNoProgress => "timed_out_no_progress",
     }
 }
 
 #[cfg(feature = "mavlink-transport")]
 struct SitlTelemetryMonitor {
-    progress: swarm_examples::sitl_progress::SitlTaskProgress,
+    progress: crate::sitl_progress::SitlTaskProgress,
     telemetry_timeout: Duration,
     no_progress_timeout: Duration,
     last_heartbeat_at: Duration,
@@ -263,9 +263,9 @@ impl SitlTelemetryMonitor {
     fn from_plan(
         plan: &SitlPlan,
         lifecycle: &LifecycleArgs,
-    ) -> Result<Self, swarm_examples::sitl_progress::SitlProgressError> {
+    ) -> Result<Self, crate::sitl_progress::SitlProgressError> {
         Ok(Self {
-            progress: swarm_examples::sitl_progress::SitlTaskProgress::from_plan(plan)?,
+            progress: crate::sitl_progress::SitlTaskProgress::from_plan(plan)?,
             telemetry_timeout: lifecycle.telemetry_timeout,
             no_progress_timeout: lifecycle.no_progress_timeout,
             last_heartbeat_at: Duration::ZERO,
@@ -277,7 +277,7 @@ impl SitlTelemetryMonitor {
         &mut self,
         event: swarm_comms::MavlinkTelemetryEvent,
         now: Duration,
-    ) -> Result<SitlTelemetryLoopStep, swarm_examples::sitl_progress::SitlProgressError> {
+    ) -> Result<SitlTelemetryLoopStep, crate::sitl_progress::SitlProgressError> {
         let is_heartbeat = matches!(event, swarm_comms::MavlinkTelemetryEvent::Heartbeat);
         let mission_current_seq = match &event {
             swarm_comms::MavlinkTelemetryEvent::MissionCurrent { seq } => Some(*seq),
@@ -302,17 +302,17 @@ impl SitlTelemetryMonitor {
             || (is_mission_complete
                 && matches!(
                     update,
-                    swarm_examples::sitl_progress::SitlProgressUpdate::Completed(_)
+                    crate::sitl_progress::SitlProgressUpdate::Completed(_)
                 ))
         {
             self.last_progress_at = now;
         }
 
         Ok(match update {
-            swarm_examples::sitl_progress::SitlProgressUpdate::Completed(report) => {
+            crate::sitl_progress::SitlProgressUpdate::Completed(report) => {
                 SitlTelemetryLoopStep::Completed(report)
             }
-            swarm_examples::sitl_progress::SitlProgressUpdate::Failed(report) => {
+            crate::sitl_progress::SitlProgressUpdate::Failed(report) => {
                 SitlTelemetryLoopStep::Failed(report)
             }
             update => SitlTelemetryLoopStep::Continue(update),
@@ -323,8 +323,8 @@ impl SitlTelemetryMonitor {
         &mut self,
         now: Duration,
     ) -> Result<
-        Option<swarm_examples::sitl_progress::SitlMissionProgressReport>,
-        swarm_examples::sitl_progress::SitlProgressError,
+        Option<crate::sitl_progress::SitlMissionProgressReport>,
+        crate::sitl_progress::SitlProgressError,
     > {
         if now.saturating_sub(self.last_heartbeat_at) >= self.telemetry_timeout {
             let update = self.apply_event(swarm_comms::MavlinkTelemetryEvent::Disconnected, now)?;
@@ -353,18 +353,18 @@ impl SitlTelemetryMonitor {
 
 #[cfg(feature = "mavlink-transport")]
 enum SitlTelemetryLoopStep {
-    Continue(swarm_examples::sitl_progress::SitlProgressUpdate),
-    Completed(swarm_examples::sitl_progress::SitlMissionProgressReport),
-    Failed(swarm_examples::sitl_progress::SitlMissionProgressReport),
+    Continue(crate::sitl_progress::SitlProgressUpdate),
+    Completed(crate::sitl_progress::SitlMissionProgressReport),
+    Failed(crate::sitl_progress::SitlMissionProgressReport),
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn print_progress_update(update: swarm_examples::sitl_progress::SitlProgressUpdate) {
+fn print_progress_update(update: crate::sitl_progress::SitlProgressUpdate) {
     match update {
-        swarm_examples::sitl_progress::SitlProgressUpdate::Heartbeat => {
+        crate::sitl_progress::SitlProgressUpdate::Heartbeat => {
             eprintln!("progress: heartbeat");
         }
-        swarm_examples::sitl_progress::SitlProgressUpdate::Current {
+        crate::sitl_progress::SitlProgressUpdate::Current {
             seq,
             task_id,
             completed_count,
@@ -374,7 +374,7 @@ fn print_progress_update(update: swarm_examples::sitl_progress::SitlProgressUpda
                 "progress: current seq={seq} task_id={task_id} completed={completed_count}/{total_count}"
             );
         }
-        swarm_examples::sitl_progress::SitlProgressUpdate::Reached {
+        crate::sitl_progress::SitlProgressUpdate::Reached {
             seq,
             task_id,
             completed_count,
@@ -384,15 +384,15 @@ fn print_progress_update(update: swarm_examples::sitl_progress::SitlProgressUpda
                 "progress: reached seq={seq} task_id={task_id} completed={completed_count}/{total_count}"
             );
         }
-        swarm_examples::sitl_progress::SitlProgressUpdate::Completed(_)
-        | swarm_examples::sitl_progress::SitlProgressUpdate::Failed(_) => {
+        crate::sitl_progress::SitlProgressUpdate::Completed(_)
+        | crate::sitl_progress::SitlProgressUpdate::Failed(_) => {
             unreachable!("terminal progress updates are handled before printing");
         }
     }
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn default_takeoff_altitude(waypoints: &[Waypoint]) -> f32 {
+pub(super) fn default_takeoff_altitude(waypoints: &[Waypoint]) -> f32 {
     waypoints
         .first()
         .map(|waypoint| waypoint.z.max(2.5) as f32)

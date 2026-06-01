@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+use super::*;
 use std::{collections::HashMap, str::FromStr};
 
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
@@ -215,7 +217,7 @@ impl ThresholdChecker {
     }
 }
 
-fn extract_metric(metrics: &AggregateMetrics, metric: &str) -> f64 {
+pub(super) fn extract_metric(metrics: &AggregateMetrics, metric: &str) -> f64 {
     match metric {
         "success_rate" => metrics.success_rate,
         "task_completion_rate" => metrics.avg_task_completion_rate,

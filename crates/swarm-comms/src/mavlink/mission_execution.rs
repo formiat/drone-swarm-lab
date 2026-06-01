@@ -1,5 +1,7 @@
+#![allow(unused_imports)]
+use super::*;
 #[cfg(feature = "mavlink-transport")]
-trait MavlinkVehicleConnection {
+pub(super) trait MavlinkVehicleConnection {
     fn send_message(&mut self, msg: CommonMessage) -> Result<(), MavlinkMissionError>;
     fn try_recv_message(
         &mut self,
@@ -34,7 +36,7 @@ impl MavlinkVehicleConnection for mavlink::Connection<CommonMessage> {
 }
 
 #[cfg(all(feature = "mavlink-transport", test))]
-fn upload_mission_with_connection<C: MavlinkVehicleConnection>(
+pub(super) fn upload_mission_with_connection<C: MavlinkVehicleConnection>(
     conn: &mut C,
     waypoints: &[Waypoint],
     options: &MissionUploadOptions,
@@ -44,7 +46,7 @@ fn upload_mission_with_connection<C: MavlinkVehicleConnection>(
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn upload_mission_with_connection_observed<C, O>(
+pub(super) fn upload_mission_with_connection_observed<C, O>(
     conn: &mut C,
     waypoints: &[Waypoint],
     options: &MissionUploadOptions,
@@ -242,7 +244,7 @@ where
 }
 
 #[cfg(all(feature = "mavlink-transport", test))]
-fn upload_and_execute_mission_with_connection<C: MavlinkVehicleConnection>(
+pub(super) fn upload_and_execute_mission_with_connection<C: MavlinkVehicleConnection>(
     conn: &mut C,
     waypoints: &[Waypoint],
     upload_options: &MissionUploadOptions,
@@ -259,7 +261,7 @@ fn upload_and_execute_mission_with_connection<C: MavlinkVehicleConnection>(
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn upload_and_execute_mission_with_connection_observed<C, O>(
+pub(super) fn upload_and_execute_mission_with_connection_observed<C, O>(
     conn: &mut C,
     waypoints: &[Waypoint],
     upload_options: &MissionUploadOptions,
@@ -300,7 +302,7 @@ pub fn mavlink_message_to_telemetry_event(msg: &CommonMessage) -> Option<Mavlink
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn poll_telemetry_event_with_connection<C: MavlinkVehicleConnection>(
+pub(super) fn poll_telemetry_event_with_connection<C: MavlinkVehicleConnection>(
     conn: &mut C,
 ) -> Result<Option<MavlinkTelemetryEvent>, MavlinkTelemetryError> {
     while let Some((_header, msg)) = conn
@@ -315,7 +317,7 @@ fn poll_telemetry_event_with_connection<C: MavlinkVehicleConnection>(
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn wait_next_telemetry_event_with_connection<C: MavlinkVehicleConnection>(
+pub(super) fn wait_next_telemetry_event_with_connection<C: MavlinkVehicleConnection>(
     conn: &mut C,
     timeout: Duration,
 ) -> Result<MavlinkTelemetryEvent, MavlinkTelemetryError> {
@@ -332,7 +334,7 @@ fn wait_next_telemetry_event_with_connection<C: MavlinkVehicleConnection>(
 }
 
 #[cfg(all(feature = "mavlink-transport", test))]
-fn execute_uploaded_mission_with_connection<C: MavlinkVehicleConnection>(
+pub(super) fn execute_uploaded_mission_with_connection<C: MavlinkVehicleConnection>(
     conn: &mut C,
     options: &MissionLifecycleOptions,
 ) -> Result<MissionLifecycleReport, MavlinkLifecycleError> {
@@ -341,7 +343,7 @@ fn execute_uploaded_mission_with_connection<C: MavlinkVehicleConnection>(
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn execute_uploaded_mission_with_connection_observed<C, O>(
+pub(super) fn execute_uploaded_mission_with_connection_observed<C, O>(
     conn: &mut C,
     options: &MissionLifecycleOptions,
     observer: &mut O,

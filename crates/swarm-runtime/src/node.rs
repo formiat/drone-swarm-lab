@@ -1,3 +1,7 @@
-// Split into include files to keep Rust source files below the repository line limit.
-include!("node_parts/runtime.rs");
-include!("node_parts/tests.rs");
+#[path = "node_parts/runtime.rs"]
+mod runtime;
+pub use runtime::*;
+
+#[cfg(test)]
+#[path = "node_parts/tests.rs"]
+mod tests;

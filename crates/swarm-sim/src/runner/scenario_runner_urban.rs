@@ -1,5 +1,7 @@
+#![allow(unused_imports)]
+use super::*;
 impl ScenarioRunner {
-    fn run_urban_patrol(
+    pub(super) fn run_urban_patrol(
         scenario: &Scenario,
         config: RunConfig,
         mut log_builder: Option<swarm_replay::EventLogBuilder>,
@@ -289,7 +291,7 @@ impl ScenarioRunner {
         finish_urban_run_metrics(metrics, log_builder)
     }
 
-    fn run_urban_search(
+    pub(super) fn run_urban_search(
         scenario: &Scenario,
         config: RunConfig,
         mut log_builder: Option<swarm_replay::EventLogBuilder>,

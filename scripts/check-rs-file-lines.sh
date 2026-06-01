@@ -30,7 +30,7 @@ done
 hard_failed=0
 warn_failed=0
 
-while IFS= read -r file; do
+while IFS= read -r -d '' file; do
   lines=$(wc -l < "$file")
   if (( lines > hard_limit )); then
     printf 'error: %s lines > %s: %s\n' "$lines" "$hard_limit" "$file" >&2
@@ -39,7 +39,7 @@ while IFS= read -r file; do
     printf 'warning: %s lines > %s: %s\n' "$lines" "$warn_limit" "$file" >&2
     warn_failed=1
   fi
-done < <(rg --files -g '*.rs')
+done < <(git ls-files -z '*.rs')
 
 if (( hard_failed != 0 )); then
   exit 1

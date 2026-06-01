@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+use super::*;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -24,12 +26,16 @@ use swarm_examples::regression_lib::{
 
 use swarm_examples::realism::{apply_realism_preset, RealismProfile};
 
+use super::urban_artifacts_and_tests::{
+    merge_reports, run_regression, sanitize_artifact_id, write_urban_analysis_artifacts,
+};
+
 type ScenarioBuilder = Box<dyn Fn(u64, &str) -> (Scenario, RunConfig) + Send + Sync>;
-type StrategyFactory =
+pub(super) type StrategyFactory =
     Box<dyn Fn(&Scenario, &RunConfig) -> Box<dyn swarm_alloc::Strategy> + Send + Sync>;
 
 #[derive(Clone, Copy)]
-enum RunMode {
+pub(super) enum RunMode {
     Smoke,       // 1 seed
     Quick,       // 10 seeds (default)
     Full,        // 1000 seeds
@@ -52,7 +58,7 @@ impl RunMode {
 }
 
 #[derive(Clone)]
-enum Mission {
+pub(super) enum Mission {
     Coverage,
     EmergencyMesh,
     Sar,
@@ -97,36 +103,36 @@ fn mission_name(mission: &Mission) -> &'static str {
 }
 
 #[derive(Clone)]
-enum PlannerChoice {
+pub(super) enum PlannerChoice {
     NearestNeighbour,
     TwoOpt,
     BatteryAware,
 }
 
-struct CliArgs {
-    mode: RunMode,
-    missions: Vec<Mission>,
-    json_path: Option<String>,
-    csv_path: Option<String>,
-    replay_log_dir: Option<String>,
-    run_id_prefix: Option<String>,
-    scenario_suite_path: Option<String>,
-    output_dir: Option<String>,
-    report_path: Option<String>,
+pub(super) struct CliArgs {
+    pub(super) mode: RunMode,
+    pub(super) missions: Vec<Mission>,
+    pub(super) json_path: Option<String>,
+    pub(super) csv_path: Option<String>,
+    pub(super) replay_log_dir: Option<String>,
+    pub(super) run_id_prefix: Option<String>,
+    pub(super) scenario_suite_path: Option<String>,
+    pub(super) output_dir: Option<String>,
+    pub(super) report_path: Option<String>,
     /// Limit rayon parallelism; `None` uses all available CPUs.
-    jobs: Option<usize>,
+    pub(super) jobs: Option<usize>,
     /// Route planner for bundle ordering (CBBA only).
-    planner: PlannerChoice,
+    pub(super) planner: PlannerChoice,
     /// Run regression suites instead of normal benchmark.
-    regression: bool,
+    pub(super) regression: bool,
     /// Compare current run against a baseline file.
-    compare_baseline: Option<String>,
+    pub(super) compare_baseline: Option<String>,
     /// Write current run as new baseline.
-    update_baseline: Option<String>,
+    pub(super) update_baseline: Option<String>,
     /// Enable M31 realism preset (wind, pose noise, comms jitter, battery model v2).
-    realism: bool,
+    pub(super) realism: bool,
     /// Realism profile: light, medium, or heavy (default: medium).
-    realism_profile: Option<String>,
+    pub(super) realism_profile: Option<String>,
 }
 
 fn parse_args() -> CliArgs {
@@ -283,7 +289,7 @@ fn make_cbba_allocator(planner: &PlannerChoice) -> CbbaAllocator {
     cbba
 }
 
-fn make_factories(planner: &PlannerChoice) -> Vec<StrategyFactory> {
+pub(super) fn make_factories(planner: &PlannerChoice) -> Vec<StrategyFactory> {
     vec![
         Box::new(|_scenario: &Scenario, _run_config: &RunConfig| Box::new(GreedyAllocator)),
         Box::new(|_scenario: &Scenario, _run_config: &RunConfig| {
@@ -337,7 +343,7 @@ fn with_realism(builder: ScenarioBuilder, profile: RealismProfile) -> ScenarioBu
     })
 }
 
-fn ensure_parent_dir(path: impl AsRef<Path>) -> std::io::Result<()> {
+pub(super) fn ensure_parent_dir(path: impl AsRef<Path>) -> std::io::Result<()> {
     let path = path.as_ref();
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
@@ -357,7 +363,7 @@ fn current_commit() -> String {
         .unwrap_or_default()
 }
 
-fn baseline_from_green_report(
+pub(super) fn baseline_from_green_report(
     report: &RegressionReport,
     suite_group: &str,
 ) -> Result<Baseline, &'static str> {
@@ -379,7 +385,7 @@ fn write_file_creating_parent(
     std::fs::write(path, contents)
 }
 
-fn main() {
+pub(crate) fn main() {
     let cli = parse_args();
 
     if cli.regression {
@@ -812,7 +818,7 @@ fn run_from_suite(suite_path: &str, cli: &CliArgs) {
     }
 }
 
-fn write_benchmark_pack(
+pub(super) fn write_benchmark_pack(
     output_dir: &str,
     report: &ComparisonReport,
     suite: Option<&swarm_sim::ScenarioSuite>,

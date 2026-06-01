@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+use super::*;
 #[cfg(feature = "mavlink-transport")]
 use std::borrow::Cow;
 use std::collections::VecDeque;
@@ -13,8 +15,6 @@ use crate::{RawMessage, Transport};
 #[cfg(feature = "mavlink-transport")]
 use mavlink::dialects::common;
 
-#[cfg(feature = "mavlink-transport")]
-type CommonHeader = mavlink::MavHeader;
 #[cfg(feature = "mavlink-transport")]
 type CommonMessage = common::MavMessage;
 
@@ -74,7 +74,7 @@ pub enum MissionFrame {
 #[cfg(feature = "mavlink-transport")]
 impl MissionFrame {
     #[allow(deprecated)]
-    fn to_mav_frame(self) -> Result<common::MavFrame, MavlinkMissionError> {
+    pub(super) fn to_mav_frame(self) -> Result<common::MavFrame, MavlinkMissionError> {
         match self {
             Self::GlobalRelativeAlt => Ok(common::MavFrame::MAV_FRAME_GLOBAL_RELATIVE_ALT_INT),
             Self::LocalNed => Err(MavlinkMissionError::UnsupportedFrame),
@@ -382,9 +382,9 @@ impl Transport for MockMavlinkTransport {
 /// Only available with feature "mavlink-transport".
 #[cfg(feature = "mavlink-transport")]
 pub struct MavlinkTransport {
-    conn: mavlink::Connection<CommonMessage>,
-    agent_id: swarm_types::AgentId,
-    recv_buf: VecDeque<RawMessage>,
+    pub(super) conn: mavlink::Connection<CommonMessage>,
+    pub(super) agent_id: swarm_types::AgentId,
+    pub(super) recv_buf: VecDeque<RawMessage>,
 }
 
 #[cfg(feature = "mavlink-transport")]

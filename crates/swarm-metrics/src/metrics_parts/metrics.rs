@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+use super::*;
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
@@ -296,7 +298,7 @@ pub struct AggregateMetrics {
     pub avg_urban_route_conflict_count: f64,
 }
 
-fn percentile_of_sorted(sorted: &[u64], p: f64) -> f64 {
+pub(super) fn percentile_of_sorted(sorted: &[u64], p: f64) -> f64 {
     if sorted.is_empty() {
         return 0.0;
     }

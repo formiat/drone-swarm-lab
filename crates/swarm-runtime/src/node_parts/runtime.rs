@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+use super::*;
 use std::collections::{HashMap, HashSet};
 
 use swarm_alloc::{AllocationAgent, AllocationTask, Allocator, CbbaAllocator, ConnectivityContext};

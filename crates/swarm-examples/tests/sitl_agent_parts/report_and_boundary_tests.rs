@@ -1,3 +1,6 @@
+#![allow(unused_imports)]
+use super::supervisor_tests::*;
+use super::*;
 #[test]
 fn cli_rejects_missing_run_report_value() {
     let scenario = write_sitl_scenario();

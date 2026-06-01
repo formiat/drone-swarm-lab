@@ -1,9 +1,13 @@
+#![allow(unused_imports)]
+#![allow(clippy::module_inception)]
+use super::*;
 #[cfg(test)]
 mod tests {
     use super::*;
     use swarm_types::{
-        Aabb, UrbanBus, UrbanBusId, UrbanDetectorConfig, UrbanEdge, UrbanEdgeId, UrbanMap,
-        UrbanNode, UrbanSearchState, UrbanStaticObstacle,
+        Aabb, Pose, UrbanBus, UrbanBusId, UrbanDetectorConfig, UrbanEdge, UrbanEdgeId, UrbanMap,
+        UrbanNode, UrbanNodeId, UrbanPlannedRoute, UrbanRouteLoop, UrbanRouteSegment,
+        UrbanSearchState, UrbanStaticObstacle, UrbanViolation,
     };
 
     fn node(id: &str, x: f64, y: f64) -> UrbanNode {

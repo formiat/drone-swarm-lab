@@ -1,4 +1,6 @@
-fn run_connection(
+#![allow(unused_imports)]
+use super::*;
+pub(super) fn run_connection(
     plan: &SitlPlan,
     connection_string: &str,
     lifecycle: &LifecycleArgs,
@@ -147,35 +149,35 @@ fn run_connection(
 
 #[cfg(feature = "mavlink-transport")]
 #[derive(Debug, Clone, PartialEq)]
-struct SitlExecutionSuccess {
-    uploaded_count: usize,
-    progress_report: swarm_examples::sitl_progress::SitlMissionProgressReport,
+pub(super) struct SitlExecutionSuccess {
+    pub(super) uploaded_count: usize,
+    pub(super) progress_report: crate::sitl_progress::SitlMissionProgressReport,
 }
 
 #[cfg(feature = "mavlink-transport")]
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct SitlExecutionFailure {
-    final_status: SitlRunFinalStatus,
-    mission_item_count: usize,
-    completed_count: usize,
-    failed_count: usize,
-    error: String,
-    abort_result: Option<String>,
+pub(super) struct SitlExecutionFailure {
+    pub(super) final_status: SitlRunFinalStatus,
+    pub(super) mission_item_count: usize,
+    pub(super) completed_count: usize,
+    pub(super) failed_count: usize,
+    pub(super) error: String,
+    pub(super) abort_result: Option<String>,
 }
 
 #[cfg(feature = "mavlink-transport")]
 #[derive(Debug, Clone, PartialEq)]
-struct SitlMissionStartReport {
-    uploaded_count: usize,
-    armed: bool,
-    took_off: bool,
-    started: bool,
-    post_start_heartbeat: bool,
-    abort_result: Option<swarm_comms::AbortCommandResult>,
+pub(super) struct SitlMissionStartReport {
+    pub(super) uploaded_count: usize,
+    pub(super) armed: bool,
+    pub(super) took_off: bool,
+    pub(super) started: bool,
+    pub(super) post_start_heartbeat: bool,
+    pub(super) abort_result: Option<swarm_comms::AbortCommandResult>,
 }
 
 #[cfg(feature = "mavlink-transport")]
-trait SitlGoldenPathDriver {
+pub(super) trait SitlGoldenPathDriver {
     fn upload_and_start_mission(
         &mut self,
         waypoints: &[Waypoint],
@@ -189,7 +191,7 @@ trait SitlGoldenPathDriver {
         lifecycle: &LifecycleArgs,
         lifecycle_options: &swarm_comms::MissionLifecycleOptions,
         mission_item_count: usize,
-    ) -> Result<swarm_examples::sitl_progress::SitlMissionProgressReport, SitlExecutionFailure>;
+    ) -> Result<crate::sitl_progress::SitlMissionProgressReport, SitlExecutionFailure>;
 
     fn record_run_completed(&mut self, _status: &str) {}
 
@@ -197,16 +199,16 @@ trait SitlGoldenPathDriver {
 }
 
 #[cfg(feature = "mavlink-transport")]
-struct MavlinkGoldenPathDriver<'a> {
-    transport: &'a mut swarm_comms::MavlinkTransport,
-    recorder: Option<&'a mut SitlEventRecorder>,
-    task_id_by_seq: BTreeMap<u16, String>,
+pub(super) struct MavlinkGoldenPathDriver<'a> {
+    pub(super) transport: &'a mut swarm_comms::MavlinkTransport,
+    pub(super) recorder: Option<&'a mut SitlEventRecorder>,
+    pub(super) task_id_by_seq: BTreeMap<u16, String>,
 }
 
 #[cfg(feature = "mavlink-transport")]
-struct SitlMavlinkObserver<'a> {
-    recorder: &'a mut SitlEventRecorder,
-    task_id_by_seq: &'a BTreeMap<u16, String>,
+pub(super) struct SitlMavlinkObserver<'a> {
+    pub(super) recorder: &'a mut SitlEventRecorder,
+    pub(super) task_id_by_seq: &'a BTreeMap<u16, String>,
 }
 
 #[cfg(feature = "mavlink-transport")]
@@ -290,8 +292,7 @@ impl SitlGoldenPathDriver for MavlinkGoldenPathDriver<'_> {
         lifecycle: &LifecycleArgs,
         lifecycle_options: &swarm_comms::MissionLifecycleOptions,
         mission_item_count: usize,
-    ) -> Result<swarm_examples::sitl_progress::SitlMissionProgressReport, SitlExecutionFailure>
-    {
+    ) -> Result<crate::sitl_progress::SitlMissionProgressReport, SitlExecutionFailure> {
         run_telemetry_progress_loop(
             self.transport,
             plan,
@@ -316,18 +317,18 @@ impl SitlGoldenPathDriver for MavlinkGoldenPathDriver<'_> {
 }
 
 #[cfg(feature = "mavlink-transport")]
-struct SitlGoldenPathRun<'a> {
-    plan: &'a SitlPlan,
-    waypoints: &'a [Waypoint],
-    connection_string: &'a str,
-    upload_options: swarm_comms::MissionUploadOptions,
-    lifecycle_options: swarm_comms::MissionLifecycleOptions,
-    lifecycle: &'a LifecycleArgs,
-    run_report: Option<&'a str>,
+pub(super) struct SitlGoldenPathRun<'a> {
+    pub(super) plan: &'a SitlPlan,
+    pub(super) waypoints: &'a [Waypoint],
+    pub(super) connection_string: &'a str,
+    pub(super) upload_options: swarm_comms::MissionUploadOptions,
+    pub(super) lifecycle_options: swarm_comms::MissionLifecycleOptions,
+    pub(super) lifecycle: &'a LifecycleArgs,
+    pub(super) run_report: Option<&'a str>,
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn run_golden_path_with_driver<D: SitlGoldenPathDriver>(
+pub(super) fn run_golden_path_with_driver<D: SitlGoldenPathDriver>(
     driver: &mut D,
     run: SitlGoldenPathRun<'_>,
 ) -> Result<(), SitlError> {
@@ -406,7 +407,7 @@ fn execute_sitl_golden_path_with_driver<D: SitlGoldenPathDriver>(
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn flight_error_to_execution_failure(
+pub(super) fn flight_error_to_execution_failure(
     mission_item_count: usize,
     error: swarm_comms::MavlinkFlightError,
 ) -> SitlExecutionFailure {
@@ -453,7 +454,7 @@ fn format_abort_result(abort_result: &swarm_comms::AbortCommandResult) -> String
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn telemetry_error_to_execution_failure(
+pub(super) fn telemetry_error_to_execution_failure(
     mission_item_count: usize,
     error: SitlTelemetryLoopError,
 ) -> SitlExecutionFailure {
@@ -484,30 +485,26 @@ fn telemetry_error_to_execution_failure(
 
 #[cfg(feature = "mavlink-transport")]
 fn progress_status_to_run_status(
-    status: swarm_examples::sitl_progress::SitlMissionFinalStatus,
+    status: crate::sitl_progress::SitlMissionFinalStatus,
 ) -> SitlRunFinalStatus {
     match status {
-        swarm_examples::sitl_progress::SitlMissionFinalStatus::Completed => {
-            SitlRunFinalStatus::Completed
-        }
-        swarm_examples::sitl_progress::SitlMissionFinalStatus::Failed => SitlRunFinalStatus::Failed,
-        swarm_examples::sitl_progress::SitlMissionFinalStatus::Disconnected => {
+        crate::sitl_progress::SitlMissionFinalStatus::Completed => SitlRunFinalStatus::Completed,
+        crate::sitl_progress::SitlMissionFinalStatus::Failed => SitlRunFinalStatus::Failed,
+        crate::sitl_progress::SitlMissionFinalStatus::Disconnected => {
             SitlRunFinalStatus::Disconnected
         }
-        swarm_examples::sitl_progress::SitlMissionFinalStatus::Rejected => {
-            SitlRunFinalStatus::Rejected
-        }
-        swarm_examples::sitl_progress::SitlMissionFinalStatus::TimedOutNoProgress => {
+        crate::sitl_progress::SitlMissionFinalStatus::Rejected => SitlRunFinalStatus::Rejected,
+        crate::sitl_progress::SitlMissionFinalStatus::TimedOutNoProgress => {
             SitlRunFinalStatus::TimedOutNoProgress
         }
     }
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn success_run_report(
+pub(super) fn success_run_report(
     plan: &SitlPlan,
     connection_string: &str,
-    progress_report: &swarm_examples::sitl_progress::SitlMissionProgressReport,
+    progress_report: &crate::sitl_progress::SitlMissionProgressReport,
 ) -> SitlRunReport {
     SitlRunReport {
         schema_version: "sitl_run_report.v1".to_owned(),
@@ -528,7 +525,7 @@ fn success_run_report(
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn failure_run_report(
+pub(super) fn failure_run_report(
     plan: &SitlPlan,
     connection_string: &str,
     failure: &SitlExecutionFailure,
@@ -564,7 +561,7 @@ fn sitl_run_status_name(status: &SitlRunFinalStatus) -> &'static str {
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn write_run_report_if_requested(
+pub(super) fn write_run_report_if_requested(
     path: Option<&str>,
     report: &SitlRunReport,
 ) -> Result<(), SitlError> {

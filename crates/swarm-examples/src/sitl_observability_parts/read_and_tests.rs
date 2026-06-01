@@ -1,3 +1,8 @@
+#![allow(unused_imports)]
+use super::*;
+use std::fs;
+use std::path::{Path, PathBuf};
+
 pub fn read_sitl_event_log(path: impl AsRef<Path>) -> Result<SitlEventLog, SitlEventLogError> {
     let path = path.as_ref();
     let json = fs::read_to_string(path).map_err(|error| SitlEventLogError::Read {

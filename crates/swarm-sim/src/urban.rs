@@ -1,3 +1,7 @@
-// Split into include files to keep Rust source files below the repository line limit.
-include!("urban_parts/planner.rs");
-include!("urban_parts/tests.rs");
+#[path = "urban_parts/planner.rs"]
+mod planner;
+pub use planner::*;
+
+#[cfg(test)]
+#[path = "urban_parts/tests.rs"]
+mod tests;

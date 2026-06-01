@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -40,9 +41,9 @@ impl InspectionState {
 }
 
 /// Wrapper that filters out tasks in no-fly zones before delegating to the inner allocator.
-struct SafetyAllocator<A> {
-    inner: A,
-    safety_config: Option<swarm_safety::SafetyConfig>,
+pub(super) struct SafetyAllocator<A> {
+    pub(super) inner: A,
+    pub(super) safety_config: Option<swarm_safety::SafetyConfig>,
 }
 
 impl<A: Allocator> Allocator for SafetyAllocator<A> {
@@ -251,7 +252,7 @@ fn default_urban_planner() -> String {
 
 /// Compute mission-specific success and detect unsupported configurations.
 #[allow(clippy::too_many_arguments)]
-fn compute_mission_success(
+pub(super) fn compute_mission_success(
     max_unassigned_ticks_config: u64,
     strategy_name: &Option<String>,
     wildfire_success_threshold: f64,

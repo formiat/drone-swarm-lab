@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+use super::*;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 #[cfg(any(feature = "mavlink-transport", test))]
@@ -57,13 +59,13 @@ pub struct SupervisorLiveConfig {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct SupervisorLoopConfig<'a> {
-    replay_log: Option<&'a str>,
-    run_id: Option<&'a str>,
-    timeout_ticks: u64,
-    max_ticks: u64,
-    own_id: String,
-    mode_label: &'a str,
+pub(super) struct SupervisorLoopConfig<'a> {
+    pub(super) replay_log: Option<&'a str>,
+    pub(super) run_id: Option<&'a str>,
+    pub(super) timeout_ticks: u64,
+    pub(super) max_ticks: u64,
+    pub(super) own_id: String,
+    pub(super) mode_label: &'a str,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -149,7 +151,7 @@ pub struct MissionReplacementPlan {
 
 impl MissionReplacementPlan {
     #[cfg(any(feature = "mavlink-transport", test))]
-    fn mission_item_count(&self) -> usize {
+    pub(super) fn mission_item_count(&self) -> usize {
         self.waypoints.len()
     }
 }
@@ -189,7 +191,7 @@ pub struct LiveAgentRun {
 
 impl LiveAgentRun {
     #[cfg(any(feature = "mavlink-transport", test))]
-    fn report(&self) -> SitlMultiAgentAgentReport {
+    pub(super) fn report(&self) -> SitlMultiAgentAgentReport {
         SitlMultiAgentAgentReport {
             agent_id: self.agent_id.clone(),
             connection_string: self.connection_string.clone(),

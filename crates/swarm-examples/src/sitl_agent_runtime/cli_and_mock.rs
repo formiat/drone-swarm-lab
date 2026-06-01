@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+use super::*;
 #[cfg(feature = "mavlink-transport")]
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -6,28 +8,26 @@ use std::time::Duration;
 #[cfg(feature = "mavlink-transport")]
 use std::time::Instant;
 
-use swarm_comms::{MockMavlinkTransport, Waypoint};
-use swarm_examples::sitl_multi_agent::{
+use crate::sitl_multi_agent::{
     agent_config, build_multi_agent_manifest, load_multi_agent_config, MultiAgentLifecycle,
     MultiAgentSitlAgentConfig,
 };
-use swarm_examples::sitl_observability::{
+use crate::sitl_observability::{
     write_sitl_event_log, SitlEventLogMetadata, SitlEventLogMode, SitlEventRecorder,
 };
-use swarm_examples::sitl_plan::{
+use crate::sitl_plan::{
     build_sitl_plan_for_task_ids, classify_connection_string, first_sitl_entry,
     format_dry_run_plan, load_sitl_suite, validate_connection_string, SitlConnectionClass,
     SitlError, SitlMode, SitlPlan,
 };
 #[cfg(feature = "mavlink-transport")]
-use swarm_examples::sitl_report::{
-    write_sitl_run_report, SitlRunFinalStatus, SitlRunMode, SitlRunReport,
-};
-use swarm_examples::sitl_safety::{
+use crate::sitl_report::{write_sitl_run_report, SitlRunFinalStatus, SitlRunMode, SitlRunReport};
+use crate::sitl_safety::{
     load_sitl_safety_config, validate_pre_upload_safety, validate_pre_upload_safety_for_task_ids,
 };
+use swarm_comms::{MockMavlinkTransport, Waypoint};
 
-struct CliArgs {
+pub(super) struct CliArgs {
     mode: Option<SitlMode>,
     scenario: String,
     agent_id: String,
@@ -41,25 +41,25 @@ struct CliArgs {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum LifecycleMode {
+pub(super) enum LifecycleMode {
     UploadOnly,
     Execute,
 }
 
-struct LifecycleArgs {
-    mode: LifecycleMode,
-    no_arm: bool,
-    abort_after: Option<Duration>,
-    timeout: Duration,
-    telemetry_timeout: Duration,
-    no_progress_timeout: Duration,
+pub(super) struct LifecycleArgs {
+    pub(super) mode: LifecycleMode,
+    pub(super) no_arm: bool,
+    pub(super) abort_after: Option<Duration>,
+    pub(super) timeout: Duration,
+    pub(super) telemetry_timeout: Duration,
+    pub(super) no_progress_timeout: Duration,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct AgentRuntimeOptions {
-    start_delay_ms: u64,
-    target_system: u8,
-    target_component: u8,
+pub(super) struct AgentRuntimeOptions {
+    pub(super) start_delay_ms: u64,
+    pub(super) target_system: u8,
+    pub(super) target_component: u8,
 }
 
 impl Default for AgentRuntimeOptions {
@@ -338,17 +338,7 @@ fn parse_duration_arg(
     })
 }
 
-fn main() {
-    if let Err(error) = run() {
-        eprintln!("error: {error}");
-        eprintln!(
-            "usage: sitl_agent --mock|--dry-run|--connection <addr> --scenario <path> --agent-id <id> [--multi-agent-config <path>] [--safety-config <path>] [--allow-hardware-candidate] [--upload-only|--execute] [--no-arm] [--abort-after <seconds>] [--timeout <seconds>] [--telemetry-timeout <seconds>] [--no-progress-timeout <seconds>] [--run-report <path>] [--replay-log <path>]"
-        );
-        std::process::exit(1);
-    }
-}
-
-fn run() -> Result<(), SitlError> {
+pub fn run() -> Result<(), SitlError> {
     let cli = parse_args()?;
     let suite = load_sitl_suite(&cli.scenario)?;
     let multi_agent_config = cli
@@ -394,7 +384,7 @@ fn run() -> Result<(), SitlError> {
         }
         build_sitl_plan_for_task_ids(&suite, &cli.scenario, &cli.agent_id, &agent.task_ids)?
     } else {
-        swarm_examples::sitl_plan::build_sitl_plan(&suite, &cli.scenario, cli.agent_id.clone())?
+        crate::sitl_plan::build_sitl_plan(&suite, &cli.scenario, cli.agent_id.clone())?
     };
 
     let mode = mode.ok_or(SitlError::MissingMode)?;
@@ -480,7 +470,7 @@ fn runtime_options_from_config(config: &MultiAgentSitlAgentConfig) -> AgentRunti
     }
 }
 
-fn apply_start_delay(start_delay_ms: u64) {
+pub(super) fn apply_start_delay(start_delay_ms: u64) {
     if start_delay_ms > 0 {
         thread::sleep(Duration::from_millis(start_delay_ms));
     }
@@ -525,7 +515,7 @@ fn run_mock(plan: &SitlPlan, replay_log: Option<&str>) -> Result<(), SitlError> 
     Ok(())
 }
 
-fn new_sitl_event_recorder(
+pub(super) fn new_sitl_event_recorder(
     plan: &SitlPlan,
     connection_string: Option<&str>,
     mode: SitlEventLogMode,
@@ -544,7 +534,7 @@ fn new_sitl_event_recorder(
     })
 }
 
-fn write_replay_log_if_requested(
+pub(super) fn write_replay_log_if_requested(
     path: Option<&str>,
     recorder: &SitlEventRecorder,
 ) -> Result<(), SitlError> {

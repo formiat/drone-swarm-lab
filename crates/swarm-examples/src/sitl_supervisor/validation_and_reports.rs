@@ -1,4 +1,6 @@
-fn build_mock_controllers(
+#![allow(unused_imports)]
+use super::*;
+pub(super) fn build_mock_controllers(
     manifest: &MultiAgentSitlManifest,
     config: &SupervisorMockConfig,
 ) -> Vec<MockAgentController> {
@@ -17,7 +19,7 @@ fn build_mock_controllers(
         .collect()
 }
 
-fn upload_and_start_manifest_agents<C: AgentController>(
+pub(super) fn upload_and_start_manifest_agents<C: AgentController>(
     manifest: &MultiAgentSitlManifest,
     controllers: &mut [C],
     recorder: &mut SitlEventRecorder,
@@ -59,7 +61,7 @@ fn upload_and_start_manifest_agents<C: AgentController>(
     Ok(())
 }
 
-fn controller_for_agent_mut<'a, C: AgentController>(
+pub(super) fn controller_for_agent_mut<'a, C: AgentController>(
     controllers: &'a mut [C],
     agent_id: &str,
 ) -> Result<&'a mut C, SitlError> {
@@ -71,7 +73,7 @@ fn controller_for_agent_mut<'a, C: AgentController>(
         })
 }
 
-fn validate_controller_set<C: AgentController>(
+pub(super) fn validate_controller_set<C: AgentController>(
     manifest: &MultiAgentSitlManifest,
     controllers: &[C],
 ) -> Result<(), SitlError> {
@@ -107,7 +109,7 @@ fn validate_controller_set<C: AgentController>(
 }
 
 #[cfg(any(feature = "mavlink-transport", test))]
-fn validate_live_controller_set<C: LiveAgentController>(
+pub(super) fn validate_live_controller_set<C: LiveAgentController>(
     manifest: &MultiAgentSitlManifest,
     controllers: &[C],
 ) -> Result<(), SitlError> {
@@ -142,7 +144,7 @@ fn validate_live_controller_set<C: LiveAgentController>(
     Ok(())
 }
 
-fn validate_live_manifest(
+pub(super) fn validate_live_manifest(
     manifest: &MultiAgentSitlManifest,
     config: &SupervisorLiveConfig,
 ) -> Result<(), SitlError> {
@@ -167,7 +169,7 @@ fn validate_live_manifest(
 }
 
 #[cfg(any(feature = "mavlink-transport", test))]
-fn live_controller_for_agent_mut<'a, C: LiveAgentController>(
+pub(super) fn live_controller_for_agent_mut<'a, C: LiveAgentController>(
     controllers: &'a mut [C],
     agent_id: &str,
 ) -> Result<&'a mut C, SitlError> {
@@ -180,7 +182,7 @@ fn live_controller_for_agent_mut<'a, C: LiveAgentController>(
 }
 
 #[cfg(any(feature = "mavlink-transport", test))]
-fn live_active_run_snapshots<C: LiveAgentController>(
+pub(super) fn live_active_run_snapshots<C: LiveAgentController>(
     manifest: &MultiAgentSitlManifest,
     controllers: &[C],
     active_agent_ids: &[String],
@@ -215,7 +217,7 @@ fn live_active_run_snapshots<C: LiveAgentController>(
 }
 
 #[cfg(any(feature = "mavlink-transport", test))]
-fn record_replacement_mission_items(
+pub(super) fn record_replacement_mission_items(
     recorder: &mut SitlEventRecorder,
     plan: &MissionReplacementPlan,
 ) {
@@ -231,7 +233,7 @@ fn record_replacement_mission_items(
 }
 
 #[cfg(any(feature = "mavlink-transport", test))]
-fn record_live_agent_run(
+pub(super) fn record_live_agent_run(
     recorder: &mut SitlEventRecorder,
     manifest: &MultiAgentSitlManifest,
     run: &LiveAgentRun,
@@ -261,7 +263,7 @@ fn record_live_agent_run(
 }
 
 #[cfg(any(feature = "mavlink-transport", test))]
-fn manifest_waypoint_for_task_id<'a>(
+pub(super) fn manifest_waypoint_for_task_id<'a>(
     manifest: &'a MultiAgentSitlManifest,
     task_id: &str,
 ) -> Option<&'a SitlWaypointItem> {
@@ -273,7 +275,10 @@ fn manifest_waypoint_for_task_id<'a>(
 }
 
 #[cfg(any(feature = "mavlink-transport", test))]
-fn live_overall_status(runs: &[LiveAgentRun], manifest: &MultiAgentSitlManifest) -> &'static str {
+pub(super) fn live_overall_status(
+    runs: &[LiveAgentRun],
+    manifest: &MultiAgentSitlManifest,
+) -> &'static str {
     if runs.iter().all(|run| run.final_status == "completed") {
         "completed"
     } else if runs
@@ -291,19 +296,19 @@ fn live_overall_status(runs: &[LiveAgentRun], manifest: &MultiAgentSitlManifest)
 }
 
 #[cfg(any(feature = "mavlink-transport", test))]
-struct LiveRunReportInput<'a> {
-    entry: &'a swarm_sim::ScenarioSuiteEntry,
-    config: &'a SupervisorLiveConfig,
-    manifest: &'a MultiAgentSitlManifest,
-    run_id: String,
-    overall_status: &'a str,
-    runs: &'a [LiveAgentRun],
-    metrics: &'a SupervisorMetrics,
-    events_summary: SitlEventLogSummary,
+pub(super) struct LiveRunReportInput<'a> {
+    pub(super) entry: &'a swarm_sim::ScenarioSuiteEntry,
+    pub(super) config: &'a SupervisorLiveConfig,
+    pub(super) manifest: &'a MultiAgentSitlManifest,
+    pub(super) run_id: String,
+    pub(super) overall_status: &'a str,
+    pub(super) runs: &'a [LiveAgentRun],
+    pub(super) metrics: &'a SupervisorMetrics,
+    pub(super) events_summary: SitlEventLogSummary,
 }
 
 #[cfg(any(feature = "mavlink-transport", test))]
-fn live_run_report(input: LiveRunReportInput<'_>) -> SitlMultiAgentRunReport {
+pub(super) fn live_run_report(input: LiveRunReportInput<'_>) -> SitlMultiAgentRunReport {
     let entry = input.entry;
     let config = input.config;
     let manifest = input.manifest;
@@ -347,7 +352,7 @@ fn live_run_report(input: LiveRunReportInput<'_>) -> SitlMultiAgentRunReport {
     }
 }
 
-fn poll_active_agent_ids<C: AgentController>(
+pub(super) fn poll_active_agent_ids<C: AgentController>(
     controllers: &mut [C],
     tick: u64,
 ) -> Result<Vec<String>, SitlError> {
@@ -361,7 +366,7 @@ fn poll_active_agent_ids<C: AgentController>(
     Ok(active_agents)
 }
 
-fn validate_failure_agent(
+pub(super) fn validate_failure_agent(
     manifest: &MultiAgentSitlManifest,
     fail_agent: Option<&str>,
 ) -> Result<(), SitlError> {
@@ -381,7 +386,7 @@ fn validate_failure_agent(
     }
 }
 
-fn supervisor_runtime_agent_id(
+pub(super) fn supervisor_runtime_agent_id(
     manifest: &MultiAgentSitlManifest,
     fail_agent: Option<&str>,
 ) -> Result<String, SitlError> {
@@ -396,7 +401,7 @@ fn supervisor_runtime_agent_id(
         })
 }
 
-fn assign_manifest_tasks(
+pub(super) fn assign_manifest_tasks(
     coordinator: &mut Coordinator,
     manifest: &MultiAgentSitlManifest,
 ) -> Result<(), SitlError> {
@@ -417,7 +422,7 @@ fn assign_manifest_tasks(
     Ok(())
 }
 
-fn complete_one_task_per_active_agent(
+pub(super) fn complete_one_task_per_active_agent(
     node: &mut AgentNode<MockMavlinkTransport>,
     manifest: &MultiAgentSitlManifest,
     active_agents: &[String],
@@ -450,7 +455,7 @@ fn complete_one_task_per_active_agent(
     completed
 }
 
-fn first_assigned_manifest_task(
+pub(super) fn first_assigned_manifest_task(
     node: &AgentNode<MockMavlinkTransport>,
     manifest: &MultiAgentSitlManifest,
     agent_id: &AgentId,
@@ -475,7 +480,10 @@ fn first_assigned_manifest_task(
     candidates.into_iter().next()
 }
 
-fn manifest_seq_for_task(manifest: &MultiAgentSitlManifest, task_id: &TaskId) -> Option<u16> {
+pub(super) fn manifest_seq_for_task(
+    manifest: &MultiAgentSitlManifest,
+    task_id: &TaskId,
+) -> Option<u16> {
     manifest
         .agents
         .iter()
@@ -484,7 +492,7 @@ fn manifest_seq_for_task(manifest: &MultiAgentSitlManifest, task_id: &TaskId) ->
         .map(|waypoint| waypoint.seq)
 }
 
-fn manifest_tasks_completed(
+pub(super) fn manifest_tasks_completed(
     node: &AgentNode<MockMavlinkTransport>,
     manifest: &MultiAgentSitlManifest,
 ) -> bool {
@@ -501,7 +509,7 @@ fn manifest_tasks_completed(
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn event_advances_progress(
+pub(super) fn event_advances_progress(
     event: &swarm_comms::MavlinkTelemetryEvent,
     previous_seq: Option<u16>,
     previous_completed_count: usize,
@@ -531,7 +539,7 @@ fn event_advances_progress(
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn append_abort_to_report(
+pub(super) fn append_abort_to_report(
     mut report: crate::sitl_progress::SitlMissionProgressReport,
     abort: swarm_comms::AbortCommandResult,
 ) -> crate::sitl_progress::SitlMissionProgressReport {
@@ -544,7 +552,9 @@ fn append_abort_to_report(
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn live_progress_status_name(status: crate::sitl_progress::SitlMissionFinalStatus) -> &'static str {
+pub(super) fn live_progress_status_name(
+    status: crate::sitl_progress::SitlMissionFinalStatus,
+) -> &'static str {
     match status {
         crate::sitl_progress::SitlMissionFinalStatus::Completed => "completed",
         crate::sitl_progress::SitlMissionFinalStatus::Failed => "failed",

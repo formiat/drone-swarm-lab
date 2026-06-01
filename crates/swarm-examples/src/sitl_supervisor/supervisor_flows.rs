@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+use super::*;
 pub fn run_mock_supervisor(
     suite: &swarm_sim::ScenarioSuite,
     config: &SupervisorMockConfig,
@@ -61,7 +63,7 @@ pub fn run_live_supervisor(
 }
 
 #[cfg(any(feature = "mavlink-transport", test))]
-fn run_live_supervisor_with_controllers<C: LiveAgentController>(
+pub(super) fn run_live_supervisor_with_controllers<C: LiveAgentController>(
     entry: &swarm_sim::ScenarioSuiteEntry,
     config: &SupervisorLiveConfig,
     manifest: &MultiAgentSitlManifest,
@@ -258,7 +260,7 @@ fn run_live_supervisor_with_controllers<C: LiveAgentController>(
     Ok(report)
 }
 
-fn run_supervisor_with_controllers<C: AgentController>(
+pub(super) fn run_supervisor_with_controllers<C: AgentController>(
     entry: &swarm_sim::ScenarioSuiteEntry,
     manifest: &MultiAgentSitlManifest,
     mut controllers: Vec<C>,

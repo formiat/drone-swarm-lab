@@ -1,12 +1,18 @@
+#![allow(unused_imports)]
+#![allow(clippy::module_inception)]
+use super::*;
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::cell::RefCell;
+    use std::collections::{HashMap, HashSet};
     use std::rc::Rc;
 
     use swarm_alloc::GreedyAllocator;
-    use swarm_comms::{InMemAgentTransport, InMemNetwork, NetworkConfig};
-    use swarm_types::{Agent, Capability, Health, Pose, Role, TaskStatus};
+    use swarm_comms::{InMemAgentTransport, InMemNetwork, NetworkConfig, RawMessage, Transport};
+    use swarm_types::{Agent, AgentId, Capability, Health, Pose, Role, Task, TaskId, TaskStatus};
+
+    use crate::{Coordinator, RuntimeMessage};
 
     fn agent_entry(id: &str) -> Agent {
         Agent {

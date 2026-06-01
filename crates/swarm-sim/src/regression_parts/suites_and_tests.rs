@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+use super::*;
 pub fn all_suites() -> Vec<RegressionSuite> {
     vec![
         // SAR — M35 changed success semantics to targets-found; keep success_rate out of
@@ -283,6 +285,8 @@ pub fn suites_by_group(group: SuiteGroup) -> Vec<RegressionSuite> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
+    use swarm_metrics::AggregateMetrics;
 
     fn make_metrics(success_rate: f64) -> AggregateMetrics {
         AggregateMetrics {

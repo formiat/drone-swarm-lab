@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+use super::*;
 impl ScenarioRunner {
     pub fn run(scenario: &Scenario, config: RunConfig) -> RunMetrics {
         use swarm_alloc::GreedyAllocator;
@@ -27,7 +29,7 @@ impl ScenarioRunner {
     }
 
     /// Build a `RunState` from the current runtime state for adapter-driven checks.
-    fn build_run_state(
+    pub(super) fn build_run_state(
         grid_state: &Option<swarm_runtime::GridState>,
         inspection_state: &Option<InspectionState>,
         wildfire_state: &Option<WildfireState>,
@@ -73,7 +75,7 @@ impl ScenarioRunner {
 
     /// Check adapter-driven mission completion.
     /// Returns true if all tasks with a known kind are completed according to their adapter.
-    fn adapter_driven_complete(
+    pub(super) fn adapter_driven_complete(
         tasks: &[Task],
         run_state: &RunState,
         registry: &AdapterRegistry,
@@ -86,5 +88,4 @@ impl ScenarioRunner {
             }
         })
     }
-
 }

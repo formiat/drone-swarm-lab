@@ -1,3 +1,9 @@
-// Split into include files to keep Rust source files below the repository line limit.
-include!("metrics_parts/metrics.rs");
-include!("metrics_parts/tests.rs");
+#[path = "metrics_parts/metrics.rs"]
+mod run;
+#[cfg(test)]
+use run::percentile_of_sorted;
+pub use run::*;
+
+#[cfg(test)]
+#[path = "metrics_parts/tests.rs"]
+mod tests;

@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+use super::*;
 use serde::{Deserialize, Serialize};
 use swarm_metrics::AggregateMetrics;
 
@@ -866,7 +868,7 @@ fn validate_name_list(
     }
 }
 
-fn compare_metric_field<T: PartialEq + std::fmt::Debug>(
+pub(super) fn compare_metric_field<T: PartialEq + std::fmt::Debug>(
     errors: &mut Vec<String>,
     key: &(String, String),
     field: &str,

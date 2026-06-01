@@ -1,3 +1,18 @@
+#![allow(unused_imports)]
+use super::*;
+use std::collections::HashMap;
+
+use serde::Serialize;
+use swarm_examples::regression_lib::{build_mission_scenario_builder, with_realism_if_needed};
+use swarm_sim::{
+    default_suites, Baseline, BenchmarkHarness, BenchmarkOptions, ComparisonReport,
+    RegressionReport, RegressionRunner, SuiteMode,
+};
+
+use super::cli_and_runs::{
+    baseline_from_green_report, ensure_parent_dir, make_factories, write_benchmark_pack, CliArgs,
+};
+
 #[derive(Serialize)]
 struct UrbanAnalysisManifest {
     schema_version: String,
@@ -18,7 +33,7 @@ struct UrbanAnalysisManifestEntry {
     separation_summary: swarm_sim::UrbanSeparationSummary,
 }
 
-fn write_urban_analysis_artifacts(
+pub(super) fn write_urban_analysis_artifacts(
     output_dir: &str,
     replay_logs: &[swarm_replay::EventLog],
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -91,7 +106,7 @@ fn write_urban_analysis_artifacts(
     Ok(())
 }
 
-fn sanitize_artifact_id(value: &str) -> String {
+pub(super) fn sanitize_artifact_id(value: &str) -> String {
     value.replace(['/', '\\', ':'], "_")
 }
 
@@ -108,7 +123,9 @@ fn has_non_pose_urban_events(counts: &swarm_sim::UrbanEventCounts) -> bool {
         > 0
 }
 
-fn merge_reports(reports: &[swarm_sim::ComparisonReport]) -> swarm_sim::ComparisonReport {
+pub(super) fn merge_reports(
+    reports: &[swarm_sim::ComparisonReport],
+) -> swarm_sim::ComparisonReport {
     use std::collections::HashMap;
     let first = &reports[0];
     let mut merged_results: HashMap<(String, String), swarm_metrics::AggregateMetrics> =
@@ -163,7 +180,7 @@ fn merge_reports(reports: &[swarm_sim::ComparisonReport]) -> swarm_sim::Comparis
     }
 }
 
-fn run_regression(cli: &CliArgs) {
+pub(super) fn run_regression(cli: &CliArgs) {
     let baseline = cli
         .compare_baseline
         .as_ref()

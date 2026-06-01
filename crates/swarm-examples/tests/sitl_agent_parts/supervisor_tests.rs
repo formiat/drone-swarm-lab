@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+use super::*;
 use std::process::Command;
 
 fn sitl_agent_binary() -> &'static str {
@@ -8,7 +10,7 @@ fn sitl_supervisor_binary() -> &'static str {
     env!("CARGO_BIN_EXE_sitl_supervisor")
 }
 
-fn write_sitl_scenario() -> tempfile::NamedTempFile {
+pub(super) fn write_sitl_scenario() -> tempfile::NamedTempFile {
     let file = tempfile::NamedTempFile::new().unwrap();
     std::fs::write(
         file.path(),
@@ -79,7 +81,7 @@ fn write_sitl_scenario() -> tempfile::NamedTempFile {
     file
 }
 
-fn write_multi_agent_sitl_scenario() -> tempfile::NamedTempFile {
+pub(super) fn write_multi_agent_sitl_scenario() -> tempfile::NamedTempFile {
     let file = tempfile::NamedTempFile::new().unwrap();
     std::fs::write(
         file.path(),
@@ -164,7 +166,7 @@ fn write_multi_agent_sitl_scenario() -> tempfile::NamedTempFile {
     file
 }
 
-fn write_multi_agent_config(duplicate: bool) -> tempfile::NamedTempFile {
+pub(super) fn write_multi_agent_config(duplicate: bool) -> tempfile::NamedTempFile {
     write_multi_agent_config_with_connections(
         duplicate,
         "udp:127.0.0.1:14550",
@@ -172,7 +174,7 @@ fn write_multi_agent_config(duplicate: bool) -> tempfile::NamedTempFile {
     )
 }
 
-fn write_multi_agent_config_with_connections(
+pub(super) fn write_multi_agent_config_with_connections(
     duplicate: bool,
     agent_0_connection: &str,
     agent_1_connection: &str,
@@ -211,7 +213,7 @@ fn write_multi_agent_config_with_connections(
     file
 }
 
-fn write_multi_agent_execute_config_with_connections(
+pub(super) fn write_multi_agent_execute_config_with_connections(
     agent_0_connection: &str,
     agent_1_connection: &str,
 ) -> tempfile::NamedTempFile {
@@ -248,31 +250,35 @@ fn write_multi_agent_execute_config_with_connections(
     file
 }
 
-fn write_safety_config(json: &str) -> tempfile::NamedTempFile {
+pub(super) fn write_safety_config(json: &str) -> tempfile::NamedTempFile {
     let file = tempfile::NamedTempFile::new().unwrap();
     std::fs::write(file.path(), json).unwrap();
     file
 }
 
-fn run_sitl_agent(args: &[&str]) -> std::process::Output {
+pub(super) fn run_sitl_agent(args: &[&str]) -> std::process::Output {
     Command::new(sitl_agent_binary())
         .args(args)
         .output()
         .expect("failed to execute sitl_agent")
 }
 
-fn run_sitl_supervisor(args: &[&str]) -> std::process::Output {
+pub(super) fn run_sitl_supervisor(args: &[&str]) -> std::process::Output {
     Command::new(sitl_supervisor_binary())
         .args(args)
         .output()
         .expect("failed to execute sitl_supervisor")
 }
 
-fn assert_sitl_supervisor_cli_error(args: &[&str], expected: &str) {
+pub(super) fn assert_sitl_supervisor_cli_error(args: &[&str], expected: &str) {
     assert_sitl_supervisor_cli_error_code(args, expected, 2);
 }
 
-fn assert_sitl_supervisor_cli_error_code(args: &[&str], expected: &str, expected_code: i32) {
+pub(super) fn assert_sitl_supervisor_cli_error_code(
+    args: &[&str],
+    expected: &str,
+    expected_code: i32,
+) {
     let output = run_sitl_supervisor(args);
     assert!(
         !output.status.success(),
@@ -294,7 +300,10 @@ fn assert_sitl_supervisor_cli_error_code(args: &[&str], expected: &str, expected
     );
 }
 
-fn run_sitl_supervisor_in_dir(args: &[&str], dir: &std::path::Path) -> std::process::Output {
+pub(super) fn run_sitl_supervisor_in_dir(
+    args: &[&str],
+    dir: &std::path::Path,
+) -> std::process::Output {
     Command::new(sitl_supervisor_binary())
         .current_dir(dir)
         .args(args)

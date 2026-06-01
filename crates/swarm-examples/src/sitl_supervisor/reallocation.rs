@@ -1,15 +1,17 @@
+#![allow(unused_imports)]
+use super::*;
 #[cfg(any(feature = "mavlink-transport", test))]
-struct LiveReallocationContext<'a> {
-    entry: &'a swarm_sim::ScenarioSuiteEntry,
-    manifest: &'a MultiAgentSitlManifest,
-    finished_runs: &'a [LiveAgentRun],
-    active_runs: &'a [LiveAgentRun],
-    failed_run: &'a LiveAgentRun,
-    survivor_ids: &'a [String],
+pub(super) struct LiveReallocationContext<'a> {
+    pub(super) entry: &'a swarm_sim::ScenarioSuiteEntry,
+    pub(super) manifest: &'a MultiAgentSitlManifest,
+    pub(super) finished_runs: &'a [LiveAgentRun],
+    pub(super) active_runs: &'a [LiveAgentRun],
+    pub(super) failed_run: &'a LiveAgentRun,
+    pub(super) survivor_ids: &'a [String],
 }
 
 #[cfg(any(feature = "mavlink-transport", test))]
-fn live_reallocation_after_failure(
+pub(super) fn live_reallocation_after_failure(
     context: LiveReallocationContext<'_>,
     recorder: &mut SitlEventRecorder,
     metrics: &mut SupervisorMetrics,
@@ -85,7 +87,7 @@ fn live_reallocation_after_failure(
 }
 
 #[cfg(any(feature = "mavlink-transport", test))]
-fn completed_live_task_ids(
+pub(super) fn completed_live_task_ids(
     manifest: &MultiAgentSitlManifest,
     previous_runs: &[LiveAgentRun],
     failed_run: &LiveAgentRun,
@@ -98,7 +100,7 @@ fn completed_live_task_ids(
 }
 
 #[cfg(any(feature = "mavlink-transport", test))]
-fn completed_task_ids_for_run(
+pub(super) fn completed_task_ids_for_run(
     manifest: &MultiAgentSitlManifest,
     run: &LiveAgentRun,
 ) -> Vec<String> {
@@ -124,7 +126,7 @@ fn completed_task_ids_for_run(
 }
 
 #[cfg(any(feature = "mavlink-transport", test))]
-fn completed_waypoints_for_run(
+pub(super) fn completed_waypoints_for_run(
     manifest: &MultiAgentSitlManifest,
     run: &LiveAgentRun,
 ) -> Vec<CompletedWaypoint> {
@@ -160,7 +162,7 @@ fn completed_waypoints_for_run(
         .unwrap_or_default()
 }
 
-fn record_reallocation_output(
+pub(super) fn record_reallocation_output(
     output: &NodeTickOutput,
     recorder: &mut SitlEventRecorder,
     metrics: &mut SupervisorMetrics,
@@ -230,13 +232,13 @@ fn record_reallocation_output(
     recovered_by_agent
 }
 
-fn dedup_strings_preserve_order(items: &mut Vec<String>) {
+pub(super) fn dedup_strings_preserve_order(items: &mut Vec<String>) {
     let mut seen = HashSet::new();
     items.retain(|item| seen.insert(item.clone()));
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn completed_waypoints_from_progress(
+pub(super) fn completed_waypoints_from_progress(
     progress: &crate::sitl_progress::SitlTaskProgress,
 ) -> Vec<CompletedWaypoint> {
     progress
@@ -247,7 +249,7 @@ fn completed_waypoints_from_progress(
 }
 
 #[cfg(test)]
-fn completed_waypoints_from_items(items: &[SitlWaypointItem]) -> Vec<CompletedWaypoint> {
+pub(super) fn completed_waypoints_from_items(items: &[SitlWaypointItem]) -> Vec<CompletedWaypoint> {
     items
         .iter()
         .map(|waypoint| CompletedWaypoint {
@@ -258,7 +260,7 @@ fn completed_waypoints_from_items(items: &[SitlWaypointItem]) -> Vec<CompletedWa
 }
 
 #[cfg(any(feature = "mavlink-transport", test))]
-fn task_ids_from_completed_waypoints(waypoints: &[CompletedWaypoint]) -> Vec<String> {
+pub(super) fn task_ids_from_completed_waypoints(waypoints: &[CompletedWaypoint]) -> Vec<String> {
     waypoints
         .iter()
         .map(|waypoint| waypoint.task_id.clone())
@@ -266,13 +268,13 @@ fn task_ids_from_completed_waypoints(waypoints: &[CompletedWaypoint]) -> Vec<Str
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn dedup_completed_waypoints_preserve_order(waypoints: &mut Vec<CompletedWaypoint>) {
+pub(super) fn dedup_completed_waypoints_preserve_order(waypoints: &mut Vec<CompletedWaypoint>) {
     let mut seen = HashSet::new();
     waypoints.retain(|waypoint| seen.insert(waypoint.task_id.clone()));
 }
 
 #[cfg(any(feature = "mavlink-transport", test))]
-fn mission_replacement_plans(
+pub(super) fn mission_replacement_plans(
     manifest: &MultiAgentSitlManifest,
     previous_runs: &[LiveAgentRun],
     failed_run: &LiveAgentRun,
@@ -322,7 +324,7 @@ fn mission_replacement_plans(
 }
 
 #[cfg(any(feature = "mavlink-transport", test))]
-fn push_recovered_tasks_in_manifest_order(
+pub(super) fn push_recovered_tasks_in_manifest_order(
     task_ids: &mut Vec<String>,
     manifest: &MultiAgentSitlManifest,
     recovered_task_ids: &HashSet<String>,
@@ -340,7 +342,7 @@ fn push_recovered_tasks_in_manifest_order(
 }
 
 #[cfg(any(feature = "mavlink-transport", test))]
-fn push_unique_replacement_task(
+pub(super) fn push_unique_replacement_task(
     task_ids: &mut Vec<String>,
     task_id: &str,
     completed: &HashSet<String>,
@@ -351,7 +353,7 @@ fn push_unique_replacement_task(
 }
 
 #[cfg(any(feature = "mavlink-transport", test))]
-fn replacement_waypoints_for_task_ids(
+pub(super) fn replacement_waypoints_for_task_ids(
     manifest: &MultiAgentSitlManifest,
     task_ids: &[String],
 ) -> Result<Vec<SitlWaypointItem>, SitlError> {

@@ -1,4 +1,8 @@
-fn compute_urban_foundation_metrics(urban_state: &Option<UrbanState>) -> (bool, f64, f64, u64) {
+#![allow(unused_imports)]
+use super::*;
+pub(super) fn compute_urban_foundation_metrics(
+    urban_state: &Option<UrbanState>,
+) -> (bool, f64, f64, u64) {
     let Some(urban_state) = urban_state else {
         return (false, 0.0, 0.0, 0);
     };
@@ -20,7 +24,7 @@ fn compute_urban_foundation_metrics(urban_state: &Option<UrbanState>) -> (bool, 
     }
 }
 
-fn speed_m_per_tick(agent: &Agent, tick_duration_ms: u64) -> f64 {
+pub(super) fn speed_m_per_tick(agent: &Agent, tick_duration_ms: u64) -> f64 {
     let tick_seconds = tick_duration_ms as f64 / 1000.0;
     if tick_seconds.is_finite() && tick_seconds > 0.0 && agent.speed.is_finite() {
         (agent.speed * tick_seconds).max(0.0)
@@ -29,7 +33,7 @@ fn speed_m_per_tick(agent: &Agent, tick_duration_ms: u64) -> f64 {
     }
 }
 
-fn route_efficiency(route_length_m: f64, distance_travelled_m: f64) -> f64 {
+pub(super) fn route_efficiency(route_length_m: f64, distance_travelled_m: f64) -> f64 {
     if distance_travelled_m > 0.0 {
         route_length_m / distance_travelled_m
     } else {
@@ -37,7 +41,7 @@ fn route_efficiency(route_length_m: f64, distance_travelled_m: f64) -> f64 {
     }
 }
 
-fn advance_search_segment(
+pub(super) fn advance_search_segment(
     route: &UrbanPlannedRoute,
     segment_index: usize,
     tick: u64,
@@ -69,7 +73,7 @@ fn advance_search_segment(
     next_index
 }
 
-fn push_segment_entered(
+pub(super) fn push_segment_entered(
     builder: &mut swarm_replay::EventLogBuilder,
     agent_id: &AgentId,
     tick: u64,
@@ -86,7 +90,7 @@ fn push_segment_entered(
     });
 }
 
-fn push_urban_violation_event(
+pub(super) fn push_urban_violation_event(
     builder: &mut swarm_replay::EventLogBuilder,
     agent_id: &AgentId,
     tick: u64,
@@ -125,7 +129,7 @@ fn push_urban_violation_event(
     });
 }
 
-fn push_detection_events(
+pub(super) fn push_detection_events(
     builder: &mut swarm_replay::EventLogBuilder,
     agent_id: &AgentId,
     tick: u64,
@@ -163,7 +167,7 @@ fn push_detection_events(
     }
 }
 
-fn push_urban_search_completed(
+pub(super) fn push_urban_search_completed(
     builder: &mut swarm_replay::EventLogBuilder,
     agent_id: &AgentId,
     tick: u64,
@@ -182,7 +186,7 @@ fn push_urban_search_completed(
     });
 }
 
-fn current_urban_pose(
+pub(super) fn current_urban_pose(
     map: &UrbanMap,
     route: &UrbanPlannedRoute,
     segment_index: usize,
@@ -200,7 +204,7 @@ fn current_urban_pose(
     })
 }
 
-struct UrbanAnalysisAgentState {
+pub(super) struct UrbanAnalysisAgentState {
     agent_id: AgentId,
     offset: swarm_types::Pose,
     speed_m_per_tick: f64,
@@ -210,7 +214,7 @@ struct UrbanAnalysisAgentState {
     total_distance_travelled_m: f64,
 }
 
-fn urban_analysis_agent_states(
+pub(super) fn urban_analysis_agent_states(
     scenario: &Scenario,
     primary_agent_id: &AgentId,
     start_pose: swarm_types::Pose,
@@ -236,7 +240,7 @@ fn urban_analysis_agent_states(
         .collect()
 }
 
-fn push_urban_analysis_agent_started(
+pub(super) fn push_urban_analysis_agent_started(
     builder: &mut swarm_replay::EventLogBuilder,
     state: &UrbanAnalysisAgentState,
     map: &UrbanMap,
@@ -271,7 +275,7 @@ fn push_urban_analysis_agent_started(
     }
 }
 
-fn advance_urban_analysis_agent(
+pub(super) fn advance_urban_analysis_agent(
     builder: &mut swarm_replay::EventLogBuilder,
     state: &mut UrbanAnalysisAgentState,
     map: &UrbanMap,
@@ -337,7 +341,7 @@ fn advance_urban_analysis_agent(
     }
 }
 
-fn offset_urban_analysis_pose(
+pub(super) fn offset_urban_analysis_pose(
     pose: swarm_types::Pose,
     state: &UrbanAnalysisAgentState,
 ) -> swarm_types::Pose {
@@ -348,7 +352,7 @@ fn offset_urban_analysis_pose(
     }
 }
 
-fn finish_urban_run_metrics(
+pub(super) fn finish_urban_run_metrics(
     mut metrics: RunMetrics,
     log_builder: Option<swarm_replay::EventLogBuilder>,
 ) -> (RunMetrics, Option<swarm_replay::EventLog>) {
@@ -367,7 +371,7 @@ fn finish_urban_run_metrics(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn urban_patrol_metrics(
+pub(super) fn urban_patrol_metrics(
     scenario: &Scenario,
     total_ticks: u64,
     success: bool,
@@ -498,7 +502,7 @@ fn urban_patrol_metrics(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn urban_search_metrics(
+pub(super) fn urban_search_metrics(
     scenario: &Scenario,
     total_ticks: u64,
     bus_detected: bool,
@@ -541,7 +545,7 @@ fn urban_search_metrics(
     metrics
 }
 
-fn update_unassigned_durations(
+pub(super) fn update_unassigned_durations(
     coordinator: &Coordinator,
     durations: &mut HashMap<TaskId, u64>,
     current_max: u64,
@@ -563,7 +567,10 @@ fn update_unassigned_durations(
     max_duration
 }
 
-fn released_tasks_reassigned(coordinator: &Coordinator, released_tasks: &[TaskId]) -> bool {
+pub(super) fn released_tasks_reassigned(
+    coordinator: &Coordinator,
+    released_tasks: &[TaskId],
+) -> bool {
     released_tasks.iter().all(|released_task| {
         coordinator
             .registry

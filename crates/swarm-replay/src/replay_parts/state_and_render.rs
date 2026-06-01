@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+use super::*;
 use crate::event_log::{Event, EventLog};
 use swarm_types::{AgentId, Pose, TaskId};
 
