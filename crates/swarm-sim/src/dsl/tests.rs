@@ -1,4 +1,3 @@
-#![allow(unused_imports)]
 use super::*;
 use crate::runner::UrbanState;
 use crate::scenario::Scenario;

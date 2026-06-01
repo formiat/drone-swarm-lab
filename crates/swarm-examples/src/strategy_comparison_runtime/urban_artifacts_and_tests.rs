@@ -1,17 +1,17 @@
-#![allow(unused_imports)]
-use super::*;
 use std::collections::HashMap;
 
 use crate::regression_lib::{build_mission_scenario_builder, with_realism_if_needed};
 use serde::Serialize;
 use swarm_sim::{
-    default_suites, Baseline, BenchmarkHarness, BenchmarkOptions, ComparisonReport,
-    RegressionReport, RegressionRunner, SuiteMode,
+    default_suites, Baseline, BenchmarkHarness, BenchmarkOptions, RegressionRunner, SuiteMode,
 };
 
-use super::cli_and_runs::{
-    baseline_from_green_report, ensure_parent_dir, make_factories, write_benchmark_pack, CliArgs,
-};
+use super::cli_and_runs::{baseline_from_green_report, ensure_parent_dir, make_factories, CliArgs};
+
+#[cfg(test)]
+use super::cli_and_runs::write_benchmark_pack;
+#[cfg(test)]
+use swarm_sim::{ComparisonReport, RegressionReport};
 
 #[derive(Serialize)]
 struct UrbanAnalysisManifest {

@@ -1,4 +1,3 @@
-#![allow(unused_imports)]
 use super::*;
 use swarm_types::{
     Aabb, Pose, UrbanBus, UrbanBusId, UrbanDetectorConfig, UrbanEdge, UrbanEdgeId, UrbanMap,

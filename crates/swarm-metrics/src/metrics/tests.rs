@@ -1,4 +1,3 @@
-#![allow(unused_imports)]
 use super::*;
 fn run(success: bool, detection_time_ticks: Option<u64>) -> RunMetrics {
     RunMetrics {

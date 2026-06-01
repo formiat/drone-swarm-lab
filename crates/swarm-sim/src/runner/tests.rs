@@ -1,4 +1,3 @@
-#![allow(unused_imports)]
 use super::*;
 use swarm_alloc::{AllocationAgent, AllocationTask, Allocator};
 use swarm_types::{

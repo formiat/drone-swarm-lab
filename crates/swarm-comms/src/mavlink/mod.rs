@@ -19,23 +19,34 @@ type CommonHeader = mavlink::MavHeader;
 #[cfg(feature = "mavlink-transport")]
 type CommonMessage = common::MavMessage;
 
-mod types_and_transport;
-use types_and_transport::*;
-pub use types_and_transport::*;
+mod types;
+use types::*;
+pub use types::*;
+
+mod transport;
+pub use transport::*;
+use transport::*;
 
 #[cfg(feature = "mavlink-transport")]
-mod mission_execution;
+mod mission_upload;
 #[cfg(feature = "mavlink-transport")]
-pub use mission_execution::mavlink_message_to_telemetry_event;
+pub use mission_upload::mavlink_message_to_telemetry_event;
 #[cfg(feature = "mavlink-transport")]
-use mission_execution::*;
+use mission_upload::*;
 
 #[cfg(feature = "mavlink-transport")]
-mod commands_and_conversion;
+mod commands;
 #[cfg(feature = "mavlink-transport")]
-pub use commands_and_conversion::*;
+pub use commands::*;
 #[cfg(feature = "mavlink-transport")]
-use commands_and_conversion::*;
+use commands::*;
+
+#[cfg(feature = "mavlink-transport")]
+mod mission_items;
+#[cfg(feature = "mavlink-transport")]
+pub use mission_items::*;
+#[cfg(feature = "mavlink-transport")]
+use mission_items::*;
 
 #[cfg(test)]
 mod tests_core;

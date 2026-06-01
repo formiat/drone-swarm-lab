@@ -33,9 +33,24 @@ use crate::sitl_plan::{
 use crate::sitl_report::{write_sitl_multi_agent_run_report, SitlMultiAgentAgentReport};
 use crate::sitl_report::{SitlMultiAgentReallocationReport, SitlMultiAgentRunReport};
 
-mod config_and_controllers;
-use config_and_controllers::*;
-pub use config_and_controllers::*;
+mod config;
+pub use config::*;
+use config::*;
+
+#[cfg(feature = "mavlink-transport")]
+mod live;
+#[cfg(feature = "mavlink-transport")]
+pub use live::*;
+#[cfg(feature = "mavlink-transport")]
+use live::*;
+
+mod mock;
+pub use mock::*;
+use mock::*;
+
+mod ports;
+pub use ports::*;
+use ports::*;
 
 mod supervisor_flows;
 pub use supervisor_flows::*;

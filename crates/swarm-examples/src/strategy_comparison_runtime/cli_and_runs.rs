@@ -1,9 +1,6 @@
-#![allow(unused_imports)]
-use super::*;
 use std::collections::HashMap;
 use std::path::Path;
 
-use serde::Serialize;
 use swarm_alloc::{
     AllocationAgent, AllocationTask, AuctionAllocator, CbbaAllocator, CentralizedPlanner,
     ConnectivityAwareAllocator, GreedyAllocator, Strategy,
@@ -16,13 +13,11 @@ use swarm_scenarios::{
     WildfireProfile,
 };
 use swarm_sim::{
-    default_suites, export_csv, export_json, Baseline, BenchmarkHarness, BenchmarkOptions,
-    ComparisonReport, RegressionReport, RegressionRunner, RunConfig, Scenario, SuiteMode,
+    export_csv, export_json, Baseline, BenchmarkHarness, BenchmarkOptions, ComparisonReport,
+    RegressionReport, RunConfig, Scenario,
 };
 
-use crate::regression_lib::{
-    build_coverage_profile, build_mission_scenario_builder, with_realism_if_needed,
-};
+use crate::regression_lib::build_coverage_profile;
 
 use crate::realism::{apply_realism_preset, RealismProfile};
 

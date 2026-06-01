@@ -1,4 +1,3 @@
-#![allow(unused_imports)]
 use super::*;
 use crate::event_log::EventLogBuilder;
 use crate::Event;
