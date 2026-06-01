@@ -20,11 +20,11 @@ use swarm_sim::{
     ComparisonReport, RegressionReport, RegressionRunner, RunConfig, Scenario, SuiteMode,
 };
 
-use swarm_examples::regression_lib::{
+use crate::regression_lib::{
     build_coverage_profile, build_mission_scenario_builder, with_realism_if_needed,
 };
 
-use swarm_examples::realism::{apply_realism_preset, RealismProfile};
+use crate::realism::{apply_realism_preset, RealismProfile};
 
 use super::urban_artifacts_and_tests::{
     merge_reports, run_regression, sanitize_artifact_id, write_urban_analysis_artifacts,

@@ -2,8 +2,8 @@
 use super::*;
 use std::collections::HashMap;
 
+use crate::regression_lib::{build_mission_scenario_builder, with_realism_if_needed};
 use serde::Serialize;
-use swarm_examples::regression_lib::{build_mission_scenario_builder, with_realism_if_needed};
 use swarm_sim::{
     default_suites, Baseline, BenchmarkHarness, BenchmarkOptions, ComparisonReport,
     RegressionReport, RegressionRunner, SuiteMode,
