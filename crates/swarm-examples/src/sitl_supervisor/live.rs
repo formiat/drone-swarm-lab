@@ -1,5 +1,28 @@
-#![allow(unused_imports)]
-use super::*;
+#[cfg(feature = "mavlink-transport")]
+use std::thread;
+#[cfg(feature = "mavlink-transport")]
+use std::time::{Duration, Instant};
+
+#[cfg(feature = "mavlink-transport")]
+use swarm_types::AgentId;
+
+#[cfg(feature = "mavlink-transport")]
+use crate::sitl_connection::{
+    default_takeoff_altitude, task_ids_by_seq_from_items, waypoints_from_sitl_items,
+    SitlConnectionLifecycle,
+};
+#[cfg(feature = "mavlink-transport")]
+use crate::sitl_multi_agent::MultiAgentSitlManifestAgent;
+#[cfg(feature = "mavlink-transport")]
+use crate::sitl_plan::{SitlError, SitlWaypointItem};
+
+#[cfg(feature = "mavlink-transport")]
+use super::{
+    append_abort_to_report, completed_waypoints_from_progress,
+    dedup_completed_waypoints_preserve_order, event_advances_progress, live_progress_status_name,
+    task_ids_from_completed_waypoints, CompletedWaypoint, LiveAgentController, LiveAgentRun,
+    MissionReplacementPlan,
+};
 
 #[cfg(feature = "mavlink-transport")]
 pub struct Px4AgentController {

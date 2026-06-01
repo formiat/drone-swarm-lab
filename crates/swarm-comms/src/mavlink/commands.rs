@@ -1,5 +1,15 @@
-#![allow(unused_imports)]
-use super::*;
+#[cfg(feature = "mavlink-transport")]
+use std::time::{Duration, Instant};
+
+#[cfg(feature = "mavlink-transport")]
+use mavlink::dialects::common;
+
+#[cfg(feature = "mavlink-transport")]
+use super::{
+    mission_upload::MavlinkVehicleConnection, AbortCommandResult, CommonHeader, CommonMessage,
+    MavlinkLifecycleError, MavlinkMissionError, MavlinkMissionEvent, MavlinkMissionObserver,
+    MavlinkTelemetryError, MissionLifecycleOptions, NoopMavlinkMissionObserver,
+};
 #[cfg(feature = "mavlink-transport")]
 pub fn arm_command(target_system: u8, target_component: u8) -> CommonMessage {
     command_long(

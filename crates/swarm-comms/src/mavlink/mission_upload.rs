@@ -1,5 +1,24 @@
-#![allow(unused_imports)]
-use super::*;
+#[cfg(feature = "mavlink-transport")]
+use std::io::ErrorKind;
+#[cfg(feature = "mavlink-transport")]
+use std::time::{Duration, Instant};
+
+#[cfg(feature = "mavlink-transport")]
+use mavlink::dialects::common;
+
+#[cfg(feature = "mavlink-transport")]
+use super::{
+    commands::{
+        arm_command, attach_abort_result, mission_error_to_telemetry_error,
+        send_abort_command_observed, send_command_and_wait_observed, start_mission_command,
+        takeoff_command, wait_for_post_start_heartbeat,
+    },
+    mission_items::waypoint_to_mission_item_int,
+    AbortCommandResult, CommonHeader, CommonMessage, MavlinkFlightError, MavlinkFlightReport,
+    MavlinkLifecycleError, MavlinkMissionError, MavlinkMissionEvent, MavlinkMissionObserver,
+    MavlinkTelemetryError, MavlinkTelemetryEvent, MissionLifecycleOptions, MissionLifecycleReport,
+    MissionUploadOptions, MissionUploadReport, NoopMavlinkMissionObserver, Waypoint,
+};
 #[cfg(feature = "mavlink-transport")]
 pub(super) trait MavlinkVehicleConnection {
     fn send_message(&mut self, msg: CommonMessage) -> Result<(), MavlinkMissionError>;

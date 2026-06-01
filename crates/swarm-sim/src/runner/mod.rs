@@ -10,6 +10,7 @@ use swarm_alloc::{
 };
 use swarm_comms::{
     ConnectivityModel, ConnectivitySnapshot, InMemAgentTransport, InMemNetwork, NetworkConfig,
+    Transport,
 };
 use swarm_metrics::RunMetrics;
 use swarm_runtime::{AgentNode, Coordinator, GridState, NodeTickOutput};
@@ -26,9 +27,11 @@ mod types;
 use types::*;
 pub use types::*;
 
+mod internal;
 mod scenario_runner_internal;
 mod scenario_runner_public;
 mod scenario_runner_urban;
+use internal::*;
 mod urban_helpers;
 use urban_helpers::*;
 

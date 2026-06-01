@@ -141,27 +141,17 @@ impl ScenarioRunner {
         });
 
         for _ in 0..config.max_ticks {
-            clock.advance();
-            let current_tick = u64::from(clock.now());
+            let current_tick = advance_tick(&mut clock);
             total_ticks = current_tick;
 
-            if let Some(ref mut builder) = log_builder {
-                builder.push(swarm_replay::Event::TickStart { tick: current_tick });
-            }
+            record_tick_start(&mut log_builder, current_tick);
 
-            for failure in config
-                .failures
-                .iter()
-                .filter(|failure| failure.at_tick == current_tick)
-            {
-                crashed_agents.insert(failure.agent_id.clone());
-                if let Some(ref mut builder) = log_builder {
-                    builder.push(swarm_replay::Event::AgentFailed {
-                        agent_id: failure.agent_id.clone(),
-                        tick: current_tick,
-                    });
-                }
-            }
+            record_agent_failures(
+                &config.failures,
+                current_tick,
+                &mut crashed_agents,
+                &mut log_builder,
+            );
 
             bus.borrow_mut().advance_tick();
 
@@ -205,12 +195,7 @@ impl ScenarioRunner {
                 }
             }
 
-            let injected: Vec<Task> = config
-                .dynamic_tasks
-                .iter()
-                .filter(|ev| ev.at_tick == current_tick)
-                .map(|ev| ev.task.clone())
-                .collect();
+            let injected = tasks_injected_at_tick(&config.dynamic_tasks, current_tick);
             tasks_injected += injected.len() as u64;
 
             // v0.5: Update connectivity snapshot on the network bus before heartbeats/gossip.
@@ -242,156 +227,44 @@ impl ScenarioRunner {
                 }
             }
 
-            // Phase 1: All alive agents send heartbeats (uses AgentNode method)
-            for (node, agent_id) in &mut nodes {
-                if crashed_agents.contains(agent_id) {
-                    continue;
-                }
-                let _ = node.send_heartbeats(current_tick);
-            }
-
-            // Phase 2: All alive agents poll and process (uses AgentNode method)
-            let mut tick_outputs: Vec<(AgentId, NodeTickOutput)> = Vec::new();
-            for (node, agent_id) in &mut nodes {
-                if crashed_agents.contains(agent_id) {
-                    continue;
-                }
-
-                let output = match node.process_inbox_and_allocate(
-                    current_tick,
-                    &mut allocator,
-                    injected.clone(),
-                ) {
-                    Ok(out) => out,
-                    Err(_) => continue,
-                };
-                tick_outputs.push((agent_id.clone(), output));
-            }
+            send_alive_heartbeats(&mut nodes, &crashed_agents, current_tick);
+            let tick_outputs = process_alive_nodes(
+                &mut nodes,
+                &crashed_agents,
+                current_tick,
+                &mut allocator,
+                &injected,
+            );
 
             // v0.5: Pose update — only teleport when movement is disabled.
             // When enable_movement=true, agents move gradually via apply_movement.
-            if !config.enable_movement {
-                for (node, agent_id) in &mut nodes {
-                    if crashed_agents.contains(agent_id) {
-                        continue;
-                    }
-                    let assigned_tasks: Vec<(AgentId, Option<swarm_types::Pose>)> = node
-                        .coordinator
-                        .registry
-                        .tasks()
-                        .filter(|t| t.assigned_to.as_ref() == Some(agent_id))
-                        .map(|t| (agent_id.clone(), t.pose))
-                        .collect();
-                    for (_aid, pose) in assigned_tasks {
-                        if let Some(p) = pose {
-                            node.coordinator.membership.update_pose(agent_id, p);
-                        }
-                    }
-                }
-            }
+            teleport_assigned_tasks_when_movement_disabled(
+                &mut nodes,
+                &crashed_agents,
+                config.enable_movement,
+            );
 
             // v0.31: Wind drift and pose noise (applied after movement to own agent's view)
-            if config.wind.is_some() || config.pose_noise_m > 0.0 {
-                let dt = config.tick_duration_ms as f64 / 1000.0;
-                let mut rng = rand::rngs::StdRng::seed_from_u64(
-                    scenario
-                        .seed
-                        .wrapping_add(current_tick)
-                        .wrapping_add(0xCAFE),
-                );
-                for (node, agent_id) in &mut nodes {
-                    if crashed_agents.contains(agent_id) {
-                        continue;
-                    }
-                    node.coordinator.membership.apply_environment_effects(
-                        config.wind,
-                        config.pose_noise_m,
-                        &mut rng,
-                        dt,
-                    );
-                }
-            }
+            apply_environment_effects(
+                &mut nodes,
+                &crashed_agents,
+                config.wind,
+                config.pose_noise_m,
+                config.tick_duration_ms,
+                scenario.seed,
+                current_tick,
+            );
 
             // v0.13: Safety checks after movement/teleport
             if let Some(ref safety_cfg) = config.safety_config {
-                let all_agents: Vec<swarm_types::Agent> = nodes
-                    .iter()
-                    .filter(|(_, id)| !crashed_agents.contains(id))
-                    .map(|(node, id)| {
-                        node.coordinator
-                            .membership
-                            .get(id)
-                            .map(|entry| swarm_types::Agent {
-                                id: id.clone(),
-                                role: entry.role.clone(),
-                                health: entry.health.clone(),
-                                pose: entry.pose,
-                                capabilities: entry.capabilities.clone(),
-                                current_task: None,
-                                battery: entry.battery,
-                                comms_range: entry.comms_range,
-                                generation: entry.generation,
-                                speed: 0.0,
-                                max_range: 0.0,
-                                battery_drain_rate: 0.0,
-                                battery_model: None,
-                            })
-                            .unwrap_or_else(|| {
-                                scenario
-                                    .agents
-                                    .iter()
-                                    .find(|a| &a.id == id)
-                                    .cloned()
-                                    .unwrap()
-                            })
-                    })
-                    .collect();
-                for (node, agent_id) in &mut nodes {
-                    if crashed_agents.contains(agent_id) {
-                        continue;
-                    }
-                    if let Some(entry) = node.coordinator.membership.get(agent_id) {
-                        let agent = swarm_types::Agent {
-                            id: agent_id.clone(),
-                            role: entry.role.clone(),
-                            health: entry.health.clone(),
-                            pose: entry.pose,
-                            capabilities: entry.capabilities.clone(),
-                            current_task: None,
-                            battery: entry.battery,
-                            comms_range: entry.comms_range,
-                            generation: entry.generation,
-                            speed: 0.0,
-                            max_range: 0.0,
-                            battery_drain_rate: 0.0,
-                            battery_model: None,
-                        };
-                        let violations = swarm_safety::check_agent(safety_cfg, &agent, &all_agents);
-                        if !violations.is_empty() {
-                            safety_violations += violations.len() as u64;
-                            if let Some(ref mut builder) = log_builder {
-                                for v in &violations {
-                                    let vtype = match v.violation_type {
-                                        swarm_safety::ViolationType::NoFlyZoneEntered => {
-                                            swarm_replay::ViolationType::NoFly
-                                        }
-                                        swarm_safety::ViolationType::GeofenceExited => {
-                                            swarm_replay::ViolationType::Geofence
-                                        }
-                                        swarm_safety::ViolationType::SeparationBreached {
-                                            ..
-                                        } => swarm_replay::ViolationType::Separation,
-                                    };
-                                    builder.push(swarm_replay::Event::SafetyViolation {
-                                        agent_id: agent_id.clone(),
-                                        violation_type: vtype,
-                                        tick: current_tick,
-                                    });
-                                }
-                            }
-                        }
-                    }
-                }
+                safety_violations += record_safety_violations(
+                    &mut nodes,
+                    &crashed_agents,
+                    scenario,
+                    safety_cfg,
+                    current_tick,
+                    &mut log_builder,
+                );
             }
 
             // v0.15: Track CBBA convergence tick
@@ -588,7 +461,7 @@ impl ScenarioRunner {
                 // Dynamic threat update
                 if wildfire_state.enable_dynamic_threat
                     && current_tick > 0
-                    && current_tick % wildfire_state.update_interval_ticks == 0
+                    && current_tick.is_multiple_of(wildfire_state.update_interval_ticks)
                 {
                     let zone_count = wildfire_state.zones.len();
                     let mut threat_changes: Vec<f64> = vec![0.0; zone_count];
@@ -783,10 +656,7 @@ impl ScenarioRunner {
             }
 
             // Use first non-crashed agent's coordinator for state checks
-            let first_id = nodes
-                .iter()
-                .find(|(_, id)| !crashed_agents.contains(id))
-                .map(|(_, id)| id.clone());
+            let first_id = first_active_agent_id(&nodes, &crashed_agents);
 
             // Track view divergence and convergence
             let maps: Vec<HashMap<TaskId, AgentId>> = nodes
@@ -891,18 +761,11 @@ impl ScenarioRunner {
             let all_expected_failures_detected = crashed_agents
                 .iter()
                 .all(|agent_id| detected_agents.contains(agent_id));
-            let all_failure_ticks_passed = config
-                .failures
-                .iter()
-                .all(|failure| current_tick >= failure.at_tick);
-            let all_dynamic_tasks_injected = config
-                .dynamic_tasks
-                .iter()
-                .all(|ev| current_tick >= ev.at_tick);
-            let all_partitions_resolved = config
-                .partition_events
-                .iter()
-                .all(|pe| pe.until_tick.is_some_and(|u| current_tick >= u));
+            let all_failure_ticks_passed = all_failure_ticks_passed(&config.failures, current_tick);
+            let all_dynamic_tasks_injected =
+                all_dynamic_tasks_injected(&config.dynamic_tasks, current_tick);
+            let all_partitions_resolved =
+                all_partitions_resolved(&config.partition_events, current_tick);
             // Don't break early while partitions are still pending
             let post_partition_converged = if all_partitions_resolved {
                 convergence_ticks.is_some() || max_view_divergence == 0
@@ -935,16 +798,20 @@ impl ScenarioRunner {
                 .as_ref()
                 .is_none_or(|s| s.covered.len() == s.graph.edges.len());
 
-            if all_tasks_assigned
-                && max_task_unassigned_ticks <= config.max_unassigned_ticks
-                && all_failure_ticks_passed
-                && all_expected_failures_detected
-                && all_dynamic_tasks_injected
-                && post_partition_converged
-                && sar_complete
-                && inspection_complete
-                && adapter_complete
-            {
+            if should_stop_tick(
+                MissionStopSnapshot {
+                    all_tasks_assigned,
+                    all_failure_ticks_passed,
+                    all_expected_failures_detected,
+                    all_dynamic_tasks_injected,
+                    post_partition_converged,
+                    sar_complete,
+                    inspection_complete,
+                    adapter_complete,
+                },
+                max_task_unassigned_ticks,
+                config.max_unassigned_ticks,
+            ) {
                 break;
             }
         }
@@ -1063,18 +930,7 @@ impl ScenarioRunner {
                 0.0
             };
 
-        // Log final poses if event logging is enabled
-        if let Some(ref mut builder) = log_builder {
-            for (node, agent_id) in &nodes {
-                if let Some(entry) = node.coordinator.membership.get(agent_id) {
-                    builder.push(swarm_replay::Event::PoseUpdated {
-                        agent_id: agent_id.clone(),
-                        pose: entry.pose,
-                        tick: total_ticks,
-                    });
-                }
-            }
-        }
+        record_final_poses(&nodes, total_ticks, &mut log_builder);
 
         // v0.16: Compute inspection metrics
         let (edge_coverage_rate, missed_edges, route_efficiency) =

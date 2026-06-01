@@ -1,5 +1,34 @@
-#![allow(unused_imports)]
-use super::*;
+use super::{
+    AgentProgress, AgentStep, CompletedWaypoint, LiveAgentRun, MissionReplacementPlan,
+    MultiAgentLifecycle, SitlError, SitlWaypointItem,
+};
+
+pub trait MissionClient {
+    fn agent_id(&self) -> &str;
+    fn mission_waypoints(&self) -> &[SitlWaypointItem];
+    fn replace_mission(&mut self, plan: &MissionReplacementPlan) -> Result<(), SitlError>;
+}
+
+pub trait TelemetrySource {
+    fn start(&mut self) -> Result<(), SitlError>;
+    fn poll(&mut self) -> Result<Option<LiveAgentRun>, SitlError>;
+    fn completed_task_count(&self) -> usize;
+    fn completed_waypoints(&self) -> Vec<CompletedWaypoint>;
+    fn completed_task_ids(&self) -> Vec<String>;
+}
+
+pub trait EventSink {
+    fn record_agent_step(&mut self, _step: &AgentStep) {}
+    fn record_agent_progress(&mut self, _progress: &AgentProgress) {}
+}
+
+pub trait SafetyGate {
+    fn validate_agent_task_subset(
+        &self,
+        agent_id: &str,
+        task_ids: &[String],
+    ) -> Result<(), SitlError>;
+}
 
 pub trait LiveAgentController {
     fn agent_id(&self) -> &str;

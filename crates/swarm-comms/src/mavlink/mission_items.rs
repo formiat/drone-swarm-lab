@@ -1,5 +1,10 @@
-#![allow(unused_imports)]
-use super::*;
+#[cfg(feature = "mavlink-transport")]
+use mavlink::dialects::common;
+#[cfg(feature = "mavlink-transport")]
+use swarm_types::TaskStatus;
+
+#[cfg(feature = "mavlink-transport")]
+use super::{CommonMessage, MavlinkMissionError, MissionUploadOptions, Waypoint};
 /// Convert a local waypoint to a MAVLink global mission item.
 #[cfg(feature = "mavlink-transport")]
 pub fn waypoint_to_mission_item_int(

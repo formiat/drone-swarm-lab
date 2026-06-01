@@ -1,19 +1,9 @@
-#![allow(unused_imports)]
-use super::*;
 #[cfg(feature = "mavlink-transport")]
-use std::borrow::Cow;
-use std::collections::VecDeque;
-#[cfg(feature = "mavlink-transport")]
-use std::io::ErrorKind;
-#[cfg(feature = "mavlink-transport")]
-use std::time::{Duration, Instant};
-
-use swarm_types::TaskStatus;
-
-use crate::{RawMessage, Transport};
+use std::time::Duration;
 
 #[cfg(feature = "mavlink-transport")]
 use mavlink::dialects::common;
+use swarm_types::TaskStatus;
 
 #[derive(Debug, thiserror::Error)]
 pub enum MavlinkError {
