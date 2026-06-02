@@ -23,7 +23,7 @@ impl RunMode {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Mission {
     Coverage,
     EmergencyMesh,
@@ -53,18 +53,6 @@ fn parse_mission(arg: &str) -> Vec<Mission> {
         _ => {
             panic!("unknown mission: {arg}. Valid: coverage, emergency-mesh, sar, inspection, wildfire, urban-patrol, urban-search, all")
         }
-    }
-}
-
-pub(super) fn mission_name(mission: &Mission) -> &'static str {
-    match mission {
-        Mission::Coverage => "coverage",
-        Mission::EmergencyMesh => "emergency-mesh",
-        Mission::Sar => "sar",
-        Mission::Inspection => "inspection",
-        Mission::Wildfire => "wildfire",
-        Mission::UrbanPatrol => "urban-patrol",
-        Mission::UrbanSearch => "urban-search",
     }
 }
 

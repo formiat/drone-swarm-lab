@@ -1,29 +1,21 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use crate::regression_lib::ScenarioBuilder;
 use swarm_alloc::Strategy;
-use swarm_scenarios::{
-    build_emergency_mesh_scenario, build_inspection_scenario, build_sar_scenario,
-    build_urban_patrol_scenario, build_urban_search_scenario, build_wildfire_scenario,
-    EmergencyMeshProfile, EmergencyMeshStandardProfiles, InspectionProfile,
-    InspectionStandardProfiles, SarProfile, StandardProfiles, UrbanProfile, UrbanStandardProfiles,
-    WildfireProfile,
-};
 use swarm_sim::{
     export_csv, export_json, Baseline, BenchmarkHarness, BenchmarkOptions, ComparisonReport,
-    RegressionReport, RunConfig, Scenario,
+    RegressionReport,
 };
 
 use crate::realism::{apply_realism_preset, RealismProfile};
-use crate::regression_lib::build_coverage_profile;
 
-use super::cli::{mission_name, parse_args, CliArgs, Mission, RunMode};
+use super::cli::{parse_args, CliArgs, RunMode};
+use super::missions::mission_descriptor;
 use super::strategies::make_factories;
 use super::urban_artifacts::{
     merge_reports, run_regression, sanitize_artifact_id, write_urban_analysis_artifacts,
 };
-
-type ScenarioBuilder = Box<dyn Fn(u64, &str) -> (Scenario, RunConfig) + Send + Sync>;
 
 /// Wraps a ScenarioBuilder so that every produced pair passes through the realism preset.
 fn with_realism(builder: ScenarioBuilder, profile: RealismProfile) -> ScenarioBuilder {
@@ -96,104 +88,10 @@ pub(crate) fn main() {
     let mut all_replay_logs = Vec::new();
 
     for mission in &cli.missions {
-        let mname = mission_name(mission);
-
-        let (profile_names, builder): (Vec<String>, ScenarioBuilder) = match mission {
-            Mission::Coverage => {
-                let profiles = if cli.mode.uses_full_profile_matrix() {
-                    let nets = StandardProfiles::network_profiles();
-                    let fails = StandardProfiles::failure_profiles();
-                    let mut combos = Vec::new();
-                    for net in &nets {
-                        for fail in &fails {
-                            combos.push(format!("{}-{}", net.name, fail.name));
-                        }
-                    }
-                    combos
-                } else {
-                    vec![
-                        "ideal-no-failures".to_owned(),
-                        "ideal-single-failure".to_owned(),
-                        "medium-loss-no-failures".to_owned(),
-                        "medium-loss-single-failure".to_owned(),
-                    ]
-                };
-                let builder: ScenarioBuilder = Box::new(|seed: u64, profile_name: &str| {
-                    build_coverage_profile(seed, profile_name)
-                });
-                (profiles, builder)
-            }
-            Mission::EmergencyMesh => {
-                let profiles: Vec<String> = EmergencyMeshStandardProfiles::profile_names()
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect();
-                let builder: ScenarioBuilder = Box::new(|seed: u64, profile_name: &str| {
-                    let profile = EmergencyMeshProfile::from_str(profile_name)
-                        .unwrap_or(EmergencyMeshProfile::Ideal);
-                    build_emergency_mesh_scenario(&profile.config(seed))
-                });
-                (profiles, builder)
-            }
-            Mission::Sar => {
-                let profiles: Vec<String> = vec!["ideal".to_owned(), "standard".to_owned()];
-                let builder: ScenarioBuilder = Box::new(|seed: u64, profile_name: &str| {
-                    let profile = SarProfile::from_str(profile_name).unwrap_or(SarProfile::Ideal);
-                    build_sar_scenario(&profile.config(seed))
-                });
-                (profiles, builder)
-            }
-            Mission::Inspection => {
-                let profiles: Vec<String> = InspectionStandardProfiles::profile_names()
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect();
-                let builder: ScenarioBuilder = Box::new(|seed: u64, profile_name: &str| {
-                    let profile = InspectionProfile::from_str(profile_name)
-                        .unwrap_or(InspectionProfile::Linear);
-                    build_inspection_scenario(&profile.config(seed))
-                });
-                (profiles, builder)
-            }
-            Mission::Wildfire => {
-                let profiles: Vec<String> = vec![
-                    "small-static".to_owned(),
-                    "medium-dynamic".to_owned(),
-                    "large-static".to_owned(),
-                    "high-threat-dynamic".to_owned(),
-                ];
-                let builder: ScenarioBuilder = Box::new(|seed: u64, profile_name: &str| {
-                    let profile = WildfireProfile::from_str(profile_name)
-                        .unwrap_or(WildfireProfile::SmallStatic);
-                    build_wildfire_scenario(&profile.config(seed))
-                });
-                (profiles, builder)
-            }
-            Mission::UrbanPatrol => {
-                let profiles: Vec<String> = UrbanStandardProfiles::patrol_profile_names()
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect();
-                let builder: ScenarioBuilder = Box::new(|seed: u64, profile_name: &str| {
-                    let profile = UrbanProfile::from_str(profile_name)
-                        .unwrap_or(UrbanProfile::PatrolSmallBlock);
-                    build_urban_patrol_scenario(&profile.config(seed))
-                });
-                (profiles, builder)
-            }
-            Mission::UrbanSearch => {
-                let profiles: Vec<String> = UrbanStandardProfiles::search_profile_names()
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect();
-                let builder: ScenarioBuilder = Box::new(|seed: u64, profile_name: &str| {
-                    let profile = UrbanProfile::from_str(profile_name)
-                        .unwrap_or(UrbanProfile::SearchStaticBus);
-                    build_urban_search_scenario(&profile.config(seed), profile)
-                });
-                (profiles, builder)
-            }
-        };
+        let descriptor = mission_descriptor(*mission);
+        let mname = descriptor.name;
+        let profile_names = descriptor.profile_names(&cli);
+        let builder = descriptor.scenario_builder();
 
         let builder = if cli.realism {
             let profile = cli
