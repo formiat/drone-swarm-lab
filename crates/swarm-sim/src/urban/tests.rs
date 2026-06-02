@@ -261,6 +261,147 @@ fn urban_route_reports_no_route() {
 }
 
 #[test]
+fn urban_route_exports_ordered_waypoints() {
+    let export = export_route_loop_to_waypoints(
+        &block_map(),
+        &UrbanRouteLoop {
+            nodes: vec![
+                UrbanNodeId::from("n0".to_owned()),
+                UrbanNodeId::from("n1".to_owned()),
+                UrbanNodeId::from("n2".to_owned()),
+                UrbanNodeId::from("n3".to_owned()),
+                UrbanNodeId::from("n0".to_owned()),
+            ],
+        },
+        &UrbanRouteExportOptions {
+            max_spacing_m: 100.0,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    assert_eq!(export.waypoints.len(), 4);
+    assert_eq!(export.waypoints[0].seq, 0);
+    assert_eq!(
+        export.waypoints[0].edge_id,
+        UrbanEdgeId::from("e01".to_owned())
+    );
+    assert_eq!(export.waypoints[0].pose.x, 10.0);
+    assert_eq!(export.waypoints[0].pose.y, 0.0);
+    assert_eq!(export.waypoints[1].seq, 1);
+    assert_eq!(
+        export.waypoints[1].edge_id,
+        UrbanEdgeId::from("e12".to_owned())
+    );
+    assert_eq!(export.waypoints[1].pose.x, 10.0);
+    assert_eq!(export.waypoints[1].pose.y, 10.0);
+    assert_eq!(
+        export.waypoints[2].edge_id,
+        UrbanEdgeId::from("e23".to_owned())
+    );
+    assert_eq!(
+        export.waypoints[3].edge_id,
+        UrbanEdgeId::from("e30".to_owned())
+    );
+}
+
+#[test]
+fn urban_route_export_stable_ids() {
+    let route_loop = UrbanRouteLoop {
+        nodes: vec![
+            UrbanNodeId::from("n0".to_owned()),
+            UrbanNodeId::from("n1".to_owned()),
+            UrbanNodeId::from("n2".to_owned()),
+        ],
+    };
+    let options = UrbanRouteExportOptions {
+        max_spacing_m: 100.0,
+        ..Default::default()
+    };
+
+    let first = export_route_loop_to_waypoints(&block_map(), &route_loop, &options).unwrap();
+    let second = export_route_loop_to_waypoints(&block_map(), &route_loop, &options).unwrap();
+
+    assert_eq!(first.waypoints, second.waypoints);
+    assert_eq!(first.waypoints[0].task_id, "urban-route-0-e01-1");
+    assert_eq!(first.waypoints[1].task_id, "urban-route-1-e12-1");
+}
+
+#[test]
+fn urban_route_altitude_explicit() {
+    let export = export_route_loop_to_waypoints(
+        &block_map(),
+        &UrbanRouteLoop {
+            nodes: vec![
+                UrbanNodeId::from("n0".to_owned()),
+                UrbanNodeId::from("n1".to_owned()),
+            ],
+        },
+        &UrbanRouteExportOptions {
+            default_altitude_m: 17.5,
+            max_spacing_m: 100.0,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    assert_eq!(export.metadata.altitude_m, 17.5);
+    assert_eq!(export.waypoints[0].pose.z, 17.5);
+    assert_eq!(
+        export.metadata.altitude_source,
+        "urban_route_export.default_altitude_m"
+    );
+}
+
+#[test]
+fn urban_route_export_densifies_long_edges() {
+    let route = plan_route(
+        &block_map(),
+        &UrbanNodeId::from("n0".to_owned()),
+        &UrbanNodeId::from("n1".to_owned()),
+    )
+    .unwrap();
+    let export = export_planned_route_to_waypoints(
+        &block_map(),
+        route,
+        &UrbanRouteExportOptions {
+            max_spacing_m: 4.0,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    assert_eq!(export.waypoints.len(), 3);
+    assert!((export.waypoints[0].pose.x - 10.0 / 3.0).abs() < 1e-9);
+    assert!((export.waypoints[1].pose.x - 20.0 / 3.0).abs() < 1e-9);
+    assert_eq!(export.waypoints[2].pose.x, 10.0);
+    assert_eq!(export.waypoints[2].point_index_on_segment, 3);
+}
+
+#[test]
+fn urban_route_export_rejects_bad_spacing() {
+    let err = export_route_loop_to_waypoints(
+        &block_map(),
+        &UrbanRouteLoop {
+            nodes: vec![
+                UrbanNodeId::from("n0".to_owned()),
+                UrbanNodeId::from("n1".to_owned()),
+            ],
+        },
+        &UrbanRouteExportOptions {
+            max_spacing_m: 0.0,
+            ..Default::default()
+        },
+    )
+    .unwrap_err();
+
+    assert!(matches!(
+        err,
+        UrbanRouteExportError::InvalidOption { field, .. } if field == "max_spacing_m"
+    ));
+}
+
+#[test]
 fn urban_judge_reports_blocked_edge_violation() {
     let mut map = block_map();
     map.edges[0].blocked = true;

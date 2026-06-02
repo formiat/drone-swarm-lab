@@ -1,6 +1,14 @@
 use serde::{Deserialize, Serialize};
 use swarm_types::{Agent, GroundNode, Pose, Task};
 
+/// WGS84 origin used to convert local simulation coordinates into global missions.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct GeoOrigin {
+    pub lat_deg: f64,
+    pub lon_deg: f64,
+    pub alt_m: f64,
+}
+
 /// A self-contained simulation scenario with initial fleet and task state.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Scenario {
@@ -12,6 +20,8 @@ pub struct Scenario {
     pub ground_nodes: Vec<GroundNode>,
     #[serde(default)]
     pub base_station: Option<Pose>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub geo_origin: Option<GeoOrigin>,
 }
 
 impl Scenario {
@@ -24,6 +34,7 @@ impl Scenario {
             tasks: Vec::new(),
             ground_nodes: Vec::new(),
             base_station: None,
+            geo_origin: None,
         }
     }
 }

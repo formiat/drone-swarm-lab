@@ -50,6 +50,7 @@ fn make_scenario_builder() -> ScenarioBuilder {
             tasks,
             ground_nodes: vec![],
             base_station: None,
+            geo_origin: None,
         };
         let run_config = RunConfig {
             max_ticks: 50,

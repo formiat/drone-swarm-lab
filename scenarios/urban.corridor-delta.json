@@ -65,6 +65,11 @@
         "base_station": {
           "x": 0.0,
           "y": 0.0
+        },
+        "geo_origin": {
+          "lat_deg": 47.397742,
+          "lon_deg": 8.545594,
+          "alt_m": 0.0
         }
       },
       "run_config": {
@@ -273,6 +278,11 @@
         "base_station": {
           "x": 0.0,
           "y": 0.0
+        },
+        "geo_origin": {
+          "lat_deg": 47.397742,
+          "lon_deg": 8.545594,
+          "alt_m": 0.0
         }
       },
       "run_config": {

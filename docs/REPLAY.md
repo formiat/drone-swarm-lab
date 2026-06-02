@@ -56,6 +56,11 @@ under `urban_analysis/` when the replay logs contain Urban events. These
 artifacts are for analysis and debugging only; they do not add avoidance,
 route deconfliction, physical simulation, or perception.
 
+M70 Urban Route Export writes a separate `sitl_dry_run_artifact.v1` JSON file
+through `sitl_agent --dry-run --dry-run-artifact`. That artifact records the
+SITL waypoint export boundary for a planned Urban route; it is not part of the
+simulation replay event schema and does not add new replay events.
+
 ### Backward Compatibility
 
 Event logs without `schema_version` default to `"0.2"` and are fully backward

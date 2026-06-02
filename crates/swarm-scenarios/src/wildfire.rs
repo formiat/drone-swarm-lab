@@ -330,6 +330,7 @@ pub fn build_wildfire_scenario(config: &WildfireConfig) -> (Scenario, RunConfig)
         tasks,
         ground_nodes: vec![],
         base_station: None,
+        geo_origin: None,
     };
 
     let wildfire_state = swarm_sim::WildfireState {

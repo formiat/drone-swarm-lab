@@ -84,6 +84,7 @@ proptest! {
             tasks,
             ground_nodes: vec![],
             base_station: None,
+        geo_origin: None,
         };
 
         let mut config: RunConfig = RunConfig {
@@ -132,6 +133,7 @@ proptest! {
             tasks,
             ground_nodes: vec![],
             base_station: None,
+        geo_origin: None,
         };
 
         let mut config = RunConfig {
@@ -182,6 +184,7 @@ proptest! {
             tasks,
             ground_nodes: vec![],
             base_station: None,
+        geo_origin: None,
         };
 
         let mut config: RunConfig = RunConfig {
@@ -226,6 +229,7 @@ proptest! {
             tasks,
             ground_nodes: vec![],
             base_station: None,
+        geo_origin: None,
         };
 
         let mut config: RunConfig = RunConfig {
@@ -270,6 +274,7 @@ proptest! {
             tasks,
             ground_nodes: vec![],
             base_station: None,
+        geo_origin: None,
         };
 
         let mut config: RunConfig = RunConfig {

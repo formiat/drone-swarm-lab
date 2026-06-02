@@ -52,6 +52,7 @@ fn scenario(seed: u64, agent_count: usize, task_count: usize) -> Scenario {
         tasks,
         ground_nodes: vec![],
         base_station: None,
+        geo_origin: None,
     }
 }
 
@@ -285,6 +286,7 @@ fn runner_coverage_kind_exits_before_max_ticks() {
             tasks,
             ground_nodes: vec![],
             base_station: None,
+            geo_origin: None,
         }
     };
     let cfg = RunConfig {

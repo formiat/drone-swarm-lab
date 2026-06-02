@@ -74,6 +74,25 @@ Expected: a portable mission upload plan printed without PX4, including
 scenario name, task ids, waypoint sequence, local coordinates, and altitude
 interpretation.
 
+### 7a. Export an Urban route to a SITL waypoint plan
+
+```bash
+cargo run --bin sitl_agent -- \
+  --dry-run \
+  --scenario scenarios/urban.patrol.json \
+  --agent-id agent-0 \
+  --dry-run-artifact results/urban_route_export/dry-run.json
+```
+
+Expected: Urban Patrol route segments are converted into an ordered waypoint
+mission with route length, segment count, waypoint count, altitude, coordinate
+origin, and stable route identity fields. The optional JSON artifact uses the
+`sitl_dry_run_artifact.v1` schema. This is the M70 Urban Route Export + Geo Origin
+dry-run path. It is a local waypoint workflow only: no PX4 upload is
+performed, no hardware readiness is claimed, and it does not add real
+perception, lidar/raycast, certified obstacle avoidance, dynamic traffic
+handling, or low-level flight control.
+
 ### 8. Run mock SITL
 
 ```bash

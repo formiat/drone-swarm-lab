@@ -22,6 +22,7 @@ pub fn build_partition_scenario(config: &PartitionConfig) -> (Scenario, RunConfi
         tasks: config.tasks.clone(),
         ground_nodes: vec![],
         base_station: None,
+        geo_origin: None,
     };
 
     let mut partition_events = Vec::new();

@@ -80,6 +80,7 @@ pub fn build_coverage_scenario(config: &CoverageConfig) -> (Scenario, RunConfig)
         tasks,
         ground_nodes: vec![],
         base_station: None,
+        geo_origin: None,
     };
     let run_config = RunConfig {
         max_ticks: config.max_ticks,

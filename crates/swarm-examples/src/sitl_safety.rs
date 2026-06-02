@@ -547,6 +547,7 @@ mod tests {
                 tasks,
                 ground_nodes: vec![],
                 base_station: None,
+                geo_origin: None,
             },
             run_config: RunConfig {
                 max_ticks: 50,

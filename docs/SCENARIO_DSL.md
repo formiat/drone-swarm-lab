@@ -51,6 +51,24 @@ an explicit schema policy update and compatibility tests.
 }
 ```
 
+## Scenario Geo Origin
+
+M70 adds optional `scenario.geo_origin`:
+
+```json
+"geo_origin": {
+  "lat_deg": 47.397742,
+  "lon_deg": 8.545594,
+  "alt_m": 0.0
+}
+```
+
+This origin is the WGS84 home point used by SITL/PX4 waypoint conversion when a
+local simulation route is exported to global mission coordinates. If omitted,
+the SITL upload path keeps the existing PX4/SIH default origin. Validation
+requires finite latitude, longitude, and altitude values; latitude must be in
+`[-90, 90]` and longitude in `[-180, 180]`.
+
 ## Required Fields
 
 ### Suite level
@@ -108,8 +126,16 @@ M65 v0 does not infer or silently teleport from an arbitrary `agent.pose`. M65
 v0 has no replanning, so `urban_replan_count = 0`.
 
 Urban Patrol itself does not implement lidar/raycast, bus detection, dynamic
-obstacles, multi-agent route deconfliction, arbitrary polygons, PX4/SITL export,
+obstacles, multi-agent route deconfliction, arbitrary polygons, PX4 execution,
 hardware readiness, or a visual UI.
+
+M70 adds a deterministic Urban Route Export dry-run path for `urban-patrol`.
+The authoritative source is `run_config.urban_state`: the planned route is
+converted into ordered SITL-compatible waypoint items with stable route identity
+fields (`edge_id`, `from_node_id`, `to_node_id`, `segment_index`,
+`point_index_on_segment`), explicit altitude, route length, segment count,
+waypoint count, and `geo_origin`. This is a local waypoint export artifact, not
+proof of PX4 execution, hardware readiness, perception, or obstacle avoidance.
 
 ## Urban Search
 

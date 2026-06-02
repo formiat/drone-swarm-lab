@@ -79,6 +79,10 @@ pub fn validate_entry(entry: &ScenarioSuiteEntry) -> Vec<ValidationError> {
         });
     }
 
+    if let Some(origin) = entry.scenario.geo_origin {
+        validate_geo_origin(origin, &mut errors);
+    }
+
     if entry.run_config.max_ticks == 0 {
         errors.push(ValidationError {
             field: "run_config.max_ticks".to_owned(),
@@ -90,6 +94,27 @@ pub fn validate_entry(entry: &ScenarioSuiteEntry) -> Vec<ValidationError> {
     errors.append(&mut validate_mission_specific(entry));
 
     errors
+}
+
+fn validate_geo_origin(origin: crate::scenario::GeoOrigin, errors: &mut Vec<ValidationError>) {
+    if !origin.lat_deg.is_finite() || !(-90.0..=90.0).contains(&origin.lat_deg) {
+        errors.push(ValidationError {
+            field: "scenario.geo_origin.lat_deg".to_owned(),
+            message: "lat_deg must be finite and within [-90, 90]".to_owned(),
+        });
+    }
+    if !origin.lon_deg.is_finite() || !(-180.0..=180.0).contains(&origin.lon_deg) {
+        errors.push(ValidationError {
+            field: "scenario.geo_origin.lon_deg".to_owned(),
+            message: "lon_deg must be finite and within [-180, 180]".to_owned(),
+        });
+    }
+    if !origin.alt_m.is_finite() {
+        errors.push(ValidationError {
+            field: "scenario.geo_origin.alt_m".to_owned(),
+            message: "alt_m must be finite".to_owned(),
+        });
+    }
 }
 
 /// Validate mission-specific constraints.

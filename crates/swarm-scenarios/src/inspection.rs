@@ -132,6 +132,7 @@ pub fn build_inspection_scenario(config: &InspectionConfig) -> (Scenario, RunCon
         tasks,
         ground_nodes: vec![],
         base_station: Some(config.graph.depot),
+        geo_origin: None,
     };
 
     let run_config = RunConfig {

@@ -79,6 +79,7 @@ fn scenario_from_agents_tasks(agents: Vec<Agent>, tasks: Vec<Task>) -> swarm_sim
         tasks,
         ground_nodes: vec![],
         base_station: None,
+        geo_origin: None,
     }
 }
 

@@ -79,7 +79,12 @@
           }
         ],
         "ground_nodes": [],
-        "base_station": null
+        "base_station": null,
+        "geo_origin": {
+          "lat_deg": 47.397742,
+          "lon_deg": 8.545594,
+          "alt_m": 0.0
+        }
       },
       "run_config": {
         "max_ticks": 50,

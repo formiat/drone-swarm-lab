@@ -285,6 +285,7 @@ pub fn build_emergency_mesh_scenario(config: &EmergencyMeshConfig) -> (Scenario,
         tasks,
         ground_nodes,
         base_station: Some(config.base_pose),
+        geo_origin: None,
     };
 
     let failure = if config.relay_count > 0 {

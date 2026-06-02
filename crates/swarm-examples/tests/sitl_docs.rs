@@ -101,6 +101,10 @@ fn sitl_docs_explain_portable_and_manual_boundaries() {
         "docs/HARDWARE_READINESS.md",
         "--allow-hardware-candidate",
         "docs/EXTENSION_GUIDE.md",
+        "M70 Urban Route Export + Geo Origin",
+        "--dry-run-artifact",
+        "sitl_dry_run_artifact.v1",
+        "no hardware readiness is claimed",
     ] {
         assert!(README.contains(required), "README missing {required}");
     }
@@ -121,6 +125,8 @@ fn sitl_docs_explain_portable_and_manual_boundaries() {
         "scenarios/sitl.multi-agent.json",
         "scenarios/sitl.multi-agent.config.json",
         "scenarios/sitl.multi-agent.execute.config.json",
+        "Urban route export dry-run",
+        "sitl_dry_run_artifact.v1",
     ] {
         assert!(
             HARDWARE_READINESS.contains(required),
@@ -152,6 +158,7 @@ fn sitl_docs_explain_portable_and_manual_boundaries() {
         "SupervisorMetrics",
         "scenarios/sitl.px4-golden.json",
         "docs/EXTENSION_GUIDE.md",
+        "sitl_dry_run_artifact.v1",
     ] {
         assert!(REPLAY.contains(required), "Replay doc missing {required}");
     }
@@ -177,8 +184,49 @@ fn sitl_docs_explain_portable_and_manual_boundaries() {
         "M61 Platform / API Stabilization",
         "docs/EXTENSION_GUIDE.md",
         "semver-stable public API",
+        "M70 Urban Route Export + Geo Origin",
+        "sitl_dry_run_artifact.v1",
     ] {
         assert!(STATUS.contains(required), "Status doc missing {required}");
+    }
+
+    for required in [
+        "Scenario Geo Origin",
+        "scenario.geo_origin",
+        "Urban Route Export dry-run path",
+        "point_index_on_segment",
+    ] {
+        assert!(
+            SCENARIO_DSL.contains(required),
+            "Scenario DSL doc missing {required}"
+        );
+    }
+
+    for required in [
+        "Urban Route Export Dry-Run",
+        "--dry-run-artifact",
+        "sitl_dry_run_artifact.v1",
+        "geo_origin",
+        "not a hardware run",
+    ] {
+        assert!(
+            SITL_SETUP.contains(required),
+            "SITL setup doc missing {required}"
+        );
+    }
+
+    for required in ["route export adapters", "geo_origin"] {
+        assert!(
+            EXTENSION_GUIDE.contains(required),
+            "Extension guide missing {required}"
+        );
+    }
+
+    for required in ["M70 Urban Route Export", "not a benchmark refresh"] {
+        assert!(
+            BENCHMARK_RESULTS.contains(required),
+            "Benchmark results doc missing {required}"
+        );
     }
 }
 

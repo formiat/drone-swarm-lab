@@ -30,13 +30,14 @@ pub use runner::{
     DynamicTaskEvent, FailureEvent, InspectionState, PartitionEvent, RunConfig, ScenarioRunner,
     UrbanState, WildfireState, WildfireZone,
 };
-pub use scenario::Scenario;
+pub use scenario::{GeoOrigin, Scenario};
 pub use support_matrix::{classify_support, SupportMatrixEntry, SupportReason, SupportStatus};
 pub use urban::{
     detect_buses, expand_route_loop, expand_route_loop_with_planner,
-    expand_route_loop_with_planner_name, judge_route, plan_route, plan_route_with_mode,
-    pose_along_segment, route_risk_score, UrbanBusObservation, UrbanDetectionOutcome,
-    UrbanPlannerMode, UrbanRouteError,
+    expand_route_loop_with_planner_name, export_route_loop_to_waypoints, judge_route, plan_route,
+    plan_route_with_mode, pose_along_segment, route_risk_score, UrbanBusObservation,
+    UrbanDetectionOutcome, UrbanPlannerMode, UrbanRouteError, UrbanRouteExport,
+    UrbanRouteExportError, UrbanRouteExportMetadata, UrbanRouteExportOptions, UrbanRouteWaypoint,
 };
 pub use urban_analysis::{
     build_urban_judge_report, build_urban_route_trace, count_urban_events,

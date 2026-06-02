@@ -1,4 +1,4 @@
-use swarm_sim::{RunConfig, Scenario, UrbanState};
+use swarm_sim::{GeoOrigin, RunConfig, Scenario, UrbanState};
 use swarm_types::{
     Aabb, Agent, AgentId, Health, Pose, Role, Task, TaskId, TaskKind, TaskStatus, UrbanBus,
     UrbanBusId, UrbanDetectorConfig, UrbanEdge, UrbanEdgeId, UrbanMap, UrbanNode, UrbanNodeId,
@@ -167,6 +167,11 @@ pub fn build_urban_patrol_scenario(config: &UrbanConfig) -> (Scenario, RunConfig
             x: 0.0,
             y: 0.0,
             ..Default::default()
+        }),
+        geo_origin: Some(GeoOrigin {
+            lat_deg: 47.397_742,
+            lon_deg: 8.545_594,
+            alt_m: 0.0,
         }),
     };
 

@@ -155,8 +155,25 @@ mod tests {
                 ],
                 ground_nodes: vec![],
                 base_station: None,
+                geo_origin: None,
             },
             run_config: RunConfig::default(),
+        }
+    }
+
+    fn sitl_waypoint(seq: u16, task_id: &str, x: f64, y: f64, z: f64) -> SitlWaypointItem {
+        SitlWaypointItem {
+            seq,
+            task_id: task_id.to_owned(),
+            x,
+            y,
+            z,
+            source: "pose_task".to_owned(),
+            edge_id: None,
+            from_node_id: None,
+            to_node_id: None,
+            segment_index: None,
+            point_index_on_segment: None,
         }
     }
 
@@ -193,13 +210,13 @@ mod tests {
             profile: "unit".to_owned(),
             coordinate_frame: crate::sitl_plan::SitlCoordinateFrame::LocalSimulation,
             altitude_source: "pose.z".to_owned(),
-            waypoints: vec![SitlWaypointItem {
-                seq: 7,
-                task_id: "wp-7".to_owned(),
-                x: 1.0,
-                y: 2.0,
-                z: 3.0,
-            }],
+            geo_origin: None,
+            export_kind: "pose_tasks".to_owned(),
+            planner_or_adapter: "sitl_pose_task_extractor".to_owned(),
+            route_length_m: None,
+            segment_count: None,
+            waypoint_count: 1,
+            waypoints: vec![sitl_waypoint(7, "wp-7", 1.0, 2.0, 3.0)],
         };
 
         let waypoints = waypoints_from_sitl_items(&plan.waypoints);
@@ -213,20 +230,8 @@ mod tests {
     #[test]
     fn takeoff_altitude_matches_single_agent_floor_contract() {
         let waypoints = vec![
-            SitlWaypointItem {
-                seq: 0,
-                task_id: "wp-0".to_owned(),
-                x: 0.0,
-                y: 0.0,
-                z: 0.0,
-            },
-            SitlWaypointItem {
-                seq: 1,
-                task_id: "wp-1".to_owned(),
-                x: 0.0,
-                y: 0.0,
-                z: 5.0,
-            },
+            sitl_waypoint(0, "wp-0", 0.0, 0.0, 0.0),
+            sitl_waypoint(1, "wp-1", 0.0, 0.0, 5.0),
         ];
 
         assert_eq!(default_takeoff_altitude(&waypoints), 2.5);

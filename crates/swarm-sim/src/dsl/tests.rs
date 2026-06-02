@@ -1,6 +1,6 @@
 use super::*;
 use crate::runner::UrbanState;
-use crate::scenario::Scenario;
+use crate::scenario::{GeoOrigin, Scenario};
 use crate::RunConfig;
 use swarm_types::{
     Agent, Health, Pose, Role, Task, TaskKind, TaskStatus, UrbanBus, UrbanBusId,
@@ -50,6 +50,7 @@ fn make_minimal_entry() -> ScenarioSuiteEntry {
             }],
             ground_nodes: vec![],
             base_station: None,
+            geo_origin: None,
         },
         run_config: RunConfig {
             max_ticks: 50,
@@ -136,6 +137,52 @@ fn make_urban_entry() -> ScenarioSuiteEntry {
         planner: "dijkstra".to_owned(),
     });
     entry
+}
+
+#[test]
+fn geo_origin_roundtrip_json() {
+    let mut entry = make_minimal_entry();
+    entry.scenario.geo_origin = Some(GeoOrigin {
+        lat_deg: 47.397_742,
+        lon_deg: 8.545_594,
+        alt_m: 488.0,
+    });
+
+    let json = serde_json::to_string_pretty(&entry).unwrap();
+    let parsed: ScenarioSuiteEntry = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(parsed.scenario.geo_origin, entry.scenario.geo_origin);
+}
+
+#[test]
+fn scenario_without_geo_origin_remains_valid() {
+    let entry = make_minimal_entry();
+
+    let errors = validate_entry(&entry);
+
+    assert!(
+        errors
+            .iter()
+            .all(|error| !error.field.starts_with("scenario.geo_origin")),
+        "unexpected geo_origin validation errors: {errors:?}"
+    );
+}
+
+#[test]
+fn geo_origin_rejects_bad_lat_lon() {
+    let mut entry = make_minimal_entry();
+    entry.scenario.geo_origin = Some(GeoOrigin {
+        lat_deg: 95.0,
+        lon_deg: -181.0,
+        alt_m: f64::NAN,
+    });
+
+    let errors = validate_entry(&entry);
+    let fields: Vec<_> = errors.iter().map(|error| error.field.as_str()).collect();
+
+    assert!(fields.contains(&"scenario.geo_origin.lat_deg"));
+    assert!(fields.contains(&"scenario.geo_origin.lon_deg"));
+    assert!(fields.contains(&"scenario.geo_origin.alt_m"));
 }
 
 fn make_urban_search_entry() -> ScenarioSuiteEntry {

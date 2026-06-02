@@ -55,6 +55,7 @@ fn safety_nofly_tasks_not_assigned() {
         tasks: vec![make_task("t0", 5.0, 5.0)],     // inside no-fly 0-10
         ground_nodes: vec![],
         base_station: None,
+        geo_origin: None,
     };
 
     let config = RunConfig {
@@ -107,6 +108,7 @@ fn safety_violations_counted() {
         tasks: vec![make_task("t0", 150.0, 150.0)],   // same position, also outside
         ground_nodes: vec![],
         base_station: None,
+        geo_origin: None,
     };
 
     let config = RunConfig {
@@ -160,6 +162,7 @@ fn safety_separation_no_panic() {
         tasks: vec![make_task("t0", 0.0, 0.0), make_task("t1", 2.0, 0.0)],
         ground_nodes: vec![],
         base_station: None,
+        geo_origin: None,
     };
 
     let config = RunConfig {

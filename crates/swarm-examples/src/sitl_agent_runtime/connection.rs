@@ -39,7 +39,9 @@ pub(super) fn run_connection(
 
     #[cfg(feature = "mavlink-transport")]
     {
-        use swarm_comms::{MavlinkTransport, MissionLifecycleOptions, MissionUploadOptions};
+        use swarm_comms::{
+            MavlinkTransport, MissionHomeOrigin, MissionLifecycleOptions, MissionUploadOptions,
+        };
 
         let agent_id = swarm_types::AgentId::from(plan.agent_id.clone());
         let mut transport =
@@ -79,6 +81,14 @@ pub(super) fn run_connection(
             target_system: runtime_options.target_system,
             target_component: runtime_options.target_component,
             timeout: lifecycle.timeout,
+            home_origin: plan
+                .geo_origin
+                .map(|origin| MissionHomeOrigin {
+                    lat_deg: origin.lat_deg,
+                    lon_deg: origin.lon_deg,
+                    alt_m: origin.alt_m,
+                })
+                .unwrap_or_default(),
             ..MissionUploadOptions::default()
         };
         match lifecycle.mode {

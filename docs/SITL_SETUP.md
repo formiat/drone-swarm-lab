@@ -113,6 +113,41 @@ waypoints:
 Dry-run does not create a MAVLink connection and does not upload anything to
 PX4.
 
+## Urban Route Export Dry-Run
+
+M70 adds a deterministic Urban route export path:
+
+```text
+Urban planned route -> ordered waypoint mission -> dry-run/SITL-compatible plan
+```
+
+Use it through the existing `sitl_agent` dry-run boundary:
+
+```bash
+cargo run --bin sitl_agent -- \
+  --dry-run \
+  --scenario scenarios/urban.patrol.json \
+  --agent-id agent-0 \
+  --dry-run-artifact results/urban_route_export/dry-run.json
+```
+
+Expected output includes `export_kind: urban_route`,
+`planner_or_adapter: urban_route_export:dijkstra`, `route_length_m`,
+`segment_count`, `waypoint_count`, `geo_origin`, and per-waypoint Urban route
+identity fields such as `edge_id`, `from`, `to`, `segment_index`, and
+`point_index_on_segment`.
+
+The JSON artifact uses `sitl_dry_run_artifact.v1` and records the source
+scenario path, route length, segment count, waypoint count, start/end waypoint
+summary, altitude source, scenario `geo_origin`, effective origin, command
+args, and local-to-global coordinate summaries. This artifact is portable and
+requires no PX4 process.
+
+This path is not a hardware run and not a real obstacle-avoidance system. It
+does not add lidar/raycast, perception, dynamic traffic handling, Gazebo/HIL,
+certified safety, or low-level flight control. It only makes the mission-level
+Urban route export visible before optional manual SITL/PX4 upload experiments.
+
 ## Quick Start: Mock Mode
 
 Mock mode sends the same extracted waypoints to an in-memory

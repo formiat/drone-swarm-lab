@@ -251,6 +251,7 @@ pub fn build_sar_scenario(config: &SarScenarioConfig) -> (Scenario, RunConfig) {
         tasks,
         ground_nodes: vec![],
         base_station: None,
+        geo_origin: None,
     };
 
     let run_config = RunConfig {

@@ -45,6 +45,7 @@ status table.
 | M67 Urban Replay / Analysis | Complete as diagnostic tooling | Simulation replay now supports deterministic timeline output with `--agent` / `--category urban` filters, additive `UrbanViolation.obstacle_id`, route-trace and judge-report JSON/CSV artifacts for Urban benchmark packs, a two-agent analysis fixture in `scenarios/urban.multi-agent.json`, suite-mode replay artifact generation, and diagnostic Urban separation/conflict aggregate metrics populated from replay-enabled Urban traces. This adds observability only; it does not add avoidance, multi-agent Urban control, real perception, lidar/raycast, PX4/SITL export, hardware claims, or a benchmark rerun. |
 | M68 Algorithm Depth On Urban + Existing Missions | Complete as small Urban planner delta | `planner: "corridor-aware"` is implemented for Urban route loops, `urban_route_risk_score` is exported, `scenarios/urban.corridor-delta.json` compares Dijkstra against the corridor-aware planner, and docs/support matrix explain the lower-risk/longer-route tradeoff. This is not a full benchmark refresh and does not change CBBA/SAR unsupported status. |
 | M69 Benchmark Refresh / Research Evidence | Complete for built-in simulation suite | Release `strategy_comparison --seeds 1000 --mission all --jobs 14` completed for code commit `5d1d3cd17cacba7482c1d9b93eb5acc107af8f71`. Artifacts are in `results/all_1000_jobs14_m69_release/`; runtime was 28:55.25 with peak RSS 207684 KB. `regression_runner --jobs 14` passed. The current `--mission all` suite covers coverage, emergency-mesh, SAR, inspection, and wildfire; Urban scenario-suite evidence remains separate in `results/m68_urban_corridor_delta/`. |
+| M70 Urban Route Export + Geo Origin | Complete as portable dry-run/SITL waypoint export boundary | `urban-patrol` routes can be exported through `sitl_agent --dry-run` into ordered waypoint missions with route length, segment count, waypoint count, stable route identity fields, explicit altitude, scenario `geo_origin`, effective default origin, and `sitl_dry_run_artifact.v1` JSON artifacts. This is local waypoint export only; it is not hardware readiness, real perception, lidar/raycast, obstacle avoidance, Gazebo/HIL, or PX4 execution evidence. |
 
 ## Current Known Limitations
 
@@ -114,11 +115,14 @@ status table.
   `max_task_unassigned_ticks <= max_unassigned_ticks`. This is intentionally
   stricter than task completion, so wildfire benchmark rows can show
   `Completion = 1.000` while `Success < 1.000`.
-- **Urban Patrol v0**: M65 implements one-agent ordered road-graph patrol in
-  simulation. Completion means all planned segments are traversed before
-  timeout with zero Urban judge violations. This is not lidar, real obstacle
-  avoidance, dynamic traffic, multi-agent deconfliction, PX4/SITL export, or
-  hardware readiness.
+- **Urban Patrol v0 + M70 export**: M65 implements one-agent ordered road-graph
+  patrol in simulation; this is the ordered road-graph patrol boundary.
+  Completion means all planned segments are traversed
+  before timeout with zero Urban judge violations. M70 can export that planned
+  route to a deterministic dry-run/SITL-compatible waypoint list with
+  `geo_origin` metadata and an optional JSON artifact. This is not lidar, real
+  obstacle avoidance, dynamic traffic, multi-agent deconfliction, PX4 execution,
+  hardware readiness, or real perception.
 - **Urban Search v1**: M66 adds one-agent mocked bus search on top of the same
   road graph. The detector is deterministic and distance/probability based; it
   is not lidar/raycast, computer vision, dynamic traffic, multi-agent
@@ -135,7 +139,7 @@ status table.
   experimental mission-level route planner. It penalizes narrow corridors and
   low static-obstacle clearance to reduce `urban_route_risk_score` on the
   deterministic corridor-delta fixture. It is not lidar, physical collision
-  avoidance, dynamic traffic handling, PX4/SITL export, or hardware evidence.
+  avoidance, dynamic traffic handling, PX4 execution, or hardware evidence.
 
 ### Platform / API
 
@@ -172,8 +176,9 @@ status table.
    gaps before making publication-level algorithm claims.
 5. Use M68 corridor-delta only as small Urban algorithm evidence; add Urban to
    a future full benchmark entrypoint only if broader Urban claims are needed.
-6. Move to the M70 decision: either prepare SITL/export boundary work or keep
-   deepening simulation/algorithm evidence based on the M69 gaps.
+6. Use M70 `sitl_agent --dry-run --dry-run-artifact` before any optional manual
+   Urban PX4/SIH upload experiment; do not treat the artifact as hardware or
+   obstacle-avoidance evidence.
 7. Keep README, `docs/BENCHMARK_RESULTS.md`, `docs/EXTENSION_GUIDE.md`,
    `docs/SITL_SETUP.md`, `docs/SCENARIO_DSL.md`, `docs/REPLAY.md`, and this
    file in sync when extension, Urban analysis, or SITL evidence changes state.

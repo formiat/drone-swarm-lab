@@ -16,6 +16,7 @@ and serial connections as hardware candidates and requires
 |---|---|---|
 | Mock SITL | Portable | Mission waypoints are sent through in-memory mock transport with no PX4, sockets, simulator, or hardware. |
 | Dry-run SITL | Portable | Scenario loading, waypoint extraction, coordinate-frame reporting, and upload-plan formatting are deterministic. |
+| Urban route export dry-run | Portable | M70 converts `urban-patrol` planned road-graph routes into ordered SITL-compatible waypoint plans with explicit altitude, `geo_origin`, route stats, and `sitl_dry_run_artifact.v1` JSON evidence. This is local export evidence only, not PX4 execution or hardware readiness. |
 | Portable regression | Portable | `portable_sitl_regression_smoke`, `sitl_docs`, safety validation, mock replay, and multi-agent manifest checks run without external PX4. |
 | Single-agent PX4 SITL | Experimental | Feature-gated mission upload, optional arm/takeoff/start, telemetry progress, run report, replay log plumbing, and public `scenarios/sitl.px4-golden.json` exist for local PX4 SITL. Live simulator verification remains manual/local. |
 | Multi-agent SITL foundation | Experimental foundation | `multi_sitl.v1` config, public `scenarios/sitl.multi-agent.json` / `scenarios/sitl.multi-agent.config.json`, per-agent task subsets, dry-run/mock manifest, mock supervisor reallocation, MAVLink system/component mapping, duplicate ownership rejection, and local two-instance PX4 SIH upload-only mission acceptance are covered. |
@@ -70,6 +71,7 @@ experiment. All items below must be true:
 - Propeller/bench safety is handled before any powered test.
 - PX4 parameters, arming checks, failsafe actions, RTL altitude, and battery failsafes are reviewed.
 - Mission waypoints, local coordinate conversion, altitude, and expected path are reviewed in `--dry-run`.
+- For Urban missions, the M70 Urban Route Export artifact is reviewed before any optional manual upload; it does not prove perception, obstacle avoidance, dynamic traffic handling, or hardware safety.
 - Safety config geofence, mission radius, waypoint jump, and altitude limits are reviewed.
 - Logs are enabled and storage is available.
 - Emergency RTL, hold, manual mode, and disarm procedure are rehearsed.

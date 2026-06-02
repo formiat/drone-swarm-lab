@@ -134,6 +134,13 @@ road-graph path instead of starting with arbitrary polygons:
   `avg_urban_route_risk_score`. They are route-planning risk proxies based on
   corridor width and AABB obstacle clearance, not physical collision
   probabilities;
+- M70 route export adapters should use `crates/swarm-sim/src/urban/route_export.rs`
+  as the boundary from Urban planned routes to SITL waypoint plans. Preserve
+  route identity fields (`edge_id`, `from_node_id`, `to_node_id`,
+  `segment_index`, `point_index_on_segment`), explicit altitude, route length,
+  segment count, waypoint count, and `geo_origin` metadata. Keep this as a
+  dry-run/SITL-compatible export boundary; do not add hardware, perception, or
+  obstacle-avoidance claims in route export adapters;
 - replay logs expose `UrbanRoutePlanned`, `UrbanSegmentEntered`,
   `UrbanSegmentCompleted`, `UrbanViolation`, `UrbanPatrolCompleted`,
   `BusObserved`, `BusDetected`, `BusFalsePositive`, and

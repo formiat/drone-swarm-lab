@@ -10,6 +10,7 @@ pub(super) struct CliArgs {
     pub(super) safety_config: Option<String>,
     pub(super) run_report: Option<String>,
     pub(super) replay_log: Option<String>,
+    pub(super) dry_run_artifact: Option<String>,
     pub(super) allow_hardware_candidate: bool,
     pub(super) lifecycle: LifecycleArgs,
     pub(super) lifecycle_from_cli: bool,
@@ -56,6 +57,7 @@ pub(super) fn parse_args() -> Result<CliArgs, SitlError> {
     let mut safety_config: Option<String> = None;
     let mut run_report: Option<String> = None;
     let mut replay_log: Option<String> = None;
+    let mut dry_run_artifact: Option<String> = None;
     let mut allow_hardware_candidate = false;
     let mut lifecycle_mode: Option<LifecycleMode> = None;
     let mut no_arm = false;
@@ -139,6 +141,16 @@ pub(super) fn parse_args() -> Result<CliArgs, SitlError> {
                     args.get(i)
                         .ok_or(SitlError::MissingArgument {
                             name: "--replay-log <path>",
+                        })?
+                        .clone(),
+                );
+            }
+            "--dry-run-artifact" => {
+                i += 1;
+                dry_run_artifact = Some(
+                    args.get(i)
+                        .ok_or(SitlError::MissingArgument {
+                            name: "--dry-run-artifact <path>",
                         })?
                         .clone(),
                 );
@@ -249,6 +261,11 @@ pub(super) fn parse_args() -> Result<CliArgs, SitlError> {
             mode: "dry-run",
         });
     }
+    if dry_run_artifact.is_some() && !matches!(mode, Some(SitlMode::DryRun)) {
+        return Err(SitlError::DryRunArtifactUnsupported {
+            option: "--dry-run-artifact",
+        });
+    }
 
     Ok(CliArgs {
         mode,
@@ -258,6 +275,7 @@ pub(super) fn parse_args() -> Result<CliArgs, SitlError> {
         safety_config,
         run_report,
         replay_log,
+        dry_run_artifact,
         allow_hardware_candidate,
         lifecycle: LifecycleArgs {
             mode: lifecycle_mode,

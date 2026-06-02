@@ -177,6 +177,17 @@ physical collision avoidance, PX4/SITL behavior, or hardware readiness.
 Unsupported pairs such as SAR+CBBA and SAR+centralized remain unsupported with
 their existing reasons; M68 does not implement failure-triggered gossip burst.
 
+## M70 Urban Route Export
+
+M70 is not a benchmark refresh. It adds a portable dry-run/SITL waypoint export
+boundary for `urban-patrol`: planned Urban routes can be converted into ordered
+waypoint plans with explicit altitude, `geo_origin`, route stats, stable route
+identity fields, and `sitl_dry_run_artifact.v1` JSON artifacts.
+
+Do not present M70 artifacts as `--mission all` evidence, PX4 execution
+evidence, Gazebo/HIL evidence, hardware readiness, real perception, lidar, or
+obstacle-avoidance validation.
+
 Historical validation packs are preserved in:
 
 - `results/all_200_jobs14_m62_release/`

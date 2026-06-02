@@ -150,6 +150,7 @@ pub fn build_dynamic_auction_scenario(config: &DynamicAuctionConfig) -> (Scenari
         tasks: initial_tasks,
         ground_nodes: vec![],
         base_station: None,
+        geo_origin: None,
     };
 
     let run_config = RunConfig {

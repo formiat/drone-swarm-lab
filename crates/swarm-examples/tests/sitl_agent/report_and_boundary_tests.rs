@@ -1,4 +1,12 @@
 use super::supervisor_tests::*;
+
+fn public_scenario(path: &str) -> String {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join(path)
+        .to_string_lossy()
+        .into_owned()
+}
 #[test]
 fn cli_rejects_missing_run_report_value() {
     let scenario = write_sitl_scenario();
@@ -59,6 +67,58 @@ fn cli_rejects_replay_log_for_dry_run() {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("replay log option --replay-log is not supported for dry-run"));
+}
+
+#[test]
+fn dry_run_artifact_contains_export_metadata() {
+    let scenario = public_scenario("scenarios/urban.patrol.json");
+    let report_dir = tempfile::tempdir().unwrap();
+    let artifact = report_dir.path().join("urban-dry-run.json");
+    let output = run_sitl_agent(&[
+        "--dry-run",
+        "--scenario",
+        &scenario,
+        "--agent-id",
+        "agent-0",
+        "--dry-run-artifact",
+        artifact.to_str().unwrap(),
+    ]);
+
+    assert!(output.status.success());
+    let json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&artifact).unwrap()).unwrap();
+    assert_eq!(json["schema_version"], "sitl_dry_run_artifact.v1");
+    assert_eq!(json["mission"], "urban-patrol");
+    assert_eq!(json["export_kind"], "urban_route");
+    assert_eq!(json["planner_or_adapter"], "urban_route_export:dijkstra");
+    assert_eq!(json["route_length_m"], 80.0);
+    assert_eq!(json["segment_count"], 4);
+    assert_eq!(json["waypoint_count"], 4);
+    assert_eq!(json["effective_geo_origin"]["lat_deg"], 47.397742);
+    assert_eq!(json["start_waypoint"]["edge_id"], "road-n0-n1");
+    assert_eq!(json["end_waypoint"]["edge_id"], "road-n3-n0");
+}
+
+#[test]
+fn dry_run_artifact_rejects_non_dry_run() {
+    let scenario = write_sitl_scenario();
+    let scenario = scenario.path().to_str().unwrap();
+    let report_dir = tempfile::tempdir().unwrap();
+    let artifact = report_dir.path().join("sitl-dry-run.json");
+    let output = run_sitl_agent(&[
+        "--mock",
+        "--scenario",
+        scenario,
+        "--agent-id",
+        "agent-0",
+        "--dry-run-artifact",
+        artifact.to_str().unwrap(),
+    ]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr
+        .contains("dry-run artifact option --dry-run-artifact is only supported for --dry-run"));
 }
 
 #[test]
