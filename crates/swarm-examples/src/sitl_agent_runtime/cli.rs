@@ -1,35 +1,18 @@
-use std::path::Path;
-use std::thread;
 use std::time::Duration;
 
-use super::connection_and_reports::run_connection;
-use crate::sitl_multi_agent::{
-    agent_config, build_multi_agent_manifest, load_multi_agent_config, MultiAgentLifecycle,
-    MultiAgentSitlAgentConfig,
-};
-use crate::sitl_observability::{
-    write_sitl_event_log, SitlEventLogMetadata, SitlEventLogMode, SitlEventRecorder,
-};
-use crate::sitl_plan::{
-    build_sitl_plan_for_task_ids, classify_connection_string, first_sitl_entry,
-    format_dry_run_plan, load_sitl_suite, SitlConnectionClass, SitlError, SitlMode, SitlPlan,
-};
-use crate::sitl_safety::{
-    load_sitl_safety_config, validate_pre_upload_safety, validate_pre_upload_safety_for_task_ids,
-};
-use swarm_comms::{MockMavlinkTransport, Waypoint};
+use crate::sitl_plan::{SitlError, SitlMode};
 
 pub(super) struct CliArgs {
-    mode: Option<SitlMode>,
-    scenario: String,
-    agent_id: String,
-    multi_agent_config: Option<String>,
-    safety_config: Option<String>,
-    run_report: Option<String>,
-    replay_log: Option<String>,
-    allow_hardware_candidate: bool,
-    lifecycle: LifecycleArgs,
-    lifecycle_from_cli: bool,
+    pub(super) mode: Option<SitlMode>,
+    pub(super) scenario: String,
+    pub(super) agent_id: String,
+    pub(super) multi_agent_config: Option<String>,
+    pub(super) safety_config: Option<String>,
+    pub(super) run_report: Option<String>,
+    pub(super) replay_log: Option<String>,
+    pub(super) allow_hardware_candidate: bool,
+    pub(super) lifecycle: LifecycleArgs,
+    pub(super) lifecycle_from_cli: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -64,7 +47,7 @@ impl Default for AgentRuntimeOptions {
     }
 }
 
-fn parse_args() -> Result<CliArgs, SitlError> {
+pub(super) fn parse_args() -> Result<CliArgs, SitlError> {
     let args: Vec<String> = std::env::args().collect();
     let mut mode: Option<SitlMode> = None;
     let mut scenario: Option<String> = None;
@@ -328,215 +311,4 @@ fn parse_duration_arg(
         name,
         value: value.to_owned(),
     })
-}
-
-pub fn run() -> Result<(), SitlError> {
-    let cli = parse_args()?;
-    let suite = load_sitl_suite(&cli.scenario)?;
-    let multi_agent_config = cli
-        .multi_agent_config
-        .as_deref()
-        .map(load_multi_agent_config)
-        .transpose()?;
-
-    let mut lifecycle = cli.lifecycle;
-    let mut runtime_options = AgentRuntimeOptions::default();
-    let mut mode = cli.mode.clone();
-    let mut safety_task_ids: Option<Vec<String>> = None;
-    let plan = if let Some(config) = multi_agent_config.as_ref() {
-        let config_path = cli.multi_agent_config.as_ref().expect("config path exists");
-        let manifest = build_multi_agent_manifest(&suite, &cli.scenario, config_path, config)?;
-        let agent = agent_config(config, &cli.agent_id)?;
-        if !cli.lifecycle_from_cli {
-            lifecycle.mode = lifecycle_mode_from_config(agent.lifecycle);
-        }
-        runtime_options = runtime_options_from_config(agent);
-        if mode.is_none() {
-            mode = Some(SitlMode::Connection {
-                addr: agent.connection_string.clone(),
-            });
-        }
-        safety_task_ids = Some(agent.task_ids.clone());
-        if matches!(mode, Some(SitlMode::DryRun)) {
-            let agent_manifest = manifest
-                .agents
-                .iter()
-                .find(|item| item.agent_id == cli.agent_id)
-                .expect("validated manifest contains agent");
-            eprintln!(
-                "Multi-agent SITL: agent={} system_id={} component_id={} connection={} lifecycle={:?} start_delay_ms={} task_ids={}",
-                agent_manifest.agent_id,
-                agent_manifest.system_id,
-                agent_manifest.component_id,
-                agent_manifest.connection_string,
-                agent_manifest.lifecycle,
-                agent_manifest.start_delay_ms,
-                agent_manifest.task_ids.join(",")
-            );
-        }
-        build_sitl_plan_for_task_ids(&suite, &cli.scenario, &cli.agent_id, &agent.task_ids)?
-    } else {
-        crate::sitl_plan::build_sitl_plan(&suite, &cli.scenario, cli.agent_id.clone())?
-    };
-
-    let mode = mode.ok_or(SitlError::MissingMode)?;
-    if cli.run_report.is_some() && lifecycle.mode != LifecycleMode::Execute {
-        return Err(SitlError::RunReportRequiresExecute {
-            option: "--run-report",
-        });
-    }
-
-    if let SitlMode::Connection { addr } = &mode {
-        enforce_hardware_candidate_boundary(addr, cli.allow_hardware_candidate)?;
-        let safety_config = load_sitl_safety_config(cli.safety_config.as_deref().map(Path::new))?;
-        let entry = first_sitl_entry(&suite, &cli.scenario)?;
-        if let Some(task_ids) = safety_task_ids.as_ref() {
-            validate_pre_upload_safety_for_task_ids(
-                entry,
-                &plan.agent_id,
-                &safety_config,
-                task_ids,
-            )?;
-        } else {
-            validate_pre_upload_safety(entry, &plan.agent_id, &safety_config)?;
-        }
-    }
-
-    match mode {
-        SitlMode::Mock => {
-            apply_start_delay(runtime_options.start_delay_ms);
-            run_mock(&plan, cli.replay_log.as_deref())
-        }
-        SitlMode::DryRun => {
-            print!("{}", format_dry_run_plan(&plan));
-            Ok(())
-        }
-        SitlMode::Connection { addr } => run_connection(
-            &plan,
-            &addr,
-            &lifecycle,
-            runtime_options,
-            cli.run_report.as_deref(),
-            cli.replay_log.as_deref(),
-        ),
-    }
-}
-
-fn enforce_hardware_candidate_boundary(
-    addr: &str,
-    allow_hardware_candidate: bool,
-) -> Result<(), SitlError> {
-    let class = classify_connection_string(addr)?;
-    if matches!(class, SitlConnectionClass::HardwareCandidate) {
-        if allow_hardware_candidate {
-            print_hardware_candidate_warning(addr, class);
-        } else {
-            return Err(SitlError::HardwareCandidateRequiresExplicitAllow {
-                addr: addr.to_owned(),
-                class: class.name(),
-            });
-        }
-    }
-    Ok(())
-}
-
-fn print_hardware_candidate_warning(addr: &str, class: SitlConnectionClass) {
-    eprintln!(
-        "WARNING: connection '{addr}' is classified as {}. This may target real hardware or a remote endpoint. This project is not hardware-ready, does not provide a certified safety layer, and requires the operator checklist in docs/HARDWARE_READINESS.md before any hardware experiment.",
-        class.name()
-    );
-}
-
-fn lifecycle_mode_from_config(lifecycle: MultiAgentLifecycle) -> LifecycleMode {
-    match lifecycle {
-        MultiAgentLifecycle::UploadOnly => LifecycleMode::UploadOnly,
-        MultiAgentLifecycle::Execute => LifecycleMode::Execute,
-    }
-}
-
-fn runtime_options_from_config(config: &MultiAgentSitlAgentConfig) -> AgentRuntimeOptions {
-    AgentRuntimeOptions {
-        start_delay_ms: config.start_delay_ms,
-        target_system: config.system_id,
-        target_component: config.component_id,
-    }
-}
-
-pub(super) fn apply_start_delay(start_delay_ms: u64) {
-    if start_delay_ms > 0 {
-        thread::sleep(Duration::from_millis(start_delay_ms));
-    }
-}
-
-fn run_mock(plan: &SitlPlan, replay_log: Option<&str>) -> Result<(), SitlError> {
-    let mut transport = MockMavlinkTransport::new();
-    let mut recorder =
-        replay_log.map(|_| new_sitl_event_recorder(plan, None, SitlEventLogMode::Mock));
-    if let Some(recorder) = recorder.as_mut() {
-        recorder.push_connection_opened();
-        recorder.push_mission_count_sent(plan.waypoints.len());
-    }
-    eprintln!(
-        "SITL Agent: {} | {} waypoints | mock=true",
-        plan.agent_id,
-        plan.waypoints.len()
-    );
-
-    for waypoint_item in &plan.waypoints {
-        let waypoint = Waypoint {
-            x: waypoint_item.x,
-            y: waypoint_item.y,
-            z: waypoint_item.z,
-            seq: waypoint_item.seq,
-        };
-        eprintln!(
-            "WAYPOINT seq={} x={:.1} y={:.1} z={:.1}",
-            waypoint.seq, waypoint.x, waypoint.y, waypoint.z
-        );
-        if let Some(recorder) = recorder.as_mut() {
-            recorder.push_mission_item_sent(waypoint.seq, Some(waypoint_item.task_id.clone()));
-            recorder.push_task_completed(waypoint.seq, waypoint_item.task_id.clone());
-        }
-        transport.send_waypoint(waypoint);
-    }
-    eprintln!("Mock mode: {} waypoints sent.", transport.waypoints().len());
-    if let Some(recorder) = recorder.as_mut() {
-        recorder.push_run_completed("completed");
-        write_replay_log_if_requested(replay_log, recorder)?;
-    }
-    Ok(())
-}
-
-pub(super) fn new_sitl_event_recorder(
-    plan: &SitlPlan,
-    connection_string: Option<&str>,
-    mode: SitlEventLogMode,
-) -> SitlEventRecorder {
-    let mode_name = mode.as_str();
-    let run_id = format!("{}:{}:{mode_name}", plan.scenario_name, plan.agent_id);
-    SitlEventRecorder::new(SitlEventLogMetadata {
-        run_id,
-        scenario_path: plan.scenario_path.clone(),
-        scenario_name: plan.scenario_name.clone(),
-        mission: plan.mission.clone(),
-        profile: plan.profile.clone(),
-        agent_id: plan.agent_id.clone(),
-        connection_string: connection_string.map(str::to_owned),
-        mode,
-    })
-}
-
-pub(super) fn write_replay_log_if_requested(
-    path: Option<&str>,
-    recorder: &SitlEventRecorder,
-) -> Result<(), SitlError> {
-    let Some(path) = path else {
-        return Ok(());
-    };
-    write_sitl_event_log(path, recorder.log()).map_err(|error| SitlError::ReplayLogWrite {
-        path: Path::new(path).to_path_buf(),
-        message: error.to_string(),
-    })?;
-    eprintln!("SITL replay log written: {path}");
-    Ok(())
 }

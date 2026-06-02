@@ -1,5 +1,6 @@
-use super::*;
 use swarm_metrics::AggregateMetrics;
+
+use super::report_compare::compare_metric_field;
 
 pub(super) fn compare_aggregate_metrics(
     key: &(String, String),

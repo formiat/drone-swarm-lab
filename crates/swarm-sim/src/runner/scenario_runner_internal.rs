@@ -20,7 +20,7 @@ use super::{
         record_inspection_edge_visits, record_safety_violations, record_sar_scans,
         record_tick_start, send_alive_heartbeats, should_stop_tick, tasks_injected_at_tick,
         teleport_assigned_tasks_when_movement_disabled, update_connectivity_snapshot,
-        MissionStopSnapshot,
+        update_view_divergence, MissionStopSnapshot,
     },
     released_tasks_reassigned, update_unassigned_durations, RunConfig, SafetyAllocator,
     ScenarioRunner,
@@ -359,29 +359,14 @@ impl ScenarioRunner {
             // Use first non-crashed agent's coordinator for state checks
             let first_id = first_active_agent_id(&nodes, &crashed_agents);
 
-            // Track view divergence and convergence
-            let maps: Vec<HashMap<TaskId, AgentId>> = nodes
-                .iter()
-                .filter(|(_, id)| !crashed_agents.contains(id))
-                .map(|(node, _)| {
-                    node.coordinator
-                        .registry
-                        .tasks()
-                        .filter_map(|t| t.assigned_to.clone().map(|a| (t.id.clone(), a)))
-                        .collect::<HashMap<_, _>>()
-                })
-                .collect();
-            if !maps.is_empty() {
-                let reference = &maps[0];
-                let diverged = maps.iter().filter(|m| *m != reference).count() as u64;
-                max_view_divergence = max_view_divergence.max(diverged);
-
-                if let Some(heal_at) = heal_tick {
-                    if current_tick > heal_at && diverged == 0 && convergence_ticks.is_none() {
-                        convergence_ticks = Some(current_tick - heal_at);
-                    }
-                }
-            }
+            update_view_divergence(
+                &nodes,
+                &crashed_agents,
+                current_tick,
+                heal_tick,
+                &mut max_view_divergence,
+                &mut convergence_ticks,
+            );
 
             // Count expired tasks from first agent only (replicated state)
             if let Some(ref target_id) = first_id {

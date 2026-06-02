@@ -12,10 +12,16 @@ use crate::sitl_report::{SitlRunFinalStatus, SitlRunReport};
 #[cfg(all(test, feature = "mavlink-transport"))]
 use swarm_comms::Waypoint;
 
-mod cli_and_mock;
-pub use cli_and_mock::run;
+mod cli;
 #[cfg(all(test, feature = "mavlink-transport"))]
-use cli_and_mock::*;
+use cli::*;
+pub use runtime::run;
+
+mod mock;
+#[cfg(all(test, feature = "mavlink-transport"))]
+use mock::*;
+
+mod runtime;
 
 mod connection_and_reports;
 #[cfg(all(test, feature = "mavlink-transport"))]

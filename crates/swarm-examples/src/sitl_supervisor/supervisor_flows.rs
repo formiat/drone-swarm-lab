@@ -9,6 +9,20 @@ use std::time::Duration;
 use super::config::{
     SupervisorLiveConfig, SupervisorLoopConfig, SupervisorMetrics, SupervisorMockConfig,
 };
+use super::controller_helpers::{
+    build_mock_controllers, poll_active_agent_ids, upload_and_start_manifest_agents,
+    validate_controller_set,
+};
+use super::live_helpers::validate_live_manifest;
+#[cfg(any(feature = "mavlink-transport", test))]
+use super::live_helpers::{
+    live_active_run_snapshots, live_controller_for_agent_mut, live_overall_status,
+    validate_live_controller_set,
+};
+use super::mock_runtime::{
+    assign_manifest_tasks, complete_one_task_per_active_agent, manifest_tasks_completed,
+    supervisor_runtime_agent_id, validate_failure_agent,
+};
 use super::ports::AgentController;
 #[cfg(any(feature = "mavlink-transport", test))]
 use super::ports::LiveAgentController;
@@ -17,17 +31,6 @@ use super::reallocation::record_reallocation_output;
 #[cfg(any(feature = "mavlink-transport", test))]
 use super::reallocation::{
     live_reallocation_after_failure, record_reallocation_output, LiveReallocationContext,
-};
-use super::validation_and_reports::{
-    assign_manifest_tasks, build_mock_controllers, complete_one_task_per_active_agent,
-    manifest_tasks_completed, poll_active_agent_ids, supervisor_runtime_agent_id,
-    upload_and_start_manifest_agents, validate_controller_set, validate_failure_agent,
-    validate_live_manifest,
-};
-#[cfg(any(feature = "mavlink-transport", test))]
-use super::validation_and_reports::{
-    live_active_run_snapshots, live_controller_for_agent_mut, live_overall_status,
-    validate_live_controller_set,
 };
 use crate::sitl_connection::SitlSafetyGate;
 use crate::sitl_multi_agent::MultiAgentSitlManifest;

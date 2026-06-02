@@ -3,9 +3,12 @@ use std::collections::BTreeMap;
 #[cfg(feature = "mavlink-transport")]
 use std::path::Path;
 
-use super::cli_and_mock::{apply_start_delay, AgentRuntimeOptions, LifecycleArgs};
 #[cfg(feature = "mavlink-transport")]
-use super::cli_and_mock::{new_sitl_event_recorder, write_replay_log_if_requested, LifecycleMode};
+use super::cli::LifecycleMode;
+use super::cli::{AgentRuntimeOptions, LifecycleArgs};
+use super::mock::apply_start_delay;
+#[cfg(feature = "mavlink-transport")]
+use super::mock::{new_sitl_event_recorder, write_replay_log_if_requested};
 #[cfg(feature = "mavlink-transport")]
 use super::telemetry::{
     default_takeoff_altitude, run_telemetry_progress_loop, sitl_task_ids_by_seq,

@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
 #[cfg(feature = "mavlink-transport")]
-use super::cli_and_mock::LifecycleArgs;
+use super::cli::LifecycleArgs;
 #[cfg(feature = "mavlink-transport")]
 use crate::sitl_observability::SitlEventRecorder;
 #[cfg(feature = "mavlink-transport")]

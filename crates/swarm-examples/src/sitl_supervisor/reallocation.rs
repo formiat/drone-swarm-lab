@@ -4,7 +4,9 @@ use super::config::SupervisorMetrics;
 #[cfg(any(feature = "mavlink-transport", test))]
 use super::config::{CompletedWaypoint, LiveAgentRun, MissionReplacementPlan};
 #[cfg(any(feature = "mavlink-transport", test))]
-use super::validation_and_reports::{assign_manifest_tasks, manifest_waypoint_for_task_id};
+use super::live_helpers::manifest_waypoint_for_task_id;
+#[cfg(any(feature = "mavlink-transport", test))]
+use super::mock_runtime::assign_manifest_tasks;
 #[cfg(any(feature = "mavlink-transport", test))]
 use crate::sitl_multi_agent::MultiAgentSitlManifest;
 use crate::sitl_observability::SitlEventRecorder;

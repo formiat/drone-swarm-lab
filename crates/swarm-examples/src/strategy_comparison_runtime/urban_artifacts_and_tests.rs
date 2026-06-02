@@ -6,10 +6,12 @@ use swarm_sim::{
     default_suites, Baseline, BenchmarkHarness, BenchmarkOptions, RegressionRunner, SuiteMode,
 };
 
-use super::cli_and_runs::{baseline_from_green_report, ensure_parent_dir, make_factories, CliArgs};
+use super::cli::CliArgs;
+use super::runs::{baseline_from_green_report, ensure_parent_dir};
+use super::strategies::make_factories;
 
 #[cfg(test)]
-use super::cli_and_runs::write_benchmark_pack;
+use super::runs::write_benchmark_pack;
 #[cfg(test)]
 use swarm_sim::{ComparisonReport, RegressionReport};
 
