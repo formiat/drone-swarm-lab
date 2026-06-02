@@ -234,6 +234,14 @@ stdout. The report also includes `task_ownership`, `final_status`, and
 `limitations` while keeping `overall_status` and `known_limitations` for
 compatibility.
 
+M72 adds `artifact_validator` for these SITL packs. The validator recomputes
+`summarize_sitl_event_log`, compares it with `run-report.json` and
+`replay-summary.txt`, checks final status consistency, verifies that completed
+tasks exist in the event log, and preserves M59 replacement mission semantics by
+checking that `multi_agent_task_completed` uses the active
+`multi_agent_mission_item_sent` seq for the same `(agent_id, task_id)`. See
+[`docs/ARTIFACT_VALIDATION.md`](ARTIFACT_VALIDATION.md).
+
 M61 documents the extension boundary for replay/report fields in
 [`docs/EXTENSION_GUIDE.md`](EXTENSION_GUIDE.md). New mission-specific replay
 events should be added only when generic task, safety, SAR, inspection,

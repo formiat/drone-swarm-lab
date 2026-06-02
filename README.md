@@ -196,13 +196,29 @@ so repeated waypoint sequence numbers remain attributable to the correct agent.
 M60 hardens this supervisor workflow for repeatable local PX4/SIH research
 runs. `--output-dir` creates a stable run directory containing
 `manifest.json`, `events.sitl-log.json`, `run-report.json` for connection
-execute mode, and `replay-summary.txt`; `--run-id` fixes the directory and log
-identity; `--force` is required to overwrite existing artifacts. The supervisor
-now returns stable exit codes: `2` for CLI/config errors, `3` for safety or
-hardware-candidate guard failures, `20` for unavailable endpoint/feature gates,
-`21` for upload or command rejection, `22` for heartbeat/telemetry/progress
-timeouts, `23` for abort failures, `30` for runtime partial failure after start,
-and `40` for artifact write or overwrite-policy failures.
+execute mode, `replay-summary.txt`, `safety_validation_report.v1.json`,
+`scenario.snapshot.json`, `config.snapshot.json`, and `command.txt`; `--run-id`
+fixes the directory and log identity; `--force` is required to overwrite
+existing artifacts. M72 adds `artifact_validator`, which checks this pack with
+stable rule ids such as `artifact.final_status_mismatch` and
+`artifact.replacement_seq_mismatch`:
+
+```bash
+cargo run -p swarm-examples --bin artifact_validator -- \
+  --output-dir target/sitl/local-multi-agent-sih \
+  --mode supervisor-run \
+  --strict
+```
+
+The manual-only helpers `scripts/run_m58_local.sh` and
+`scripts/run_m59_local.sh` can rerun local PX4/SIH evidence when PX4 is
+installed; use `DRY_RUN=1` to inspect commands without launching PX4. The
+supervisor now returns stable exit codes: `2` for CLI/config errors, `3` for
+safety or hardware-candidate guard failures, `20` for unavailable
+endpoint/feature gates, `21` for upload or command rejection, `22` for
+heartbeat/telemetry/progress timeouts, `23` for abort failures, `30` for runtime
+partial failure after start, and `40` for artifact write or overwrite-policy
+failures.
 
 ### 13. Upload or execute a mission in PX4 SITL
 
@@ -275,6 +291,7 @@ cargo run -p swarm-examples --bin replay -- \
 | Dynamic Reallocation | ✅ Stable local SITL | M51/M59 | Heartbeat timeout releases unfinished tasks from lost agents, recovers assignable tasks on survivors, exposes runtime metrics and SITL reallocation events; `sitl_supervisor --mock` emits the failure/reallocation flow; M59 wires the same runtime path into controlled local PX4/SIH active-survivor mission replacement behind `--reupload-on-failure` |
 | Multi-Agent SITL Foundation | ✅ Stable local SITL | M52/M58/M59 | `multi_sitl.v1` config, public fixtures, `sitl_supervisor` dry-run/mock orchestration, per-agent task subsets, MAVLink system/component mapping, duplicate ownership rejection, two-instance PX4 SIH upload-only evidence, local multi-agent PX4/SIH execute evidence, and controlled active-survivor mission replacement after a failed agent |
 | PX4/SIH Supervisor Hardening | ✅ Stable local workflow | M60 | `sitl_supervisor --output-dir`, `--run-id`, `--force`, checked artifact overwrite policy, stable exit codes, `task_ownership` / `events_summary` / `final_status` / `limitations` in `sitl_multi_agent_run_report.v1`, and replay summary artifacts for repeatable local PX4/SIH runs |
+| Artifact Validation | ✅ Stable local workflow | M72 | `artifact_validator` validates supervisor packs (`manifest.json`, event log, run report, replay summary, safety report, snapshots, command metadata) with stable rule ids; `scripts/run_m58_local.sh` and `scripts/run_m59_local.sh` are manual-only PX4/SIH harnesses with `DRY_RUN=1` |
 | Hardware Readiness Boundary | ✅ Stable | M53 | `docs/HARDWARE_READINESS.md`, connection classes, and `--allow-hardware-candidate` guard remote/wildcard/serial hardware candidates; this documents the boundary, not hardware readiness |
 | Supervisor Controller Boundary | ✅ Stable | M57 | `sitl_supervisor` mock orchestration is split into a testable internal supervisor module with `AgentController`, `MockAgentController`, fake-controller coverage, and assertable `SupervisorMetrics`; M58 adds the separate live PX4/SIH execute controller path |
 | Replay / Debuggability | ✅ Stable | M23/M67 | `replay` CLI, ASCII visualization, deterministic timeline output, and optional `--agent` / `--category urban` filters |
@@ -643,6 +660,7 @@ points, not a published semver-stable SDK.
 | M69 | ✅ | Benchmark Refresh / Research Evidence: release `--seeds 1000 --mission all --jobs 14` benchmark captured for code commit `5d1d3cd17cacba7482c1d9b93eb5acc107af8f71` in `results/all_1000_jobs14_m69_release/`; regression runner passed at `--jobs 14`; current `--mission all` covers coverage/emergency-mesh/SAR/inspection/wildfire, while Urban remains separate M68 scenario-suite evidence |
 | M70 | ✅ | Urban Route Export + Geo Origin: `urban-patrol` route loops export to ordered SITL dry-run waypoint plans and optional `sitl_dry_run_artifact.v1` JSON with route metadata, stable route identity fields, `geo_origin`, and effective default SITL origin; not PX4 execution evidence |
 | M71 | ✅ | Preflight Safety And Invariant Contract: static `SafetyValidationReport` preflight gate with rule ids, severity, affected id, reason, geofence/no-fly/altitude/route/ownership/Urban/semantic checks, dry-run artifact integration, supervisor output-dir safety report, and stable exit code convention 2/3/4/5; not certified flight safety |
+| M72 | ✅ | Artifact Validator + SITL Harness: `artifact_validator`, `artifact_validation_report.v1`, M72 manifest metadata, scenario/config/command snapshots, stable artifact rule ids, portable validator tests, and manual-only M58/M59 local PX4/SIH harness scripts; not automated PX4 CI or hardware readiness |
 
 ---
 
@@ -655,6 +673,7 @@ points, not a published semver-stable SDK.
 | [`docs/SCENARIO_DSL.md`](docs/SCENARIO_DSL.md) | Scenario suite format and validation |
 | [`docs/REPLAY.md`](docs/REPLAY.md) | Replay event log schema and CLI usage |
 | [`docs/SITL_SETUP.md`](docs/SITL_SETUP.md) | Mock, dry-run, and experimental PX4 SITL setup |
+| [`docs/ARTIFACT_VALIDATION.md`](docs/ARTIFACT_VALIDATION.md) | M72 artifact validator contract, rule ids, and manual local SITL harness |
 
 ---
 

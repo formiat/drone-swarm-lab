@@ -18,6 +18,7 @@ and serial connections as hardware candidates and requires
 | Dry-run SITL | Portable | Scenario loading, waypoint extraction, coordinate-frame reporting, and upload-plan formatting are deterministic. |
 | Urban route export dry-run | Portable | M70 converts `urban-patrol` planned road-graph routes into ordered SITL-compatible waypoint plans with explicit altitude, `geo_origin`, route stats, and `sitl_dry_run_artifact.v1` JSON evidence. This is local export evidence only, not PX4 execution or hardware readiness. |
 | Preflight safety contract | Portable static gate | M71 requires mission inputs to pass `SafetyValidationReport` checks before dry-run, SITL upload, or hardware-candidate experiments. It catches geofence, no-fly, altitude, route length, ownership, Urban, and known semantic issues. This is not certified flight safety. |
+| Artifact validation | Portable evidence gate | M72 adds `artifact_validator`, `artifact_validation_report.v1`, scenario/config/command snapshots, manifest metadata, and stable artifact rule ids for local SITL packs. It improves evidence discipline before future hardware-candidate work, but it is not automated PX4 CI, Gazebo/HIL validation, hardware readiness, or flight certification. |
 | Portable regression | Portable | `portable_sitl_regression_smoke`, `sitl_docs`, safety validation, mock replay, and multi-agent manifest checks run without external PX4. |
 | Single-agent PX4 SITL | Experimental | Feature-gated mission upload, optional arm/takeoff/start, telemetry progress, run report, replay log plumbing, and public `scenarios/sitl.px4-golden.json` exist for local PX4 SITL. Live simulator verification remains manual/local. |
 | Multi-agent SITL foundation | Experimental foundation | `multi_sitl.v1` config, public `scenarios/sitl.multi-agent.json` / `scenarios/sitl.multi-agent.config.json`, per-agent task subsets, dry-run/mock manifest, mock supervisor reallocation, MAVLink system/component mapping, duplicate ownership rejection, and local two-instance PX4 SIH upload-only mission acceptance are covered. |
@@ -73,6 +74,7 @@ experiment. All items below must be true:
 - PX4 parameters, arming checks, failsafe actions, RTL altitude, and battery failsafes are reviewed.
 - Mission waypoints, local coordinate conversion, altitude, and expected path are reviewed in `--dry-run`.
 - M71 preflight passes with no error-severity rule ids; review `docs/PREFLIGHT_SAFETY.md` and any `safety_validation_report.v1.json` artifact before proceeding.
+- M72 artifact validation passes for any local supervisor output pack that will be cited as evidence; review `docs/ARTIFACT_VALIDATION.md` and keep historical artifacts clearly marked when they lack M72 metadata.
 - For Urban missions, the M70 Urban Route Export artifact is reviewed before any optional manual upload; it does not prove perception, obstacle avoidance, dynamic traffic handling, or hardware safety.
 - Safety config geofence, mission radius, waypoint jump, and altitude limits are reviewed.
 - Logs are enabled and storage is available.

@@ -34,6 +34,10 @@ Preflight returns `SafetyValidationReport`:
 - `sitl_agent --dry-run --dry-run-artifact` includes the report in
   `sitl_dry_run_artifact.v1`.
 - `sitl_supervisor --output-dir` writes `safety_validation_report.v1.json`.
+- M72 `artifact_validator --mode supervisor-run` requires
+  `safety_validation_report.v1.json` in supervisor packs and reports
+  `artifact.safety_report_missing` when it is absent. See
+  [`docs/ARTIFACT_VALIDATION.md`](ARTIFACT_VALIDATION.md).
 
 ## Exit Code Convention
 

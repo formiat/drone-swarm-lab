@@ -44,6 +44,10 @@ path = "src/bin/replay.rs"
 name = "regression_runner"
 path = "src/bin/regression_runner.rs"
 
+[[bin]]
+name = "artifact_validator"
+path = "src/bin/artifact_validator.rs"
+
 [dependencies]
 serde              = { workspace = true }
 serde_json         = { workspace = true }

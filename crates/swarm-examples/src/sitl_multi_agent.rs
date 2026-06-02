@@ -55,6 +55,19 @@ pub struct MultiAgentSitlManifest {
     pub agents_count: usize,
     pub agents: Vec<MultiAgentSitlManifestAgent>,
     pub ownership_summary: TaskOwnershipSummary,
+    #[serde(default)]
+    pub artifact_metadata: SitlArtifactMetadata,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SitlArtifactMetadata {
+    pub command: Vec<String>,
+    pub git_commit: Option<String>,
+    pub build_profile: String,
+    pub run_id: Option<String>,
+    pub scenario_snapshot_path: Option<PathBuf>,
+    pub config_snapshot_path: Option<PathBuf>,
+    pub command_path: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -147,6 +160,7 @@ pub fn build_multi_agent_manifest(
         agents_count: agents.len(),
         agents,
         ownership_summary: ownership_summary(suite, config)?,
+        artifact_metadata: SitlArtifactMetadata::default(),
     })
 }
 

@@ -39,6 +39,27 @@ and rule ids such as `geofence.waypoint_outside`, `nofly.waypoint_inside`, or
 [`docs/PREFLIGHT_SAFETY.md`](PREFLIGHT_SAFETY.md). This is not certified flight
 safety.
 
+M72 adds artifact validation for supervisor output directories. A new
+`sitl_supervisor --output-dir <root> --run-id <id>` pack includes
+`manifest.json`, `events.sitl-log.json`, `run-report.json`,
+`replay-summary.txt`, `safety_validation_report.v1.json`,
+`scenario.snapshot.json`, `config.snapshot.json`, and `command.txt`. Validate it
+with:
+
+```bash
+cargo run -p swarm-examples --bin artifact_validator -- \
+  --output-dir <root>/<id> \
+  --mode supervisor-run \
+  --strict
+```
+
+`scripts/run_m58_local.sh` and `scripts/run_m59_local.sh` are manual-only
+helpers for local PX4/SIH reruns. They require operator-provided
+`PX4_AGENT0_CMD` and `PX4_AGENT1_CMD` in live mode. Use `DRY_RUN=1` or
+`--dry-run` to inspect commands without launching PX4/SIH. These scripts are
+not default CI and do not prove Gazebo, HIL, hardware, or production failover.
+See [`docs/ARTIFACT_VALIDATION.md`](ARTIFACT_VALIDATION.md).
+
 Recommended automated checks:
 
 ```bash
@@ -87,6 +108,7 @@ Out of scope for automated CI in this repository:
 - real PX4 CI orchestration;
 - automated real multi-agent PX4 SITL CI orchestration;
 - automated live multi-agent PX4 failure/reallocation;
+- automated M58/M59 harness scripts without an operator-provided PX4/SIH setup;
 - HIL;
 - real aircraft;
 - production autopilot certification;

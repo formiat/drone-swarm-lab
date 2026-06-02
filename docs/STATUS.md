@@ -47,6 +47,7 @@ status table.
 | M69 Benchmark Refresh / Research Evidence | Complete for built-in simulation suite | Release `strategy_comparison --seeds 1000 --mission all --jobs 14` completed for code commit `5d1d3cd17cacba7482c1d9b93eb5acc107af8f71`. Artifacts are in `results/all_1000_jobs14_m69_release/`; runtime was 28:55.25 with peak RSS 207684 KB. `regression_runner --jobs 14` passed. The current `--mission all` suite covers coverage, emergency-mesh, SAR, inspection, and wildfire; Urban scenario-suite evidence remains separate in `results/m68_urban_corridor_delta/`. |
 | M70 Urban Route Export + Geo Origin | Complete as portable dry-run/SITL waypoint export boundary | `urban-patrol` routes can be exported through `sitl_agent --dry-run` into ordered waypoint missions with route length, segment count, waypoint count, stable route identity fields, explicit altitude, scenario `geo_origin`, effective default origin, and `sitl_dry_run_artifact.v1` JSON artifacts. This is local waypoint export only; it is not hardware readiness, real perception, lidar/raycast, obstacle avoidance, Gazebo/HIL, or PX4 execution evidence. |
 | M71 Preflight Safety And Invariant Contract | Complete as static input gate | `SafetyValidationReport` preflight checks now emit rule-id based violations with severity, affected id, and reason. Dry-run and supervisor inputs pass a preflight gate before execution, dry-run artifacts include the safety report, `sitl_supervisor --output-dir` writes `safety_validation_report.v1.json`, and stable exit codes use 2/3/4/5 for validation/runtime/artifact/environment categories. This is not certified flight safety or hardware validation. |
+| M72 Artifact Validator + SITL Harness | Complete as local artifact discipline | `artifact_validator` validates supervisor output packs with stable rule ids such as `artifact.final_status_mismatch`, `artifact.replacement_seq_mismatch`, and `artifact.safety_report_missing`; it checks manifest metadata, run id/final status/event summary/replay summary/task completion/replacement seq/safety/limitations consistency, and supports historical mode for old M58/M59 packs. `sitl_supervisor --output-dir` now captures `scenario.snapshot.json`, `config.snapshot.json`, and `command.txt`. `scripts/run_m58_local.sh` and `scripts/run_m59_local.sh` are manual-only PX4/SIH harness helpers with `DRY_RUN=1`; this is not automated PX4 CI or hardware readiness. |
 
 ## Current Known Limitations
 
@@ -161,6 +162,7 @@ status table.
 | Urban algorithm work | Has M68 local delta; not in full benchmark yet | M68 provides a corridor-aware planner delta and route-risk metric. The current M69 `--mission all` benchmark does not include Urban scenario suites; dynamic obstacles, richer judging, route deconfliction, and avoidance remain future work. |
 | M48 live PX4 verification | Complete for local PX4 SIH | Captured in `results/m48_px4_sitl_2026-05-30/`; Gazebo/HIL/hardware remain out of scope. |
 | Real multi-agent PX4/SIH | Experimental local workflow with M60 hardening | Upload-only, execute, and controlled failure/reallocation SIH evidence exists. `sitl_supervisor --connection --execute --reupload-on-failure --output-dir ... --run-id ...` can produce stable artifacts and exit codes for local runs; automated PX4 CI, Gazebo/HIL, hardware, broader failure modes, and production safety remain future work. |
+| Artifact validation | Ready for local SITL packs | Use `artifact_validator --output-dir <pack> --mode supervisor-run --strict` for new supervisor output dirs. Historical M58/M59 packs can be checked with `--allow-historical`; live harness scripts remain manual-only. |
 | Large benchmark publication | Evidence captured, interpretation still needed | M69 provides a current-head 1000-seed release simulation pack, but publication claims still need explicit interpretation of SAR/wildfire/CBBA weak rows and must not be presented as PX4/SITL or hardware evidence. |
 | Hardware experiment | Not product-ready | Requires external safety process; see `docs/HARDWARE_READINESS.md`. |
 
@@ -182,9 +184,13 @@ status table.
    obstacle-avoidance evidence.
 7. Keep M71 `docs/PREFLIGHT_SAFETY.md` in sync with rule ids and exit code
    semantics whenever preflight checks or CLI categories change.
-8. Keep README, `docs/BENCHMARK_RESULTS.md`, `docs/EXTENSION_GUIDE.md`,
-   `docs/SITL_SETUP.md`, `docs/SCENARIO_DSL.md`, `docs/REPLAY.md`, and this
-   file in sync when extension, Urban analysis, or SITL evidence changes state.
+8. Use M72 `artifact_validator` for new local supervisor evidence packs before
+   citing them in README/status docs. Keep historical mode explicit for old
+   committed evidence that lacks M72 metadata.
+9. Keep README, `docs/BENCHMARK_RESULTS.md`, `docs/EXTENSION_GUIDE.md`,
+   `docs/SITL_SETUP.md`, `docs/SCENARIO_DSL.md`, `docs/REPLAY.md`,
+   `docs/ARTIFACT_VALIDATION.md`, and this file in sync when extension, Urban
+   analysis, or SITL evidence changes state.
 
 ## How to Verify This Status
 

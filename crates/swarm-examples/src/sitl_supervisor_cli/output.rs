@@ -14,6 +14,9 @@ pub(super) struct OutputPaths {
     pub(super) run_report: Option<PathBuf>,
     pub(super) replay_summary: Option<PathBuf>,
     pub(super) safety_report: Option<PathBuf>,
+    pub(super) scenario_snapshot: Option<PathBuf>,
+    pub(super) config_snapshot: Option<PathBuf>,
+    pub(super) command_capture: Option<PathBuf>,
     pub(super) run_id: Option<String>,
 }
 
@@ -45,6 +48,9 @@ pub(super) fn resolve_output_paths(
                 (cli.mode == SupervisorMode::Connection).then(|| base.join("run-report.json"))
             }),
             safety_report: Some(base.join("safety_validation_report.v1.json")),
+            scenario_snapshot: Some(base.join("scenario.snapshot.json")),
+            config_snapshot: Some(base.join("config.snapshot.json")),
+            command_capture: Some(base.join("command.txt")),
             run_id,
         };
     }
@@ -55,6 +61,9 @@ pub(super) fn resolve_output_paths(
         run_report: cli.run_report.as_ref().map(PathBuf::from),
         replay_summary: None,
         safety_report: None,
+        scenario_snapshot: None,
+        config_snapshot: None,
+        command_capture: None,
         run_id,
     }
 }
@@ -69,11 +78,52 @@ pub(super) fn ensure_output_paths_available(
         paths.run_report.as_deref(),
         paths.replay_summary.as_deref(),
         paths.safety_report.as_deref(),
+        paths.scenario_snapshot.as_deref(),
+        paths.config_snapshot.as_deref(),
+        paths.command_capture.as_deref(),
     ]
     .into_iter()
     .flatten()
     {
         ensure_output_path_available(path, force)?;
+    }
+    Ok(())
+}
+
+pub(super) fn write_artifact_snapshots_if_requested(
+    paths: &OutputPaths,
+    scenario_path: &Path,
+    config_path: &Path,
+    command: &[String],
+    force: bool,
+) -> Result<(), SitlError> {
+    if let Some(path) = paths.scenario_snapshot.as_deref() {
+        let contents = std::fs::read_to_string(scenario_path).map_err(|error| {
+            run_report_write_error(scenario_path.to_path_buf(), error.to_string())
+        })?;
+        write_checked_file(path, contents, force, run_report_write_error)?;
+        eprintln!(
+            "SITL supervisor scenario snapshot written: {}",
+            path.display()
+        );
+    }
+    if let Some(path) = paths.config_snapshot.as_deref() {
+        let contents = std::fs::read_to_string(config_path).map_err(|error| {
+            run_report_write_error(config_path.to_path_buf(), error.to_string())
+        })?;
+        write_checked_file(path, contents, force, run_report_write_error)?;
+        eprintln!(
+            "SITL supervisor config snapshot written: {}",
+            path.display()
+        );
+    }
+    if let Some(path) = paths.command_capture.as_deref() {
+        let contents = format!("{}\n", command.join(" "));
+        write_checked_file(path, contents, force, run_report_write_error)?;
+        eprintln!(
+            "SITL supervisor command capture written: {}",
+            path.display()
+        );
     }
     Ok(())
 }

@@ -36,6 +36,12 @@ For live PX4/SIH evidence, see `docs/STATUS.md` and the `results/m48_*`,
 benchmark results must not be used as a substitute for PX4/SIH or hardware
 validation.
 
+M72 `artifact_validator` validates local SITL supervisor packs, including event
+log/report/replay summary/safety consistency and replacement seq semantics. It
+does not currently validate full benchmark result directories such as
+`results/all_1000_jobs14_m69_release/`; benchmark-pack validation remains future
+work. See `docs/ARTIFACT_VALIDATION.md`.
+
 ## M69 Current 1000-Seed Run
 
 - **Date:** 2026-05-31

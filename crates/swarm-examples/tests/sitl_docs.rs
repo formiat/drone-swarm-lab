@@ -7,6 +7,7 @@ const SCENARIO_DSL: &str = include_str!("../../../docs/SCENARIO_DSL.md");
 const STATUS: &str = include_str!("../../../docs/STATUS.md");
 const BENCHMARK_RESULTS: &str = include_str!("../../../docs/BENCHMARK_RESULTS.md");
 const PREFLIGHT_SAFETY: &str = include_str!("../../../docs/PREFLIGHT_SAFETY.md");
+const ARTIFACT_VALIDATION: &str = include_str!("../../../docs/ARTIFACT_VALIDATION.md");
 const M62_RESULT_README: &str =
     include_str!("../../../results/all_500_jobs14_m62_release/README.md");
 
@@ -274,6 +275,84 @@ fn m71_docs_describe_preflight_safety_contract() {
         assert!(
             SCENARIO_DSL.contains(required),
             "SCENARIO_DSL missing {required}"
+        );
+    }
+}
+
+#[test]
+fn m72_docs_describe_artifact_validator_and_manual_harness() {
+    for required in [
+        "M72 Artifact Validator + SITL Harness",
+        "artifact_validator",
+        "artifact.final_status_mismatch",
+        "artifact.replacement_seq_mismatch",
+        "scenario.snapshot.json",
+        "config.snapshot.json",
+        "command.txt",
+        "manual-only PX4/SIH harness",
+        "not automated PX4 CI or hardware readiness",
+    ] {
+        assert!(STATUS.contains(required), "STATUS missing {required}");
+    }
+
+    for required in [
+        "Artifact Validation",
+        "artifact_validation_report.v1",
+        "artifact.safety_report_missing",
+        "artifact.limitations_missing",
+        "scripts/run_m58_local.sh",
+        "scripts/run_m59_local.sh",
+        "DRY_RUN=1",
+        "Manual Boundary",
+    ] {
+        assert!(
+            ARTIFACT_VALIDATION.contains(required),
+            "ARTIFACT_VALIDATION missing {required}"
+        );
+    }
+
+    for required in [
+        "artifact_validator",
+        "docs/ARTIFACT_VALIDATION.md",
+        "scripts/run_m58_local.sh",
+        "scripts/run_m59_local.sh",
+        "scenario.snapshot.json",
+    ] {
+        assert!(README.contains(required), "README missing {required}");
+        assert!(
+            SITL_SETUP.contains(required),
+            "SITL setup doc missing {required}"
+        );
+    }
+
+    for required in [
+        "Artifact validation",
+        "docs/ARTIFACT_VALIDATION.md",
+        "not automated PX4 CI",
+    ] {
+        assert!(
+            HARDWARE_READINESS.contains(required),
+            "Hardware readiness doc missing {required}"
+        );
+    }
+
+    for required in [
+        "artifact_validator",
+        "multi_agent_task_completed",
+        "multi_agent_mission_item_sent",
+        "docs/ARTIFACT_VALIDATION.md",
+    ] {
+        assert!(REPLAY.contains(required), "Replay doc missing {required}");
+    }
+
+    assert!(
+        PREFLIGHT_SAFETY.contains("artifact.safety_report_missing"),
+        "Preflight safety doc missing M72 validator rule"
+    );
+    for required in ["benchmark-pack validation", "future"] {
+        assert!(
+            BENCHMARK_RESULTS.contains(required),
+            "Benchmark results doc missing {required}"
         );
     }
 }
