@@ -21,9 +21,14 @@ pub use types::*;
 mod internal;
 mod scenario_runner_internal;
 mod scenario_runner_public;
-mod scenario_runner_urban;
+mod urban_events;
 mod urban_helpers;
+mod urban_metrics;
+mod urban_patrol;
+mod urban_search;
+use urban_events::*;
 use urban_helpers::*;
+use urban_metrics::*;
 
 #[cfg(test)]
 mod tests;
