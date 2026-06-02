@@ -1,11 +1,14 @@
 use std::collections::{HashMap, HashSet};
 
-use swarm_alloc::{AllocationAgent, AllocationTask, Allocator, CbbaAllocator, ConnectivityContext};
-use swarm_comms::{ConnectivitySnapshot, RawMessage, Transport};
-use swarm_types::{AgentId, Health, Task, TaskId};
+use swarm_alloc::{AllocationAgent, AllocationTask, Allocator, CbbaAllocator};
+use swarm_comms::{RawMessage, Transport};
+use swarm_types::{AgentId, Task, TaskId};
 
 use crate::message::RuntimeMessage;
 use crate::Coordinator;
+
+use super::gossip::apply_gossip_messages;
+use super::reallocation::allocate_unassigned;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AssignmentChange {
@@ -372,175 +375,6 @@ impl<T: Transport> AgentNode<T> {
     }
 
     pub fn apply_gossip_buffer(&mut self, buffer: &[RuntimeMessage]) -> (u64, u64) {
-        let mut merged: u64 = 0;
-        let mut stale: u64 = 0;
-
-        for msg in buffer {
-            if let RuntimeMessage::Gossip {
-                assignments,
-                generations,
-            } = msg
-            {
-                let mut ordered_assignments: Vec<_> = assignments.iter().collect();
-                ordered_assignments
-                    .sort_by(|(left_id, _), (right_id, _)| left_id.as_ref().cmp(right_id.as_ref()));
-                for (task_id, remote_agent_id) in ordered_assignments {
-                    let local_owner = self
-                        .coordinator
-                        .registry
-                        .tasks()
-                        .find(|t| &t.id == task_id)
-                        .and_then(|t| t.assigned_to.clone());
-
-                    match local_owner {
-                        None => {
-                            if self.coordinator.membership.is_alive(remote_agent_id) {
-                                let _ = self
-                                    .coordinator
-                                    .registry
-                                    .assign(task_id, remote_agent_id.clone());
-                                merged += 1;
-                            } else {
-                                stale += 1;
-                            }
-                        }
-                        Some(ref local_id) if local_id == remote_agent_id => {
-                            // Already agree
-                        }
-                        Some(ref local_id) => {
-                            if !self.coordinator.membership.is_alive(remote_agent_id) {
-                                stale += 1;
-                                continue;
-                            }
-
-                            let local_gen = self.coordinator.membership.generation_of(local_id);
-                            let remote_gen = generations.get(remote_agent_id).copied().unwrap_or(1);
-
-                            if remote_gen > local_gen {
-                                // Remote agent has higher generation — authoritative
-                                self.coordinator.registry.release_task(task_id);
-                                let _ = self
-                                    .coordinator
-                                    .registry
-                                    .assign(task_id, remote_agent_id.clone());
-                                merged += 1;
-                            } else if remote_gen == local_gen
-                                && remote_agent_id.as_ref() > local_id.as_ref()
-                            {
-                                // Equal generation, deterministic tiebreaker: max AgentId wins
-                                self.coordinator.registry.release_task(task_id);
-                                let _ = self
-                                    .coordinator
-                                    .registry
-                                    .assign(task_id, remote_agent_id.clone());
-                                merged += 1;
-                            } else {
-                                stale += 1;
-                            }
-                        }
-                    }
-                }
-
-                let mut ordered_generations: Vec<_> = generations.iter().collect();
-                ordered_generations
-                    .sort_by(|(left_id, _), (right_id, _)| left_id.as_ref().cmp(right_id.as_ref()));
-                for (agent_id, remote_gen) in ordered_generations {
-                    let local_gen = self.coordinator.membership.generation_of(agent_id);
-                    if *remote_gen > local_gen {
-                        self.coordinator
-                            .membership
-                            .record_heartbeat(agent_id, 0, *remote_gen);
-                    }
-                }
-            }
-        }
-
-        (merged, stale)
+        apply_gossip_messages(&mut self.coordinator, buffer)
     }
-}
-
-#[derive(Default)]
-struct AllocationOutcome {
-    assignments: Vec<AssignmentChange>,
-    conflicting_assignments: u64,
-}
-
-fn allocate_unassigned<A: Allocator>(
-    coordinator: &mut Coordinator,
-    allocator: &mut A,
-) -> AllocationOutcome {
-    let mut tasks: Vec<Task> = coordinator
-        .registry
-        .unassigned()
-        .into_iter()
-        .cloned()
-        .collect();
-    tasks.sort_by(|a, b| a.id.as_ref().cmp(b.id.as_ref()));
-    let allocation_tasks: Vec<AllocationTask<'_>> =
-        tasks.iter().map(|task| AllocationTask { task }).collect();
-
-    let mut agents: Vec<AllocationAgent> = coordinator
-        .membership
-        .alive_agents()
-        .map(|(id, entry)| AllocationAgent {
-            id: id.clone(),
-            pose: entry.pose,
-            battery: entry.battery,
-            capabilities: entry.capabilities.clone(),
-            role: entry.role.clone(),
-            comms_range: entry.comms_range,
-            speed: 0.0,
-            max_range: 0.0,
-            battery_drain_rate: 0.0,
-        })
-        .collect();
-    agents.sort_by(|a, b| a.id.as_ref().cmp(b.id.as_ref()));
-
-    // Build connectivity context for v0.5+ allocators
-    let agent_entries: Vec<(AgentId, swarm_types::Pose, f64, Health)> = coordinator
-        .membership
-        .alive_agents()
-        .map(|(id, entry)| (id.clone(), entry.pose, entry.comms_range, Health::Alive))
-        .collect();
-    let base_id = agents
-        .first()
-        .map(|a| a.id.clone())
-        .unwrap_or_else(|| AgentId::from("base".to_owned()));
-    let base_pose = agents.first().map(|a| a.pose).unwrap_or(swarm_types::Pose {
-        x: 0.0,
-        y: 0.0,
-        ..Default::default()
-    });
-    let connectivity = ConnectivityContext {
-        snapshot: ConnectivitySnapshot {
-            agent_entries,
-            ground_nodes: vec![],
-            base_id: base_id.to_string(),
-            base_pose,
-        },
-        base_id: base_id.clone(),
-    };
-
-    let decisions = allocator.allocate_with_connectivity(&allocation_tasks, &agents, &connectivity);
-
-    let mut seen = HashSet::new();
-    let mut outcome = AllocationOutcome::default();
-    for (task_id, agent_id) in decisions {
-        if !seen.insert(task_id.clone()) {
-            outcome.conflicting_assignments += 1;
-            continue;
-        }
-        if coordinator
-            .registry
-            .assign(&task_id, agent_id.clone())
-            .is_err()
-        {
-            outcome.conflicting_assignments += 1;
-        } else {
-            outcome
-                .assignments
-                .push(AssignmentChange { task_id, agent_id });
-        }
-    }
-    outcome
 }

@@ -1,3 +1,4 @@
+mod display;
 mod run;
 #[cfg(test)]
 use run::percentile_of_sorted;

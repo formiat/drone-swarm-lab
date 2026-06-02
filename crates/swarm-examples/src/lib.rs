@@ -10,4 +10,5 @@ pub mod sitl_progress;
 pub mod sitl_report;
 pub mod sitl_safety;
 pub mod sitl_supervisor;
+pub mod sitl_supervisor_cli;
 pub mod strategy_comparison_runtime;
