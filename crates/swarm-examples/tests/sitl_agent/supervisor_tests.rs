@@ -710,7 +710,7 @@ fn multi_agent_sitl_supervisor_output_dir_layout_and_force_test() {
 
     let duplicate = run_sitl_supervisor(&args);
     assert!(!duplicate.status.success());
-    assert_eq!(duplicate.status.code(), Some(40));
+    assert_eq!(duplicate.status.code(), Some(4));
     let duplicate_stderr = String::from_utf8_lossy(&duplicate.stderr);
     assert!(duplicate_stderr.contains("output path already exists"));
     assert!(!duplicate_stderr.contains("usage: sitl_supervisor"));

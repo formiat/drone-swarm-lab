@@ -335,7 +335,7 @@ fn multi_agent_sitl_supervisor_connection_rejects_hardware_candidate_before_uplo
     ]);
 
     assert!(!output.status.success());
-    assert_eq!(output.status.code(), Some(3));
+    assert_eq!(output.status.code(), Some(5));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("requires --allow-hardware-candidate"));
     assert!(!stderr.contains("feature missing"));
@@ -366,7 +366,7 @@ fn multi_agent_sitl_supervisor_connection_rejects_unsafe_agent_subset_before_upl
     ]);
 
     assert!(!output.status.success());
-    assert_eq!(output.status.code(), Some(3));
+    assert_eq!(output.status.code(), Some(2));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("safety validation failed"));
     assert!(stderr.contains("rule_id=outside_geofence"));
@@ -396,7 +396,7 @@ fn multi_agent_sitl_supervisor_connection_validates_before_feature_error_test() 
     ]);
 
     assert!(!output.status.success());
-    assert_eq!(output.status.code(), Some(20));
+    assert_eq!(output.status.code(), Some(5));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("feature missing"));
     assert!(stderr.contains("mavlink-transport"));

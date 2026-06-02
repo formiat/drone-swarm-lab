@@ -46,6 +46,7 @@ status table.
 | M68 Algorithm Depth On Urban + Existing Missions | Complete as small Urban planner delta | `planner: "corridor-aware"` is implemented for Urban route loops, `urban_route_risk_score` is exported, `scenarios/urban.corridor-delta.json` compares Dijkstra against the corridor-aware planner, and docs/support matrix explain the lower-risk/longer-route tradeoff. This is not a full benchmark refresh and does not change CBBA/SAR unsupported status. |
 | M69 Benchmark Refresh / Research Evidence | Complete for built-in simulation suite | Release `strategy_comparison --seeds 1000 --mission all --jobs 14` completed for code commit `5d1d3cd17cacba7482c1d9b93eb5acc107af8f71`. Artifacts are in `results/all_1000_jobs14_m69_release/`; runtime was 28:55.25 with peak RSS 207684 KB. `regression_runner --jobs 14` passed. The current `--mission all` suite covers coverage, emergency-mesh, SAR, inspection, and wildfire; Urban scenario-suite evidence remains separate in `results/m68_urban_corridor_delta/`. |
 | M70 Urban Route Export + Geo Origin | Complete as portable dry-run/SITL waypoint export boundary | `urban-patrol` routes can be exported through `sitl_agent --dry-run` into ordered waypoint missions with route length, segment count, waypoint count, stable route identity fields, explicit altitude, scenario `geo_origin`, effective default origin, and `sitl_dry_run_artifact.v1` JSON artifacts. This is local waypoint export only; it is not hardware readiness, real perception, lidar/raycast, obstacle avoidance, Gazebo/HIL, or PX4 execution evidence. |
+| M71 Preflight Safety And Invariant Contract | Complete as static input gate | `SafetyValidationReport` preflight checks now emit rule-id based violations with severity, affected id, and reason. Dry-run and supervisor inputs pass a preflight gate before execution, dry-run artifacts include the safety report, `sitl_supervisor --output-dir` writes `safety_validation_report.v1.json`, and stable exit codes use 2/3/4/5 for validation/runtime/artifact/environment categories. This is not certified flight safety or hardware validation. |
 
 ## Current Known Limitations
 
@@ -179,7 +180,9 @@ status table.
 6. Use M70 `sitl_agent --dry-run --dry-run-artifact` before any optional manual
    Urban PX4/SIH upload experiment; do not treat the artifact as hardware or
    obstacle-avoidance evidence.
-7. Keep README, `docs/BENCHMARK_RESULTS.md`, `docs/EXTENSION_GUIDE.md`,
+7. Keep M71 `docs/PREFLIGHT_SAFETY.md` in sync with rule ids and exit code
+   semantics whenever preflight checks or CLI categories change.
+8. Keep README, `docs/BENCHMARK_RESULTS.md`, `docs/EXTENSION_GUIDE.md`,
    `docs/SITL_SETUP.md`, `docs/SCENARIO_DSL.md`, `docs/REPLAY.md`, and this
    file in sync when extension, Urban analysis, or SITL evidence changes state.
 

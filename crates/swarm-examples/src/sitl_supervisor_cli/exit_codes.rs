@@ -7,13 +7,19 @@ pub(super) fn supervisor_exit_code(error: &SitlError) -> u8 {
         | SitlError::SafetyConfigParse { .. }
         | SitlError::SafetyConfigInvalid { .. }
         | SitlError::SafetyValidationFailed { .. }
-        | SitlError::HardwareCandidateRequiresExplicitAllow { .. } => 3,
-        SitlError::FeatureMissing { .. } => 20,
+        | SitlError::PreflightFailed { .. }
+        | SitlError::InvalidScenario { .. }
+        | SitlError::UnsupportedCoordinateFrame { .. }
+        | SitlError::UrbanRouteExport { .. } => 2,
+        SitlError::FeatureMissing { .. }
+        | SitlError::BadConnectionString { .. }
+        | SitlError::HardwareCandidateRequiresExplicitAllow { .. } => 5,
         SitlError::RunReportWrite { .. }
         | SitlError::ReplayLogWrite { .. }
         | SitlError::ReplaySummaryWrite { .. }
         | SitlError::MultiAgentManifestWrite { .. }
-        | SitlError::OutputAlreadyExists { .. } => 40,
+        | SitlError::DryRunArtifactWrite { .. }
+        | SitlError::OutputAlreadyExists { .. } => 4,
         SitlError::ConnectionFailed { message } => classify_connection_failure_exit_code(message),
         _ => 2,
     }
@@ -30,30 +36,9 @@ pub(super) fn classify_connection_failure_exit_code(message: &str) -> u8 {
         || lower.contains("failed to connect")
         || lower.contains("unable to connect")
     {
-        20
-    } else if lower.contains("heartbeat")
-        || lower.contains("telemetry")
-        || lower.contains("progress")
-        || lower.contains("timeout")
-    {
-        22
-    } else if lower.contains("abort") {
-        23
-    } else if lower.contains("upload")
-        || lower.contains("mission")
-        || lower.contains("ack")
-        || lower.contains("reject")
-        || lower.contains("command")
-    {
-        21
-    } else if lower.contains("final_status")
-        || lower.contains("partial")
-        || lower.contains("failed")
-        || lower.contains("failure")
-    {
-        30
+        5
     } else {
-        20
+        3
     }
 }
 

@@ -7,6 +7,131 @@ fn public_scenario(path: &str) -> String {
         .to_string_lossy()
         .into_owned()
 }
+
+fn write_preflight_geofence_violation_scenario() -> tempfile::NamedTempFile {
+    let file = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(
+        file.path(),
+        r#"{
+  "schema_version": "0.1",
+  "name": "Preflight Failure",
+  "description": "preflight failure fixture",
+  "scenarios": [
+    {
+      "mission": "sitl",
+      "profile": "preflight",
+      "scenario": {
+        "name": "preflight_failure",
+        "seed": 0,
+        "agents": [
+          {
+            "id": "agent-0",
+            "role": "scout",
+            "health": "alive",
+            "pose": { "x": 0.0, "y": 0.0 },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 1000.0,
+            "generation": 1,
+            "speed": 0.0,
+            "max_range": 1000.0,
+            "battery_drain_rate": 0.0
+          }
+        ],
+        "tasks": [
+          {
+            "id": "wp-outside",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": null,
+            "expires_at": null,
+            "pose": { "x": 100.0, "y": 100.0, "z": 5.0 },
+            "grid_cell": null
+          }
+        ],
+        "ground_nodes": [],
+        "base_station": null
+      },
+      "run_config": {
+        "max_ticks": 50,
+        "safety_config": {
+          "geofence": {
+            "bounds": { "min_x": 0.0, "max_x": 10.0, "min_y": 0.0, "max_y": 10.0 }
+          }
+        }
+      }
+    }
+  ]
+}"#,
+    )
+    .unwrap();
+    file
+}
+
+#[test]
+fn preflight_failure_exits_nonzero_with_rule_ids() {
+    let scenario = write_preflight_geofence_violation_scenario();
+    let output = run_sitl_agent(&[
+        "--dry-run",
+        "--scenario",
+        scenario.path().to_str().unwrap(),
+        "--agent-id",
+        "agent-0",
+    ]);
+
+    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("geofence.waypoint_outside"));
+}
+
+#[test]
+fn valid_scenario_passes_preflight_and_succeeds() {
+    let scenario = write_sitl_scenario();
+    let output = run_sitl_agent(&[
+        "--dry-run",
+        "--scenario",
+        scenario.path().to_str().unwrap(),
+        "--agent-id",
+        "agent-0",
+    ]);
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("preflight_safety: passed"));
+}
+
+#[test]
+fn safety_report_written_when_output_dir_requested() {
+    let scenario = write_multi_agent_sitl_scenario();
+    let config = write_multi_agent_config(false);
+    let output_dir = tempfile::tempdir().unwrap();
+    let output = run_sitl_supervisor(&[
+        "--dry-run",
+        "--scenario",
+        scenario.path().to_str().unwrap(),
+        "--config",
+        config.path().to_str().unwrap(),
+        "--output-dir",
+        output_dir.path().to_str().unwrap(),
+        "--run-id",
+        "m71-preflight",
+    ]);
+
+    assert!(output.status.success());
+    let report_path = output_dir
+        .path()
+        .join("m71-preflight")
+        .join("safety_validation_report.v1.json");
+    let json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(report_path).unwrap()).unwrap();
+    assert_eq!(json["passed"], true);
+    assert!(json["violations"].as_array().unwrap().is_empty());
+}
 #[test]
 fn cli_rejects_missing_run_report_value() {
     let scenario = write_sitl_scenario();
@@ -95,6 +220,7 @@ fn dry_run_artifact_contains_export_metadata() {
     assert_eq!(json["segment_count"], 4);
     assert_eq!(json["waypoint_count"], 4);
     assert_eq!(json["effective_geo_origin"]["lat_deg"], 47.397742);
+    assert_eq!(json["safety_report"]["passed"], true);
     assert_eq!(json["start_waypoint"]["edge_id"], "road-n0-n1");
     assert_eq!(json["end_waypoint"]["edge_id"], "road-n3-n0");
 }

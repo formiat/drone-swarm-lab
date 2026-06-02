@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::sitl_multi_agent::MultiAgentSitlManifest;
 use crate::sitl_observability::{format_sitl_summary, read_sitl_event_log};
 use crate::sitl_plan::SitlError;
+use swarm_safety::preflight::SafetyValidationReport;
 
 use super::cli::{CliArgs, SupervisorMode};
 
@@ -12,6 +13,7 @@ pub(super) struct OutputPaths {
     pub(super) replay_log: Option<PathBuf>,
     pub(super) run_report: Option<PathBuf>,
     pub(super) replay_summary: Option<PathBuf>,
+    pub(super) safety_report: Option<PathBuf>,
     pub(super) run_id: Option<String>,
 }
 
@@ -42,6 +44,7 @@ pub(super) fn resolve_output_paths(
             run_report: cli.run_report.as_ref().map(PathBuf::from).or_else(|| {
                 (cli.mode == SupervisorMode::Connection).then(|| base.join("run-report.json"))
             }),
+            safety_report: Some(base.join("safety_validation_report.v1.json")),
             run_id,
         };
     }
@@ -51,6 +54,7 @@ pub(super) fn resolve_output_paths(
         replay_log: cli.replay_log.as_ref().map(PathBuf::from),
         run_report: cli.run_report.as_ref().map(PathBuf::from),
         replay_summary: None,
+        safety_report: None,
         run_id,
     }
 }
@@ -64,12 +68,30 @@ pub(super) fn ensure_output_paths_available(
         paths.replay_log.as_deref(),
         paths.run_report.as_deref(),
         paths.replay_summary.as_deref(),
+        paths.safety_report.as_deref(),
     ]
     .into_iter()
     .flatten()
     {
         ensure_output_path_available(path, force)?;
     }
+    Ok(())
+}
+
+pub(super) fn write_safety_report_if_requested(
+    paths: &OutputPaths,
+    report: &SafetyValidationReport,
+    force: bool,
+) -> Result<(), SitlError> {
+    let Some(path) = paths.safety_report.as_deref() else {
+        return Ok(());
+    };
+    let json = serde_json::to_string_pretty(report).map_err(|error| SitlError::RunReportWrite {
+        path: path.to_path_buf(),
+        message: error.to_string(),
+    })?;
+    write_checked_file(path, json, force, run_report_write_error)?;
+    eprintln!("SITL supervisor safety report written: {}", path.display());
     Ok(())
 }
 
@@ -149,4 +171,8 @@ pub(super) fn manifest_write_error(path: PathBuf, message: String) -> SitlError 
 
 pub(super) fn replay_summary_write_error(path: PathBuf, message: String) -> SitlError {
     SitlError::ReplaySummaryWrite { path, message }
+}
+
+pub(super) fn run_report_write_error(path: PathBuf, message: String) -> SitlError {
+    SitlError::RunReportWrite { path, message }
 }

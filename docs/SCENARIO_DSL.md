@@ -69,6 +69,20 @@ the SITL upload path keeps the existing PX4/SIH default origin. Validation
 requires finite latitude, longitude, and altitude values; latitude must be in
 `[-90, 90]` and longitude in `[-180, 180]`.
 
+## Preflight Safety
+
+M71 adds static preflight validation for scenario entries. The DSL validator
+converts error-severity preflight violations into validation errors using their
+stable rule ids. `run_config.safety_config` can now carry optional
+`max_altitude_m`, `min_altitude_m`, `max_route_length_m`, and
+`max_duration_ticks` fields in addition to geofence, no-fly zones, and
+separation constraints.
+
+See [`docs/PREFLIGHT_SAFETY.md`](PREFLIGHT_SAFETY.md) for the full rule table,
+including `geofence.waypoint_outside`, `nofly.waypoint_inside`,
+`altitude.above_max`, `ownership.duplicate_task_id`, `urban.blocked_edge`, and
+`semantics.unsupported_strategy_pair`.
+
 ## Required Fields
 
 ### Suite level

@@ -92,8 +92,27 @@ pub fn validate_entry(entry: &ScenarioSuiteEntry) -> Vec<ValidationError> {
 
     // Mission-specific constraints
     errors.append(&mut validate_mission_specific(entry));
+    errors.append(&mut validate_preflight_errors(entry));
 
     errors
+}
+
+pub fn run_preflight_report(
+    entry: &ScenarioSuiteEntry,
+) -> swarm_safety::preflight::SafetyValidationReport {
+    crate::preflight::run_preflight(entry)
+}
+
+fn validate_preflight_errors(entry: &ScenarioSuiteEntry) -> Vec<ValidationError> {
+    run_preflight_report(entry)
+        .violations
+        .into_iter()
+        .filter(|violation| violation.severity == swarm_safety::preflight::ViolationSeverity::Error)
+        .map(|violation| ValidationError {
+            field: violation.rule_id,
+            message: violation.reason,
+        })
+        .collect()
 }
 
 fn validate_geo_origin(origin: crate::scenario::GeoOrigin, errors: &mut Vec<ValidationError>) {

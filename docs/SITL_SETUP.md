@@ -30,6 +30,15 @@ agents, summarize reallocation events, and validate multi-agent manifests.
 These checks use no external PX4, no simulator process, no network endpoint,
 and no real hardware.
 
+M71 adds a preflight safety gate before dry-run, SITL upload, and supervisor
+execution. Unsafe mission inputs fail with validation/preflight exit code `2`
+and rule ids such as `geofence.waypoint_outside`, `nofly.waypoint_inside`, or
+`urban.blocked_edge`. `sitl_agent --dry-run --dry-run-artifact` embeds the
+`SafetyValidationReport`; `sitl_supervisor --output-dir` writes
+`safety_validation_report.v1.json`. See
+[`docs/PREFLIGHT_SAFETY.md`](PREFLIGHT_SAFETY.md). This is not certified flight
+safety.
+
 Recommended automated checks:
 
 ```bash

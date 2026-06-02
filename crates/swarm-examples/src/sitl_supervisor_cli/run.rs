@@ -4,7 +4,7 @@ use crate::sitl_connection::SitlConnectionLifecycle;
 use crate::sitl_multi_agent::{
     build_multi_agent_manifest, load_multi_agent_config, MultiAgentSitlManifest,
 };
-use crate::sitl_plan::{load_sitl_suite, SitlError};
+use crate::sitl_plan::{check_preflight_or_err, first_sitl_entry, load_sitl_suite, SitlError};
 use crate::sitl_supervisor::{
     run_live_supervisor, run_mock_supervisor, SupervisorLiveConfig, SupervisorMetrics,
     SupervisorMockConfig,
@@ -24,6 +24,9 @@ pub(super) fn run() -> Result<(), SitlError> {
     let manifest = build_multi_agent_manifest(&suite, &cli.scenario, &cli.config, &config)?;
     let output_paths = resolve_output_paths(&cli, &manifest);
     ensure_output_paths_available(&output_paths, cli.force)?;
+    let entry = first_sitl_entry(&suite, &cli.scenario)?;
+    let safety_report = check_preflight_or_err(entry)?;
+    super::output::write_safety_report_if_requested(&output_paths, &safety_report, cli.force)?;
 
     match cli.mode {
         SupervisorMode::DryRun => {

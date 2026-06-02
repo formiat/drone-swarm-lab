@@ -6,6 +6,7 @@ const REPLAY: &str = include_str!("../../../docs/REPLAY.md");
 const SCENARIO_DSL: &str = include_str!("../../../docs/SCENARIO_DSL.md");
 const STATUS: &str = include_str!("../../../docs/STATUS.md");
 const BENCHMARK_RESULTS: &str = include_str!("../../../docs/BENCHMARK_RESULTS.md");
+const PREFLIGHT_SAFETY: &str = include_str!("../../../docs/PREFLIGHT_SAFETY.md");
 const M62_RESULT_README: &str =
     include_str!("../../../results/all_500_jobs14_m62_release/README.md");
 
@@ -59,6 +60,8 @@ fn sitl_docs_explain_portable_and_manual_boundaries() {
         "Connection Classes",
         "--allow-hardware-candidate",
         "docs/HARDWARE_READINESS.md",
+        "docs/PREFLIGHT_SAFETY.md",
+        "safety_validation_report.v1.json",
     ] {
         assert!(
             SITL_SETUP.contains(required),
@@ -127,6 +130,8 @@ fn sitl_docs_explain_portable_and_manual_boundaries() {
         "scenarios/sitl.multi-agent.execute.config.json",
         "Urban route export dry-run",
         "sitl_dry_run_artifact.v1",
+        "Preflight safety contract",
+        "SafetyValidationReport",
     ] {
         assert!(
             HARDWARE_READINESS.contains(required),
@@ -226,6 +231,49 @@ fn sitl_docs_explain_portable_and_manual_boundaries() {
         assert!(
             BENCHMARK_RESULTS.contains(required),
             "Benchmark results doc missing {required}"
+        );
+    }
+}
+
+#[test]
+fn m71_docs_describe_preflight_safety_contract() {
+    for required in [
+        "M71 Preflight Safety And Invariant Contract",
+        "SafetyValidationReport",
+        "safety_validation_report.v1.json",
+        "stable exit codes use 2/3/4/5",
+        "not certified flight safety",
+    ] {
+        assert!(STATUS.contains(required), "STATUS missing {required}");
+    }
+
+    for required in [
+        "Preflight Rules",
+        "geofence.waypoint_outside",
+        "nofly.waypoint_inside",
+        "altitude.above_max",
+        "ownership.duplicate_task_id",
+        "urban.blocked_edge",
+        "semantics.unsupported_strategy_pair",
+        "Exit Code Convention",
+        "Not Certified Flight Safety",
+        "What Is Not Checked",
+    ] {
+        assert!(
+            PREFLIGHT_SAFETY.contains(required),
+            "PREFLIGHT_SAFETY missing {required}"
+        );
+    }
+
+    for required in [
+        "Preflight Safety",
+        "max_altitude_m",
+        "max_route_length_m",
+        "geofence.waypoint_outside",
+    ] {
+        assert!(
+            SCENARIO_DSL.contains(required),
+            "SCENARIO_DSL missing {required}"
         );
     }
 }

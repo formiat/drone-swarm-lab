@@ -117,6 +117,7 @@ fn test_plan() -> SitlPlan {
             test_waypoint(0, "wp-0", 10.0, 20.0, 3.0),
             test_waypoint(1, "wp-1", 30.0, 40.0, 4.0),
         ],
+        safety_report: swarm_safety::preflight::SafetyValidationReport::ok(),
     }
 }
 
@@ -167,6 +168,7 @@ fn runtime_test_plan_keeps_sitl_metadata_shape() {
     assert_eq!(plan.planner_or_adapter, "sitl_pose_task_extractor");
     assert_eq!(plan.waypoint_count, plan.waypoints.len());
     assert_eq!(plan.geo_origin, None);
+    assert!(plan.safety_report.passed);
     assert!(plan
         .waypoints
         .iter()

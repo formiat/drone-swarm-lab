@@ -39,7 +39,7 @@ use crate::sitl_observability::summarize_sitl_event_log;
 use crate::sitl_observability::{
     write_sitl_event_log, SitlEventLogMetadata, SitlEventLogMode, SitlEventRecorder,
 };
-use crate::sitl_plan::{first_sitl_entry, SitlError};
+use crate::sitl_plan::{check_preflight_or_err, first_sitl_entry, SitlError};
 #[cfg(any(feature = "mavlink-transport", test))]
 use crate::sitl_report::write_sitl_multi_agent_run_report;
 use crate::sitl_report::SitlMultiAgentRunReport;
@@ -62,6 +62,7 @@ pub fn run_mock_supervisor(
 ) -> Result<SupervisorMetrics, SitlError> {
     validate_failure_agent(manifest, config.fail_agent.as_deref())?;
     let entry = first_sitl_entry(suite, &config.scenario_path)?;
+    check_preflight_or_err(entry)?;
     let timeout_ticks = config
         .heartbeat_timeout_ticks
         .unwrap_or(entry.run_config.timeout_ticks);
@@ -90,6 +91,7 @@ pub fn run_live_supervisor(
     manifest: &MultiAgentSitlManifest,
 ) -> Result<SitlMultiAgentRunReport, SitlError> {
     let entry = first_sitl_entry(suite, &config.scenario_path)?;
+    check_preflight_or_err(entry)?;
     validate_live_manifest(manifest, config)?;
 
     let safety_gate = SitlSafetyGate::new(config.safety_config_path.clone());

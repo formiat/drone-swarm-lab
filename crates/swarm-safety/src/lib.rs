@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use swarm_types::{Agent, AgentId, Pose, Task};
 
+pub mod preflight;
+
 /// Axis-aligned bounding box for geofence or no-fly zone.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Aabb {
@@ -59,6 +61,14 @@ pub struct SafetyConfig {
     pub no_fly_zones: Vec<NoFlyZone>,
     #[serde(default)]
     pub separation: Option<SeparationConstraint>,
+    #[serde(default)]
+    pub max_altitude_m: Option<f64>,
+    #[serde(default)]
+    pub min_altitude_m: Option<f64>,
+    #[serde(default)]
+    pub max_route_length_m: Option<f64>,
+    #[serde(default)]
+    pub max_duration_ticks: Option<u64>,
 }
 
 /// Type of safety violation detected.
@@ -275,6 +285,7 @@ mod tests {
                 active_until_tick: None,
             }],
             separation: None,
+            ..Default::default()
         };
         let agent = make_agent("a0", 0.0, 0.0);
         let violations = check_agent(&config, &agent, &[]);
@@ -296,6 +307,7 @@ mod tests {
                 active_until_tick: None,
             }],
             separation: None,
+            ..Default::default()
         };
         let agent = make_agent("a0", 5.0, 5.0);
         let violations = check_agent(&config, &agent, &[]);
@@ -319,6 +331,7 @@ mod tests {
             }),
             no_fly_zones: vec![],
             separation: None,
+            ..Default::default()
         };
         let agent = make_agent("a0", 150.0, 50.0);
         let violations = check_agent(&config, &agent, &[]);
@@ -339,6 +352,7 @@ mod tests {
             }),
             no_fly_zones: vec![],
             separation: None,
+            ..Default::default()
         };
         let agent = make_agent("a0", 50.0, 50.0);
         let violations = check_agent(&config, &agent, &[]);
@@ -353,6 +367,7 @@ mod tests {
             separation: Some(SeparationConstraint {
                 min_distance_m: 5.0,
             }),
+            ..Default::default()
         };
         let agent = make_agent("a0", 0.0, 0.0);
         let other = make_agent("a1", 3.0, 0.0); // distance = 3 < 5
@@ -372,6 +387,7 @@ mod tests {
             separation: Some(SeparationConstraint {
                 min_distance_m: 5.0,
             }),
+            ..Default::default()
         };
         let agent = make_agent("a0", 0.0, 0.0);
         let other = make_agent("a1", 10.0, 0.0); // distance = 10 >= 5
@@ -394,6 +410,7 @@ mod tests {
                 active_until_tick: None,
             }],
             separation: None,
+            ..Default::default()
         };
         let agent = make_agent("a0", 0.0, 0.0);
         let task = make_task("t0", 5.0, 5.0);
@@ -415,6 +432,7 @@ mod tests {
                 active_until_tick: None,
             }],
             separation: None,
+            ..Default::default()
         };
         let agent = make_agent("a0", 0.0, 0.0);
         let task = make_task("t0", 20.0, 20.0);
@@ -436,6 +454,7 @@ mod tests {
                 active_until_tick: None,
             }],
             separation: None,
+            ..Default::default()
         };
         let agent = make_agent("a0", 0.0, 0.0);
         let safe_task = make_task("t0", 20.0, 20.0);
@@ -479,6 +498,7 @@ mod tests {
             separation: Some(SeparationConstraint {
                 min_distance_m: 2.0,
             }),
+            ..Default::default()
         };
         let json = serde_json::to_string(&config).unwrap();
         let parsed: SafetyConfig = serde_json::from_str(&json).unwrap();
@@ -536,6 +556,7 @@ mod tests {
                 active_until_tick: Some(20),
             }],
             separation: None,
+            ..Default::default()
         };
         let agent = make_agent("a0", 5.0, 5.0); // inside zone
 

@@ -7,6 +7,10 @@ mod run;
 
 use exit_codes::{prints_usage, supervisor_exit_code};
 
+pub fn sitl_error_exit_code(error: &crate::sitl_plan::SitlError) -> u8 {
+    supervisor_exit_code(error)
+}
+
 pub fn run_cli() -> ExitCode {
     match run::run() {
         Ok(()) => ExitCode::SUCCESS,
@@ -79,29 +83,29 @@ mod tests {
                 "failed",
                 "failed",
                 "connection open failed: endpoint udp:127.0.0.1:14550 unavailable",
-                20,
+                5,
             ),
             (
                 "failed",
                 "failed",
                 "mission upload failed: MAV_MISSION_ERROR",
-                21,
+                3,
             ),
             (
                 "failed",
                 "failed",
                 "command rejected: MAV_CMD_MISSION_START MAV_RESULT_DENIED",
-                21,
+                3,
             ),
-            ("failed", "failed", "heartbeat timeout before start", 22),
-            ("failed", "failed", "telemetry timeout after start", 22),
-            ("failed", "failed", "no mission progress before timeout", 22),
-            ("failed", "aborted", "abort failed: command rejected", 23),
+            ("failed", "failed", "heartbeat timeout before start", 3),
+            ("failed", "failed", "telemetry timeout after start", 3),
+            ("failed", "failed", "no mission progress before timeout", 3),
+            ("failed", "aborted", "abort failed: command rejected", 3),
             (
                 "partial_failed",
                 "failed",
                 "agent completed one task then failed after start",
-                30,
+                3,
             ),
         ];
 

@@ -87,6 +87,7 @@ fn safety_nofly_tasks_not_assigned() {
                 active_until_tick: None,
             }],
             separation: None,
+            ..Default::default()
         }),
         ..Default::default()
     };
@@ -138,6 +139,7 @@ fn safety_violations_counted() {
             }),
             no_fly_zones: vec![],
             separation: None,
+            ..Default::default()
         }),
         ..Default::default()
     };
@@ -187,6 +189,7 @@ fn safety_separation_no_panic() {
             separation: Some(SeparationConstraint {
                 min_distance_m: 5.0,
             }),
+            ..Default::default()
         }),
         ..Default::default()
     };

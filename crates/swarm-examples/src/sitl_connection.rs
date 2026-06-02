@@ -217,6 +217,7 @@ mod tests {
             segment_count: None,
             waypoint_count: 1,
             waypoints: vec![sitl_waypoint(7, "wp-7", 1.0, 2.0, 3.0)],
+            safety_report: swarm_safety::preflight::SafetyValidationReport::ok(),
         };
 
         let waypoints = waypoints_from_sitl_items(&plan.waypoints);

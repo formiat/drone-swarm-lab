@@ -1,6 +1,7 @@
 pub mod benchmark;
 pub mod clock;
 pub mod dsl;
+pub mod preflight;
 pub mod regression;
 pub mod report_export;
 pub mod runner;
@@ -14,9 +15,11 @@ pub use benchmark::{
 };
 pub use clock::{Clock, Tick};
 pub use dsl::{
-    export_entry, export_suite, load_scenario_suite, validate_entry, validate_mission_specific,
-    validate_scenario_suite, ScenarioSuite, ScenarioSuiteEntry, ValidationError,
+    export_entry, export_suite, load_scenario_suite, run_preflight_report, validate_entry,
+    validate_mission_specific, validate_scenario_suite, ScenarioSuite, ScenarioSuiteEntry,
+    ValidationError,
 };
+pub use preflight::run_preflight;
 pub use regression::{
     all_suites, default_suites, suites_by_group, Baseline, BaselineDelta, DeltaStatus,
     RegressionReport, RegressionRunner, RegressionSuite, SuiteGroup, SuiteMode, SuiteResult,

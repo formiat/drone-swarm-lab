@@ -5,6 +5,7 @@ use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use swarm_safety::preflight::{SafetyValidationReport, ViolationSeverity};
 use swarm_sim::{
     export_route_loop_to_waypoints, validate_scenario_suite, GeoOrigin, ScenarioSuite,
     ScenarioSuiteEntry, UrbanRouteExportOptions,
@@ -105,6 +106,7 @@ pub struct SitlPlan {
     pub segment_count: Option<usize>,
     pub waypoint_count: usize,
     pub waypoints: Vec<SitlWaypointItem>,
+    pub safety_report: SafetyValidationReport,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -151,6 +153,8 @@ pub enum SitlError {
     SafetyConfigInvalid { field: String, message: String },
     #[error("safety validation failed: {message}")]
     SafetyValidationFailed { message: String },
+    #[error("preflight validation failed: {rule_ids}")]
+    PreflightFailed { rule_ids: String },
     #[error("missing SITL mode: specify exactly one of --mock, --dry-run, or --connection <addr>")]
     MissingMode,
     #[error(
@@ -220,6 +224,7 @@ pub struct SitlDryRunArtifact {
     pub geo_origin: Option<GeoOrigin>,
     pub effective_geo_origin: GeoOrigin,
     pub coordinate_frame: String,
+    pub safety_report: SafetyValidationReport,
     pub command: Vec<String>,
     pub git_commit: Option<String>,
 }
@@ -368,8 +373,9 @@ fn build_sitl_plan_with_task_filter(
     task_ids: Option<&[String]>,
 ) -> Result<SitlPlan, SitlError> {
     let scenario_path = scenario_path.as_ref().to_path_buf();
-    let validation_errors = validate_scenario_suite(suite);
     let entry = first_sitl_entry(suite, &scenario_path)?;
+    let safety_report = check_preflight_or_err(entry)?;
+    let validation_errors = validate_scenario_suite(suite);
     let agent_id = agent_id.into();
 
     if entry.mission == "urban-patrol" && entry.run_config.urban_state.is_some() {
@@ -382,6 +388,7 @@ fn build_sitl_plan_with_task_filter(
             scenario_path,
             agent_id,
             validation_errors,
+            safety_report,
         );
     }
 
@@ -483,6 +490,7 @@ fn build_sitl_plan_with_task_filter(
         segment_count: None,
         waypoint_count: waypoints.len(),
         waypoints,
+        safety_report,
     })
 }
 
@@ -492,6 +500,7 @@ fn build_urban_route_sitl_plan(
     scenario_path: PathBuf,
     agent_id: String,
     validation_errors: Vec<swarm_sim::ValidationError>,
+    safety_report: SafetyValidationReport,
 ) -> Result<SitlPlan, SitlError> {
     if !validation_errors.is_empty() {
         let message = validation_errors
@@ -564,7 +573,25 @@ fn build_urban_route_sitl_plan(
         segment_count: Some(export.metadata.segment_count),
         waypoint_count: export.metadata.waypoint_count,
         waypoints,
+        safety_report,
     })
+}
+
+pub fn check_preflight_or_err(
+    entry: &ScenarioSuiteEntry,
+) -> Result<SafetyValidationReport, SitlError> {
+    let report = swarm_sim::preflight::run_preflight(entry);
+    if !report.passed {
+        let rule_ids = report
+            .violations
+            .iter()
+            .filter(|violation| violation.severity == ViolationSeverity::Error)
+            .map(|violation| violation.rule_id.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(SitlError::PreflightFailed { rule_ids });
+    }
+    Ok(report)
 }
 
 pub fn format_dry_run_plan(plan: &SitlPlan) -> String {
@@ -595,6 +622,12 @@ pub fn format_dry_run_plan(plan: &SitlPlan) -> String {
         writeln!(output, "segment_count: {segment_count}").unwrap();
     }
     writeln!(output, "waypoint_count: {}", plan.waypoint_count).unwrap();
+    if plan.safety_report.passed {
+        writeln!(output, "preflight_safety: passed").unwrap();
+    } else {
+        let rule_ids = preflight_error_rule_ids(&plan.safety_report);
+        writeln!(output, "preflight_safety: failed rule_ids={rule_ids}").unwrap();
+    }
     writeln!(
         output,
         "limitations: x/y are local simulation coordinates, not WGS84 latitude/longitude; dry-run does not upload to PX4"
@@ -667,9 +700,20 @@ pub fn dry_run_artifact(plan: &SitlPlan, command: Vec<String>) -> SitlDryRunArti
         geo_origin: plan.geo_origin,
         effective_geo_origin,
         coordinate_frame: plan.coordinate_frame.name().to_owned(),
+        safety_report: plan.safety_report.clone(),
         command,
         git_commit: option_env!("GIT_COMMIT").map(str::to_owned),
     }
+}
+
+fn preflight_error_rule_ids(report: &SafetyValidationReport) -> String {
+    report
+        .violations
+        .iter()
+        .filter(|violation| violation.severity == ViolationSeverity::Error)
+        .map(|violation| violation.rule_id.as_str())
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 pub fn global_waypoint_summary(
