@@ -8,16 +8,11 @@ use mavlink::dialects::common;
 
 #[cfg(feature = "mavlink-transport")]
 use super::{
-    commands::{
-        arm_command, attach_abort_result, mission_error_to_telemetry_error,
-        send_abort_command_observed, send_command_and_wait_observed, start_mission_command,
-        takeoff_command, wait_for_post_start_heartbeat,
-    },
-    mission_items::waypoint_to_mission_item_int,
-    AbortCommandResult, CommonHeader, CommonMessage, MavlinkFlightError, MavlinkFlightReport,
-    MavlinkLifecycleError, MavlinkMissionError, MavlinkMissionEvent, MavlinkMissionObserver,
-    MavlinkTelemetryError, MavlinkTelemetryEvent, MissionLifecycleOptions, MissionLifecycleReport,
-    MissionUploadOptions, MissionUploadReport, NoopMavlinkMissionObserver, Waypoint,
+    lifecycle::execute_uploaded_mission_with_connection_observed,
+    mission_items::waypoint_to_mission_item_int, CommonHeader, CommonMessage, MavlinkFlightError,
+    MavlinkFlightReport, MavlinkMissionError, MavlinkMissionEvent, MavlinkMissionObserver,
+    MissionLifecycleOptions, MissionUploadOptions, MissionUploadReport, NoopMavlinkMissionObserver,
+    Waypoint,
 };
 #[cfg(feature = "mavlink-transport")]
 pub(super) trait MavlinkVehicleConnection {
@@ -26,8 +21,6 @@ pub(super) trait MavlinkVehicleConnection {
         &mut self,
     ) -> Result<Option<(CommonHeader, CommonMessage)>, MavlinkMissionError>;
 }
-
-#[cfg(feature = "mavlink-transport")]
 impl MavlinkVehicleConnection for mavlink::Connection<CommonMessage> {
     fn send_message(&mut self, msg: CommonMessage) -> Result<(), MavlinkMissionError> {
         use mavlink::MavConnection;
@@ -63,8 +56,6 @@ pub(super) fn upload_mission_with_connection<C: MavlinkVehicleConnection>(
     let mut observer = NoopMavlinkMissionObserver;
     upload_mission_with_connection_observed(conn, waypoints, options, &mut observer)
 }
-
-#[cfg(feature = "mavlink-transport")]
 pub(super) fn upload_mission_with_connection_observed<C, O>(
     conn: &mut C,
     waypoints: &[Waypoint],
@@ -296,145 +287,4 @@ where
     let lifecycle =
         execute_uploaded_mission_with_connection_observed(conn, lifecycle_options, observer)?;
     Ok(MavlinkFlightReport { upload, lifecycle })
-}
-
-#[cfg(feature = "mavlink-transport")]
-pub fn mavlink_message_to_telemetry_event(msg: &CommonMessage) -> Option<MavlinkTelemetryEvent> {
-    match msg {
-        CommonMessage::HEARTBEAT(_) => Some(MavlinkTelemetryEvent::Heartbeat),
-        CommonMessage::MISSION_CURRENT(current) => {
-            Some(MavlinkTelemetryEvent::MissionCurrent { seq: current.seq })
-        }
-        CommonMessage::MISSION_ITEM_REACHED(reached) => {
-            Some(MavlinkTelemetryEvent::WaypointReached { seq: reached.seq })
-        }
-        CommonMessage::MISSION_ACK(ack)
-            if ack.mavtype == common::MavMissionResult::MAV_MISSION_ACCEPTED =>
-        {
-            Some(MavlinkTelemetryEvent::MissionComplete)
-        }
-        CommonMessage::MISSION_ACK(ack) => Some(MavlinkTelemetryEvent::MissionRejected {
-            reason: format!("{:?}", ack.mavtype),
-        }),
-        _ => None,
-    }
-}
-
-#[cfg(feature = "mavlink-transport")]
-pub(super) fn poll_telemetry_event_with_connection<C: MavlinkVehicleConnection>(
-    conn: &mut C,
-) -> Result<Option<MavlinkTelemetryEvent>, MavlinkTelemetryError> {
-    while let Some((_header, msg)) = conn
-        .try_recv_message()
-        .map_err(mission_error_to_telemetry_error)?
-    {
-        if let Some(event) = mavlink_message_to_telemetry_event(&msg) {
-            return Ok(Some(event));
-        }
-    }
-    Ok(None)
-}
-
-#[cfg(feature = "mavlink-transport")]
-pub(super) fn wait_next_telemetry_event_with_connection<C: MavlinkVehicleConnection>(
-    conn: &mut C,
-    timeout: Duration,
-) -> Result<MavlinkTelemetryEvent, MavlinkTelemetryError> {
-    let deadline = Instant::now() + timeout;
-    loop {
-        if let Some(event) = poll_telemetry_event_with_connection(conn)? {
-            return Ok(event);
-        }
-        if Instant::now() >= deadline {
-            return Err(MavlinkTelemetryError::Timeout { timeout });
-        }
-        std::thread::sleep(Duration::from_millis(1));
-    }
-}
-
-#[cfg(all(feature = "mavlink-transport", test))]
-pub(super) fn execute_uploaded_mission_with_connection<C: MavlinkVehicleConnection>(
-    conn: &mut C,
-    options: &MissionLifecycleOptions,
-) -> Result<MissionLifecycleReport, MavlinkLifecycleError> {
-    let mut observer = NoopMavlinkMissionObserver;
-    execute_uploaded_mission_with_connection_observed(conn, options, &mut observer)
-}
-
-#[cfg(feature = "mavlink-transport")]
-pub(super) fn execute_uploaded_mission_with_connection_observed<C, O>(
-    conn: &mut C,
-    options: &MissionLifecycleOptions,
-    observer: &mut O,
-) -> Result<MissionLifecycleReport, MavlinkLifecycleError>
-where
-    C: MavlinkVehicleConnection,
-    O: MavlinkMissionObserver,
-{
-    if !options.takeoff_altitude_m.is_finite() || options.takeoff_altitude_m < 0.0 {
-        return Err(MavlinkLifecycleError::InvalidTakeoffAltitude {
-            altitude_m: options.takeoff_altitude_m,
-        });
-    }
-
-    let mut report = MissionLifecycleReport::default();
-
-    if !options.no_arm {
-        send_command_and_wait_observed(
-            conn,
-            arm_command(options.target_system, options.target_component),
-            options.timeout,
-            observer,
-        )?;
-        report.armed = true;
-    }
-
-    if let Err(error) = send_command_and_wait_observed(
-        conn,
-        takeoff_command(
-            options.target_system,
-            options.target_component,
-            options.takeoff_altitude_m,
-        ),
-        options.timeout,
-        observer,
-    ) {
-        let abort_result = send_abort_command_observed(conn, options, observer);
-        return Err(attach_abort_result(error, abort_result));
-    }
-    report.took_off = true;
-
-    if let Err(error) = send_command_and_wait_observed(
-        conn,
-        start_mission_command(options.target_system, options.target_component),
-        options.timeout,
-        observer,
-    ) {
-        let abort_result = send_abort_command_observed(conn, options, observer);
-        return Err(attach_abort_result(error, abort_result));
-    }
-    report.started = true;
-
-    match wait_for_post_start_heartbeat(conn, options.timeout) {
-        Ok(()) => {
-            report.post_start_heartbeat = true;
-            observer.on_event(MavlinkMissionEvent::HeartbeatSeen);
-        }
-        Err(MavlinkLifecycleError::PostStartHeartbeatTimeout { .. }) => {
-            let abort_result = send_abort_command_observed(conn, options, observer);
-            return Err(MavlinkLifecycleError::PostStartHeartbeatTimeout { abort_result });
-        }
-        Err(error) => return Err(error),
-    }
-
-    if let Some(abort_after) = options.abort_after {
-        std::thread::sleep(abort_after);
-        let abort_result = send_abort_command_observed(conn, options, observer);
-        if abort_result != AbortCommandResult::Accepted {
-            return Err(MavlinkLifecycleError::AbortFailed { abort_result });
-        }
-        report.abort_result = Some(AbortCommandResult::Accepted);
-    }
-
-    Ok(report)
 }

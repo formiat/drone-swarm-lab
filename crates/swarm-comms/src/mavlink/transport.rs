@@ -11,11 +11,12 @@ use std::{borrow::Cow, time::Duration};
 use super::commands::send_abort_command;
 #[cfg(feature = "mavlink-transport")]
 use super::{
+    lifecycle::execute_uploaded_mission_with_connection_observed,
     mission_upload::{
-        execute_uploaded_mission_with_connection_observed, poll_telemetry_event_with_connection,
         upload_and_execute_mission_with_connection_observed,
-        upload_mission_with_connection_observed, wait_next_telemetry_event_with_connection,
+        upload_mission_with_connection_observed,
     },
+    telemetry::{poll_telemetry_event_with_connection, wait_next_telemetry_event_with_connection},
     AbortCommandResult, CommonMessage, MavlinkFlightError, MavlinkFlightReport,
     MavlinkLifecycleError, MavlinkMissionError, MavlinkMissionObserver, MavlinkTelemetryError,
     MavlinkTelemetryEvent, MissionLifecycleOptions, MissionLifecycleReport, MissionUploadOptions,

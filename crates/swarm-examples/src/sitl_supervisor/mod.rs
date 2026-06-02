@@ -59,6 +59,12 @@ use supervisor_flows::*;
 mod reallocation;
 use reallocation::*;
 
+mod events;
+use events::*;
+
+mod artifacts;
+use artifacts::*;
+
 mod validation_and_reports;
 use validation_and_reports::*;
 

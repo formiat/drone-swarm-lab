@@ -201,31 +201,14 @@ impl ScenarioRunner {
             // v0.5: Update connectivity snapshot on the network bus before heartbeats/gossip.
             // Include all non-crashed agents (not just alive) so that partition-induced
             // false failure detection does not permanently break mesh reachability after heal.
-            {
-                let first_alive = nodes.iter().find(|(_, id)| !crashed_agents.contains(id));
-                if let Some((node, _)) = first_alive {
-                    let agent_entries: Vec<(AgentId, swarm_types::Pose, f64, Health)> = node
-                        .coordinator
-                        .membership
-                        .all_agents()
-                        .filter(|(id, _)| !crashed_agents.contains(id))
-                        .map(|(id, entry)| {
-                            (id.clone(), entry.pose, entry.comms_range, Health::Alive)
-                        })
-                        .collect();
-                    let snapshot = ConnectivitySnapshot {
-                        agent_entries,
-                        ground_nodes: scenario
-                            .ground_nodes
-                            .iter()
-                            .map(|gn| (gn.id.clone(), gn.pose, gn.comms_range))
-                            .collect(),
-                        base_id: base_id.to_string(),
-                        base_pose,
-                    };
-                    bus.borrow_mut().set_connectivity_snapshot(snapshot);
-                }
-            }
+            update_connectivity_snapshot(
+                &nodes,
+                &crashed_agents,
+                &bus,
+                scenario,
+                &base_id,
+                base_pose,
+            );
 
             send_alive_heartbeats(&mut nodes, &crashed_agents, current_tick);
             let tick_outputs = process_alive_nodes(
@@ -560,59 +543,15 @@ impl ScenarioRunner {
             }
 
             // v0.5: Compute connectivity metrics for this tick
+            if let Some(connectivity) =
+                connectivity_metrics_tick(&nodes, &crashed_agents, scenario, &base_id, base_pose)
             {
-                let first_alive = nodes.iter().find(|(_, id)| !crashed_agents.contains(id));
-                if let Some((node, _)) = first_alive {
-                    let agent_entries: Vec<(AgentId, swarm_types::Pose, f64, Health)> = node
-                        .coordinator
-                        .membership
-                        .all_agents()
-                        .filter(|(id, _)| !crashed_agents.contains(id))
-                        .map(|(id, entry)| {
-                            (id.clone(), entry.pose, entry.comms_range, Health::Alive)
-                        })
-                        .collect();
-                    let snapshot = ConnectivitySnapshot {
-                        agent_entries,
-                        ground_nodes: scenario
-                            .ground_nodes
-                            .iter()
-                            .map(|gn| (gn.id.clone(), gn.pose, gn.comms_range))
-                            .collect(),
-                        base_id: base_id.to_string(),
-                        base_pose,
-                    };
-                    let reachability = ConnectivityModel::reachability_from_base(&snapshot);
-                    let alive_agent_ids: Vec<AgentId> = node
-                        .coordinator
-                        .membership
-                        .alive_agents()
-                        .map(|(id, _)| id.clone())
-                        .collect();
-                    let availability =
-                        ConnectivityModel::availability_fraction(&reachability, &alive_agent_ids);
-                    availability_per_tick.push(availability);
-
-                    let disconnected_count = alive_agent_ids.len()
-                        - alive_agent_ids
-                            .iter()
-                            .filter(|id| reachability.contains_key(id.as_ref()))
-                            .count();
-                    disconnected_agents_max =
-                        disconnected_agents_max.max(disconnected_count as u64);
-
-                    let hop_sum: usize = alive_agent_ids
-                        .iter()
-                        .filter_map(|id| reachability.get(id.as_ref()))
-                        .sum();
-                    let reachable_count = alive_agent_ids
-                        .iter()
-                        .filter(|id| reachability.contains_key(id.as_ref()))
-                        .count();
-                    if reachable_count > 0 {
-                        total_hop_count_sum += hop_sum as f64 / reachable_count as f64;
-                        total_hop_count_ticks += 1;
-                    }
+                availability_per_tick.push(connectivity.availability);
+                disconnected_agents_max =
+                    disconnected_agents_max.max(connectivity.disconnected_agents);
+                if let Some(average_hop_count) = connectivity.average_hop_count {
+                    total_hop_count_sum += average_hop_count;
+                    total_hop_count_ticks += 1;
                 }
             }
 
