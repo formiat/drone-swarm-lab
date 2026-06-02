@@ -1,7 +1,5 @@
 #[cfg(feature = "mavlink-transport")]
 use std::collections::BTreeMap;
-#[cfg(feature = "mavlink-transport")]
-use std::path::Path;
 
 #[cfg(feature = "mavlink-transport")]
 use super::cli::LifecycleMode;
@@ -23,6 +21,8 @@ use super::telemetry::{
 #[cfg(feature = "mavlink-transport")]
 use crate::sitl_observability::{SitlEventLogMode, SitlEventRecorder};
 use crate::sitl_plan::{validate_connection_string, SitlError, SitlPlan};
+#[cfg(feature = "mavlink-transport")]
+use crate::sitl_report::SitlRunFinalStatus;
 #[cfg(feature = "mavlink-transport")]
 use swarm_comms::Waypoint;
 
@@ -387,7 +387,7 @@ fn execute_sitl_golden_path_with_driver<D: SitlGoldenPathDriver>(
         let error =
             format!("mission aborted before telemetry completion; abort_result={abort_result:?}");
         return Err(SitlExecutionFailure {
-            final_status: super::reports::SitlRunFinalStatus::Aborted,
+            final_status: SitlRunFinalStatus::Aborted,
             mission_item_count: waypoints.len(),
             completed_count: 0,
             failed_count: waypoints.len(),
@@ -408,7 +408,6 @@ pub(super) fn flight_error_to_execution_failure(
     mission_item_count: usize,
     error: swarm_comms::MavlinkFlightError,
 ) -> SitlExecutionFailure {
-    use super::reports::SitlRunFinalStatus;
     let final_status = match &error {
         swarm_comms::MavlinkFlightError::MissionUpload(
             swarm_comms::MavlinkMissionError::MissionRejected(_),
@@ -471,7 +470,7 @@ pub(super) fn telemetry_error_to_execution_failure(
             abort_result: Some(format!("{abort_result:?}")),
         },
         error => SitlExecutionFailure {
-            final_status: super::reports::SitlRunFinalStatus::Failed,
+            final_status: SitlRunFinalStatus::Failed,
             mission_item_count,
             completed_count: 0,
             failed_count: 0,
