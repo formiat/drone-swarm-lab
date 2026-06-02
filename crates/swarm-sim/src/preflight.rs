@@ -131,13 +131,17 @@ fn check_route_limits(
     }
 
     if let Some(max_duration_ticks) = config.max_duration_ticks {
-        if entry.run_config.max_ticks > max_duration_ticks {
+        let planned_duration_ms = entry
+            .run_config
+            .max_ticks
+            .saturating_mul(entry.run_config.tick_duration_ms);
+        let max_duration_ms = max_duration_ticks.saturating_mul(1000);
+        if planned_duration_ms > max_duration_ms {
             violations.push(warning(
                 "route.duration_exceeds_max",
                 None,
                 format!(
-                    "max_ticks {} exceeds max_duration_ticks {max_duration_ticks}",
-                    entry.run_config.max_ticks
+                    "planned duration {planned_duration_ms}ms exceeds max_duration_ticks {max_duration_ticks}s ({max_duration_ms}ms)"
                 ),
             ));
         }
@@ -495,6 +499,22 @@ mod tests {
         let report = run_preflight(&entry);
         assert!(report.passed);
         assert_rule(&report, "semantics.unsupported_strategy_pair");
+    }
+
+    #[test]
+    fn duration_limit_uses_tick_duration_ms() {
+        let mut entry = entry(vec![task("wp-0", Pose::default())]);
+        entry.run_config.max_ticks = 5;
+        entry.run_config.tick_duration_ms = 2000;
+        entry.run_config.safety_config = Some(SafetyConfig {
+            max_duration_ticks: Some(6),
+            ..Default::default()
+        });
+
+        let report = run_preflight(&entry);
+
+        assert!(report.passed);
+        assert_rule(&report, "route.duration_exceeds_max");
     }
 
     #[test]

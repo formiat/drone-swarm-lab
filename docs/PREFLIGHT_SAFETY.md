@@ -13,7 +13,7 @@ not certified flight safety.
 | `altitude.above_max` | error | A task waypoint is above `SafetyConfig.max_altitude_m`. |
 | `altitude.below_min` | warning | A task waypoint is below `SafetyConfig.min_altitude_m`. |
 | `route.length_exceeds_max` | error | An Urban route exceeds `SafetyConfig.max_route_length_m`. |
-| `route.duration_exceeds_max` | warning | `run_config.max_ticks` exceeds `SafetyConfig.max_duration_ticks`. |
+| `route.duration_exceeds_max` | warning | `run_config.max_ticks * tick_duration_ms` exceeds `SafetyConfig.max_duration_ticks` seconds. |
 | `pose.invalid_coordinate` | error | A task waypoint has non-finite coordinates. |
 | `id.missing_task_id` | error | A task id is empty. |
 | `ownership.duplicate_task_id` | error | Scenario tasks contain duplicate task ids. |
