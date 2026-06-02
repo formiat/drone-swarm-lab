@@ -1,6 +1,7 @@
 mod allocation;
 mod dynamic_tasks;
 mod events;
+mod final_metrics;
 mod inspection;
 mod mission_success;
 mod movement;
@@ -14,6 +15,7 @@ mod wildfire;
 pub(in crate::runner) use allocation::*;
 pub(in crate::runner) use dynamic_tasks::*;
 pub(in crate::runner) use events::*;
+pub(in crate::runner) use final_metrics::*;
 pub(in crate::runner) use inspection::*;
 pub(in crate::runner) use mission_success::*;
 pub(in crate::runner) use movement::*;
