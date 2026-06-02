@@ -479,6 +479,39 @@ sitl_multi_agent/
 - не переносить весь SITL слой в новый crate без отдельного плана;
 - не менять CLI paths и binary names.
 
+Решение текущего refactor pass: **deferred**.
+
+Почему не делаем сейчас:
+
+- текущий refactor pass уже закрыл основные блокирующие архитектурные узлы:
+  runner, urban runner, benchmark, report export, DSL и mission registry;
+- SITL supervisor уже имеет отдельные подмодули (`sitl_supervisor/`,
+  `sitl_supervisor_cli/`, `sitl_agent_runtime/`, `sitl_observability/`), а
+  оставшиеся flat-файлы не блокируют текущие изменения;
+- split `sitl_safety.rs`, `sitl_plan.rs` и `sitl_multi_agent.rs` затронет
+  много call sites и тестов вокруг PX4/SIH workflow, но не даст немедленного
+  функционального результата в текущем плане;
+- риск случайно изменить safety gates, waypoint planning или multi-agent
+  manifest semantics выше, чем польза от механического split прямо сейчас.
+
+Оставленный риск:
+
+- `sitl_safety.rs`, `sitl_plan.rs` и `sitl_multi_agent.rs` остаются большими
+  файлами, поэтому локальные SITL-изменения в них по-прежнему требуют
+  аккуратного чтения и targeted tests;
+- новые SITL features могут снова начать смешивать validation, planning,
+  config parsing и artifact semantics, если перед ними не вернуться к split.
+
+Когда возвращаться:
+
+- перед крупной новой SITL feature, которая меняет safety gates, waypoint
+  planning или multi-agent manifest/config;
+- перед вынесением SITL слоя в отдельный crate;
+- если один из файлов начнет регулярно мешать code review или безопасному
+  добавлению тестов;
+- перед публикационным hardening, если `swarm-examples` станет внешним API, а
+  не только local research workflow.
+
 ## 9. Отдельно оценить судьбу `swarm-examples`
 
 Приоритет: стратегический, не обязательный для текущего refactor pass.
@@ -500,6 +533,37 @@ sitl_multi_agent/
 
 Рекомендация: пока выбрать вариант 1. Возвращаться к варианту 2 только после
 завершения runner/benchmark/DSL refactor или перед публикацией.
+
+Решение текущего refactor pass: **вариант 1, оставить `swarm-examples` как
+есть**.
+
+Почему:
+
+- внешних пользователей стабильного `swarm-examples` API пока нет;
+- crate уже содержит рабочие binary targets и internal helper modules, а
+  переезд в `swarm-sitl` / `swarm-cli` потребует отдельного плана по public API,
+  feature flags, binary names, docs и CI;
+- текущий pass был про снижение локальной сложности внутри существующей
+  структуры, а не про изменение workspace topology;
+- перенос SITL/CLI сейчас создаст много mechanical churn вокруг Cargo targets,
+  docs, tests и artifact paths без нового функционального результата.
+
+Что это означает практически:
+
+- `swarm-examples` пока остается mixed crate для local research workflows:
+  examples, strategy comparison CLI, SITL runtime/supervisor/safety и demo
+  binaries;
+- новые refactor-ы внутри crate допустимы, если они уменьшают локальную
+  сложность без изменения CLI paths;
+- `swarm-sitl` или `swarm-cli` не создаются в этом pass.
+
+Когда пересматривать:
+
+- когда появятся внешние пользователи SITL/CLI API;
+- перед публикацией crate/binaries;
+- когда потребуется стабильная semver boundary между simulation library,
+  SITL runtime и CLI tooling;
+- если `swarm-examples` начнет мешать dependency management или CI matrix.
 
 # Testing strategy
 
