@@ -77,6 +77,39 @@ testing.
   - M72 validator нужно расширить M73 checks, а не создавать отдельный
   валидатор.
 
+### M73 failure-mode matrix
+
+Эта матрица фиксирует ожидаемый scope до implementation round. Все failure modes
+из `docs_raw/BEFORE_HARDWARE_A.23.md` должны попасть либо в fake-tested
+supported path, либо в clearly-labeled manual/experimental/not-tested docs.
+
+| Failure mode | Detection source | Decision | Final status | Coverage target |
+|---|---|---|---|---|
+| `AgentLostBeforeUpload` | fake controller fails before transport/upload starts; live fallback maps pre-upload connection/open failure | `Abort` + `MarkTotalFailure` | `failed` | supported/fake-tested: `m73_fake_agent_lost_before_upload_marks_total_failure`; live/manual not claimed |
+| `UploadRejected` | fake upload returns mission rejection; live fallback maps MAVLink upload rejection | `Abort` + `MarkTotalFailure` | `failed` | supported/fake-tested: `m73_fake_upload_rejection_reports_degraded_record`; local SITL manual optional |
+| `AgentLostAfterUploadBeforeMissionStart` | fake controller upload succeeds, start/first post-upload heartbeat fails before mission start | `Abort` + `MarkTotalFailure` | `failed` | supported/fake-tested: `m73_fake_agent_lost_after_upload_before_start_marks_total_failure`; live/manual optional |
+| `NoProgressTimeout` | fake active controller emits no progress until timeout; live fallback maps no-progress timeout | `Wait` during grace period, then `Abort`; if completed tasks exist then `MarkPartialSuccess` | `failed` or `partial_failed` | supported/fake-tested: `m73_fake_no_progress_timeout_reports_abort_decision` |
+| `HeartbeatLost` | fake active controller stops heartbeat while survivor remains active | `ReleaseTasksToPool` + `ReassignUnfinishedTasks` + `ContinueWithSurvivor` | `completed_with_reallocation` if survivor completes, otherwise `partial_failed`/`failed_recovery` | supported/fake-tested: `m73_fake_heartbeat_lost_reallocates_unfinished_tasks` |
+| `StaleTelemetry` | fake controller repeats stale current seq/heartbeat without task progress until stale threshold | `Wait` first, then `Abort` or reallocation if classified as lost with survivor | `failed` or `partial_failed` | supported/fake-tested: `m73_fake_stale_telemetry_waits_then_aborts_or_recovers`; no RF modeling claim |
+| `PartialCompletionThenFailure` | fake controller completes a strict subset, then disconnects/fails | with survivor: `ReleaseTasksToPool` + `ReassignUnfinishedTasks` + `ContinueWithSurvivor`; without survivor: `MarkPartialSuccess` | `completed_with_reallocation` or `partial_failed` | supported/fake-tested: `m73_fake_partial_completion_then_disconnect_abandons_completed_subset_correctly` |
+| `ReplacementMissionRejected` | fake survivor rejects `replace_mission`; live fallback maps replacement upload/execute failure | `Abort` recovery + `MarkPartialSuccess` if prior work exists, otherwise `MarkTotalFailure` | `failed_recovery` | supported/fake-tested: `m73_fake_replacement_mission_rejected_reports_recovery_failed` |
+| `SurvivorFailedAfterReplacement` | fake survivor accepts replacement, then fails while executing recovered tasks | `MarkPartialSuccess`; do not attempt recursive recovery in M73 | `failed_recovery` or `partial_failed` | supported/fake-tested: `m73_fake_survivor_fails_after_replacement_reports_bounded_failure`; repeated recovery explicitly not tested |
+| `UnsafeReplacementRoute` | M71 safety gate rejects replacement task subset/route | `RefuseUnsafeReplacement` | `failed_recovery` | supported/fake-tested: `m73_fake_unsafe_replacement_route_is_refused`; hardware safety not claimed |
+| `BadWaypointOrMissionItem` | replacement planning finds missing task id, bad waypoint, or invalid seq/materialized mission item | `Abort` + `MarkTotalFailure` for planning-only failure, or `MarkPartialSuccess` if prior tasks completed | `failed_recovery` or `failed` | supported/fake-tested: `m73_fake_bad_waypoint_or_mission_item_reports_planning_failure`; docs label live/PX4 version not-tested |
+
+### M73 decision coverage
+
+| Decision | Covered by scenario | Status in M73 |
+|---|---|---|
+| `Abort` | pre-upload loss, upload rejection, after-upload-before-start loss, no-progress timeout, bad mission item | supported/fake-tested |
+| `Wait` | stale telemetry / no-progress grace period before timeout | supported/fake-tested as deterministic fake time progression; no real RF modeling |
+| `ReleaseTasksToPool` | heartbeat lost and partial completion with active survivor | supported/fake-tested |
+| `ReassignUnfinishedTasks` | heartbeat lost and partial completion with active survivor | supported/fake-tested |
+| `MarkPartialSuccess` | partial completion with no survivor, replacement rejected after completed tasks, survivor fails after replacement | supported/fake-tested |
+| `MarkTotalFailure` | pre-upload loss, upload rejection, after-upload-before-start loss, bad mission item with zero completed tasks | supported/fake-tested |
+| `ContinueWithSurvivor` | heartbeat lost/partial completion after successful replacement mission | supported/fake-tested |
+| `RefuseUnsafeReplacement` | M71 safety gate rejects replacement route | supported/fake-tested |
+
 ## Affected components
 
 - `crates/swarm-examples/src/sitl_supervisor/degraded.rs` - новый модуль с
@@ -448,13 +481,18 @@ testing.
 
     Конкретные tests:
 
+    - `m73_fake_agent_lost_before_upload_marks_total_failure`;
     - `m73_fake_upload_rejection_reports_degraded_record`;
+    - `m73_fake_agent_lost_after_upload_before_start_marks_total_failure`;
     - `m73_fake_no_progress_timeout_reports_abort_decision`;
     - `m73_fake_heartbeat_lost_reallocates_unfinished_tasks`;
+    - `m73_fake_stale_telemetry_waits_then_aborts_or_recovers`;
     - `m73_fake_partial_completion_then_disconnect_abandons_completed_subset_correctly`;
     - `m73_fake_replacement_mission_rejected_reports_recovery_failed`;
+    - `m73_fake_survivor_fails_after_replacement_reports_bounded_failure`;
     - `m73_fake_survivor_completes_recovered_tasks`;
     - `m73_fake_unsafe_replacement_route_is_refused`;
+    - `m73_fake_bad_waypoint_or_mission_item_reports_planning_failure`;
     - `m73_failure_metrics_aggregate_modes_and_decisions`.
 
     Каждый тест должен assert-ить:
@@ -561,13 +599,18 @@ testing.
 
 ### 1. Tests that need no refactoring
 
+- `m73_fake_agent_lost_before_upload_marks_total_failure`.
 - `m73_fake_upload_rejection_reports_degraded_record`.
+- `m73_fake_agent_lost_after_upload_before_start_marks_total_failure`.
 - `m73_fake_no_progress_timeout_reports_abort_decision`.
 - `m73_fake_heartbeat_lost_reallocates_unfinished_tasks`.
+- `m73_fake_stale_telemetry_waits_then_aborts_or_recovers`.
 - `m73_fake_partial_completion_then_disconnect_abandons_completed_subset_correctly`.
 - `m73_fake_replacement_mission_rejected_reports_recovery_failed`.
+- `m73_fake_survivor_fails_after_replacement_reports_bounded_failure`.
 - `m73_fake_survivor_completes_recovered_tasks`.
 - `m73_fake_unsafe_replacement_route_is_refused`.
+- `m73_fake_bad_waypoint_or_mission_item_reports_planning_failure`.
 - `m73_failure_metrics_aggregate_modes_and_decisions`.
 - `artifact_validator` valid degraded pack passes.
 - `artifact_validator` missing degraded event fails with stable rule id.
