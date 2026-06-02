@@ -131,7 +131,50 @@ pub(super) fn run_live_supervisor_with_controllers<C: LiveAgentController>(
     manifest: &MultiAgentSitlManifest,
     mut controllers: Vec<C>,
 ) -> Result<SitlMultiAgentRunReport, SitlError> {
-    validate_live_controller_set(manifest, &controllers)?;
+    let safety_gate = SitlSafetyGate::new(config.safety_config_path.clone());
+    run_live_supervisor_with_controllers_and_safety_gate(
+        entry,
+        config,
+        manifest,
+        &mut controllers,
+        &safety_gate,
+    )
+}
+
+#[cfg(any(feature = "mavlink-transport", test))]
+pub(super) trait LiveSupervisorSafetyGate {
+    fn validate_agent_task_subset(
+        &self,
+        entry: &swarm_sim::ScenarioSuiteEntry,
+        agent_id: &str,
+        task_ids: &[String],
+    ) -> Result<(), SitlError>;
+}
+
+#[cfg(any(feature = "mavlink-transport", test))]
+impl LiveSupervisorSafetyGate for SitlSafetyGate {
+    fn validate_agent_task_subset(
+        &self,
+        entry: &swarm_sim::ScenarioSuiteEntry,
+        agent_id: &str,
+        task_ids: &[String],
+    ) -> Result<(), SitlError> {
+        SitlSafetyGate::validate_agent_task_subset(self, entry, agent_id, task_ids)
+    }
+}
+
+#[cfg(any(feature = "mavlink-transport", test))]
+pub(super) fn run_live_supervisor_with_controllers_and_safety_gate<
+    C: LiveAgentController,
+    G: LiveSupervisorSafetyGate,
+>(
+    entry: &swarm_sim::ScenarioSuiteEntry,
+    config: &SupervisorLiveConfig,
+    manifest: &MultiAgentSitlManifest,
+    controllers: &mut [C],
+    safety_gate: &G,
+) -> Result<SitlMultiAgentRunReport, SitlError> {
+    validate_live_controller_set(manifest, controllers)?;
     let run_id = config
         .run_id
         .clone()
@@ -153,7 +196,6 @@ pub(super) fn run_live_supervisor_with_controllers<C: LiveAgentController>(
         manifest.agents_count, manifest.scenario_name, config.config_path
     );
 
-    let safety_gate = SitlSafetyGate::new(config.safety_config_path.clone());
     let mut live_metrics = SupervisorMetrics::default();
     let mut reallocation_target_counts: HashMap<String, usize> = HashMap::new();
     let mut lost_agents = HashSet::new();
@@ -163,11 +205,11 @@ pub(super) fn run_live_supervisor_with_controllers<C: LiveAgentController>(
 
     for agent in &manifest.agents {
         let start_delay_ms =
-            live_controller_for_agent_mut(&mut controllers, &agent.agent_id)?.start_delay_ms();
+            live_controller_for_agent_mut(controllers, &agent.agent_id)?.start_delay_ms();
         if start_delay_ms > 0 {
             thread::sleep(Duration::from_millis(start_delay_ms));
         }
-        let mission_waypoints = live_controller_for_agent_mut(&mut controllers, &agent.agent_id)?
+        let mission_waypoints = live_controller_for_agent_mut(controllers, &agent.agent_id)?
             .mission_waypoints()
             .to_vec();
         recorder
@@ -194,7 +236,7 @@ pub(super) fn run_live_supervisor_with_controllers<C: LiveAgentController>(
             agent.component_id,
         );
 
-        live_controller_for_agent_mut(&mut controllers, &agent.agent_id)?.start()?;
+        live_controller_for_agent_mut(controllers, &agent.agent_id)?.start()?;
         active_agent_ids.push(agent.agent_id.clone());
     }
 
@@ -205,8 +247,7 @@ pub(super) fn run_live_supervisor_with_controllers<C: LiveAgentController>(
             if !active_agent_ids.iter().any(|active| active == &agent_id) {
                 continue;
             }
-            let Some(mut run) =
-                live_controller_for_agent_mut(&mut controllers, &agent_id)?.poll()?
+            let Some(mut run) = live_controller_for_agent_mut(controllers, &agent_id)?.poll()?
             else {
                 continue;
             };
@@ -254,7 +295,7 @@ pub(super) fn run_live_supervisor_with_controllers<C: LiveAgentController>(
                     live_metrics.record_decision(SupervisorDecision::Wait);
                 }
                 let active_runs =
-                    live_active_run_snapshots(manifest, &controllers, &active_agent_ids);
+                    live_active_run_snapshots(manifest, controllers, &active_agent_ids);
                 let survivor_ids: Vec<String> = active_agent_ids
                     .iter()
                     .filter(|candidate| *candidate != &run.agent_id)
@@ -295,8 +336,40 @@ pub(super) fn run_live_supervisor_with_controllers<C: LiveAgentController>(
                     failed_run: &run,
                     survivor_ids: &survivor_ids,
                 };
-                let plans =
-                    live_reallocation_after_failure(context, &mut recorder, &mut live_metrics)?;
+                let plans = match live_reallocation_after_failure(
+                    context,
+                    &mut recorder,
+                    &mut live_metrics,
+                ) {
+                    Ok(plans) => plans,
+                    Err(error) => {
+                        record.failure_mode = SupervisorFailureMode::BadWaypointOrMissionItem;
+                        record.decision = SupervisorDecision::Abort;
+                        record
+                            .tasks_abandoned
+                            .extend(run.completed_task_ids.clone());
+                        record.final_status = "failed_recovery".to_owned();
+                        recorder.push_supervisor_failure_detected(
+                            run.agent_id.clone(),
+                            record.failure_mode.as_str(),
+                            run.completed_task_ids.clone(),
+                        );
+                        recorder.push_supervisor_failure_classified(
+                            run.agent_id.clone(),
+                            record.failure_mode.as_str(),
+                            record.decision.as_str(),
+                        );
+                        recorder.push_supervisor_recovery_failed(
+                            run.agent_id.clone(),
+                            record.failure_mode.as_str(),
+                            error.to_string(),
+                        );
+                        live_metrics.record_degraded(&record);
+                        degraded_records.push(record);
+                        runs.push(run);
+                        continue;
+                    }
+                };
                 let mut recovery_failed = false;
                 for plan in plans {
                     recorder.push_supervisor_recovery_started(
@@ -316,6 +389,16 @@ pub(super) fn run_live_supervisor_with_controllers<C: LiveAgentController>(
                         record.decision = SupervisorDecision::RefuseUnsafeReplacement;
                         record.tasks_abandoned.extend(plan.task_ids.clone());
                         record.final_status = "failed_recovery".to_owned();
+                        recorder.push_supervisor_failure_detected(
+                            run.agent_id.clone(),
+                            record.failure_mode.as_str(),
+                            run.completed_task_ids.clone(),
+                        );
+                        recorder.push_supervisor_failure_classified(
+                            run.agent_id.clone(),
+                            record.failure_mode.as_str(),
+                            record.decision.as_str(),
+                        );
                         recorder.push_supervisor_recovery_failed(
                             plan.target_agent_id.clone(),
                             record.failure_mode.as_str(),
@@ -330,7 +413,7 @@ pub(super) fn run_live_supervisor_with_controllers<C: LiveAgentController>(
                     );
                     record_replacement_mission_items(&mut recorder, &plan);
                     if let Err(error) =
-                        live_controller_for_agent_mut(&mut controllers, &plan.target_agent_id)?
+                        live_controller_for_agent_mut(controllers, &plan.target_agent_id)?
                             .replace_mission(&plan)
                     {
                         recovery_failed = true;
@@ -342,6 +425,16 @@ pub(super) fn run_live_supervisor_with_controllers<C: LiveAgentController>(
                         };
                         record.tasks_abandoned.extend(plan.task_ids.clone());
                         record.final_status = "failed_recovery".to_owned();
+                        recorder.push_supervisor_failure_detected(
+                            run.agent_id.clone(),
+                            record.failure_mode.as_str(),
+                            run.completed_task_ids.clone(),
+                        );
+                        recorder.push_supervisor_failure_classified(
+                            run.agent_id.clone(),
+                            record.failure_mode.as_str(),
+                            record.decision.as_str(),
+                        );
                         recorder.push_supervisor_recovery_failed(
                             plan.target_agent_id.clone(),
                             record.failure_mode.as_str(),

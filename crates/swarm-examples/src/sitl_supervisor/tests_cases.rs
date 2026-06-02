@@ -1,6 +1,16 @@
 use super::tests_support::*;
 use super::*;
+use crate::artifact_validator::{
+    validate_artifact_pack, ArtifactPackPaths, ArtifactValidationOptions,
+};
+use crate::sitl_multi_agent::SitlArtifactMetadata;
+use crate::sitl_observability::{
+    format_sitl_summary, read_sitl_event_log, summarize_sitl_event_log,
+};
 use crate::sitl_report::SitlMultiAgentReallocationReport;
+use std::fs;
+use std::path::Path;
+use swarm_safety::preflight::SafetyValidationReport;
 #[test]
 fn supervisor_metrics_formats_contract_line() {
     let metrics = SupervisorMetrics {
@@ -647,9 +657,24 @@ fn m73_fake_partial_completion_then_disconnect_abandons_completed_subset_correct
 fn m73_fake_replacement_mission_rejected_reports_recovery_failed() {
     let suite = fixture_suite();
     let entry = first_sitl_entry(&suite, "inline-scenario.json").unwrap();
-    let manifest = fixture_execute_manifest();
+    let mut manifest = fixture_execute_manifest();
+    let dir = tempfile::tempdir().unwrap();
+    let output_dir = dir.path().join("unit-live-run");
+    prepare_m73_artifact_manifest(&mut manifest, &output_dir);
     let mut config = fixture_live_config();
     config.reupload_on_failure = true;
+    config.replay_log = Some(
+        output_dir
+            .join("events.sitl-log.json")
+            .to_string_lossy()
+            .into_owned(),
+    );
+    config.run_report = Some(
+        output_dir
+            .join("run-report.json")
+            .to_string_lossy()
+            .into_owned(),
+    );
     let controllers = vec![
         FakeLiveAgentController::failed(&manifest.agents[0], 0)
             .with_failure_mode(SupervisorFailureMode::HeartbeatLost),
@@ -670,6 +695,8 @@ fn m73_fake_replacement_mission_rejected_reports_recovery_failed() {
         report.degraded.records[0].tasks_abandoned,
         vec!["wp-0", "wp-1"]
     );
+    write_m73_artifact_sidecars(&output_dir, &manifest);
+    assert_m73_artifact_pack_passes(&output_dir);
 }
 
 #[test]
@@ -708,45 +735,74 @@ fn m73_fake_survivor_completes_recovered_tasks() {
 
 #[test]
 fn m73_fake_unsafe_replacement_route_is_refused() {
-    let mut report = run_m73_reallocation_failure(SupervisorFailureMode::UnsafeReplacementRoute, 0);
-    report.degraded.records[0].failure_mode = SupervisorFailureMode::UnsafeReplacementRoute;
-    report.degraded.records[0].decision = SupervisorDecision::RefuseUnsafeReplacement;
-    report.degraded.failure_mode_counts.clear();
-    report.degraded.decision_counts.clear();
-    report.degraded.failure_mode_counts.insert(
-        SupervisorFailureMode::UnsafeReplacementRoute
-            .as_str()
-            .to_owned(),
-        1,
+    let suite = fixture_suite();
+    let entry = first_sitl_entry(&suite, "inline-scenario.json").unwrap();
+    let mut manifest = fixture_execute_manifest();
+    let dir = tempfile::tempdir().unwrap();
+    let output_dir = dir.path().join("unit-live-run");
+    prepare_m73_artifact_manifest(&mut manifest, &output_dir);
+    let mut config = fixture_live_config();
+    config.reupload_on_failure = true;
+    config.replay_log = Some(
+        output_dir
+            .join("events.sitl-log.json")
+            .to_string_lossy()
+            .into_owned(),
     );
-    report.degraded.decision_counts.insert(
-        SupervisorDecision::RefuseUnsafeReplacement
-            .as_str()
-            .to_owned(),
-        1,
+    config.run_report = Some(
+        output_dir
+            .join("run-report.json")
+            .to_string_lossy()
+            .into_owned(),
     );
+    let mut controllers = vec![
+        FakeLiveAgentController::failed(&manifest.agents[0], 0)
+            .with_failure_mode(SupervisorFailureMode::HeartbeatLost),
+        FakeLiveAgentController::completed_after_polls(&manifest.agents[1], 1),
+    ];
+    let safety_gate = RefusingReplacementSafetyGate;
+    let report = run_live_supervisor_with_controllers_and_safety_gate(
+        entry,
+        &config,
+        &manifest,
+        &mut controllers,
+        &safety_gate,
+    )
+    .unwrap();
 
     assert_degraded_count(
         &report,
         SupervisorFailureMode::UnsafeReplacementRoute,
         SupervisorDecision::RefuseUnsafeReplacement,
     );
+    assert_eq!(report.degraded.recovery_failed_count, 1);
+    write_m73_artifact_sidecars(&output_dir, &manifest);
+    assert_m73_artifact_pack_passes(&output_dir);
 }
 
 #[test]
 fn m73_fake_bad_waypoint_or_mission_item_reports_planning_failure() {
-    let report = run_m73_single_failure(
-        SupervisorFailureMode::BadWaypointOrMissionItem,
-        0,
-        "bad mission item in replacement plan",
-        false,
-    );
+    let suite = fixture_suite();
+    let entry = first_sitl_entry(&suite, "inline-scenario.json").unwrap();
+    let mut manifest = fixture_execute_manifest();
+    let controller_manifest = manifest.clone();
+    manifest.agents[1].waypoints.clear();
+    let mut config = fixture_live_config();
+    config.reupload_on_failure = true;
+    let controllers = vec![
+        FakeLiveAgentController::failed(&controller_manifest.agents[0], 0)
+            .with_failure_mode(SupervisorFailureMode::HeartbeatLost),
+        FakeLiveAgentController::completed_after_polls(&controller_manifest.agents[1], 1),
+    ];
+    let report =
+        run_live_supervisor_with_controllers(entry, &config, &manifest, controllers).unwrap();
 
     assert_degraded_count(
         &report,
         SupervisorFailureMode::BadWaypointOrMissionItem,
-        SupervisorDecision::MarkTotalFailure,
+        SupervisorDecision::Abort,
     );
+    assert_eq!(report.degraded.recovery_failed_count, 1);
 }
 
 #[test]
@@ -867,4 +923,75 @@ fn assert_decision_count(report: &SitlMultiAgentRunReport, decision: SupervisorD
         "{:?}",
         report.degraded
     );
+}
+
+struct RefusingReplacementSafetyGate;
+
+impl LiveSupervisorSafetyGate for RefusingReplacementSafetyGate {
+    fn validate_agent_task_subset(
+        &self,
+        _entry: &swarm_sim::ScenarioSuiteEntry,
+        agent_id: &str,
+        task_ids: &[String],
+    ) -> Result<(), SitlError> {
+        Err(SitlError::SafetyValidationFailed {
+            message: format!(
+                "fake unsafe replacement route for agent '{agent_id}' tasks={}",
+                task_ids.join(",")
+            ),
+        })
+    }
+}
+
+fn prepare_m73_artifact_manifest(
+    manifest: &mut crate::sitl_multi_agent::MultiAgentSitlManifest,
+    output_dir: &Path,
+) {
+    manifest.artifact_metadata = SitlArtifactMetadata {
+        command: vec!["sitl_supervisor".to_owned(), "--connection".to_owned()],
+        git_commit: Some("0123456789abcdef".to_owned()),
+        build_profile: "debug".to_owned(),
+        run_id: Some("unit-live-run".to_owned()),
+        scenario_snapshot_path: Some("scenario.snapshot.json".into()),
+        config_snapshot_path: Some("config.snapshot.json".into()),
+        command_path: Some("command.txt".into()),
+    };
+    fs::create_dir_all(output_dir).unwrap();
+}
+
+fn write_m73_artifact_sidecars(
+    output_dir: &Path,
+    manifest: &crate::sitl_multi_agent::MultiAgentSitlManifest,
+) {
+    write_json(&output_dir.join("manifest.json"), manifest);
+    write_json(
+        &output_dir.join("safety_validation_report.v1.json"),
+        &SafetyValidationReport::ok(),
+    );
+    fs::write(output_dir.join("scenario.snapshot.json"), "{}\n").unwrap();
+    fs::write(output_dir.join("config.snapshot.json"), "{}\n").unwrap();
+    fs::write(
+        output_dir.join("command.txt"),
+        "sitl_supervisor --connection --execute --reupload-on-failure\n",
+    )
+    .unwrap();
+    let log = read_sitl_event_log(output_dir.join("events.sitl-log.json")).unwrap();
+    fs::write(
+        output_dir.join("replay-summary.txt"),
+        format!("{}\n", format_sitl_summary(&summarize_sitl_event_log(&log))),
+    )
+    .unwrap();
+}
+
+fn assert_m73_artifact_pack_passes(output_dir: &Path) {
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(output_dir),
+        ArtifactValidationOptions::default(),
+    );
+    assert!(report.passed, "{:?}", report.violations);
+}
+
+fn write_json(path: &Path, value: &impl serde::Serialize) {
+    let json = serde_json::to_string_pretty(value).unwrap();
+    fs::write(path, json).unwrap();
 }
