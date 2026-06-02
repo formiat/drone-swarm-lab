@@ -1,55 +1,6 @@
 use crate::event_log::{Event, EventLog};
 use swarm_types::{AgentId, Pose, TaskId};
 
-/// Minimal replay state that reconstructs the system from an event log.
-///
-/// The replay engine does not re-run the simulation; it reconstructs
-/// the final state by applying events in order.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct ReplayState {
-    pub failed_agents: Vec<(AgentId, u64)>,
-    pub assigned_tasks: Vec<(TaskId, AgentId, u64)>,
-    pub messages_sent: u64,
-    pub messages_dropped: u64,
-    pub partition_events: u64,
-    pub final_poses: Vec<(AgentId, swarm_types::Pose)>,
-}
-
-/// Summary of a replay log with mission-specific counts.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct ReplaySummary {
-    pub total_ticks: u64,
-    pub assignments: usize,
-    pub completions: usize,
-    pub conflicts: usize,
-    pub failures: usize,
-    pub safety_violations: usize,
-    pub sar_scans: usize,
-    pub sar_detections: usize,
-    pub edges_visited: usize,
-    pub cbba_convergence_ticks: Vec<u64>,
-    pub messages_sent: u64,
-    pub messages_dropped: u64,
-    // v0.38 Wildfire v2
-    pub zones_mapped: usize,
-    pub hazard_updates: usize,
-    pub observations: usize,
-    // M65 Urban Patrol v0
-    pub urban_routes_planned: usize,
-    pub urban_segments_entered: usize,
-    pub urban_segments_completed: usize,
-    pub urban_violations: usize,
-    pub urban_patrol_completions: usize,
-    pub urban_completion_ticks: Vec<u64>,
-    // M66 Urban Search v1
-    pub bus_observations: usize,
-    pub bus_detections: usize,
-    pub bus_false_positives: usize,
-    pub urban_search_completions: usize,
-    pub urban_search_time_to_detection_ticks: Vec<u64>,
-    pub urban_search_no_detection_count: usize,
-}
-
 /// Snapshot of the system at a specific tick.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ReplaySnapshot {
@@ -153,153 +104,6 @@ pub fn format_timeline(log: &EventLog, filter: &ReplayTimelineFilter) -> String 
     }
 }
 
-/// Replay an event log and produce the final reconstructed state.
-pub fn replay(log: &EventLog) -> ReplayState {
-    let mut state = ReplayState::default();
-
-    for event in &log.events {
-        match event {
-            Event::AgentFailed { agent_id, tick } => {
-                state.failed_agents.push((agent_id.clone(), *tick));
-            }
-            Event::TaskAssigned {
-                task_id,
-                agent_id,
-                tick,
-            } => {
-                state
-                    .assigned_tasks
-                    .push((task_id.clone(), agent_id.clone(), *tick));
-            }
-            Event::MessageSent { .. } => {
-                state.messages_sent += 1;
-            }
-            Event::MessageDropped { .. } => {
-                state.messages_dropped += 1;
-            }
-            Event::PartitionAdded { .. } | Event::PartitionRemoved { .. } => {
-                state.partition_events += 1;
-            }
-            Event::PoseUpdated { agent_id, pose, .. } => {
-                // Overwrite previous pose for this agent
-                if let Some(entry) = state.final_poses.iter_mut().find(|(id, _)| id == agent_id) {
-                    entry.1 = *pose;
-                } else {
-                    state.final_poses.push((agent_id.clone(), *pose));
-                }
-            }
-            Event::TickStart { .. }
-            | Event::TaskStarted { .. }
-            | Event::TaskCompleted { .. }
-            | Event::TaskExpired { .. }
-            | Event::SarScan { .. }
-            | Event::SarDetection { .. }
-            | Event::EdgeVisited { .. }
-            | Event::SafetyViolation { .. }
-            | Event::CbbaConverged { .. }
-            | Event::CbbaBundleUpdated { .. }
-            | Event::AgentObservation { .. }
-            | Event::HazardMapUpdated { .. }
-            | Event::TaskPriorityUpdated { .. }
-            | Event::UrbanRoutePlanned { .. }
-            | Event::UrbanSegmentEntered { .. }
-            | Event::UrbanSegmentCompleted { .. }
-            | Event::UrbanViolation { .. }
-            | Event::UrbanPatrolCompleted { .. }
-            | Event::BusObserved { .. }
-            | Event::BusDetected { .. }
-            | Event::BusFalsePositive { .. }
-            | Event::UrbanSearchCompleted { .. } => {}
-        }
-    }
-
-    state
-}
-
-/// Summarize an event log into key metrics.
-pub fn summarize(log: &EventLog) -> ReplaySummary {
-    let mut summary = ReplaySummary::default();
-
-    for event in &log.events {
-        match event {
-            Event::TickStart { tick } => {
-                summary.total_ticks = summary.total_ticks.max(*tick);
-            }
-            Event::TaskAssigned { .. } => {
-                summary.assignments += 1;
-            }
-            Event::TaskCompleted { .. } => {
-                summary.completions += 1;
-            }
-            Event::AgentFailed { .. } => {
-                summary.failures += 1;
-            }
-            Event::MessageSent { .. } => {
-                summary.messages_sent += 1;
-            }
-            Event::MessageDropped { .. } => {
-                summary.messages_dropped += 1;
-            }
-            Event::SafetyViolation { .. } => {
-                summary.safety_violations += 1;
-            }
-            Event::SarScan { .. } => {
-                summary.sar_scans += 1;
-            }
-            Event::SarDetection { .. } => {
-                summary.sar_detections += 1;
-            }
-            Event::EdgeVisited { .. } => {
-                summary.edges_visited += 1;
-            }
-            Event::CbbaConverged { tick } => {
-                summary.cbba_convergence_ticks.push(*tick);
-            }
-            Event::AgentObservation { .. } => {
-                summary.observations += 1;
-            }
-            Event::HazardMapUpdated { .. } => {
-                summary.hazard_updates += 1;
-            }
-            Event::UrbanRoutePlanned { .. } => {
-                summary.urban_routes_planned += 1;
-            }
-            Event::UrbanSegmentEntered { .. } => {
-                summary.urban_segments_entered += 1;
-            }
-            Event::UrbanSegmentCompleted { .. } => {
-                summary.urban_segments_completed += 1;
-            }
-            Event::UrbanViolation { .. } => {
-                summary.urban_violations += 1;
-            }
-            Event::UrbanPatrolCompleted { tick, .. } => {
-                summary.urban_patrol_completions += 1;
-                summary.urban_completion_ticks.push(*tick);
-            }
-            Event::BusObserved { .. } => {
-                summary.bus_observations += 1;
-            }
-            Event::BusDetected { tick, .. } => {
-                summary.bus_detections += 1;
-                summary.urban_search_time_to_detection_ticks.push(*tick);
-            }
-            Event::BusFalsePositive { .. } => {
-                summary.bus_false_positives += 1;
-            }
-            Event::UrbanSearchCompleted { detected, .. } => {
-                summary.urban_search_completions += 1;
-                if !detected {
-                    summary.urban_search_no_detection_count += 1;
-                }
-            }
-            _ => {}
-        }
-    }
-
-    summary
-}
-
 /// Build a snapshot of the system state at the given tick.
 pub fn snapshot_at_tick(log: &EventLog, target_tick: u64) -> ReplaySnapshot {
     let mut snapshot = ReplaySnapshot {
@@ -375,6 +179,68 @@ pub fn snapshot_at_tick(log: &EventLog, target_tick: u64) -> ReplaySnapshot {
     }
 
     snapshot
+}
+
+/// Render an ASCII grid snapshot.
+///
+/// Agents are rendered as 'A', failed agents as 'X', empty cells as '.'.
+/// When multiple agents occupy the same cell, the count is shown.
+pub fn render_ascii_grid(
+    snapshot: &ReplaySnapshot,
+    grid_bounds: (f64, f64, f64, f64),
+    grid_size: usize,
+) -> String {
+    let (min_x, max_x, min_y, max_y) = grid_bounds;
+    let cell_w = (max_x - min_x) / grid_size as f64;
+    let cell_h = (max_y - min_y) / grid_size as f64;
+
+    // Count agents per cell
+    let mut grid: Vec<Vec<u32>> = vec![vec![0; grid_size]; grid_size];
+    let mut failed_grid: Vec<Vec<u32>> = vec![vec![0; grid_size]; grid_size];
+
+    for (agent_id, pose) in &snapshot.agent_poses {
+        let gx = ((pose.x - min_x) / cell_w).clamp(0.0, grid_size as f64 - 1.0) as usize;
+        let gy = ((pose.y - min_y) / cell_h).clamp(0.0, grid_size as f64 - 1.0) as usize;
+        if snapshot.failed_agents.contains(agent_id) {
+            failed_grid[gy][gx] += 1;
+        } else {
+            grid[gy][gx] += 1;
+        }
+    }
+
+    let mut lines = Vec::new();
+    lines.push(format!(
+        "Tick {}  ({}x{} grid)",
+        snapshot.tick, grid_size, grid_size
+    ));
+    lines.push("-".repeat(grid_size));
+
+    for gy in (0..grid_size).rev() {
+        let mut row = String::new();
+        for gx in 0..grid_size {
+            let active = grid[gy][gx];
+            let failed = failed_grid[gy][gx];
+            let ch = if active > 0 && failed > 0 {
+                '*'
+            } else if active > 1 {
+                char::from_digit(active.min(9), 10).unwrap_or('A')
+            } else if active == 1 {
+                'A'
+            } else if failed > 1 {
+                char::from_digit(failed.min(9), 10).unwrap_or('X')
+            } else if failed == 1 {
+                'X'
+            } else {
+                '.'
+            };
+            row.push(ch);
+        }
+        lines.push(row);
+    }
+
+    lines.push("-".repeat(grid_size));
+    lines.push("Legend: A=active agent  X=failed agent  *=mixed  .=empty".to_owned());
+    lines.join("\n")
 }
 
 fn event_category(event: &Event) -> ReplayEventCategory {
@@ -648,66 +514,4 @@ fn optional_usize(value: Option<usize>) -> String {
 
 fn format_pose(pose: Pose) -> String {
     format!("pose=({:.3},{:.3},{:.3})", pose.x, pose.y, pose.z)
-}
-
-/// Render an ASCII grid snapshot.
-///
-/// Agents are rendered as 'A', failed agents as 'X', empty cells as '.'.
-/// When multiple agents occupy the same cell, the count is shown.
-pub fn render_ascii_grid(
-    snapshot: &ReplaySnapshot,
-    grid_bounds: (f64, f64, f64, f64),
-    grid_size: usize,
-) -> String {
-    let (min_x, max_x, min_y, max_y) = grid_bounds;
-    let cell_w = (max_x - min_x) / grid_size as f64;
-    let cell_h = (max_y - min_y) / grid_size as f64;
-
-    // Count agents per cell
-    let mut grid: Vec<Vec<u32>> = vec![vec![0; grid_size]; grid_size];
-    let mut failed_grid: Vec<Vec<u32>> = vec![vec![0; grid_size]; grid_size];
-
-    for (agent_id, pose) in &snapshot.agent_poses {
-        let gx = ((pose.x - min_x) / cell_w).clamp(0.0, grid_size as f64 - 1.0) as usize;
-        let gy = ((pose.y - min_y) / cell_h).clamp(0.0, grid_size as f64 - 1.0) as usize;
-        if snapshot.failed_agents.contains(agent_id) {
-            failed_grid[gy][gx] += 1;
-        } else {
-            grid[gy][gx] += 1;
-        }
-    }
-
-    let mut lines = Vec::new();
-    lines.push(format!(
-        "Tick {}  ({}x{} grid)",
-        snapshot.tick, grid_size, grid_size
-    ));
-    lines.push("-".repeat(grid_size));
-
-    for gy in (0..grid_size).rev() {
-        let mut row = String::new();
-        for gx in 0..grid_size {
-            let active = grid[gy][gx];
-            let failed = failed_grid[gy][gx];
-            let ch = if active > 0 && failed > 0 {
-                '*'
-            } else if active > 1 {
-                char::from_digit(active.min(9), 10).unwrap_or('A')
-            } else if active == 1 {
-                'A'
-            } else if failed > 1 {
-                char::from_digit(failed.min(9), 10).unwrap_or('X')
-            } else if failed == 1 {
-                'X'
-            } else {
-                '.'
-            };
-            row.push(ch);
-        }
-        lines.push(row);
-    }
-
-    lines.push("-".repeat(grid_size));
-    lines.push("Legend: A=active agent  X=failed agent  *=mixed  .=empty".to_owned());
-    lines.join("\n")
 }

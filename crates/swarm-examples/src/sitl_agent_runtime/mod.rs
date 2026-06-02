@@ -23,9 +23,13 @@ use mock::*;
 
 mod runtime;
 
-mod connection_and_reports;
+mod reports;
 #[cfg(all(test, feature = "mavlink-transport"))]
-use connection_and_reports::*;
+use reports::*;
+
+mod connection;
+#[cfg(all(test, feature = "mavlink-transport"))]
+use connection::*;
 
 #[cfg(feature = "mavlink-transport")]
 mod telemetry;

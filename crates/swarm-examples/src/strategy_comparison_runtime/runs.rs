@@ -19,7 +19,7 @@ use crate::regression_lib::build_coverage_profile;
 
 use super::cli::{mission_name, parse_args, CliArgs, Mission, RunMode};
 use super::strategies::make_factories;
-use super::urban_artifacts_and_tests::{
+use super::urban_artifacts::{
     merge_reports, run_regression, sanitize_artifact_id, write_urban_analysis_artifacts,
 };
 

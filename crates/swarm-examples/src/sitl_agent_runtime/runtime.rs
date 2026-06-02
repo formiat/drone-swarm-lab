@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use super::cli::{parse_args, AgentRuntimeOptions, LifecycleMode};
-use super::connection_and_reports::run_connection;
+use super::connection::run_connection;
 use super::mock::{apply_start_delay, run_mock};
 use crate::sitl_multi_agent::{
     agent_config, build_multi_agent_manifest, load_multi_agent_config, MultiAgentLifecycle,

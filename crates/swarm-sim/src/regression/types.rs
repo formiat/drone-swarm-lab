@@ -3,10 +3,6 @@ use std::{collections::HashMap, str::FromStr};
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use swarm_metrics::AggregateMetrics;
 
-// ---------------------------------------------------------------------------
-// 1. Threshold & RegressionSuite
-// ---------------------------------------------------------------------------
-
 /// A single threshold check against an aggregated metric.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Threshold {
@@ -181,10 +177,6 @@ impl std::fmt::Display for ThresholdViolation {
     }
 }
 
-// ---------------------------------------------------------------------------
-// 2. ThresholdChecker
-// ---------------------------------------------------------------------------
-
 pub struct ThresholdChecker;
 
 impl ThresholdChecker {
@@ -262,10 +254,6 @@ pub(super) fn extract_metric(metrics: &AggregateMetrics, metric: &str) -> f64 {
         _ => 0.0,
     }
 }
-
-// ---------------------------------------------------------------------------
-// 3. Baseline
-// ---------------------------------------------------------------------------
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Baseline {
@@ -412,41 +400,13 @@ impl Baseline {
     }
 }
 
-fn seed_range_for_results(results: &[SuiteResult]) -> Option<(u64, u64)> {
+pub(super) fn seed_range_for_results(results: &[SuiteResult]) -> Option<(u64, u64)> {
     let start = results.iter().map(|result| result.seed_range.0).min()?;
     let end = results.iter().map(|result| result.seed_range.1).max()?;
     Some((start, end))
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub struct BaselineDelta {
-    pub suite_name: String,
-    pub metric: String,
-    pub baseline_value: f64,
-    pub current_value: f64,
-    pub change_pct: f64,
-    pub status: DeltaStatus,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum DeltaStatus {
-    Improved,
-    Degraded,
-    Stable,
-}
-
-impl DeltaStatus {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Improved => "improved",
-            Self::Degraded => "degraded",
-            Self::Stable => "stable",
-        }
-    }
-}
-
-fn compare_field(
+pub(super) fn compare_field(
     suite_name: &str,
     metric: &str,
     baseline: f64,
@@ -474,12 +434,10 @@ fn compare_field(
         } else {
             DeltaStatus::Improved
         }
+    } else if lower_is_better {
+        DeltaStatus::Improved
     } else {
-        if lower_is_better {
-            DeltaStatus::Improved
-        } else {
-            DeltaStatus::Degraded
-        }
+        DeltaStatus::Degraded
     };
 
     Some(BaselineDelta {
@@ -492,84 +450,30 @@ fn compare_field(
     })
 }
 
-// ---------------------------------------------------------------------------
-// 4. RegressionRunner
-// ---------------------------------------------------------------------------
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct BaselineDelta {
+    pub suite_name: String,
+    pub metric: String,
+    pub baseline_value: f64,
+    pub current_value: f64,
+    pub change_pct: f64,
+    pub status: DeltaStatus,
+}
 
-pub struct RegressionRunner;
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DeltaStatus {
+    Improved,
+    Degraded,
+    Stable,
+}
 
-impl RegressionRunner {
-    pub fn run(
-        suites: &[RegressionSuite],
-        baseline: Option<&Baseline>,
-        suite_runner: impl Fn(&RegressionSuite) -> HashMap<String, AggregateMetrics>,
-    ) -> RegressionReport {
-        let mut suite_results = Vec::new();
-        let mut deltas = Vec::new();
-        let mut missing_baselines = Vec::new();
-        let mut overall_pass = true;
-
-        for suite in suites {
-            let metrics_map = suite_runner(suite);
-            let seed_range = suite.mode.seed_range();
-
-            if suite.strategy == "all" {
-                // Run thresholds against every strategy returned.
-                for (strategy_name, metrics) in &metrics_map {
-                    let violations = ThresholdChecker::check(metrics, &suite.thresholds);
-                    if !violations.is_empty() && suite.group.is_gating() {
-                        overall_pass = false;
-                    }
-                    let result = SuiteResult {
-                        suite: suite.clone(),
-                        actual_strategy: strategy_name.clone(),
-                        metrics: metrics.clone(),
-                        violations,
-                        seed_range,
-                    };
-                    if let Some(b) = baseline {
-                        let suite_key = result.regression_key();
-                        if b.has_result(&suite_key) {
-                            deltas.extend(b.compare(metrics, &suite_key));
-                        } else {
-                            missing_baselines.push(suite_key);
-                        }
-                    }
-                    suite_results.push(result);
-                }
-            } else {
-                let metrics = metrics_map
-                    .get(&suite.strategy)
-                    .cloned()
-                    .unwrap_or_else(|| AggregateMetrics::from_runs(&[]));
-                let violations = ThresholdChecker::check(&metrics, &suite.thresholds);
-                if !violations.is_empty() && suite.group.is_gating() {
-                    overall_pass = false;
-                }
-                let result = SuiteResult {
-                    suite: suite.clone(),
-                    actual_strategy: suite.strategy.clone(),
-                    metrics: metrics.clone(),
-                    violations,
-                    seed_range,
-                };
-                if let Some(b) = baseline {
-                    let suite_key = result.regression_key();
-                    if b.has_result(&suite_key) {
-                        deltas.extend(b.compare(&metrics, &suite_key));
-                    } else {
-                        missing_baselines.push(suite_key);
-                    }
-                }
-                suite_results.push(result);
-            }
-        }
-
-        RegressionReport {
-            suite_results,
-            deltas,
-            missing_baselines,
-            overall_pass,
+impl DeltaStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Improved => "improved",
+            Self::Degraded => "degraded",
+            Self::Stable => "stable",
         }
     }
 }
@@ -645,7 +549,3 @@ impl std::fmt::Display for RegressionReport {
         Ok(())
     }
 }
-
-// ---------------------------------------------------------------------------
-// 5. Default suites
-// ---------------------------------------------------------------------------

@@ -10,6 +10,12 @@ use super::mock::apply_start_delay;
 #[cfg(feature = "mavlink-transport")]
 use super::mock::{new_sitl_event_recorder, write_replay_log_if_requested};
 #[cfg(feature = "mavlink-transport")]
+use super::reports::{
+    failure_run_report, progress_status_to_run_status, sitl_run_status_name, success_run_report,
+    write_run_report_if_requested, SitlExecutionFailure, SitlExecutionSuccess,
+    SitlMissionStartReport,
+};
+#[cfg(feature = "mavlink-transport")]
 use super::telemetry::{
     default_takeoff_altitude, run_telemetry_progress_loop, sitl_task_ids_by_seq,
     SitlTelemetryLoopError,
@@ -17,8 +23,6 @@ use super::telemetry::{
 #[cfg(feature = "mavlink-transport")]
 use crate::sitl_observability::{SitlEventLogMode, SitlEventRecorder};
 use crate::sitl_plan::{validate_connection_string, SitlError, SitlPlan};
-#[cfg(feature = "mavlink-transport")]
-use crate::sitl_report::{write_sitl_run_report, SitlRunFinalStatus, SitlRunMode, SitlRunReport};
 #[cfg(feature = "mavlink-transport")]
 use swarm_comms::Waypoint;
 
@@ -167,35 +171,6 @@ pub(super) fn run_connection(
             feature: "mavlink-transport",
         })
     }
-}
-
-#[cfg(feature = "mavlink-transport")]
-#[derive(Debug, Clone, PartialEq)]
-pub(super) struct SitlExecutionSuccess {
-    pub(super) uploaded_count: usize,
-    pub(super) progress_report: crate::sitl_progress::SitlMissionProgressReport,
-}
-
-#[cfg(feature = "mavlink-transport")]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct SitlExecutionFailure {
-    pub(super) final_status: SitlRunFinalStatus,
-    pub(super) mission_item_count: usize,
-    pub(super) completed_count: usize,
-    pub(super) failed_count: usize,
-    pub(super) error: String,
-    pub(super) abort_result: Option<String>,
-}
-
-#[cfg(feature = "mavlink-transport")]
-#[derive(Debug, Clone, PartialEq)]
-pub(super) struct SitlMissionStartReport {
-    pub(super) uploaded_count: usize,
-    pub(super) armed: bool,
-    pub(super) took_off: bool,
-    pub(super) started: bool,
-    pub(super) post_start_heartbeat: bool,
-    pub(super) abort_result: Option<swarm_comms::AbortCommandResult>,
 }
 
 #[cfg(feature = "mavlink-transport")]
@@ -412,7 +387,7 @@ fn execute_sitl_golden_path_with_driver<D: SitlGoldenPathDriver>(
         let error =
             format!("mission aborted before telemetry completion; abort_result={abort_result:?}");
         return Err(SitlExecutionFailure {
-            final_status: SitlRunFinalStatus::Aborted,
+            final_status: super::reports::SitlRunFinalStatus::Aborted,
             mission_item_count: waypoints.len(),
             completed_count: 0,
             failed_count: waypoints.len(),
@@ -433,6 +408,7 @@ pub(super) fn flight_error_to_execution_failure(
     mission_item_count: usize,
     error: swarm_comms::MavlinkFlightError,
 ) -> SitlExecutionFailure {
+    use super::reports::SitlRunFinalStatus;
     let final_status = match &error {
         swarm_comms::MavlinkFlightError::MissionUpload(
             swarm_comms::MavlinkMissionError::MissionRejected(_),
@@ -495,7 +471,7 @@ pub(super) fn telemetry_error_to_execution_failure(
             abort_result: Some(format!("{abort_result:?}")),
         },
         error => SitlExecutionFailure {
-            final_status: SitlRunFinalStatus::Failed,
+            final_status: super::reports::SitlRunFinalStatus::Failed,
             mission_item_count,
             completed_count: 0,
             failed_count: 0,
@@ -503,97 +479,4 @@ pub(super) fn telemetry_error_to_execution_failure(
             abort_result: None,
         },
     }
-}
-
-#[cfg(feature = "mavlink-transport")]
-fn progress_status_to_run_status(
-    status: crate::sitl_progress::SitlMissionFinalStatus,
-) -> SitlRunFinalStatus {
-    match status {
-        crate::sitl_progress::SitlMissionFinalStatus::Completed => SitlRunFinalStatus::Completed,
-        crate::sitl_progress::SitlMissionFinalStatus::Failed => SitlRunFinalStatus::Failed,
-        crate::sitl_progress::SitlMissionFinalStatus::Disconnected => {
-            SitlRunFinalStatus::Disconnected
-        }
-        crate::sitl_progress::SitlMissionFinalStatus::Rejected => SitlRunFinalStatus::Rejected,
-        crate::sitl_progress::SitlMissionFinalStatus::TimedOutNoProgress => {
-            SitlRunFinalStatus::TimedOutNoProgress
-        }
-    }
-}
-
-#[cfg(feature = "mavlink-transport")]
-pub(super) fn success_run_report(
-    plan: &SitlPlan,
-    connection_string: &str,
-    progress_report: &crate::sitl_progress::SitlMissionProgressReport,
-) -> SitlRunReport {
-    SitlRunReport {
-        schema_version: "sitl_run_report.v1".to_owned(),
-        scenario_path: plan.scenario_path.clone(),
-        scenario_name: plan.scenario_name.clone(),
-        mission: plan.mission.clone(),
-        profile: plan.profile.clone(),
-        agent_id: plan.agent_id.clone(),
-        connection_string: connection_string.to_owned(),
-        mode: SitlRunMode::ConnectionExecute,
-        mission_item_count: plan.waypoints.len(),
-        completed_count: progress_report.completed_count,
-        failed_count: progress_report.failed_count,
-        final_status: SitlRunFinalStatus::Completed,
-        error: None,
-        abort_result: None,
-    }
-}
-
-#[cfg(feature = "mavlink-transport")]
-pub(super) fn failure_run_report(
-    plan: &SitlPlan,
-    connection_string: &str,
-    failure: &SitlExecutionFailure,
-) -> SitlRunReport {
-    SitlRunReport {
-        schema_version: "sitl_run_report.v1".to_owned(),
-        scenario_path: plan.scenario_path.clone(),
-        scenario_name: plan.scenario_name.clone(),
-        mission: plan.mission.clone(),
-        profile: plan.profile.clone(),
-        agent_id: plan.agent_id.clone(),
-        connection_string: connection_string.to_owned(),
-        mode: SitlRunMode::ConnectionExecute,
-        mission_item_count: failure.mission_item_count,
-        completed_count: failure.completed_count,
-        failed_count: failure.failed_count,
-        final_status: failure.final_status.clone(),
-        error: Some(failure.error.clone()),
-        abort_result: failure.abort_result.clone(),
-    }
-}
-
-#[cfg(feature = "mavlink-transport")]
-fn sitl_run_status_name(status: &SitlRunFinalStatus) -> &'static str {
-    match status {
-        SitlRunFinalStatus::Completed => "completed",
-        SitlRunFinalStatus::Failed => "failed",
-        SitlRunFinalStatus::Disconnected => "disconnected",
-        SitlRunFinalStatus::Rejected => "rejected",
-        SitlRunFinalStatus::TimedOutNoProgress => "timed_out_no_progress",
-        SitlRunFinalStatus::Aborted => "aborted",
-    }
-}
-
-#[cfg(feature = "mavlink-transport")]
-pub(super) fn write_run_report_if_requested(
-    path: Option<&str>,
-    report: &SitlRunReport,
-) -> Result<(), SitlError> {
-    let Some(path) = path else {
-        return Ok(());
-    };
-    write_sitl_run_report(path, report).map_err(|error| SitlError::RunReportWrite {
-        path: Path::new(path).to_path_buf(),
-        message: error.to_string(),
-    })?;
-    eprintln!("SITL run report written: {path}");
-    Ok(())
 }

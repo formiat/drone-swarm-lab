@@ -1,7 +1,10 @@
-mod types_and_runner;
+mod types;
 #[cfg(test)]
-use types_and_runner::extract_metric;
-pub use types_and_runner::*;
+use types::extract_metric;
+pub use types::*;
+
+mod runner;
+pub use runner::*;
 
 mod suites;
 pub use suites::*;
