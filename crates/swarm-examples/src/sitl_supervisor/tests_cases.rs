@@ -1,6 +1,6 @@
-#![allow(unused_imports)]
 use super::tests_support::*;
 use super::*;
+use crate::sitl_report::SitlMultiAgentReallocationReport;
 #[test]
 fn supervisor_metrics_formats_contract_line() {
     let metrics = SupervisorMetrics {

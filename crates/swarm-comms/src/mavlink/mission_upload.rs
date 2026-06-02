@@ -6,13 +6,14 @@ use std::time::{Duration, Instant};
 #[cfg(feature = "mavlink-transport")]
 use mavlink::dialects::common;
 
+#[cfg(test)]
+use super::NoopMavlinkMissionObserver;
 #[cfg(feature = "mavlink-transport")]
 use super::{
     lifecycle::execute_uploaded_mission_with_connection_observed,
     mission_items::waypoint_to_mission_item_int, CommonHeader, CommonMessage, MavlinkFlightError,
     MavlinkFlightReport, MavlinkMissionError, MavlinkMissionEvent, MavlinkMissionObserver,
-    MissionLifecycleOptions, MissionUploadOptions, MissionUploadReport, NoopMavlinkMissionObserver,
-    Waypoint,
+    MissionLifecycleOptions, MissionUploadOptions, MissionUploadReport, Waypoint,
 };
 #[cfg(feature = "mavlink-transport")]
 pub(super) trait MavlinkVehicleConnection {

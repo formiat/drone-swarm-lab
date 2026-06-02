@@ -1,4 +1,3 @@
-#![allow(unused_imports)]
 use super::*;
 #[cfg(feature = "mavlink-transport")]
 #[derive(Debug, thiserror::Error)]

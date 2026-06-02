@@ -1,5 +1,3 @@
-#![allow(unused_imports)]
-use super::*;
 use std::process::Command;
 
 fn sitl_agent_binary() -> &'static str {

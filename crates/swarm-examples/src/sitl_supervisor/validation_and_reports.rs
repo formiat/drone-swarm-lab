@@ -1,4 +1,3 @@
-#![allow(unused_imports)]
 use super::*;
 pub(super) fn build_mock_controllers(
     manifest: &MultiAgentSitlManifest,

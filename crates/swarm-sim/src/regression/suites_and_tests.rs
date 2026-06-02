@@ -1,4 +1,3 @@
-#![allow(unused_imports)]
 use super::*;
 pub fn all_suites() -> Vec<RegressionSuite> {
     vec![

@@ -1,3 +1,5 @@
+#[cfg(test)]
+use super::NoopMavlinkMissionObserver;
 #[cfg(feature = "mavlink-transport")]
 use super::{
     commands::{
@@ -7,7 +9,7 @@ use super::{
     },
     mission_upload::MavlinkVehicleConnection,
     AbortCommandResult, MavlinkLifecycleError, MavlinkMissionEvent, MavlinkMissionObserver,
-    MissionLifecycleOptions, MissionLifecycleReport, NoopMavlinkMissionObserver,
+    MissionLifecycleOptions, MissionLifecycleReport,
 };
 
 #[cfg(all(feature = "mavlink-transport", test))]

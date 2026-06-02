@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use crate::sitl_connection::SitlConnectionLifecycle;
 use crate::sitl_multi_agent::MultiAgentLifecycle;
 use crate::sitl_plan::SitlWaypointItem;

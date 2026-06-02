@@ -1,4 +1,3 @@
-#![allow(unused_imports)]
 use super::*;
 use swarm_metrics::AggregateMetrics;
 

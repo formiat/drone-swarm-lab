@@ -1,4 +1,3 @@
-#![allow(unused_imports)]
 use super::*;
 use serde::{Deserialize, Serialize};
 use swarm_metrics::AggregateMetrics;

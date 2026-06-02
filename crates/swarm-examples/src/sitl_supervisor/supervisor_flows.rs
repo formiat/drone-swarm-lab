@@ -1,5 +1,8 @@
-#![allow(unused_imports)]
 use super::*;
+#[cfg(any(feature = "mavlink-transport", test))]
+use crate::sitl_supervisor::artifacts::{live_run_report, LiveRunReportInput};
+#[cfg(any(feature = "mavlink-transport", test))]
+use crate::sitl_supervisor::events::{record_live_agent_run, record_replacement_mission_items};
 pub fn run_mock_supervisor(
     suite: &swarm_sim::ScenarioSuite,
     config: &SupervisorMockConfig,

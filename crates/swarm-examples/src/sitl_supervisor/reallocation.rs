@@ -1,4 +1,3 @@
-#![allow(unused_imports)]
 use super::*;
 #[cfg(any(feature = "mavlink-transport", test))]
 pub(super) struct LiveReallocationContext<'a> {

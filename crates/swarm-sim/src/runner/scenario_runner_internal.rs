@@ -2,14 +2,13 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-use rand::SeedableRng;
 use swarm_alloc::{
     route_cost, Allocator, BatteryAwarePlanner, NearestNeighbourPlanner, RoutePlanner,
 };
 use swarm_comms::{InMemAgentTransport, InMemNetwork, NetworkConfig};
 use swarm_metrics::RunMetrics;
 use swarm_runtime::{AgentNode, Coordinator};
-use swarm_types::{AdapterRegistry, AgentId, Health, Role, Task, TaskId, TaskKind};
+use swarm_types::{AdapterRegistry, AgentId, Role, Task, TaskId};
 
 use super::{
     compute_mission_success, compute_urban_foundation_metrics,
@@ -17,10 +16,11 @@ use super::{
         advance_tick, all_dynamic_tasks_injected, all_failure_ticks_passed,
         all_partitions_resolved, apply_environment_effects, apply_partition_events,
         connectivity_metrics_tick, first_active_agent_id, process_alive_nodes,
-        record_agent_failures, record_final_poses, record_inspection_edge_visits,
-        record_safety_violations, record_sar_scans, record_tick_start, send_alive_heartbeats,
-        should_stop_tick, tasks_injected_at_tick, teleport_assigned_tasks_when_movement_disabled,
-        update_connectivity_snapshot, MissionStopSnapshot,
+        process_wildfire_mapping_tick, record_agent_failures, record_final_poses,
+        record_inspection_edge_visits, record_safety_violations, record_sar_scans,
+        record_tick_start, send_alive_heartbeats, should_stop_tick, tasks_injected_at_tick,
+        teleport_assigned_tasks_when_movement_disabled, update_connectivity_snapshot,
+        MissionStopSnapshot,
     },
     released_tasks_reassigned, update_unassigned_durations, RunConfig, SafetyAllocator,
     ScenarioRunner,
@@ -285,158 +285,23 @@ impl ScenarioRunner {
                 coverage_over_time.push(grid_state.coverage_fraction());
             }
 
-            // v0.30: Wildfire Mapping zone observation logic
             if let Some(ref mut wildfire_state) = wildfire_state {
-                for (node, agent_id) in &mut nodes {
-                    if crashed_agents.contains(agent_id) {
-                        continue;
-                    }
-                    let assigned_tasks: Vec<_> = node
-                        .coordinator
-                        .registry
-                        .tasks()
-                        .filter(|t| t.assigned_to.as_ref() == Some(agent_id))
-                        .filter(|t| t.kind == Some(swarm_types::TaskKind::MappingZone))
-                        .cloned()
-                        .collect();
-                    for task in assigned_tasks {
-                        if let Some(entry) = node.coordinator.membership.get(agent_id) {
-                            let task_pose = task.pose.unwrap_or(entry.pose);
-                            let dist = entry.pose.distance_to(&task_pose);
-                            let threshold = 1.0; // 1 metre proximity
-                            if dist < threshold {
-                                let zone_id = task.id.to_string();
-                                zone_observations += 1;
-                                if wildfire_state.mapped_zone_ids.insert(zone_id.clone()) {
-                                    if let Some(ref mut builder) = log_builder {
-                                        builder.push(swarm_replay::Event::AgentObservation {
-                                            agent_id: agent_id.clone(),
-                                            zone_id: zone_id.clone(),
-                                            tick: current_tick,
-                                        });
-                                        builder.push(swarm_replay::Event::TaskCompleted {
-                                            task_id: task.id.clone(),
-                                            agent_id: agent_id.clone(),
-                                            tick: current_tick,
-                                        });
-                                    }
-                                    node.coordinator.registry.complete_assigned_task(&task.id);
-                                    // Track high-priority zone mapping
-                                    if let Some(zone) =
-                                        wildfire_state.zones.iter().find(|z| z.id == zone_id)
-                                    {
-                                        if zone.priority >= 5 {
-                                            high_priority_zones_mapped += 1;
-                                            if time_to_map_first_high_risk.is_none() {
-                                                time_to_map_first_high_risk = Some(current_tick);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                let wildfire_tick = process_wildfire_mapping_tick(
+                    &mut nodes,
+                    &crashed_agents,
+                    wildfire_state,
+                    config.wind,
+                    current_tick,
+                    time_to_map_first_high_risk.is_some(),
+                    &mut log_builder,
+                );
+                priority_updates += wildfire_tick.priority_updates;
+                high_priority_zones_mapped += wildfire_tick.high_priority_zones_mapped;
+                if time_to_map_first_high_risk.is_none() {
+                    time_to_map_first_high_risk = wildfire_tick.time_to_map_first_high_risk;
                 }
-
-                // Dynamic threat update
-                if wildfire_state.enable_dynamic_threat
-                    && current_tick > 0
-                    && current_tick.is_multiple_of(wildfire_state.update_interval_ticks)
-                {
-                    let zone_count = wildfire_state.zones.len();
-                    let mut threat_changes: Vec<f64> = vec![0.0; zone_count];
-                    for (i, zone) in wildfire_state.zones.iter().enumerate() {
-                        let base_increase = 0.1;
-                        let mut increase = base_increase;
-                        // Wind influence: if wind is set, downwind zones get extra escalation
-                        if let Some((wx, wy, _)) = config.wind {
-                            // Simple wind influence: wind direction accelerates threat growth
-                            let wind_magnitude = (wx * wx + wy * wy).sqrt();
-                            if wind_magnitude > 0.0 && zone.threat_level > 0.5 {
-                                increase += wind_magnitude * 0.05;
-                            }
-                        }
-                        threat_changes[i] = increase;
-                    }
-                    // Spatial spread: high-threat zones spread to adjacent zones
-                    if wildfire_state.enable_spatial_spread {
-                        for i in 0..zone_count {
-                            if wildfire_state.zones[i].threat_level > 0.8 {
-                                // Spread to adjacent zones (neighbor indices)
-                                let neighbors = match i {
-                                    0 => vec![1],
-                                    n if n == zone_count - 1 => vec![n - 1],
-                                    _ => vec![i - 1, i + 1],
-                                };
-                                for &neighbor in &neighbors {
-                                    if neighbor < zone_count {
-                                        threat_changes[neighbor] += 0.05;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    for (i, zone) in wildfire_state.zones.iter_mut().enumerate() {
-                        let old_threat = zone.threat_level;
-                        zone.threat_level = (zone.threat_level + threat_changes[i]).min(1.0);
-                        // Significant threat increase boosts priority
-                        if zone.threat_level - old_threat > 0.2 {
-                            zone.priority = (zone.priority + 2).min(10);
-                        } else {
-                            zone.priority = (zone.priority + 1).min(10);
-                        }
-                        if let Some(ref mut builder) = log_builder {
-                            builder.push(swarm_replay::Event::HazardMapUpdated {
-                                zone_id: zone.id.clone(),
-                                new_threat_level: zone.threat_level,
-                                new_priority: zone.priority,
-                                tick: current_tick,
-                            });
-                        }
-                    }
-                    // Update task priorities in the registry
-                    for (node, _) in &mut nodes {
-                        for task in node.coordinator.registry.tasks_mut() {
-                            if let Some(ref kind) = task.kind {
-                                if *kind == swarm_types::TaskKind::MappingZone {
-                                    if let Some(zone) = wildfire_state
-                                        .zones
-                                        .iter()
-                                        .find(|z| z.id == task.id.to_string())
-                                    {
-                                        let old_priority = task.priority;
-                                        task.priority = zone.priority;
-                                        if old_priority != task.priority {
-                                            priority_updates += 1;
-                                            if let Some(ref mut builder) = log_builder {
-                                                builder.push(
-                                                    swarm_replay::Event::TaskPriorityUpdated {
-                                                        task_id: task.id.clone(),
-                                                        old_priority,
-                                                        new_priority: task.priority,
-                                                        tick: current_tick,
-                                                    },
-                                                );
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                // Record average threat level over time
-                let avg_threat: f64 = if !wildfire_state.zones.is_empty() {
-                    wildfire_state
-                        .zones
-                        .iter()
-                        .map(|z| z.threat_level)
-                        .sum::<f64>()
-                        / wildfire_state.zones.len() as f64
-                } else {
-                    0.0
-                };
-                threat_level_over_time.push(avg_threat);
+                zone_observations += wildfire_tick.zone_observations;
+                threat_level_over_time.push(wildfire_tick.avg_threat_level);
             }
 
             // v0.5: Compute connectivity metrics for this tick

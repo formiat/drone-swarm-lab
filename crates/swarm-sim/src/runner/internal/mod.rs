@@ -9,6 +9,7 @@ mod partitions;
 mod safety;
 mod sar;
 mod tick_loop;
+mod wildfire;
 
 pub(in crate::runner) use allocation::*;
 pub(in crate::runner) use dynamic_tasks::*;
@@ -21,3 +22,4 @@ pub(in crate::runner) use partitions::*;
 pub(in crate::runner) use safety::*;
 pub(in crate::runner) use sar::*;
 pub(in crate::runner) use tick_loop::*;
+pub(in crate::runner) use wildfire::*;

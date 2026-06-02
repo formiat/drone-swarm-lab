@@ -1,4 +1,3 @@
-#![allow(unused_imports)]
 use super::*;
 impl ScenarioRunner {
     pub fn run(scenario: &Scenario, config: RunConfig) -> RunMetrics {

@@ -1,9 +1,10 @@
 use super::*;
 use swarm_alloc::{AllocationAgent, AllocationTask, Allocator};
 use swarm_types::{
-    Aabb, Agent, Capability, CellState, Health, InspectionEdge, Pose, Role, SearchGrid,
+    Aabb, Agent, Capability, CellState, EdgeId, Health, InspectionEdge, Pose, Role, SearchGrid,
     SensorModel, Task, TaskKind, TaskStatus, UrbanBus, UrbanBusId, UrbanDetectorConfig, UrbanEdge,
-    UrbanEdgeId, UrbanNode, UrbanObstacleId, UrbanSearchState, UrbanStaticObstacle,
+    UrbanEdgeId, UrbanNode, UrbanNodeId, UrbanObstacleId, UrbanRouteLoop, UrbanSearchState,
+    UrbanStaticObstacle,
 };
 
 fn scenario(seed: u64, agent_count: usize, task_count: usize) -> Scenario {

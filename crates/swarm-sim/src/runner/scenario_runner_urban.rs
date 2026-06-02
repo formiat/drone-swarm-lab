@@ -1,4 +1,3 @@
-#![allow(unused_imports)]
 use super::*;
 impl ScenarioRunner {
     pub(super) fn run_urban_patrol(

@@ -1,6 +1,4 @@
-#![allow(unused_imports)]
 use super::supervisor_tests::*;
-use super::*;
 #[test]
 fn multi_agent_sitl_supervisor_rejects_missing_and_invalid_cli_args_test() {
     let scenario = write_multi_agent_sitl_scenario();

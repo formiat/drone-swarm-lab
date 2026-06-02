@@ -1,6 +1,5 @@
-#![allow(unused_imports)]
 use super::*;
-use super::*;
+use crate::sitl_connection::SitlConnectionLifecycle;
 use crate::sitl_multi_agent::{build_multi_agent_manifest, MultiAgentSitlConfig};
 
 pub(super) fn fixture_suite() -> swarm_sim::ScenarioSuite {

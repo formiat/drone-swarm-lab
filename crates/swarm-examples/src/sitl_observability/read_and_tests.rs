@@ -1,7 +1,6 @@
-#![allow(unused_imports)]
 use super::*;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 pub fn read_sitl_event_log(path: impl AsRef<Path>) -> Result<SitlEventLog, SitlEventLogError> {
     let path = path.as_ref();
@@ -18,6 +17,7 @@ pub fn read_sitl_event_log(path: impl AsRef<Path>) -> Result<SitlEventLog, SitlE
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     fn sample_log() -> SitlEventLog {
         let mut recorder = SitlEventRecorder::new(SitlEventLogMetadata {

@@ -1,26 +1,13 @@
-#![allow(unused_imports)]
-use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
 
-use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
-use swarm_alloc::{
-    route_cost, Allocator, BatteryAwarePlanner, NearestNeighbourPlanner, RoutePlanner,
-};
-use swarm_comms::{
-    ConnectivityModel, ConnectivitySnapshot, InMemAgentTransport, InMemNetwork, NetworkConfig,
-};
-use swarm_metrics::RunMetrics;
-use swarm_runtime::{AgentNode, Coordinator, GridState, NodeTickOutput};
+use swarm_alloc::Allocator;
+use swarm_runtime::GridState;
 use swarm_safety::SafetyConfig;
 use swarm_types::{
-    AdapterRegistry, Agent, AgentId, EdgeId, Health, InspectionGraph, Role, RunState, Task, TaskId,
-    UrbanBusId, UrbanMap, UrbanNodeId, UrbanPlannedRoute, UrbanRouteLoop, UrbanRouteSegment,
-    UrbanSearchState, UrbanViolation,
+    AgentId, EdgeId, InspectionGraph, Task, TaskId, UrbanMap, UrbanNodeId, UrbanRouteLoop,
+    UrbanSearchState,
 };
-
-use crate::{Clock, Scenario};
 
 /// Tracks coverage of inspection edges during a run.
 #[derive(Clone, Debug, Serialize, Deserialize)]

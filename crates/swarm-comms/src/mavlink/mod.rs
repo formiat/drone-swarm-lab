@@ -1,14 +1,7 @@
-#![allow(unused_imports)]
-#[cfg(feature = "mavlink-transport")]
-use std::borrow::Cow;
-use std::collections::VecDeque;
-#[cfg(feature = "mavlink-transport")]
-use std::io::ErrorKind;
-#[cfg(feature = "mavlink-transport")]
-use std::time::{Duration, Instant};
+#[cfg(all(feature = "mavlink-transport", test))]
+use std::time::Duration;
 
-use swarm_types::TaskStatus;
-
+#[cfg(test)]
 use crate::{RawMessage, Transport};
 
 #[cfg(feature = "mavlink-transport")]
@@ -23,49 +16,39 @@ mod errors;
 pub use errors::*;
 
 mod types;
-use types::*;
 pub use types::*;
 
 #[cfg(feature = "mavlink-transport")]
 mod observer;
 #[cfg(feature = "mavlink-transport")]
 pub use observer::*;
-#[cfg(feature = "mavlink-transport")]
-use observer::*;
 
 mod transport;
 pub use transport::*;
-use transport::*;
 
 #[cfg(feature = "mavlink-transport")]
 mod mission_upload;
-#[cfg(feature = "mavlink-transport")]
+#[cfg(all(feature = "mavlink-transport", test))]
 use mission_upload::*;
 
 #[cfg(feature = "mavlink-transport")]
 mod commands;
 #[cfg(feature = "mavlink-transport")]
 pub use commands::*;
-#[cfg(feature = "mavlink-transport")]
-use commands::*;
 
 #[cfg(feature = "mavlink-transport")]
 mod mission_items;
 #[cfg(feature = "mavlink-transport")]
 pub use mission_items::*;
-#[cfg(feature = "mavlink-transport")]
-use mission_items::*;
 
 #[cfg(feature = "mavlink-transport")]
 mod telemetry;
 #[cfg(feature = "mavlink-transport")]
 pub use telemetry::*;
-#[cfg(feature = "mavlink-transport")]
-use telemetry::*;
 
 #[cfg(feature = "mavlink-transport")]
 mod lifecycle;
-#[cfg(feature = "mavlink-transport")]
+#[cfg(all(feature = "mavlink-transport", test))]
 use lifecycle::*;
 
 #[cfg(test)]
