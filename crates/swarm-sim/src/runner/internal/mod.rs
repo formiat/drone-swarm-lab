@@ -1,17 +1,23 @@
 mod allocation;
 mod dynamic_tasks;
 mod events;
+mod inspection;
 mod mission_success;
 mod movement;
 mod network;
+mod partitions;
 mod safety;
+mod sar;
 mod tick_loop;
 
 pub(in crate::runner) use allocation::*;
 pub(in crate::runner) use dynamic_tasks::*;
 pub(in crate::runner) use events::*;
+pub(in crate::runner) use inspection::*;
 pub(in crate::runner) use mission_success::*;
 pub(in crate::runner) use movement::*;
 pub(in crate::runner) use network::*;
+pub(in crate::runner) use partitions::*;
 pub(in crate::runner) use safety::*;
+pub(in crate::runner) use sar::*;
 pub(in crate::runner) use tick_loop::*;

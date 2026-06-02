@@ -1,5 +1,32 @@
-#![allow(unused_imports)]
-use super::*;
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
+
+use rand::SeedableRng;
+use swarm_alloc::{
+    route_cost, Allocator, BatteryAwarePlanner, NearestNeighbourPlanner, RoutePlanner,
+};
+use swarm_comms::{InMemAgentTransport, InMemNetwork, NetworkConfig};
+use swarm_metrics::RunMetrics;
+use swarm_runtime::{AgentNode, Coordinator};
+use swarm_types::{AdapterRegistry, AgentId, Health, Role, Task, TaskId, TaskKind};
+
+use super::{
+    compute_mission_success, compute_urban_foundation_metrics,
+    internal::{
+        advance_tick, all_dynamic_tasks_injected, all_failure_ticks_passed,
+        all_partitions_resolved, apply_environment_effects, apply_partition_events,
+        connectivity_metrics_tick, first_active_agent_id, process_alive_nodes,
+        record_agent_failures, record_final_poses, record_inspection_edge_visits,
+        record_safety_violations, record_sar_scans, record_tick_start, send_alive_heartbeats,
+        should_stop_tick, tasks_injected_at_tick, teleport_assigned_tasks_when_movement_disabled,
+        update_connectivity_snapshot, MissionStopSnapshot,
+    },
+    released_tasks_reassigned, update_unassigned_durations, RunConfig, SafetyAllocator,
+    ScenarioRunner,
+};
+use crate::{Clock, Scenario};
+
 impl ScenarioRunner {
     pub(super) fn run_internal<A: Allocator>(
         scenario: &Scenario,
@@ -155,44 +182,17 @@ impl ScenarioRunner {
 
             bus.borrow_mut().advance_tick();
 
-            // Apply partition events
-            for pe in &config.partition_events {
-                if pe.at_tick == current_tick {
-                    bus.borrow_mut()
-                        .add_partition(pe.agents.0.clone(), pe.agents.1.clone());
-                    partition_events += 1;
-                    partitions_active = true;
-                    if let Some(ref mut builder) = log_builder {
-                        builder.push(swarm_replay::Event::PartitionAdded {
-                            agent_a: pe.agents.0.clone(),
-                            agent_b: pe.agents.1.clone(),
-                            tick: current_tick,
-                        });
-                    }
-                }
-                if pe.until_tick == Some(current_tick) {
-                    bus.borrow_mut()
-                        .remove_partition(pe.agents.0.clone(), pe.agents.1.clone());
-                    heal_tick = Some(current_tick);
-                    if let Some(ref mut builder) = log_builder {
-                        builder.push(swarm_replay::Event::PartitionRemoved {
-                            agent_a: pe.agents.0.clone(),
-                            agent_b: pe.agents.1.clone(),
-                            tick: current_tick,
-                        });
-                    }
-                }
-                // v0.15: heal_at_tick — explicit heal time with CBBA convergence reset
-                if pe.heal_at_tick == Some(current_tick) {
-                    bus.borrow_mut()
-                        .remove_partition(pe.agents.0.clone(), pe.agents.1.clone());
-                    heal_tick = Some(current_tick);
-                    for (node, _) in &mut nodes {
-                        if let Some(ref mut cbba) = node.cbba {
-                            cbba.converged = false;
-                        }
-                    }
-                }
+            let partition_tick = apply_partition_events(
+                &config.partition_events,
+                current_tick,
+                &bus,
+                &mut nodes,
+                &mut log_builder,
+            );
+            partition_events += partition_tick.partition_events;
+            partitions_active |= partition_tick.partitions_active;
+            if partition_tick.heal_tick.is_some() {
+                heal_tick = partition_tick.heal_tick;
             }
 
             let injected = tasks_injected_at_tick(&config.dynamic_tasks, current_tick);
@@ -263,128 +263,25 @@ impl ScenarioRunner {
                 }
             }
 
-            // v0.16: Inspection edge coverage logic
             if let Some(ref mut inspection_state) = inspection_state {
-                for (node, agent_id) in &mut nodes {
-                    if crashed_agents.contains(agent_id) {
-                        continue;
-                    }
-                    let assigned_tasks: Vec<_> = node
-                        .coordinator
-                        .registry
-                        .tasks()
-                        .filter(|t| t.assigned_to.as_ref() == Some(agent_id))
-                        .filter(|t| t.edge_id.is_some())
-                        .cloned()
-                        .collect();
-                    for task in assigned_tasks {
-                        if let Some(ref edge_id) = task.edge_id {
-                            if let Some(entry) = node.coordinator.membership.get(agent_id) {
-                                let task_pose = task.pose.unwrap_or(entry.pose);
-                                let edge = inspection_state
-                                    .graph
-                                    .edges
-                                    .iter()
-                                    .find(|e| &e.id == edge_id);
-                                if let Some(edge) = edge {
-                                    let threshold = (edge.length_m * 0.1).max(1.0);
-                                    let dist = entry.pose.distance_to(&task_pose);
-                                    if dist < threshold {
-                                        let count = inspection_state
-                                            .visit_counts
-                                            .entry(edge_id.clone())
-                                            .or_insert(0);
-                                        *count += 1;
-                                        if !inspection_state.covered.insert(edge_id.clone()) {
-                                            revisit_count += 1;
-                                        }
-                                        if let Some(ref mut builder) = log_builder {
-                                            builder.push(swarm_replay::Event::EdgeVisited {
-                                                edge_id: edge_id.to_string(),
-                                                agent_id: agent_id.clone(),
-                                                tick: current_tick,
-                                            });
-                                            builder.push(swarm_replay::Event::TaskCompleted {
-                                                task_id: task.id.clone(),
-                                                agent_id: agent_id.clone(),
-                                                tick: current_tick,
-                                            });
-                                        }
-                                        node.coordinator.registry.complete_assigned_task(&task.id);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                revisit_count += record_inspection_edge_visits(
+                    &mut nodes,
+                    &crashed_agents,
+                    inspection_state,
+                    current_tick,
+                    &mut log_builder,
+                );
             }
 
-            // v0.9: SAR scan logic
             if let Some(ref mut grid_state) = grid_state {
-                for (node, agent_id) in &mut nodes {
-                    if crashed_agents.contains(agent_id) {
-                        continue;
-                    }
-                    let assigned_tasks: Vec<_> = node
-                        .coordinator
-                        .registry
-                        .tasks()
-                        .filter(|t| t.assigned_to.as_ref() == Some(agent_id))
-                        .map(|t| (t.id.clone(), t.grid_cell))
-                        .collect();
-                    let mut scanned_tasks = Vec::new();
-                    for (task_id, grid_cell) in assigned_tasks {
-                        if let Some((cell_x, cell_y)) = grid_cell {
-                            if let Some(entry) = node.coordinator.membership.get(agent_id) {
-                                let cell_pose = grid_state.grid.cell_center(cell_x, cell_y);
-                                let dist = entry.pose.distance_to(&cell_pose);
-                                let threshold = grid_state.grid.cell_size * 0.1;
-                                if dist < threshold {
-                                    let mut rng = rand::rngs::StdRng::seed_from_u64(
-                                        scenario.seed.wrapping_add(current_tick),
-                                    );
-                                    let detected = grid_state.scan_cell(
-                                        agent_id.clone(),
-                                        cell_x,
-                                        cell_y,
-                                        &entry.role,
-                                        current_tick,
-                                        entry.pose.z,
-                                        &mut rng,
-                                    );
-                                    if let Some(ref mut builder) = log_builder {
-                                        builder.push(swarm_replay::Event::SarScan {
-                                            agent_id: agent_id.clone(),
-                                            cell: (cell_x, cell_y),
-                                            tick: current_tick,
-                                            detected,
-                                        });
-                                        if detected {
-                                            builder.push(swarm_replay::Event::SarDetection {
-                                                agent_id: agent_id.clone(),
-                                                target_pose: cell_pose,
-                                                tick: current_tick,
-                                            });
-                                        }
-                                    }
-                                    scanned_tasks.push((task_id, agent_id.clone()));
-                                }
-                            }
-                        }
-                    }
-                    // A scanned SAR cell is done; completed tasks are excluded from
-                    // future allocation so agents move on to unvisited cells.
-                    for (task_id, scanned_by) in scanned_tasks {
-                        if let Some(ref mut builder) = log_builder {
-                            builder.push(swarm_replay::Event::TaskCompleted {
-                                task_id: task_id.clone(),
-                                agent_id: scanned_by,
-                                tick: current_tick,
-                            });
-                        }
-                        node.coordinator.registry.complete_assigned_task(&task_id);
-                    }
-                }
+                record_sar_scans(
+                    &mut nodes,
+                    &crashed_agents,
+                    grid_state,
+                    scenario.seed,
+                    current_tick,
+                    &mut log_builder,
+                );
                 coverage_over_time.push(grid_state.coverage_fraction());
             }
 
