@@ -130,6 +130,13 @@ SITL event types are serialized in `snake_case`:
 | `survivor_mission_update_started` | Survivor mission replacement was planned after failed-agent reallocation | `step`, `agent_id`, `policy`, `task_ids` |
 | `survivor_mission_update_completed` | Survivor mission replacement was installed in the controller state | `step`, `agent_id`, `policy`, `task_ids`, `mission_item_count` |
 | `reallocation_completed` | Reallocation summary for a failed agent | `step`, `failed_agent_id`, `reassignment_count`, `tasks_recovered`, `latency_ticks` |
+| `supervisor_failure_detected` | M73 supervisor observed a degraded failure path | `step`, `agent_id`, `mode`, `completed_task_ids` |
+| `supervisor_failure_classified` | M73 supervisor mapped a failure mode to a decision | `step`, `agent_id`, `mode`, `decision` |
+| `supervisor_recovery_started` | M73 bounded recovery attempt started | `step`, `agent_id`, `policy`, `task_ids` |
+| `supervisor_replacement_uploaded` | M73 replacement mission was accepted by the survivor controller | `step`, `agent_id`, `replacement_mission_id`, `mission_item_count` |
+| `supervisor_recovery_completed` | M73 bounded recovery attempt completed | `step`, `agent_id`, `recovered_task_ids`, `latency_ticks` |
+| `supervisor_recovery_failed` | M73 bounded recovery attempt failed or was refused | `step`, `agent_id`, `mode`, `reason` |
+| `supervisor_final_status` | M73 degraded-aware final supervisor status | `step`, `status`, `degraded` |
 | `run_completed` | Successful terminal status | `step`, `status` |
 
 Reallocation events are schema/API/runtime covered and are produced by the mock

@@ -107,6 +107,9 @@ impl Px4AgentController {
             completed_task_ids,
             final_status: "failed".to_owned(),
             error: Some(error.into()),
+            failure_mode: None,
+            detected_after_ms: None,
+            tasks_abandoned: Vec::new(),
         }
     }
 
@@ -128,6 +131,9 @@ impl Px4AgentController {
             completed_task_ids,
             final_status: live_progress_status_name(report.final_status).to_owned(),
             error: report.failure_reason,
+            failure_mode: None,
+            detected_after_ms: None,
+            tasks_abandoned: Vec::new(),
         }
     }
 

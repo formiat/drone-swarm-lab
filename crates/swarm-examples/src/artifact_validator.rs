@@ -28,6 +28,12 @@ pub const RULE_REPLACEMENT_SEQ_MISMATCH: &str = "artifact.replacement_seq_mismat
 pub const RULE_SAFETY_REPORT_MISSING: &str = "artifact.safety_report_missing";
 pub const RULE_LIMITATIONS_MISSING: &str = "artifact.limitations_missing";
 pub const RULE_OVERWRITE_POLICY_MISSING: &str = "artifact.overwrite_policy_missing";
+pub const RULE_DEGRADED_RECORD_MISSING: &str = "artifact.degraded_record_missing";
+pub const RULE_DEGRADED_EVENT_MISSING: &str = "artifact.degraded_event_missing";
+pub const RULE_DEGRADED_FINAL_STATUS_MISMATCH: &str = "artifact.degraded_final_status_mismatch";
+pub const RULE_DEGRADED_RECOVERY_TASK_MISMATCH: &str = "artifact.degraded_recovery_task_mismatch";
+pub const RULE_DEGRADED_UNSUPPORTED_PATH_UNLABELED: &str =
+    "artifact.degraded_unsupported_path_unlabeled";
 pub const RULE_PARSE_FAILED: &str = "artifact.parse_failed";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -158,6 +164,7 @@ impl<'a> Validator<'a> {
             self.validate_final_status(report, &summary);
             self.validate_completed_tasks(&manifest, log, report);
             self.validate_event_summary(report, &summary);
+            self.validate_degraded_contract(log, report);
             if let Some(summary_text) = &replay_summary {
                 self.validate_replay_summary(summary_text, &summary);
             }
@@ -464,6 +471,119 @@ impl<'a> Validator<'a> {
                 self.paths.run_report.clone(),
                 "run-report events_summary does not match recomputed event-log summary",
             );
+        }
+    }
+
+    fn validate_degraded_contract(&mut self, log: &SitlEventLog, report: &SitlMultiAgentRunReport) {
+        let historical = self.options.allow_historical
+            || matches!(self.options.mode, ArtifactValidationMode::Historical);
+        let needs_degraded = report.failed_agents > 0
+            || report.final_status.contains("failed")
+            || report.final_status.contains("reallocation")
+            || report.overall_status.contains("failed")
+            || report.overall_status.contains("reallocation");
+        if needs_degraded && report.degraded.records.is_empty() {
+            let severity = if historical {
+                ArtifactValidationSeverity::Warning
+            } else {
+                ArtifactValidationSeverity::Error
+            };
+            self.push(
+                RULE_DEGRADED_RECORD_MISSING,
+                severity,
+                self.paths.run_report.clone(),
+                "failed/reallocated supervisor artifacts must include degraded records",
+            );
+            return;
+        }
+        if report.degraded.records.is_empty() {
+            return;
+        }
+
+        for record in &report.degraded.records {
+            let mode = record.failure_mode.as_str();
+            let decision = record.decision.as_str();
+            if mode == "unknown" && !historical {
+                self.push_error(
+                    RULE_DEGRADED_UNSUPPORTED_PATH_UNLABELED,
+                    self.paths.run_report.clone(),
+                    format!(
+                        "degraded record for agent '{}' uses unknown failure_mode without historical mode",
+                        record.affected_agent_id
+                    ),
+                );
+            }
+            let has_detected = log.events.iter().any(|event| {
+                matches!(
+                    event,
+                    SitlEvent::SupervisorFailureDetected {
+                        agent_id,
+                        mode: event_mode,
+                        ..
+                    } if agent_id == &record.affected_agent_id && event_mode == mode
+                )
+            });
+            let has_classified = log.events.iter().any(|event| {
+                matches!(
+                    event,
+                    SitlEvent::SupervisorFailureClassified {
+                        agent_id,
+                        mode: event_mode,
+                        decision: event_decision,
+                        ..
+                    } if agent_id == &record.affected_agent_id
+                        && event_mode == mode
+                        && event_decision == decision
+                )
+            });
+            if !has_detected || !has_classified {
+                self.push_error(
+                    RULE_DEGRADED_EVENT_MISSING,
+                    self.paths.event_log.clone(),
+                    format!(
+                        "degraded record for agent '{}' mode '{mode}' decision '{decision}' is missing matching replay events",
+                        record.affected_agent_id
+                    ),
+                );
+            }
+            if !record.tasks_recovered.is_empty() {
+                let recovered_event_tasks: HashSet<&str> = log
+                    .events
+                    .iter()
+                    .filter_map(|event| match event {
+                        SitlEvent::SupervisorRecoveryCompleted {
+                            recovered_task_ids, ..
+                        } => Some(recovered_task_ids),
+                        _ => None,
+                    })
+                    .flatten()
+                    .map(String::as_str)
+                    .collect();
+                for task_id in &record.tasks_recovered {
+                    if !recovered_event_tasks.contains(task_id.as_str()) {
+                        self.push_error(
+                            RULE_DEGRADED_RECOVERY_TASK_MISMATCH,
+                            self.paths.run_report.clone(),
+                            format!(
+                                "degraded recovered task_id '{task_id}' is missing from supervisor recovery completed events"
+                            ),
+                        );
+                    }
+                }
+            }
+            if record.final_status != report.final_status
+                && record.final_status != report.overall_status
+                && record.final_status != "failed_recovery"
+            {
+                self.push_error(
+                    RULE_DEGRADED_FINAL_STATUS_MISMATCH,
+                    self.paths.run_report.clone(),
+                    format!(
+                        "degraded record final_status '{}' does not match report final_status '{}' / overall_status '{}'",
+                        record.final_status, report.final_status, report.overall_status
+                    ),
+                );
+            }
         }
     }
 

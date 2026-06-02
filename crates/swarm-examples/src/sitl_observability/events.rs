@@ -199,6 +199,47 @@ pub enum SitlEvent {
         tasks_recovered: Vec<String>,
         latency_ticks: u64,
     },
+    SupervisorFailureDetected {
+        step: u64,
+        agent_id: String,
+        mode: String,
+        completed_task_ids: Vec<String>,
+    },
+    SupervisorFailureClassified {
+        step: u64,
+        agent_id: String,
+        mode: String,
+        decision: String,
+    },
+    SupervisorRecoveryStarted {
+        step: u64,
+        agent_id: String,
+        policy: String,
+        task_ids: Vec<String>,
+    },
+    SupervisorReplacementUploaded {
+        step: u64,
+        agent_id: String,
+        replacement_mission_id: String,
+        mission_item_count: usize,
+    },
+    SupervisorRecoveryCompleted {
+        step: u64,
+        agent_id: String,
+        recovered_task_ids: Vec<String>,
+        latency_ticks: Option<u64>,
+    },
+    SupervisorRecoveryFailed {
+        step: u64,
+        agent_id: String,
+        mode: String,
+        reason: String,
+    },
+    SupervisorFinalStatus {
+        step: u64,
+        status: String,
+        degraded: bool,
+    },
     RunCompleted {
         step: u64,
         status: String,
@@ -559,6 +600,111 @@ impl SitlEventRecorder {
         });
     }
 
+    pub fn push_supervisor_failure_detected(
+        &mut self,
+        agent_id: impl Into<String>,
+        mode: impl Into<String>,
+        completed_task_ids: Vec<String>,
+    ) {
+        let step = self.next_step();
+        self.log.events.push(SitlEvent::SupervisorFailureDetected {
+            step,
+            agent_id: agent_id.into(),
+            mode: mode.into(),
+            completed_task_ids,
+        });
+    }
+
+    pub fn push_supervisor_failure_classified(
+        &mut self,
+        agent_id: impl Into<String>,
+        mode: impl Into<String>,
+        decision: impl Into<String>,
+    ) {
+        let step = self.next_step();
+        self.log
+            .events
+            .push(SitlEvent::SupervisorFailureClassified {
+                step,
+                agent_id: agent_id.into(),
+                mode: mode.into(),
+                decision: decision.into(),
+            });
+    }
+
+    pub fn push_supervisor_recovery_started(
+        &mut self,
+        agent_id: impl Into<String>,
+        policy: impl Into<String>,
+        task_ids: Vec<String>,
+    ) {
+        let step = self.next_step();
+        self.log.events.push(SitlEvent::SupervisorRecoveryStarted {
+            step,
+            agent_id: agent_id.into(),
+            policy: policy.into(),
+            task_ids,
+        });
+    }
+
+    pub fn push_supervisor_replacement_uploaded(
+        &mut self,
+        agent_id: impl Into<String>,
+        replacement_mission_id: impl Into<String>,
+        mission_item_count: usize,
+    ) {
+        let step = self.next_step();
+        self.log
+            .events
+            .push(SitlEvent::SupervisorReplacementUploaded {
+                step,
+                agent_id: agent_id.into(),
+                replacement_mission_id: replacement_mission_id.into(),
+                mission_item_count,
+            });
+    }
+
+    pub fn push_supervisor_recovery_completed(
+        &mut self,
+        agent_id: impl Into<String>,
+        recovered_task_ids: Vec<String>,
+        latency_ticks: Option<u64>,
+    ) {
+        let step = self.next_step();
+        self.log
+            .events
+            .push(SitlEvent::SupervisorRecoveryCompleted {
+                step,
+                agent_id: agent_id.into(),
+                recovered_task_ids,
+                latency_ticks,
+            });
+    }
+
+    pub fn push_supervisor_recovery_failed(
+        &mut self,
+        agent_id: impl Into<String>,
+        mode: impl Into<String>,
+        reason: impl Into<String>,
+    ) {
+        let step = self.next_step();
+        self.log.events.push(SitlEvent::SupervisorRecoveryFailed {
+            step,
+            agent_id: agent_id.into(),
+            mode: mode.into(),
+            reason: reason.into(),
+        });
+    }
+
+    pub fn push_supervisor_final_status(&mut self, status: impl Into<String>, degraded: bool) {
+        let step = self.next_step();
+        self.log.events.push(SitlEvent::SupervisorFinalStatus {
+            step,
+            status: status.into(),
+            degraded,
+        });
+    }
+
     pub fn push_survivor_mission_update_started(
         &mut self,
         agent_id: impl Into<String>,
@@ -651,6 +797,13 @@ pub struct SitlEventLogSummary {
     pub survivor_mission_update_started: usize,
     pub survivor_mission_update_completed: usize,
     pub survivor_mission_updates: usize,
+    pub supervisor_failure_detected: usize,
+    pub supervisor_failure_classified: usize,
+    pub supervisor_recovery_started: usize,
+    pub supervisor_replacement_uploaded: usize,
+    pub supervisor_recovery_completed: usize,
+    pub supervisor_recovery_failed: usize,
+    pub supervisor_final_status: usize,
     pub multi_agent_run_started: usize,
     pub multi_agent_run_finished: usize,
     pub multi_agent_agent_started: usize,
@@ -773,6 +926,33 @@ pub fn summarize_sitl_event_log(log: &SitlEventLog) -> SitlEventLogSummary {
                     .reallocation_latency_ticks
                     .get_or_insert(*latency_ticks);
             }
+            SitlEvent::SupervisorFailureDetected { .. } => {
+                summary.supervisor_failure_detected += 1;
+            }
+            SitlEvent::SupervisorFailureClassified { .. } => {
+                summary.supervisor_failure_classified += 1;
+            }
+            SitlEvent::SupervisorRecoveryStarted { .. } => {
+                summary.supervisor_recovery_started += 1;
+            }
+            SitlEvent::SupervisorReplacementUploaded { .. } => {
+                summary.supervisor_replacement_uploaded += 1;
+            }
+            SitlEvent::SupervisorRecoveryCompleted { latency_ticks, .. } => {
+                summary.supervisor_recovery_completed += 1;
+                if let Some(latency_ticks) = latency_ticks {
+                    summary
+                        .reallocation_latency_ticks
+                        .get_or_insert(*latency_ticks);
+                }
+            }
+            SitlEvent::SupervisorRecoveryFailed { .. } => {
+                summary.supervisor_recovery_failed += 1;
+            }
+            SitlEvent::SupervisorFinalStatus { status, .. } => {
+                summary.supervisor_final_status += 1;
+                summary.final_status = Some(status.clone());
+            }
             SitlEvent::RunCompleted { status, .. } => {
                 summary.final_status = Some(status.clone());
             }
@@ -832,6 +1012,16 @@ pub fn format_sitl_summary(summary: &SitlEventLogSummary) -> String {
                 .map(|ticks| ticks.to_string())
                 .unwrap_or_else(|| "none".to_owned()),
             summary.survivor_mission_updates
+        ),
+        format!(
+            "Degraded supervisor: failure_detected={} failure_classified={} recovery_started={} replacement_uploaded={} recovery_completed={} recovery_failed={} final_status_events={}",
+            summary.supervisor_failure_detected,
+            summary.supervisor_failure_classified,
+            summary.supervisor_recovery_started,
+            summary.supervisor_replacement_uploaded,
+            summary.supervisor_recovery_completed,
+            summary.supervisor_recovery_failed,
+            summary.supervisor_final_status
         ),
         format!(
             "Multi-agent: started={} finished={} agents_started={} agents_finished={} agent_count={}",

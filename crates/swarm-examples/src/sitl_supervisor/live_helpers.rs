@@ -116,6 +116,9 @@ pub(super) fn live_active_run_snapshots<C: LiveAgentController>(
                 completed_task_ids,
                 final_status: "running".to_owned(),
                 error: None,
+                failure_mode: None,
+                detected_after_ms: None,
+                tasks_abandoned: Vec::new(),
             })
         })
         .collect()

@@ -418,6 +418,8 @@ pub(super) struct FakeLiveAgentController {
     started: bool,
     poll_count: usize,
     finish_after_polls: usize,
+    replacement_error: Option<String>,
+    fail_after_replacement: Option<(usize, super::SupervisorFailureMode)>,
 }
 
 impl FakeLiveAgentController {
@@ -435,12 +437,17 @@ impl FakeLiveAgentController {
                 completed_task_ids: agent.task_ids.clone(),
                 final_status: "completed".to_owned(),
                 error: None,
+                failure_mode: None,
+                detected_after_ms: None,
+                tasks_abandoned: Vec::new(),
             },
             start_delay_ms: agent.start_delay_ms,
             mission_waypoints: agent.waypoints.clone(),
             started: false,
             poll_count: 0,
             finish_after_polls: 0,
+            replacement_error: None,
+            fail_after_replacement: None,
         }
     }
 
@@ -465,12 +472,17 @@ impl FakeLiveAgentController {
                     .collect(),
                 final_status: "failed".to_owned(),
                 error: Some("fake live failure".to_owned()),
+                failure_mode: None,
+                detected_after_ms: None,
+                tasks_abandoned: Vec::new(),
             },
             start_delay_ms: agent.start_delay_ms,
             mission_waypoints: agent.waypoints.clone(),
             started: false,
             poll_count: 0,
             finish_after_polls: 0,
+            replacement_error: None,
+            fail_after_replacement: None,
         }
     }
 
@@ -490,6 +502,30 @@ impl FakeLiveAgentController {
             finish_after_polls: polls,
             ..Self::failed(agent, completed_task_count)
         }
+    }
+
+    pub(super) fn with_failure_mode(mut self, failure_mode: super::SupervisorFailureMode) -> Self {
+        self.run.failure_mode = Some(failure_mode);
+        self
+    }
+
+    pub(super) fn with_error(mut self, error: impl Into<String>) -> Self {
+        self.run.error = Some(error.into());
+        self
+    }
+
+    pub(super) fn reject_replacement(mut self, error: impl Into<String>) -> Self {
+        self.replacement_error = Some(error.into());
+        self
+    }
+
+    pub(super) fn fail_after_replacement(
+        mut self,
+        completed_task_count: usize,
+        failure_mode: super::SupervisorFailureMode,
+    ) -> Self {
+        self.fail_after_replacement = Some((completed_task_count, failure_mode));
+        self
     }
 }
 
@@ -515,9 +551,27 @@ impl LiveAgentController for FakeLiveAgentController {
                 ),
             });
         }
+        if let Some(error) = &self.replacement_error {
+            return Err(SitlError::ConnectionFailed {
+                message: error.clone(),
+            });
+        }
         self.mission_waypoints = plan.waypoints.clone();
         self.run.mission_item_count = plan.waypoints.len();
-        if self.run.final_status == "completed" {
+        if let Some((completed_task_count, failure_mode)) = self.fail_after_replacement.clone() {
+            self.run.final_status = "failed".to_owned();
+            self.run.error = Some("survivor failed after replacement".to_owned());
+            self.run.failure_mode = Some(failure_mode);
+            self.run.completed_task_count = completed_task_count.min(plan.waypoints.len());
+            self.run.completed_waypoints =
+                completed_waypoints_from_items(&plan.waypoints[..self.run.completed_task_count]);
+            self.run.completed_task_ids = plan
+                .task_ids
+                .iter()
+                .take(self.run.completed_task_count)
+                .cloned()
+                .collect();
+        } else if self.run.final_status == "completed" {
             self.run.completed_task_count = plan.waypoints.len();
             self.run.completed_waypoints = completed_waypoints_from_items(&plan.waypoints);
             self.run.completed_task_ids = plan.task_ids.clone();
@@ -539,6 +593,9 @@ impl LiveAgentController for FakeLiveAgentController {
             return Ok(Some(LiveAgentRun {
                 final_status: "failed".to_owned(),
                 error: Some("fake live controller polled before start".to_owned()),
+                failure_mode: None,
+                detected_after_ms: None,
+                tasks_abandoned: Vec::new(),
                 ..self.run.clone()
             }));
         }

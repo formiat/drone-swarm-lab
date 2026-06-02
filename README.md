@@ -292,6 +292,7 @@ cargo run -p swarm-examples --bin replay -- \
 | Multi-Agent SITL Foundation | ✅ Stable local SITL | M52/M58/M59 | `multi_sitl.v1` config, public fixtures, `sitl_supervisor` dry-run/mock orchestration, per-agent task subsets, MAVLink system/component mapping, duplicate ownership rejection, two-instance PX4 SIH upload-only evidence, local multi-agent PX4/SIH execute evidence, and controlled active-survivor mission replacement after a failed agent |
 | PX4/SIH Supervisor Hardening | ✅ Stable local workflow | M60 | `sitl_supervisor --output-dir`, `--run-id`, `--force`, checked artifact overwrite policy, stable exit codes, `task_ownership` / `events_summary` / `final_status` / `limitations` in `sitl_multi_agent_run_report.v1`, and replay summary artifacts for repeatable local PX4/SIH runs |
 | Artifact Validation | ✅ Stable local workflow | M72 | `artifact_validator` validates supervisor packs (`manifest.json`, event log, run report, replay summary, safety report, snapshots, command metadata) with stable rule ids; `scripts/run_m58_local.sh` and `scripts/run_m59_local.sh` are manual-only PX4/SIH harnesses with `DRY_RUN=1` |
+| Degraded Supervisor | ✅ Stable fake-tested boundary | M73 | `docs/DEGRADED_SUPERVISOR.md` documents the failure matrix; live supervisor reports additive `degraded` records, failure/decision counters, bounded recovery semantics, degraded replay events, and M72 validator checks. This is fake-tested/pre-hardware only, not hardware failover evidence |
 | Hardware Readiness Boundary | ✅ Stable | M53 | `docs/HARDWARE_READINESS.md`, connection classes, and `--allow-hardware-candidate` guard remote/wildcard/serial hardware candidates; this documents the boundary, not hardware readiness |
 | Supervisor Controller Boundary | ✅ Stable | M57 | `sitl_supervisor` mock orchestration is split into a testable internal supervisor module with `AgentController`, `MockAgentController`, fake-controller coverage, and assertable `SupervisorMetrics`; M58 adds the separate live PX4/SIH execute controller path |
 | Replay / Debuggability | ✅ Stable | M23/M67 | `replay` CLI, ASCII visualization, deterministic timeline output, and optional `--agent` / `--category urban` filters |
@@ -661,6 +662,7 @@ points, not a published semver-stable SDK.
 | M70 | ✅ | Urban Route Export + Geo Origin: `urban-patrol` route loops export to ordered SITL dry-run waypoint plans and optional `sitl_dry_run_artifact.v1` JSON with route metadata, stable route identity fields, `geo_origin`, and effective default SITL origin; not PX4 execution evidence |
 | M71 | ✅ | Preflight Safety And Invariant Contract: static `SafetyValidationReport` preflight gate with rule ids, severity, affected id, reason, geofence/no-fly/altitude/route/ownership/Urban/semantic checks, dry-run artifact integration, supervisor output-dir safety report, and stable exit code convention 2/3/4/5; not certified flight safety |
 | M72 | ✅ | Artifact Validator + SITL Harness: `artifact_validator`, `artifact_validation_report.v1`, M72 manifest metadata, scenario/config/command snapshots, stable artifact rule ids, portable validator tests, and manual-only M58/M59 local PX4/SIH harness scripts; not automated PX4 CI or hardware readiness |
+| M73 | ✅ | M73 Fault Injection And Degraded Supervisor: structured failure modes, supervisor decisions, bounded recovery/abort reporting, degraded replay events, artifact-validator consistency checks, fake-controller coverage, and `docs/DEGRADED_SUPERVISOR.md`; not hardware failure validation |
 
 ---
 
@@ -674,6 +676,7 @@ points, not a published semver-stable SDK.
 | [`docs/REPLAY.md`](docs/REPLAY.md) | Replay event log schema and CLI usage |
 | [`docs/SITL_SETUP.md`](docs/SITL_SETUP.md) | Mock, dry-run, and experimental PX4 SITL setup |
 | [`docs/ARTIFACT_VALIDATION.md`](docs/ARTIFACT_VALIDATION.md) | M72 artifact validator contract, rule ids, and manual local SITL harness |
+| [`docs/DEGRADED_SUPERVISOR.md`](docs/DEGRADED_SUPERVISOR.md) | M73 degraded-supervisor failure matrix, report fields, replay events, and pre-hardware limits |
 
 ---
 

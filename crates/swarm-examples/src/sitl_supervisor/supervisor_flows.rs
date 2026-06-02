@@ -13,6 +13,11 @@ use super::controller_helpers::{
     build_mock_controllers, poll_active_agent_ids, upload_and_start_manifest_agents,
     validate_controller_set,
 };
+#[cfg(any(feature = "mavlink-transport", test))]
+use super::degraded::{
+    classify_live_failure, terminal_decision_for_run, DegradedRunRecord, SupervisorDecision,
+    SupervisorFailureMode,
+};
 use super::live_helpers::validate_live_manifest;
 #[cfg(any(feature = "mavlink-transport", test))]
 use super::live_helpers::{
@@ -153,6 +158,7 @@ pub(super) fn run_live_supervisor_with_controllers<C: LiveAgentController>(
     let mut reallocation_target_counts: HashMap<String, usize> = HashMap::new();
     let mut lost_agents = HashSet::new();
     let mut runs = Vec::with_capacity(manifest.agents.len());
+    let mut degraded_records = Vec::new();
     let mut active_agent_ids = Vec::with_capacity(manifest.agents.len());
 
     for agent in &manifest.agents {
@@ -199,12 +205,17 @@ pub(super) fn run_live_supervisor_with_controllers<C: LiveAgentController>(
             if !active_agent_ids.iter().any(|active| active == &agent_id) {
                 continue;
             }
-            let Some(run) = live_controller_for_agent_mut(&mut controllers, &agent_id)?.poll()?
+            let Some(mut run) =
+                live_controller_for_agent_mut(&mut controllers, &agent_id)?.poll()?
             else {
                 continue;
             };
             made_progress = true;
             active_agent_ids.retain(|active| active != &run.agent_id);
+            if run.final_status != "completed" {
+                let failure_mode = classify_live_failure(&run);
+                run.failure_mode.get_or_insert(failure_mode);
+            }
             record_live_agent_run(&mut recorder, manifest, &run);
             if run.final_status == "completed" {
                 if let Some(expected_count) = reallocation_target_counts.remove(&run.agent_id) {
@@ -227,10 +238,21 @@ pub(super) fn run_live_supervisor_with_controllers<C: LiveAgentController>(
                     run.agent_id
                 );
             }
-            if config.reupload_on_failure
-                && run.final_status != "completed"
-                && lost_agents.insert(run.agent_id.clone())
-            {
+            if run.final_status != "completed" && lost_agents.insert(run.agent_id.clone()) {
+                let failure_mode = classify_live_failure(&run);
+                let mut record = DegradedRunRecord::from_failed_run(&run, failure_mode.clone());
+                recorder.push_supervisor_failure_detected(
+                    run.agent_id.clone(),
+                    failure_mode.as_str(),
+                    run.completed_task_ids.clone(),
+                );
+                if matches!(
+                    failure_mode,
+                    SupervisorFailureMode::NoProgressTimeout
+                        | SupervisorFailureMode::StaleTelemetry
+                ) {
+                    live_metrics.record_decision(SupervisorDecision::Wait);
+                }
                 let active_runs =
                     live_active_run_snapshots(manifest, &controllers, &active_agent_ids);
                 let survivor_ids: Vec<String> = active_agent_ids
@@ -238,6 +260,33 @@ pub(super) fn run_live_supervisor_with_controllers<C: LiveAgentController>(
                     .filter(|candidate| *candidate != &run.agent_id)
                     .cloned()
                     .collect();
+                if !config.reupload_on_failure || survivor_ids.is_empty() {
+                    record.decision = terminal_decision_for_run(&run);
+                    record.final_status = live_overall_status(
+                        &runs
+                            .iter()
+                            .cloned()
+                            .chain(std::iter::once(run.clone()))
+                            .collect::<Vec<_>>(),
+                        manifest,
+                    )
+                    .to_owned();
+                    recorder.push_supervisor_failure_classified(
+                        run.agent_id.clone(),
+                        record.failure_mode.as_str(),
+                        record.decision.as_str(),
+                    );
+                    live_metrics.record_degraded(&record);
+                    degraded_records.push(record);
+                    runs.push(run);
+                    continue;
+                }
+                record.decision = SupervisorDecision::ContinueWithSurvivor;
+                recorder.push_supervisor_failure_classified(
+                    run.agent_id.clone(),
+                    record.failure_mode.as_str(),
+                    record.decision.as_str(),
+                );
                 let context = LiveReallocationContext {
                     entry,
                     manifest,
@@ -248,30 +297,101 @@ pub(super) fn run_live_supervisor_with_controllers<C: LiveAgentController>(
                 };
                 let plans =
                     live_reallocation_after_failure(context, &mut recorder, &mut live_metrics)?;
+                let mut recovery_failed = false;
                 for plan in plans {
-                    safety_gate.validate_agent_task_subset(
+                    recorder.push_supervisor_recovery_started(
+                        plan.target_agent_id.clone(),
+                        plan.policy.clone(),
+                        plan.task_ids.clone(),
+                    );
+                    live_metrics.record_decision(SupervisorDecision::ReleaseTasksToPool);
+                    live_metrics.record_decision(SupervisorDecision::ReassignUnfinishedTasks);
+                    if let Err(error) = safety_gate.validate_agent_task_subset(
                         entry,
                         &plan.target_agent_id,
                         &plan.task_ids,
-                    )?;
+                    ) {
+                        recovery_failed = true;
+                        record.failure_mode = SupervisorFailureMode::UnsafeReplacementRoute;
+                        record.decision = SupervisorDecision::RefuseUnsafeReplacement;
+                        record.tasks_abandoned.extend(plan.task_ids.clone());
+                        record.final_status = "failed_recovery".to_owned();
+                        recorder.push_supervisor_recovery_failed(
+                            plan.target_agent_id.clone(),
+                            record.failure_mode.as_str(),
+                            error.to_string(),
+                        );
+                        continue;
+                    }
                     recorder.push_survivor_mission_update_started(
                         plan.target_agent_id.clone(),
                         plan.policy.clone(),
                         plan.task_ids.clone(),
                     );
                     record_replacement_mission_items(&mut recorder, &plan);
-                    live_controller_for_agent_mut(&mut controllers, &plan.target_agent_id)?
-                        .replace_mission(&plan)?;
+                    if let Err(error) =
+                        live_controller_for_agent_mut(&mut controllers, &plan.target_agent_id)?
+                            .replace_mission(&plan)
+                    {
+                        recovery_failed = true;
+                        record.failure_mode = SupervisorFailureMode::ReplacementMissionRejected;
+                        record.decision = if run.completed_task_count > 0 {
+                            SupervisorDecision::MarkPartialSuccess
+                        } else {
+                            SupervisorDecision::Abort
+                        };
+                        record.tasks_abandoned.extend(plan.task_ids.clone());
+                        record.final_status = "failed_recovery".to_owned();
+                        recorder.push_supervisor_recovery_failed(
+                            plan.target_agent_id.clone(),
+                            record.failure_mode.as_str(),
+                            error.to_string(),
+                        );
+                        continue;
+                    }
                     recorder.push_survivor_mission_update_completed(
                         plan.target_agent_id.clone(),
                         plan.policy.clone(),
                         plan.task_ids.clone(),
                         plan.mission_item_count(),
                     );
+                    let recovered_task_ids: Vec<String> = plan
+                        .task_ids
+                        .iter()
+                        .filter(|task_id| live_metrics.tasks_recovered.contains(*task_id))
+                        .cloned()
+                        .collect();
+                    recorder.push_supervisor_replacement_uploaded(
+                        plan.target_agent_id.clone(),
+                        format!("replacement:{}:{}", run.agent_id, plan.target_agent_id),
+                        plan.mission_item_count(),
+                    );
+                    recorder.push_supervisor_recovery_completed(
+                        plan.target_agent_id.clone(),
+                        recovered_task_ids.clone(),
+                        live_metrics.reallocation_latency_ticks,
+                    );
                     live_metrics.survivor_mission_updates += 1;
                     reallocation_target_counts
                         .insert(plan.target_agent_id.clone(), plan.mission_item_count());
+                    record.tasks_recovered.extend(recovered_task_ids);
+                    record.replacement_mission_id = Some(format!(
+                        "replacement:{}:{}",
+                        run.agent_id, plan.target_agent_id
+                    ));
                 }
+                if recovery_failed {
+                    record.tasks_abandoned.sort();
+                    record.tasks_abandoned.dedup();
+                }
+                record.tasks_recovered.sort();
+                record.tasks_recovered.dedup();
+                record.recovery_latency_ticks = live_metrics.reallocation_latency_ticks;
+                if !record.tasks_recovered.is_empty() && !recovery_failed {
+                    record.final_status = "completed_with_reallocation".to_owned();
+                }
+                live_metrics.record_degraded(&record);
+                degraded_records.push(record);
             }
             runs.push(run);
         }
@@ -284,6 +404,7 @@ pub(super) fn run_live_supervisor_with_controllers<C: LiveAgentController>(
         runs.iter().map(|run| run.completed_task_count as u64).sum();
     live_metrics.finalize();
     let overall_status = live_overall_status(&runs, manifest);
+    recorder.push_supervisor_final_status(overall_status, !degraded_records.is_empty());
     recorder.push_multi_agent_run_finished(overall_status);
     recorder.push_run_completed(overall_status);
     let events_summary = summarize_sitl_event_log(recorder.log());
@@ -296,6 +417,7 @@ pub(super) fn run_live_supervisor_with_controllers<C: LiveAgentController>(
         overall_status,
         runs: &runs,
         metrics: &live_metrics,
+        degraded_records: &degraded_records,
         events_summary,
     });
     if let Some(path) = &config.replay_log {

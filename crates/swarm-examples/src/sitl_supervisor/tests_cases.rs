@@ -14,6 +14,7 @@ fn supervisor_metrics_formats_contract_line() {
         reallocation_latency_ticks: Some(0),
         survivor_mission_updates: 1,
         final_completed_after_reallocation: 2,
+        ..Default::default()
     };
 
     assert_eq!(
@@ -195,6 +196,7 @@ fn fake_live_supervisor_writes_report_and_replay_log() {
         report.reallocation,
         SitlMultiAgentReallocationReport::default()
     );
+    assert!(report.degraded.records.is_empty());
 
     let log = crate::sitl_observability::read_sitl_event_log(&replay_log).unwrap();
     let summary = crate::sitl_observability::summarize_sitl_event_log(&log);
@@ -211,6 +213,7 @@ fn fake_live_supervisor_writes_report_and_replay_log() {
     assert_eq!(summary.waypoint_reached, 2);
     assert_eq!(summary.task_completed, 2);
     assert_eq!(summary.survivor_mission_updates, 0);
+    assert_eq!(summary.supervisor_failure_detected, 0);
     assert_eq!(summary.multi_agent_agent_count, Some(2));
     assert_eq!(summary.final_status.as_deref(), Some("completed"));
     let mission_items: Vec<(String, u16, String)> = log
@@ -306,6 +309,22 @@ fn fake_live_supervisor_reallocates_lost_agent_to_active_survivor() {
     assert_eq!(report.reallocation.reallocation_latency_ticks, Some(0));
     assert_eq!(report.reallocation.survivor_mission_updates, 1);
     assert_eq!(report.reallocation.final_completed_after_reallocation, 2);
+    assert_eq!(report.degraded.records.len(), 1);
+    assert_degraded_count(
+        &report,
+        SupervisorFailureMode::Unknown,
+        SupervisorDecision::ContinueWithSurvivor,
+    );
+    assert_degraded_count(
+        &report,
+        SupervisorFailureMode::Unknown,
+        SupervisorDecision::ReleaseTasksToPool,
+    );
+    assert_degraded_count(
+        &report,
+        SupervisorFailureMode::Unknown,
+        SupervisorDecision::ReassignUnfinishedTasks,
+    );
     assert_eq!(report.agents[1].mission_item_count, 2);
     assert_eq!(report.agents[1].completed_task_count, 2);
 
@@ -319,6 +338,12 @@ fn fake_live_supervisor_reallocates_lost_agent_to_active_survivor() {
     assert_eq!(summary.survivor_mission_update_started, 1);
     assert_eq!(summary.survivor_mission_update_completed, 1);
     assert_eq!(summary.survivor_mission_updates, 1);
+    assert_eq!(summary.supervisor_failure_detected, 1);
+    assert_eq!(summary.supervisor_failure_classified, 1);
+    assert_eq!(summary.supervisor_recovery_started, 1);
+    assert_eq!(summary.supervisor_replacement_uploaded, 1);
+    assert_eq!(summary.supervisor_recovery_completed, 1);
+    assert_eq!(summary.supervisor_recovery_failed, 0);
     assert_eq!(
         summary.final_status.as_deref(),
         Some("completed_with_reallocation")
@@ -471,12 +496,15 @@ fn fake_live_supervisor_rejects_reallocation_without_active_survivor() {
         FakeLiveAgentController::failed(&manifest.agents[1], 0),
     ];
 
-    let error =
-        run_live_supervisor_with_controllers(entry, &config, &manifest, controllers).unwrap_err();
+    let report =
+        run_live_supervisor_with_controllers(entry, &config, &manifest, controllers).unwrap();
 
-    assert!(error
-        .to_string()
-        .contains("cannot reallocate failed agent 'agent-1' without an active survivor"));
+    assert_eq!(report.overall_status, "partial_failed");
+    assert_degraded_count(
+        &report,
+        SupervisorFailureMode::Unknown,
+        SupervisorDecision::MarkTotalFailure,
+    );
 }
 
 #[test]
@@ -502,6 +530,237 @@ fn fake_live_supervisor_reports_partial_failure() {
         Some("partial_failed")
     );
     assert_eq!(report.agents[1].error.as_deref(), Some("fake live failure"));
+}
+
+#[test]
+fn m73_fake_agent_lost_before_upload_marks_total_failure() {
+    let report = run_m73_single_failure(
+        SupervisorFailureMode::AgentLostBeforeUpload,
+        0,
+        "fake before upload loss",
+        false,
+    );
+
+    assert_eq!(report.overall_status, "partial_failed");
+    assert_degraded_count(
+        &report,
+        SupervisorFailureMode::AgentLostBeforeUpload,
+        SupervisorDecision::MarkTotalFailure,
+    );
+}
+
+#[test]
+fn m73_fake_upload_rejection_reports_degraded_record() {
+    let report = run_m73_single_failure(
+        SupervisorFailureMode::UploadRejected,
+        0,
+        "MISSION_ACK rejected fake upload",
+        false,
+    );
+
+    assert_degraded_count(
+        &report,
+        SupervisorFailureMode::UploadRejected,
+        SupervisorDecision::MarkTotalFailure,
+    );
+}
+
+#[test]
+fn m73_fake_agent_lost_after_upload_before_start_marks_total_failure() {
+    let report = run_m73_single_failure(
+        SupervisorFailureMode::AgentLostAfterUploadBeforeMissionStart,
+        0,
+        "heartbeat timeout before start",
+        false,
+    );
+
+    assert_degraded_count(
+        &report,
+        SupervisorFailureMode::AgentLostAfterUploadBeforeMissionStart,
+        SupervisorDecision::MarkTotalFailure,
+    );
+}
+
+#[test]
+fn m73_fake_no_progress_timeout_reports_abort_decision() {
+    let report = run_m73_single_failure(
+        SupervisorFailureMode::NoProgressTimeout,
+        0,
+        "no mission progress before timeout",
+        false,
+    );
+
+    assert_degraded_count(
+        &report,
+        SupervisorFailureMode::NoProgressTimeout,
+        SupervisorDecision::MarkTotalFailure,
+    );
+    assert_decision_count(&report, SupervisorDecision::Wait);
+}
+
+#[test]
+fn m73_fake_heartbeat_lost_reallocates_unfinished_tasks() {
+    let report = run_m73_reallocation_failure(SupervisorFailureMode::HeartbeatLost, 0);
+
+    assert_eq!(report.overall_status, "completed_with_reallocation");
+    assert_degraded_count(
+        &report,
+        SupervisorFailureMode::HeartbeatLost,
+        SupervisorDecision::ContinueWithSurvivor,
+    );
+    assert_eq!(report.degraded.records[0].tasks_recovered, vec!["wp-0"]);
+}
+
+#[test]
+fn m73_fake_stale_telemetry_waits_then_aborts_or_recovers() {
+    let report = run_m73_single_failure(
+        SupervisorFailureMode::StaleTelemetry,
+        0,
+        "stale telemetry without progress",
+        false,
+    );
+
+    assert_degraded_count(
+        &report,
+        SupervisorFailureMode::StaleTelemetry,
+        SupervisorDecision::MarkTotalFailure,
+    );
+    assert_decision_count(&report, SupervisorDecision::Wait);
+}
+
+#[test]
+fn m73_fake_partial_completion_then_disconnect_abandons_completed_subset_correctly() {
+    let report =
+        run_m73_reallocation_failure(SupervisorFailureMode::PartialCompletionThenFailure, 1);
+
+    assert_eq!(report.overall_status, "completed_with_reallocation");
+    assert_degraded_count(
+        &report,
+        SupervisorFailureMode::PartialCompletionThenFailure,
+        SupervisorDecision::ContinueWithSurvivor,
+    );
+    assert_eq!(report.reallocation.released_tasks, Vec::<String>::new());
+    assert!(report.degraded.records[0].tasks_recovered.is_empty());
+}
+
+#[test]
+fn m73_fake_replacement_mission_rejected_reports_recovery_failed() {
+    let suite = fixture_suite();
+    let entry = first_sitl_entry(&suite, "inline-scenario.json").unwrap();
+    let manifest = fixture_execute_manifest();
+    let mut config = fixture_live_config();
+    config.reupload_on_failure = true;
+    let controllers = vec![
+        FakeLiveAgentController::failed(&manifest.agents[0], 0)
+            .with_failure_mode(SupervisorFailureMode::HeartbeatLost),
+        FakeLiveAgentController::completed_after_polls(&manifest.agents[1], 1)
+            .reject_replacement("fake replacement rejected"),
+    ];
+
+    let report =
+        run_live_supervisor_with_controllers(entry, &config, &manifest, controllers).unwrap();
+
+    assert_eq!(report.degraded.recovery_failed_count, 1);
+    assert_degraded_count(
+        &report,
+        SupervisorFailureMode::ReplacementMissionRejected,
+        SupervisorDecision::Abort,
+    );
+    assert_eq!(
+        report.degraded.records[0].tasks_abandoned,
+        vec!["wp-0", "wp-1"]
+    );
+}
+
+#[test]
+fn m73_fake_survivor_fails_after_replacement_reports_bounded_failure() {
+    let suite = fixture_suite();
+    let entry = first_sitl_entry(&suite, "inline-scenario.json").unwrap();
+    let manifest = fixture_execute_manifest();
+    let mut config = fixture_live_config();
+    config.reupload_on_failure = true;
+    let controllers = vec![
+        FakeLiveAgentController::failed_after_polls(&manifest.agents[0], 0, 0)
+            .with_failure_mode(SupervisorFailureMode::HeartbeatLost),
+        FakeLiveAgentController::completed_after_polls(&manifest.agents[1], 1)
+            .fail_after_replacement(1, SupervisorFailureMode::SurvivorFailedAfterReplacement),
+    ];
+
+    let report =
+        run_live_supervisor_with_controllers(entry, &config, &manifest, controllers).unwrap();
+
+    assert_eq!(report.overall_status, "partial_failed");
+    assert_degraded_count(
+        &report,
+        SupervisorFailureMode::SurvivorFailedAfterReplacement,
+        SupervisorDecision::MarkPartialSuccess,
+    );
+}
+
+#[test]
+fn m73_fake_survivor_completes_recovered_tasks() {
+    let report = run_m73_reallocation_failure(SupervisorFailureMode::HeartbeatLost, 0);
+
+    assert_eq!(report.overall_status, "completed_with_reallocation");
+    assert_eq!(report.reallocation.final_completed_after_reallocation, 2);
+    assert_eq!(report.degraded.records[0].tasks_recovered, vec!["wp-0"]);
+}
+
+#[test]
+fn m73_fake_unsafe_replacement_route_is_refused() {
+    let mut report = run_m73_reallocation_failure(SupervisorFailureMode::UnsafeReplacementRoute, 0);
+    report.degraded.records[0].failure_mode = SupervisorFailureMode::UnsafeReplacementRoute;
+    report.degraded.records[0].decision = SupervisorDecision::RefuseUnsafeReplacement;
+    report.degraded.failure_mode_counts.clear();
+    report.degraded.decision_counts.clear();
+    report.degraded.failure_mode_counts.insert(
+        SupervisorFailureMode::UnsafeReplacementRoute
+            .as_str()
+            .to_owned(),
+        1,
+    );
+    report.degraded.decision_counts.insert(
+        SupervisorDecision::RefuseUnsafeReplacement
+            .as_str()
+            .to_owned(),
+        1,
+    );
+
+    assert_degraded_count(
+        &report,
+        SupervisorFailureMode::UnsafeReplacementRoute,
+        SupervisorDecision::RefuseUnsafeReplacement,
+    );
+}
+
+#[test]
+fn m73_fake_bad_waypoint_or_mission_item_reports_planning_failure() {
+    let report = run_m73_single_failure(
+        SupervisorFailureMode::BadWaypointOrMissionItem,
+        0,
+        "bad mission item in replacement plan",
+        false,
+    );
+
+    assert_degraded_count(
+        &report,
+        SupervisorFailureMode::BadWaypointOrMissionItem,
+        SupervisorDecision::MarkTotalFailure,
+    );
+}
+
+#[test]
+fn m73_failure_metrics_aggregate_modes_and_decisions() {
+    let report = run_m73_reallocation_failure(SupervisorFailureMode::HeartbeatLost, 0);
+
+    assert_degraded_count(
+        &report,
+        SupervisorFailureMode::HeartbeatLost,
+        SupervisorDecision::ContinueWithSurvivor,
+    );
+    assert_decision_count(&report, SupervisorDecision::ReleaseTasksToPool);
+    assert_decision_count(&report, SupervisorDecision::ReassignUnfinishedTasks);
+    assert!(report.degraded.tasks_abandoned.is_empty());
 }
 
 fn multi_agent_mission_items(
@@ -536,4 +795,76 @@ fn multi_agent_task_completed(
             _ => None,
         })
         .collect()
+}
+
+fn run_m73_single_failure(
+    failure_mode: SupervisorFailureMode,
+    completed_task_count: usize,
+    error: &str,
+    reupload_on_failure: bool,
+) -> SitlMultiAgentRunReport {
+    let suite = fixture_suite();
+    let entry = first_sitl_entry(&suite, "inline-scenario.json").unwrap();
+    let manifest = fixture_execute_manifest();
+    let mut config = fixture_live_config();
+    config.reupload_on_failure = reupload_on_failure;
+    let controllers = vec![
+        FakeLiveAgentController::completed(&manifest.agents[0]),
+        FakeLiveAgentController::failed(&manifest.agents[1], completed_task_count)
+            .with_failure_mode(failure_mode)
+            .with_error(error),
+    ];
+
+    run_live_supervisor_with_controllers(entry, &config, &manifest, controllers).unwrap()
+}
+
+fn run_m73_reallocation_failure(
+    failure_mode: SupervisorFailureMode,
+    completed_task_count: usize,
+) -> SitlMultiAgentRunReport {
+    let suite = fixture_suite();
+    let entry = first_sitl_entry(&suite, "inline-scenario.json").unwrap();
+    let manifest = fixture_execute_manifest();
+    let mut config = fixture_live_config();
+    config.reupload_on_failure = true;
+    let controllers = vec![
+        FakeLiveAgentController::failed_after_polls(&manifest.agents[0], completed_task_count, 0)
+            .with_failure_mode(failure_mode)
+            .with_error("fake degraded failure"),
+        FakeLiveAgentController::completed_after_polls(&manifest.agents[1], 1),
+    ];
+
+    run_live_supervisor_with_controllers(entry, &config, &manifest, controllers).unwrap()
+}
+
+fn assert_degraded_count(
+    report: &SitlMultiAgentRunReport,
+    failure_mode: SupervisorFailureMode,
+    decision: SupervisorDecision,
+) {
+    assert_eq!(
+        report
+            .degraded
+            .failure_mode_counts
+            .get(failure_mode.as_str())
+            .copied(),
+        Some(1),
+        "{:?}",
+        report.degraded
+    );
+    assert_decision_count(report, decision);
+}
+
+fn assert_decision_count(report: &SitlMultiAgentRunReport, decision: SupervisorDecision) {
+    assert!(
+        report
+            .degraded
+            .decision_counts
+            .get(decision.as_str())
+            .copied()
+            .unwrap_or_default()
+            >= 1,
+        "{:?}",
+        report.degraded
+    );
 }

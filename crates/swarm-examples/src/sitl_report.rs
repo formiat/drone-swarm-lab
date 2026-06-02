@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::sitl_multi_agent::TaskOwnershipSummary;
 use crate::sitl_observability::SitlEventLogSummary;
+use crate::sitl_supervisor::SitlDegradedRunReport;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -66,6 +67,8 @@ pub struct SitlMultiAgentRunReport {
     #[serde(default)]
     pub reallocation: SitlMultiAgentReallocationReport,
     #[serde(default)]
+    pub degraded: SitlDegradedRunReport,
+    #[serde(default)]
     pub limitations: Vec<String>,
     pub known_limitations: Vec<String>,
 }
@@ -93,6 +96,10 @@ pub struct SitlMultiAgentAgentReport {
     pub completed_task_count: usize,
     pub final_status: String,
     pub error: Option<String>,
+    #[serde(default)]
+    pub failure_mode: Option<String>,
+    #[serde(default)]
+    pub tasks_abandoned: Vec<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -232,6 +239,8 @@ mod tests {
                 completed_task_count: 2,
                 final_status: "completed".to_owned(),
                 error: None,
+                failure_mode: None,
+                tasks_abandoned: Vec::new(),
             }],
             total_completed_tasks: 2,
             failed_agents: 0,
@@ -254,6 +263,7 @@ mod tests {
             },
             final_status: "completed".to_owned(),
             reallocation: SitlMultiAgentReallocationReport::default(),
+            degraded: SitlDegradedRunReport::default(),
             limitations: vec!["local PX4/SIH only".to_owned()],
             known_limitations: vec!["local PX4/SIH only".to_owned()],
         };
@@ -311,6 +321,7 @@ mod tests {
                 survivor_mission_updates: 1,
                 final_completed_after_reallocation: 2,
             },
+            degraded: SitlDegradedRunReport::default(),
             limitations: vec!["controlled local PX4/SIH only".to_owned()],
             known_limitations: vec!["controlled local PX4/SIH only".to_owned()],
         };
@@ -351,6 +362,7 @@ mod tests {
         );
         assert_eq!(report.task_ownership, TaskOwnershipSummary::default());
         assert_eq!(report.events_summary, SitlEventLogSummary::default());
+        assert_eq!(report.degraded, SitlDegradedRunReport::default());
         assert_eq!(report.final_status, "");
         assert_eq!(report.limitations, Vec::<String>::new());
     }

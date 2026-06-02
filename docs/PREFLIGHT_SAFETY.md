@@ -54,6 +54,11 @@ Preflight returns `SafetyValidationReport`:
 - Real sensor data.
 - Hardware failsafe behaviour.
 - Released task history after runtime reallocation.
+
+M73 uses this same static gate for replacement missions. If a survivor
+replacement route is rejected by preflight, the supervisor records
+`unsafe_replacement_route` with decision `refuse_unsafe_replacement`; this is
+evidence of refused recovery, not certified flight safety.
 - Full support matrix as machine-readable policy.
 - Regulatory compliance.
 

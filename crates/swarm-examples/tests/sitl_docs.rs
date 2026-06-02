@@ -8,6 +8,7 @@ const STATUS: &str = include_str!("../../../docs/STATUS.md");
 const BENCHMARK_RESULTS: &str = include_str!("../../../docs/BENCHMARK_RESULTS.md");
 const PREFLIGHT_SAFETY: &str = include_str!("../../../docs/PREFLIGHT_SAFETY.md");
 const ARTIFACT_VALIDATION: &str = include_str!("../../../docs/ARTIFACT_VALIDATION.md");
+const DEGRADED_SUPERVISOR: &str = include_str!("../../../docs/DEGRADED_SUPERVISOR.md");
 const M62_RESULT_README: &str =
     include_str!("../../../results/all_500_jobs14_m62_release/README.md");
 
@@ -353,6 +354,80 @@ fn m72_docs_describe_artifact_validator_and_manual_harness() {
         assert!(
             BENCHMARK_RESULTS.contains(required),
             "Benchmark results doc missing {required}"
+        );
+    }
+}
+
+#[test]
+fn m73_docs_describe_degraded_supervisor_boundary() {
+    for required in [
+        "M73 Fault Injection And Degraded Supervisor",
+        "docs/DEGRADED_SUPERVISOR.md",
+        "degraded replay events",
+        "not hardware failure validation",
+    ] {
+        assert!(README.contains(required), "README missing {required}");
+        assert!(STATUS.contains(required), "STATUS missing {required}");
+    }
+
+    for required in [
+        "Failure Matrix",
+        "Supported In Fake Tests",
+        "Experimental Local SITL",
+        "Not Tested / Non-Goals",
+        "Recovery Semantics",
+        "Report Fields",
+        "Replay Events",
+        "Manual Checks",
+        "agent_lost_before_upload",
+        "survivor_failed_after_replacement",
+        "unsafe_replacement_route",
+        "bad_waypoint_or_mission_item",
+        "supervisor_failure_detected",
+        "supervisor_recovery_failed",
+        "run-report.json.degraded",
+        "--allow-historical",
+        "No hardware failure testing",
+    ] {
+        assert!(
+            DEGRADED_SUPERVISOR.contains(required),
+            "DEGRADED_SUPERVISOR missing {required}"
+        );
+    }
+
+    for required in [
+        "supervisor_failure_detected",
+        "supervisor_failure_classified",
+        "supervisor_recovery_completed",
+        "supervisor_final_status",
+    ] {
+        assert!(REPLAY.contains(required), "REPLAY missing {required}");
+    }
+
+    for required in [
+        "artifact.degraded_record_missing",
+        "artifact.degraded_event_missing",
+        "artifact.degraded_final_status_mismatch",
+        "artifact.degraded_recovery_task_mismatch",
+        "artifact.degraded_unsupported_path_unlabeled",
+    ] {
+        assert!(
+            ARTIFACT_VALIDATION.contains(required),
+            "ARTIFACT_VALIDATION missing {required}"
+        );
+    }
+
+    for required in [
+        "unsafe_replacement_route",
+        "refuse_unsafe_replacement",
+        "Degraded supervisor",
+        "M73 degraded-supervisor fields are additive",
+    ] {
+        assert!(
+            PREFLIGHT_SAFETY.contains(required)
+                || HARDWARE_READINESS.contains(required)
+                || EXTENSION_GUIDE.contains(required),
+            "M73 companion docs missing {required}"
         );
     }
 }

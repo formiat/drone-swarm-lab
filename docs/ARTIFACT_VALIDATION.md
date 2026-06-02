@@ -77,6 +77,11 @@ Exit codes:
 | `artifact.safety_report_missing` | Supervisor pack has no `safety_validation_report.v1.json`. |
 | `artifact.limitations_missing` | Connection execute report lacks limitations. |
 | `artifact.overwrite_policy_missing` | Manifest metadata does not identify captured command/output policy metadata. |
+| `artifact.degraded_record_missing` | Failed/reallocated current supervisor pack has no degraded records. |
+| `artifact.degraded_event_missing` | Degraded record has no matching failure detected/classified replay events. |
+| `artifact.degraded_final_status_mismatch` | Degraded record final status is inconsistent with the run report. |
+| `artifact.degraded_recovery_task_mismatch` | Recovered tasks in the report are missing from recovery replay events. |
+| `artifact.degraded_unsupported_path_unlabeled` | Current degraded record uses `unknown` without historical mode. |
 | `artifact.parse_failed` | A required artifact could not be read or parsed. |
 
 ## Local Harness
@@ -106,3 +111,9 @@ M72 validates artifact consistency. It does not provide automated PX4 CI,
 Gazebo/HIL coverage, physical hardware readiness, production failover, runtime
 obstacle avoidance, or flight certification. Live M58/M59 harness runs must stay
 operator-controlled and outside default CI.
+
+M73 adds degraded-supervisor validation for failed/reallocated packs. It checks
+that `run-report.json.degraded` records have matching degraded replay events and
+that recovered tasks are present in `supervisor_recovery_completed`. Historical
+M58/M59 evidence can still be checked with `--allow-historical` when it lacks
+M73 fields.

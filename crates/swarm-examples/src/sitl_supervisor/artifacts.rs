@@ -9,6 +9,8 @@ use crate::sitl_observability::SitlEventLogSummary;
 use crate::sitl_report::SitlMultiAgentRunReport;
 
 #[cfg(any(feature = "mavlink-transport", test))]
+use super::{DegradedRunRecord, SitlDegradedRunReport};
+#[cfg(any(feature = "mavlink-transport", test))]
 use super::{LiveAgentRun, SupervisorLiveConfig, SupervisorMetrics};
 
 #[cfg(any(feature = "mavlink-transport", test))]
@@ -20,6 +22,7 @@ pub(super) struct LiveRunReportInput<'a> {
     pub(super) overall_status: &'a str,
     pub(super) runs: &'a [LiveAgentRun],
     pub(super) metrics: &'a SupervisorMetrics,
+    pub(super) degraded_records: &'a [DegradedRunRecord],
     pub(super) events_summary: SitlEventLogSummary,
 }
 
@@ -37,6 +40,7 @@ pub(super) fn live_run_report(input: LiveRunReportInput<'_>) -> SitlMultiAgentRu
         } else {
             "live failed-agent reallocation requires explicit --reupload-on-failure".to_owned()
         },
+        "degraded supervisor uses one bounded recovery attempt; repeated failures are reported but not recursively recovered".to_owned(),
     ];
     SitlMultiAgentRunReport {
         schema_version: "sitl_multi_agent_run_report.v1".to_owned(),
@@ -63,6 +67,13 @@ pub(super) fn live_run_report(input: LiveRunReportInput<'_>) -> SitlMultiAgentRu
         events_summary: input.events_summary,
         final_status: input.overall_status.to_owned(),
         reallocation: input.metrics.into(),
+        degraded: SitlDegradedRunReport {
+            records: input.degraded_records.to_vec(),
+            failure_mode_counts: input.metrics.failure_mode_counts.clone(),
+            decision_counts: input.metrics.decision_counts.clone(),
+            tasks_abandoned: input.metrics.tasks_abandoned.clone(),
+            recovery_failed_count: input.metrics.recovery_failed_count,
+        },
         limitations: limitations.clone(),
         known_limitations: limitations,
     }

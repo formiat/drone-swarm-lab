@@ -53,6 +53,13 @@ cargo run -p swarm-examples --bin artifact_validator -- \
   --strict
 ```
 
+M73 adds a degraded-supervisor contract for fault injection before hardware.
+Failed local supervisor runs now carry additive `degraded` report records and
+`supervisor_failure_detected` / `supervisor_failure_classified` / recovery
+events. The supported automated scope is fake-controller tests plus M72/M73
+artifact validation; local PX4/SIH fault injection remains manual-only. See
+[`docs/DEGRADED_SUPERVISOR.md`](DEGRADED_SUPERVISOR.md).
+
 `scripts/run_m58_local.sh` and `scripts/run_m59_local.sh` are manual-only
 helpers for local PX4/SIH reruns. They require operator-provided
 `PX4_AGENT0_CMD` and `PX4_AGENT1_CMD` in live mode. Use `DRY_RUN=1` or
@@ -108,6 +115,7 @@ Out of scope for automated CI in this repository:
 - real PX4 CI orchestration;
 - automated real multi-agent PX4 SITL CI orchestration;
 - automated live multi-agent PX4 failure/reallocation;
+- automated real PX4/SIH degraded-supervisor fault injection;
 - automated M58/M59 harness scripts without an operator-provided PX4/SIH setup;
 - HIL;
 - real aircraft;

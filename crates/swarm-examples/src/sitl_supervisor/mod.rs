@@ -6,6 +6,9 @@ use crate::sitl_plan::{SitlError, SitlWaypointItem};
 mod config;
 pub use config::*;
 
+pub mod degraded;
+pub use degraded::*;
+
 #[cfg(feature = "mavlink-transport")]
 mod live;
 #[cfg(feature = "mavlink-transport")]

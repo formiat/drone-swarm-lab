@@ -1,9 +1,13 @@
+use std::collections::BTreeMap;
+
 use crate::sitl_connection::SitlConnectionLifecycle;
 use crate::sitl_multi_agent::MultiAgentLifecycle;
 use crate::sitl_plan::SitlWaypointItem;
 #[cfg(any(feature = "mavlink-transport", test))]
 use crate::sitl_report::SitlMultiAgentAgentReport;
 use crate::sitl_report::SitlMultiAgentReallocationReport;
+
+use super::degraded::{DegradedRunRecord, SupervisorFailureMode};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SupervisorMockConfig {
@@ -51,6 +55,10 @@ pub struct SupervisorMetrics {
     pub reallocation_latency_ticks: Option<u64>,
     pub survivor_mission_updates: u64,
     pub final_completed_after_reallocation: u64,
+    pub failure_mode_counts: BTreeMap<String, u64>,
+    pub decision_counts: BTreeMap<String, u64>,
+    pub tasks_abandoned: Vec<String>,
+    pub recovery_failed_count: u64,
 }
 
 impl SupervisorMetrics {
@@ -61,6 +69,31 @@ impl SupervisorMetrics {
         self.reassigned_tasks.dedup();
         self.tasks_recovered.sort();
         self.tasks_recovered.dedup();
+        self.tasks_abandoned.sort();
+        self.tasks_abandoned.dedup();
+    }
+
+    pub fn record_degraded(&mut self, record: &DegradedRunRecord) {
+        *self
+            .failure_mode_counts
+            .entry(record.failure_mode.as_str().to_owned())
+            .or_default() += 1;
+        *self
+            .decision_counts
+            .entry(record.decision.as_str().to_owned())
+            .or_default() += 1;
+        self.tasks_abandoned
+            .extend(record.tasks_abandoned.iter().cloned());
+        if record.final_status == "failed_recovery" {
+            self.recovery_failed_count += 1;
+        }
+    }
+
+    pub fn record_decision(&mut self, decision: super::SupervisorDecision) {
+        *self
+            .decision_counts
+            .entry(decision.as_str().to_owned())
+            .or_default() += 1;
     }
 
     pub fn format_summary_line(&self, agents_count: usize, final_status: &str) -> String {
@@ -158,6 +191,9 @@ pub struct LiveAgentRun {
     pub completed_task_ids: Vec<String>,
     pub final_status: String,
     pub error: Option<String>,
+    pub failure_mode: Option<SupervisorFailureMode>,
+    pub detected_after_ms: Option<u64>,
+    pub tasks_abandoned: Vec<String>,
 }
 
 impl LiveAgentRun {
@@ -177,6 +213,12 @@ impl LiveAgentRun {
             completed_task_count: self.completed_task_count,
             final_status: self.final_status.clone(),
             error: self.error.clone(),
+            failure_mode: self
+                .failure_mode
+                .as_ref()
+                .map(SupervisorFailureMode::as_str)
+                .map(str::to_owned),
+            tasks_abandoned: self.tasks_abandoned.clone(),
         }
     }
 }

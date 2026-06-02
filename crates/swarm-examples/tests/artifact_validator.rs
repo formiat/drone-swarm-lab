@@ -3,9 +3,10 @@ use std::path::{Path, PathBuf};
 
 use swarm_examples::artifact_validator::{
     validate_artifact_pack, ArtifactPackPaths, ArtifactValidationMode, ArtifactValidationOptions,
-    RULE_BUILD_PROFILE_MISSING, RULE_COMPLETED_TASK_MISSING_EVENT, RULE_FINAL_STATUS_MISMATCH,
-    RULE_MANIFEST_MISSING, RULE_REPLACEMENT_SEQ_MISMATCH, RULE_REPLAY_SUMMARY_COUNT_MISMATCH,
-    RULE_SAFETY_REPORT_MISSING,
+    RULE_BUILD_PROFILE_MISSING, RULE_COMPLETED_TASK_MISSING_EVENT, RULE_DEGRADED_EVENT_MISSING,
+    RULE_DEGRADED_FINAL_STATUS_MISMATCH, RULE_DEGRADED_RECORD_MISSING,
+    RULE_DEGRADED_RECOVERY_TASK_MISMATCH, RULE_FINAL_STATUS_MISMATCH, RULE_MANIFEST_MISSING,
+    RULE_REPLACEMENT_SEQ_MISMATCH, RULE_REPLAY_SUMMARY_COUNT_MISMATCH, RULE_SAFETY_REPORT_MISSING,
 };
 use swarm_examples::sitl_multi_agent::{
     MultiAgentLifecycle, MultiAgentSitlManifest, MultiAgentSitlManifestAgent, SitlArtifactMetadata,
@@ -16,6 +17,9 @@ use swarm_examples::sitl_observability::{
 };
 use swarm_examples::sitl_report::{
     SitlMultiAgentAgentReport, SitlMultiAgentReallocationReport, SitlMultiAgentRunReport,
+};
+use swarm_examples::sitl_supervisor::{
+    DegradedRunRecord, SitlDegradedRunReport, SupervisorDecision, SupervisorFailureMode,
 };
 use swarm_safety::preflight::SafetyValidationReport;
 
@@ -151,6 +155,101 @@ fn missing_safety_report_fails_for_supervisor_run() {
     assert_rule(&report, RULE_SAFETY_REPORT_MISSING);
 }
 
+#[test]
+fn valid_degraded_supervisor_pack_passes() {
+    let fixture = ArtifactFixture::new();
+    fixture.write_degraded_pack(|_, _| {});
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&fixture.output_dir),
+        ArtifactValidationOptions::default(),
+    );
+
+    assert!(report.passed, "{:?}", report.violations);
+}
+
+#[test]
+fn degraded_report_without_degraded_replay_events_fails() {
+    let fixture = ArtifactFixture::new();
+    fixture.write_degraded_pack(|log, _| {
+        log.events.retain(|event| {
+            !matches!(
+                event,
+                SitlEvent::SupervisorFailureDetected { .. }
+                    | SitlEvent::SupervisorFailureClassified { .. }
+                    | SitlEvent::SupervisorRecoveryStarted { .. }
+                    | SitlEvent::SupervisorRecoveryCompleted { .. }
+            )
+        });
+    });
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&fixture.output_dir),
+        ArtifactValidationOptions::default(),
+    );
+
+    assert_rule(&report, RULE_DEGRADED_EVENT_MISSING);
+}
+
+#[test]
+fn degraded_final_status_mismatch_fails() {
+    let fixture = ArtifactFixture::new();
+    fixture.write_degraded_pack(|_, report| {
+        report.degraded.records[0].final_status = "unexpected".to_owned();
+    });
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&fixture.output_dir),
+        ArtifactValidationOptions::default(),
+    );
+
+    assert_rule(&report, RULE_DEGRADED_FINAL_STATUS_MISMATCH);
+}
+
+#[test]
+fn degraded_recovered_task_mismatch_fails() {
+    let fixture = ArtifactFixture::new();
+    fixture.write_degraded_pack(|_, report| {
+        report.degraded.records[0]
+            .tasks_recovered
+            .push("missing-recovered-task".to_owned());
+    });
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&fixture.output_dir),
+        ArtifactValidationOptions::default(),
+    );
+
+    assert_rule(&report, RULE_DEGRADED_RECOVERY_TASK_MISMATCH);
+}
+
+#[test]
+fn historical_failed_pack_without_degraded_record_warns_but_passes() {
+    let fixture = ArtifactFixture::new();
+    fixture.write_event_log(|log| {
+        log.events.push(SitlEvent::MultiAgentRunFinished {
+            step: 6,
+            overall_status: "partial_failed".to_owned(),
+        });
+    });
+    fixture.write_report(|report| {
+        report.failed_agents = 1;
+        report.final_status = "partial_failed".to_owned();
+        report.overall_status = "partial_failed".to_owned();
+    });
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&fixture.output_dir),
+        ArtifactValidationOptions {
+            allow_historical: true,
+            ..Default::default()
+        },
+    );
+
+    assert!(report.passed, "{:?}", report.violations);
+    assert_rule(&report, RULE_DEGRADED_RECORD_MISSING);
+}
+
 fn assert_rule(
     report: &swarm_examples::artifact_validator::ArtifactValidationReport,
     rule_id: &str,
@@ -267,6 +366,24 @@ impl ArtifactFixture {
             &SafetyValidationReport::ok(),
         );
     }
+
+    fn write_degraded_pack(
+        &self,
+        mutate: impl FnOnce(&mut SitlEventLog, &mut SitlMultiAgentRunReport),
+    ) {
+        let mut log = base_degraded_event_log();
+        let summary = summarize_sitl_event_log(&log);
+        let mut report = base_degraded_report(summary);
+        mutate(&mut log, &mut report);
+        report.events_summary = summarize_sitl_event_log(&log);
+        write_json(&self.output_dir.join("events.sitl-log.json"), &log);
+        write_json(&self.output_dir.join("run-report.json"), &report);
+        fs::write(
+            self.output_dir.join("replay-summary.txt"),
+            format!("{}\n", format_sitl_summary(&summarize_sitl_event_log(&log))),
+        )
+        .unwrap();
+    }
 }
 
 fn manifest_agent(agent_id: &str, system_id: u8, task_ids: &[&str]) -> MultiAgentSitlManifestAgent {
@@ -336,6 +453,87 @@ fn base_event_log() -> SitlEventLog {
     }
 }
 
+fn base_degraded_event_log() -> SitlEventLog {
+    let mut log = base_event_log();
+    log.events = vec![
+        SitlEvent::MultiAgentRunStarted {
+            step: 0,
+            agent_count: 2,
+            scenario: "sitl_multi_agent".to_owned(),
+        },
+        SitlEvent::MultiAgentMissionItemSent {
+            step: 1,
+            agent_id: "agent-0".to_owned(),
+            seq: 0,
+            task_id: Some("wp-0".to_owned()),
+        },
+        SitlEvent::MultiAgentMissionItemSent {
+            step: 2,
+            agent_id: "agent-1".to_owned(),
+            seq: 0,
+            task_id: Some("wp-1".to_owned()),
+        },
+        SitlEvent::SupervisorFailureDetected {
+            step: 3,
+            agent_id: "agent-0".to_owned(),
+            mode: "heartbeat_lost".to_owned(),
+            completed_task_ids: Vec::new(),
+        },
+        SitlEvent::SupervisorFailureClassified {
+            step: 4,
+            agent_id: "agent-0".to_owned(),
+            mode: "heartbeat_lost".to_owned(),
+            decision: "continue_with_survivor".to_owned(),
+        },
+        SitlEvent::SupervisorRecoveryStarted {
+            step: 5,
+            agent_id: "agent-1".to_owned(),
+            policy: "mission_replacement".to_owned(),
+            task_ids: vec!["wp-1".to_owned(), "wp-0".to_owned()],
+        },
+        SitlEvent::SupervisorRecoveryCompleted {
+            step: 6,
+            agent_id: "agent-1".to_owned(),
+            recovered_task_ids: vec!["wp-0".to_owned()],
+            latency_ticks: Some(0),
+        },
+        SitlEvent::MultiAgentMissionItemSent {
+            step: 7,
+            agent_id: "agent-1".to_owned(),
+            seq: 0,
+            task_id: Some("wp-1".to_owned()),
+        },
+        SitlEvent::MultiAgentMissionItemSent {
+            step: 8,
+            agent_id: "agent-1".to_owned(),
+            seq: 1,
+            task_id: Some("wp-0".to_owned()),
+        },
+        SitlEvent::MultiAgentTaskCompleted {
+            step: 9,
+            agent_id: "agent-1".to_owned(),
+            seq: 0,
+            task_id: "wp-1".to_owned(),
+        },
+        SitlEvent::MultiAgentTaskCompleted {
+            step: 10,
+            agent_id: "agent-1".to_owned(),
+            seq: 1,
+            task_id: "wp-0".to_owned(),
+        },
+        SitlEvent::SupervisorFinalStatus {
+            step: 11,
+            status: "completed_with_reallocation".to_owned(),
+            degraded: true,
+        },
+        SitlEvent::MultiAgentRunFinished {
+            step: 12,
+            overall_status: "completed_with_reallocation".to_owned(),
+        },
+    ];
+    log
+}
+
 fn base_report(
     summary: swarm_examples::sitl_observability::SitlEventLogSummary,
 ) -> SitlMultiAgentRunReport {
@@ -363,9 +561,45 @@ fn base_report(
         events_summary: summary,
         final_status: "completed".to_owned(),
         reallocation: SitlMultiAgentReallocationReport::default(),
+        degraded: swarm_examples::sitl_supervisor::SitlDegradedRunReport::default(),
         limitations: vec!["local PX4/SIH only".to_owned()],
         known_limitations: vec!["local PX4/SIH only".to_owned()],
     }
+}
+
+fn base_degraded_report(
+    summary: swarm_examples::sitl_observability::SitlEventLogSummary,
+) -> SitlMultiAgentRunReport {
+    let mut report = base_report(summary);
+    report.failed_agents = 1;
+    report.overall_status = "completed_with_reallocation".to_owned();
+    report.final_status = "completed_with_reallocation".to_owned();
+    report.total_completed_tasks = 2;
+    report.reallocation.lost_agent_count = 1;
+    report.reallocation.released_tasks = vec!["wp-0".to_owned()];
+    report.reallocation.reassigned_tasks = vec!["wp-0".to_owned()];
+    report.reallocation.reassignment_count = 1;
+    report.reallocation.tasks_recovered = vec!["wp-0".to_owned()];
+    report.degraded = SitlDegradedRunReport {
+        records: vec![DegradedRunRecord {
+            failure_mode: SupervisorFailureMode::HeartbeatLost,
+            decision: SupervisorDecision::ContinueWithSurvivor,
+            detected_tick: Some(3),
+            detected_after_ms: None,
+            affected_agent_id: "agent-0".to_owned(),
+            tasks_completed_before_failure: Vec::new(),
+            tasks_recovered: vec!["wp-0".to_owned()],
+            tasks_abandoned: Vec::new(),
+            replacement_mission_id: Some("replacement:agent-0:agent-1".to_owned()),
+            recovery_latency_ticks: Some(0),
+            final_status: "completed_with_reallocation".to_owned(),
+        }],
+        failure_mode_counts: [("heartbeat_lost".to_owned(), 1)].into(),
+        decision_counts: [("continue_with_survivor".to_owned(), 1)].into(),
+        tasks_abandoned: Vec::new(),
+        recovery_failed_count: 0,
+    };
+    report
 }
 
 fn agent_report(agent_id: &str, system_id: u8) -> SitlMultiAgentAgentReport {
@@ -379,6 +613,8 @@ fn agent_report(agent_id: &str, system_id: u8) -> SitlMultiAgentAgentReport {
         completed_task_count: 1,
         final_status: "completed".to_owned(),
         error: None,
+        failure_mode: None,
+        tasks_abandoned: Vec::new(),
     }
 }
 

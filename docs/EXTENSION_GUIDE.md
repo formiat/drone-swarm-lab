@@ -225,6 +225,12 @@ SITL schemas:
 - Multi-agent SITL config: `multi_sitl.v1`.
 - Multi-agent SITL manifest: `multi_sitl_manifest.v1`.
 
+M73 degraded-supervisor fields are additive within these same schema versions:
+`run-report.json.degraded`, optional per-agent `failure_mode` /
+`tasks_abandoned`, and `supervisor_*` degraded replay events. Extensions should
+preserve `#[serde(default)]` compatibility and must not turn fake-tested failure
+modes into hardware claims without separate evidence.
+
 Report/export schemas:
 
 - JSON can add optional/defaulted fields when old files still deserialize.

@@ -19,6 +19,7 @@ and serial connections as hardware candidates and requires
 | Urban route export dry-run | Portable | M70 converts `urban-patrol` planned road-graph routes into ordered SITL-compatible waypoint plans with explicit altitude, `geo_origin`, route stats, and `sitl_dry_run_artifact.v1` JSON evidence. This is local export evidence only, not PX4 execution or hardware readiness. |
 | Preflight safety contract | Portable static gate | M71 requires mission inputs to pass `SafetyValidationReport` checks before dry-run, SITL upload, or hardware-candidate experiments. It catches geofence, no-fly, altitude, route length, ownership, Urban, and known semantic issues. This is not certified flight safety. |
 | Artifact validation | Portable evidence gate | M72 adds `artifact_validator`, `artifact_validation_report.v1`, scenario/config/command snapshots, manifest metadata, and stable artifact rule ids for local SITL packs. It improves evidence discipline before future hardware-candidate work, but it is not automated PX4 CI, Gazebo/HIL validation, hardware readiness, or flight certification. |
+| Degraded supervisor | Portable fake-tested boundary | M73 adds structured failure modes, supervisor decisions, degraded report fields, replay events, and artifact-validator checks for failed/reallocated supervisor packs. This is pre-hardware evidence discipline, not hardware failsafe validation, RF modeling, Gazebo/HIL coverage, or production failover. |
 | Portable regression | Portable | `portable_sitl_regression_smoke`, `sitl_docs`, safety validation, mock replay, and multi-agent manifest checks run without external PX4. |
 | Single-agent PX4 SITL | Experimental | Feature-gated mission upload, optional arm/takeoff/start, telemetry progress, run report, replay log plumbing, and public `scenarios/sitl.px4-golden.json` exist for local PX4 SITL. Live simulator verification remains manual/local. |
 | Multi-agent SITL foundation | Experimental foundation | `multi_sitl.v1` config, public `scenarios/sitl.multi-agent.json` / `scenarios/sitl.multi-agent.config.json`, per-agent task subsets, dry-run/mock manifest, mock supervisor reallocation, MAVLink system/component mapping, duplicate ownership rejection, and local two-instance PX4 SIH upload-only mission acceptance are covered. |
@@ -36,6 +37,7 @@ and serial connections as hardware candidates and requires
 - Pilot handoff, operator workload, crew coordination, or emergency procedure reliability.
 - Certified geofence enforcement, flight termination, or remote ID compliance.
 - Hardware-in-the-loop CI.
+- Real hardware degraded-supervisor fault injection.
 - Multi-agent real PX4 flight orchestration on hardware.
 - Any production safety guarantee.
 

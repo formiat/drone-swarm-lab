@@ -61,6 +61,8 @@ mod tests {
                 completed_task_count: usize::from(final_status == "partial_failed"),
                 final_status: agent_status.to_owned(),
                 error: Some(error.to_owned()),
+                failure_mode: None,
+                tasks_abandoned: Vec::new(),
             }],
             total_completed_tasks: usize::from(final_status == "partial_failed"),
             failed_agents: 1,
@@ -71,6 +73,7 @@ mod tests {
             events_summary: SitlEventLogSummary::default(),
             final_status: final_status.to_owned(),
             reallocation: SitlMultiAgentReallocationReport::default(),
+            degraded: crate::sitl_supervisor::SitlDegradedRunReport::default(),
             limitations: Vec::new(),
             known_limitations: Vec::new(),
         }
