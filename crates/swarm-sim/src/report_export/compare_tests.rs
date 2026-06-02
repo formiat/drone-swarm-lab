@@ -455,7 +455,7 @@ mod tests {
         );
 
         let csv = export_csv(&report).unwrap();
-        let mut reader = csv::Reader::from_reader(csv.as_bytes());
+        let mut reader = ::csv::Reader::from_reader(csv.as_bytes());
         let csv_row = reader.records().next().unwrap().unwrap();
         let csv_identity = (
             csv_row.get(2).unwrap().to_owned(),
