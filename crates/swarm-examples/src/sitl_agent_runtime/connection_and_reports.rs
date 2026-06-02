@@ -1,4 +1,24 @@
-use super::*;
+#[cfg(feature = "mavlink-transport")]
+use std::collections::BTreeMap;
+#[cfg(feature = "mavlink-transport")]
+use std::path::Path;
+
+use super::cli_and_mock::{apply_start_delay, AgentRuntimeOptions, LifecycleArgs};
+#[cfg(feature = "mavlink-transport")]
+use super::cli_and_mock::{new_sitl_event_recorder, write_replay_log_if_requested, LifecycleMode};
+#[cfg(feature = "mavlink-transport")]
+use super::telemetry::{
+    default_takeoff_altitude, run_telemetry_progress_loop, sitl_task_ids_by_seq,
+    SitlTelemetryLoopError,
+};
+#[cfg(feature = "mavlink-transport")]
+use crate::sitl_observability::{SitlEventLogMode, SitlEventRecorder};
+use crate::sitl_plan::{validate_connection_string, SitlError, SitlPlan};
+#[cfg(feature = "mavlink-transport")]
+use crate::sitl_report::{write_sitl_run_report, SitlRunFinalStatus, SitlRunMode, SitlRunReport};
+#[cfg(feature = "mavlink-transport")]
+use swarm_comms::Waypoint;
+
 pub(super) fn run_connection(
     plan: &SitlPlan,
     connection_string: &str,

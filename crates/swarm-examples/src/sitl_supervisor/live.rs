@@ -17,11 +17,14 @@ use crate::sitl_multi_agent::MultiAgentSitlManifestAgent;
 use crate::sitl_plan::{SitlError, SitlWaypointItem};
 
 #[cfg(feature = "mavlink-transport")]
-use super::{
-    append_abort_to_report, completed_waypoints_from_progress,
-    dedup_completed_waypoints_preserve_order, event_advances_progress, live_progress_status_name,
-    task_ids_from_completed_waypoints, CompletedWaypoint, LiveAgentController, LiveAgentRun,
-    MissionReplacementPlan,
+use super::config::{CompletedWaypoint, LiveAgentRun, MissionReplacementPlan};
+use super::ports::LiveAgentController;
+use super::reallocation::{
+    completed_waypoints_from_progress, dedup_completed_waypoints_preserve_order,
+    task_ids_from_completed_waypoints,
+};
+use super::validation_and_reports::{
+    append_abort_to_report, event_advances_progress, live_progress_status_name,
 };
 
 #[cfg(feature = "mavlink-transport")]

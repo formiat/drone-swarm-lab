@@ -1,4 +1,9 @@
-use super::*;
+use super::{
+    AdapterRegistry, InspectionState, RunConfig, RunMetrics, RunState, Scenario, ScenarioRunner,
+    Task, WildfireState,
+};
+use swarm_alloc::Allocator;
+
 impl ScenarioRunner {
     pub fn run(scenario: &Scenario, config: RunConfig) -> RunMetrics {
         use swarm_alloc::GreedyAllocator;

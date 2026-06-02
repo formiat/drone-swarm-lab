@@ -1,4 +1,25 @@
-use super::*;
+use std::collections::{HashMap, HashSet};
+
+use super::config::SupervisorMetrics;
+#[cfg(any(feature = "mavlink-transport", test))]
+use super::config::{CompletedWaypoint, LiveAgentRun, MissionReplacementPlan};
+#[cfg(any(feature = "mavlink-transport", test))]
+use super::validation_and_reports::{assign_manifest_tasks, manifest_waypoint_for_task_id};
+#[cfg(any(feature = "mavlink-transport", test))]
+use crate::sitl_multi_agent::MultiAgentSitlManifest;
+use crate::sitl_observability::SitlEventRecorder;
+#[cfg(any(feature = "mavlink-transport", test))]
+use crate::sitl_plan::{SitlError, SitlWaypointItem};
+#[cfg(any(feature = "mavlink-transport", test))]
+use swarm_alloc::GreedyAllocator;
+#[cfg(any(feature = "mavlink-transport", test))]
+use swarm_comms::{MockMavlinkTransport, RawMessage};
+use swarm_runtime::NodeTickOutput;
+#[cfg(any(feature = "mavlink-transport", test))]
+use swarm_runtime::{AgentNode, Coordinator, RuntimeMessage};
+#[cfg(any(feature = "mavlink-transport", test))]
+use swarm_types::{AgentId, TaskId};
+
 #[cfg(any(feature = "mavlink-transport", test))]
 pub(super) struct LiveReallocationContext<'a> {
     pub(super) entry: &'a swarm_sim::ScenarioSuiteEntry,

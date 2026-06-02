@@ -1,8 +1,8 @@
-use super::*;
 use std::path::Path;
 use std::thread;
 use std::time::Duration;
 
+use super::connection_and_reports::run_connection;
 use crate::sitl_multi_agent::{
     agent_config, build_multi_agent_manifest, load_multi_agent_config, MultiAgentLifecycle,
     MultiAgentSitlAgentConfig,

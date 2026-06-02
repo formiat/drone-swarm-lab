@@ -1,4 +1,10 @@
-use super::*;
+use std::collections::{HashMap, HashSet};
+
+use super::{
+    Agent, AgentId, Coordinator, Health, RunMetrics, Scenario, TaskId, UrbanBusId, UrbanMap,
+    UrbanPlannedRoute, UrbanRouteSegment, UrbanState, UrbanViolation,
+};
+
 pub(super) fn compute_urban_foundation_metrics(
     urban_state: &Option<UrbanState>,
 ) -> (bool, f64, f64, u64) {

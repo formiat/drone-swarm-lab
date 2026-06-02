@@ -4,7 +4,9 @@ use crate::sitl_multi_agent::MultiAgentSitlManifest;
 use crate::sitl_observability::SitlEventRecorder;
 
 #[cfg(any(feature = "mavlink-transport", test))]
-use super::{completed_waypoints_for_run, LiveAgentRun, MissionReplacementPlan};
+use super::config::{LiveAgentRun, MissionReplacementPlan};
+#[cfg(any(feature = "mavlink-transport", test))]
+use super::reallocation::completed_waypoints_for_run;
 
 #[cfg(any(feature = "mavlink-transport", test))]
 pub(super) fn record_replacement_mission_items(

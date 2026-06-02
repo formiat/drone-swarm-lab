@@ -1,8 +1,57 @@
-use super::*;
+#[cfg(any(feature = "mavlink-transport", test))]
+use std::collections::{HashMap, HashSet};
+use std::path::Path;
+#[cfg(any(feature = "mavlink-transport", test))]
+use std::thread;
+#[cfg(any(feature = "mavlink-transport", test))]
+use std::time::Duration;
+
+use super::config::{
+    SupervisorLiveConfig, SupervisorLoopConfig, SupervisorMetrics, SupervisorMockConfig,
+};
+use super::ports::AgentController;
+#[cfg(any(feature = "mavlink-transport", test))]
+use super::ports::LiveAgentController;
+#[cfg(not(any(feature = "mavlink-transport", test)))]
+use super::reallocation::record_reallocation_output;
+#[cfg(any(feature = "mavlink-transport", test))]
+use super::reallocation::{
+    live_reallocation_after_failure, record_reallocation_output, LiveReallocationContext,
+};
+use super::validation_and_reports::{
+    assign_manifest_tasks, build_mock_controllers, complete_one_task_per_active_agent,
+    manifest_tasks_completed, poll_active_agent_ids, supervisor_runtime_agent_id,
+    upload_and_start_manifest_agents, validate_controller_set, validate_failure_agent,
+    validate_live_manifest,
+};
+#[cfg(any(feature = "mavlink-transport", test))]
+use super::validation_and_reports::{
+    live_active_run_snapshots, live_controller_for_agent_mut, live_overall_status,
+    validate_live_controller_set,
+};
+use crate::sitl_connection::SitlSafetyGate;
+use crate::sitl_multi_agent::MultiAgentSitlManifest;
+#[cfg(any(feature = "mavlink-transport", test))]
+use crate::sitl_observability::summarize_sitl_event_log;
+use crate::sitl_observability::{
+    write_sitl_event_log, SitlEventLogMetadata, SitlEventLogMode, SitlEventRecorder,
+};
+use crate::sitl_plan::{first_sitl_entry, SitlError};
+#[cfg(any(feature = "mavlink-transport", test))]
+use crate::sitl_report::write_sitl_multi_agent_run_report;
+use crate::sitl_report::SitlMultiAgentRunReport;
+use swarm_alloc::GreedyAllocator;
+use swarm_comms::{MockMavlinkTransport, RawMessage};
+use swarm_runtime::{AgentNode, Coordinator, RuntimeMessage};
+use swarm_types::AgentId;
+
 #[cfg(any(feature = "mavlink-transport", test))]
 use crate::sitl_supervisor::artifacts::{live_run_report, LiveRunReportInput};
 #[cfg(any(feature = "mavlink-transport", test))]
 use crate::sitl_supervisor::events::{record_live_agent_run, record_replacement_mission_items};
+#[cfg(feature = "mavlink-transport")]
+use crate::sitl_supervisor::Px4AgentController;
+
 pub fn run_mock_supervisor(
     suite: &swarm_sim::ScenarioSuite,
     config: &SupervisorMockConfig,

@@ -1,30 +1,29 @@
-#[cfg(feature = "mavlink-transport")]
-use std::collections::BTreeMap;
-#[cfg(feature = "mavlink-transport")]
-use std::path::Path;
-#[cfg(feature = "mavlink-transport")]
+#[cfg(all(test, feature = "mavlink-transport"))]
 use std::time::Duration;
-#[cfg(feature = "mavlink-transport")]
-use std::time::Instant;
 
-#[cfg(feature = "mavlink-transport")]
-use crate::sitl_observability::{SitlEventLogMode, SitlEventRecorder};
-use crate::sitl_plan::{validate_connection_string, SitlError, SitlPlan};
-#[cfg(feature = "mavlink-transport")]
-use crate::sitl_report::{write_sitl_run_report, SitlRunFinalStatus, SitlRunMode, SitlRunReport};
-#[cfg(feature = "mavlink-transport")]
+#[cfg(all(test, feature = "mavlink-transport"))]
+use crate::sitl_observability::SitlEventLogMode;
+#[cfg(all(test, feature = "mavlink-transport"))]
+use crate::sitl_plan::SitlPlan;
+#[cfg(test)]
+use crate::sitl_plan::{validate_connection_string, SitlError};
+#[cfg(all(test, feature = "mavlink-transport"))]
+use crate::sitl_report::{SitlRunFinalStatus, SitlRunReport};
+#[cfg(all(test, feature = "mavlink-transport"))]
 use swarm_comms::Waypoint;
 
 mod cli_and_mock;
 pub use cli_and_mock::run;
+#[cfg(all(test, feature = "mavlink-transport"))]
 use cli_and_mock::*;
 
 mod connection_and_reports;
+#[cfg(all(test, feature = "mavlink-transport"))]
 use connection_and_reports::*;
 
 #[cfg(feature = "mavlink-transport")]
 mod telemetry;
-#[cfg(feature = "mavlink-transport")]
+#[cfg(all(test, feature = "mavlink-transport"))]
 use telemetry::*;
 
 #[cfg(test)]

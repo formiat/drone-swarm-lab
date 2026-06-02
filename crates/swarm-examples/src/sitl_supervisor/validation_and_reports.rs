@@ -1,4 +1,25 @@
-use super::*;
+use std::collections::HashSet;
+use std::thread;
+use std::time::Duration;
+
+#[cfg(any(feature = "mavlink-transport", test))]
+use super::config::LiveAgentRun;
+use super::config::{SupervisorLiveConfig, SupervisorMockConfig};
+use super::mock::MockAgentController;
+use super::ports::AgentController;
+#[cfg(any(feature = "mavlink-transport", test))]
+use super::ports::LiveAgentController;
+#[cfg(any(feature = "mavlink-transport", test))]
+use super::reallocation::task_ids_from_completed_waypoints;
+use crate::sitl_multi_agent::{MultiAgentLifecycle, MultiAgentSitlManifest};
+use crate::sitl_observability::SitlEventRecorder;
+#[cfg(any(feature = "mavlink-transport", test))]
+use crate::sitl_plan::SitlWaypointItem;
+use crate::sitl_plan::{classify_connection_string, SitlConnectionClass, SitlError};
+use swarm_comms::MockMavlinkTransport;
+use swarm_runtime::{AgentNode, Coordinator};
+use swarm_types::{AgentId, TaskId, TaskStatus};
+
 pub(super) fn build_mock_controllers(
     manifest: &MultiAgentSitlManifest,
     config: &SupervisorMockConfig,

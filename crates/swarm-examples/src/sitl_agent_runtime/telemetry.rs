@@ -1,4 +1,17 @@
-use super::*;
+#[cfg(feature = "mavlink-transport")]
+use std::collections::BTreeMap;
+#[cfg(feature = "mavlink-transport")]
+use std::time::{Duration, Instant};
+
+#[cfg(feature = "mavlink-transport")]
+use super::cli_and_mock::LifecycleArgs;
+#[cfg(feature = "mavlink-transport")]
+use crate::sitl_observability::SitlEventRecorder;
+#[cfg(feature = "mavlink-transport")]
+use crate::sitl_plan::SitlPlan;
+#[cfg(feature = "mavlink-transport")]
+use swarm_comms::Waypoint;
+
 #[cfg(feature = "mavlink-transport")]
 #[derive(Debug, thiserror::Error)]
 pub(super) enum SitlTelemetryLoopError {
