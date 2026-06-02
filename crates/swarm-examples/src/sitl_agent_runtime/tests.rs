@@ -74,6 +74,29 @@ impl SitlTelemetryRuntime for FakeTelemetryRuntime {
 }
 
 #[cfg(feature = "mavlink-transport")]
+fn test_waypoint(
+    seq: u16,
+    task_id: &str,
+    x: f64,
+    y: f64,
+    z: f64,
+) -> crate::sitl_plan::SitlWaypointItem {
+    crate::sitl_plan::SitlWaypointItem {
+        seq,
+        task_id: task_id.to_owned(),
+        x,
+        y,
+        z,
+        source: "pose_task".to_owned(),
+        edge_id: None,
+        from_node_id: None,
+        to_node_id: None,
+        segment_index: None,
+        point_index_on_segment: None,
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
 fn test_plan() -> SitlPlan {
     SitlPlan {
         agent_id: "agent-0".to_owned(),
@@ -84,21 +107,15 @@ fn test_plan() -> SitlPlan {
         profile: "waypoints".to_owned(),
         coordinate_frame: crate::sitl_plan::SitlCoordinateFrame::LocalSimulation,
         altitude_source: "pose.z".to_owned(),
+        geo_origin: None,
+        export_kind: "pose_tasks".to_owned(),
+        planner_or_adapter: "sitl_pose_task_extractor".to_owned(),
+        route_length_m: None,
+        segment_count: None,
+        waypoint_count: 2,
         waypoints: vec![
-            crate::sitl_plan::SitlWaypointItem {
-                seq: 0,
-                task_id: "wp-0".to_owned(),
-                x: 10.0,
-                y: 20.0,
-                z: 3.0,
-            },
-            crate::sitl_plan::SitlWaypointItem {
-                seq: 1,
-                task_id: "wp-1".to_owned(),
-                x: 30.0,
-                y: 40.0,
-                z: 4.0,
-            },
+            test_waypoint(0, "wp-0", 10.0, 20.0, 3.0),
+            test_waypoint(1, "wp-1", 30.0, 40.0, 4.0),
         ],
     }
 }
@@ -139,6 +156,25 @@ fn test_waypoints() -> Vec<Waypoint> {
             seq: waypoint.seq,
         })
         .collect()
+}
+
+#[test]
+#[cfg(feature = "mavlink-transport")]
+fn runtime_test_plan_keeps_sitl_metadata_shape() {
+    let plan = test_plan();
+
+    assert_eq!(plan.export_kind, "pose_tasks");
+    assert_eq!(plan.planner_or_adapter, "sitl_pose_task_extractor");
+    assert_eq!(plan.waypoint_count, plan.waypoints.len());
+    assert_eq!(plan.geo_origin, None);
+    assert!(plan
+        .waypoints
+        .iter()
+        .all(|waypoint| waypoint.source == "pose_task"));
+    assert!(plan
+        .waypoints
+        .iter()
+        .all(|waypoint| waypoint.edge_id.is_none()));
 }
 
 #[test]
