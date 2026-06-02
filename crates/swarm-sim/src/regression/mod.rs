@@ -3,5 +3,7 @@ mod types_and_runner;
 use types_and_runner::extract_metric;
 pub use types_and_runner::*;
 
-mod suites_and_tests;
-pub use suites_and_tests::*;
+mod suites;
+pub use suites::*;
+#[cfg(test)]
+mod suites_tests;

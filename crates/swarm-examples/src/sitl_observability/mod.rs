@@ -1,5 +1,11 @@
-mod events_and_io;
-pub use events_and_io::*;
+mod events;
+pub use events::*;
 
-mod read_and_tests;
-pub use read_and_tests::*;
+mod io;
+pub use io::*;
+
+mod read;
+pub use read::*;
+
+#[cfg(test)]
+mod read_tests;
