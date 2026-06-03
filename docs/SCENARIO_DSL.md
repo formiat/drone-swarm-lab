@@ -131,8 +131,10 @@ These fields are optional and default to the old behavior when omitted:
   beyond an `AllocationAgent.comms_range`.
 - `run_config.wildfire_priority_realloc_threshold` — absent by default. When
   set, a wildfire mapping task whose dynamic priority crosses the threshold
-  emits `WildfirePriorityReallocationRequested`, is released from the current
-  owner, and is reassigned through the normal runtime allocation path.
+  emits `TaskPriorityUpdated` and `WildfirePriorityReallocationRequested`. If
+  the runtime actually releases the task from its previous owner, replay emits
+  `WildfirePriorityTaskReleased`; a later `TaskAssigned` records reassignment
+  through the normal runtime allocation path.
 - `run_config.dynamic_belief_updates` — `false` by default. When `true`, SAR
   scan tasks that are not completed/failed are re-ranked by the current
   `BeliefMap` entropy after scan events.

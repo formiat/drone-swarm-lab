@@ -30,6 +30,7 @@ Each simulation run can optionally produce an `EventLog` — a JSON file contain
 | `CbbaConverged` | CBBA reached consensus | `tick` |
 | `CbbaBundleUpdated` | CBBA bundle changed | `agent_id`, `bundle_size`, `conflict_count`, `tick` |
 | `WildfirePriorityReallocationRequested` | Wildfire priority crossed a configured reallocation threshold | `task_id`, `old_priority`, `new_priority`, optional `previous_agent_id`, `tick` |
+| `WildfirePriorityTaskReleased` | Wildfire priority-triggered reallocation actually released a task from its previous owner | `task_id`, `old_priority`, `new_priority`, optional `previous_agent_id`, `tick` |
 | `UrbanRoutePlanned` | Urban Patrol route planned | `agent_id`, `tick`, `edge_ids`, `route_length_m` |
 | `UrbanSegmentEntered` | Urban route segment entered | `agent_id`, `tick`, `segment_index`, `edge_id`, `from`, `to` |
 | `UrbanSegmentCompleted` | Urban route segment completed | `agent_id`, `tick`, `segment_index`, `edge_id` |
@@ -80,7 +81,12 @@ claiming a fix. Wildfire dynamic priority changes may additionally emit
 `WildfirePriorityReallocationRequested` when
 `run_config.wildfire_priority_realloc_threshold` is enabled and a task crosses
 the threshold. This event is distinct from `TaskPriorityUpdated`; it records the
-trigger for release/reassignment rather than a normal priority mutation.
+trigger for release/reassignment rather than a normal priority mutation. If the
+runtime then actually releases the task from an alive registry, replay records
+`WildfirePriorityTaskReleased`. A later `TaskAssigned` records the normal
+allocator path that assigns the released task again. The intended sequence is
+`TaskPriorityUpdated` -> `WildfirePriorityReallocationRequested` ->
+`WildfirePriorityTaskReleased` -> later `TaskAssigned`.
 
 For extension work, use [`docs/EXTENSION_GUIDE.md`](EXTENSION_GUIDE.md) as the
 schema policy checklist. Prefer additive replay events or defaulted fields.

@@ -117,6 +117,21 @@ pub(in crate::runner) fn run_tick_loop<A: Allocator>(
             &mut state.allocator,
             &injected,
         );
+        let first_id = first_active_agent_id(&state.nodes, &state.crashed_agents);
+
+        if let Some(ref target_id) = first_id {
+            if let Some((_, output)) = tick_outputs.iter().find(|(id, _)| id == target_id) {
+                if let Some(ref mut builder) = state.log_builder {
+                    for assignment in &output.reassigned_tasks {
+                        builder.push(swarm_replay::Event::TaskAssigned {
+                            task_id: assignment.task_id.clone(),
+                            agent_id: assignment.agent_id.clone(),
+                            tick: current_tick,
+                        });
+                    }
+                }
+            }
+        }
 
         teleport_assigned_tasks_when_movement_disabled(
             &mut state.nodes,
@@ -204,11 +219,27 @@ pub(in crate::runner) fn run_tick_loop<A: Allocator>(
                 .threat_level_over_time
                 .push(wildfire_tick.avg_threat_level);
             for request in wildfire_tick.priority_reallocation_requests {
+                let mut released_previous_agent = None;
                 for (node, agent_id) in &mut state.nodes {
                     if state.crashed_agents.contains(agent_id) {
                         continue;
                     }
-                    node.coordinator.registry.release_task(&request.task_id);
+                    if let Some(previous_agent_id) =
+                        node.coordinator.registry.release_task(&request.task_id)
+                    {
+                        released_previous_agent.get_or_insert(previous_agent_id);
+                    }
+                }
+                if let (Some(builder), Some(previous_agent_id)) =
+                    (&mut state.log_builder, released_previous_agent)
+                {
+                    builder.push(swarm_replay::Event::WildfirePriorityTaskReleased {
+                        task_id: request.task_id,
+                        old_priority: request.old_priority,
+                        new_priority: request.new_priority,
+                        previous_agent_id: Some(previous_agent_id),
+                        tick: current_tick,
+                    });
                 }
             }
         }
@@ -289,8 +320,6 @@ pub(in crate::runner) fn run_tick_loop<A: Allocator>(
                 }
             }
         }
-
-        let first_id = first_active_agent_id(&state.nodes, &state.crashed_agents);
 
         update_view_divergence(
             &state.nodes,

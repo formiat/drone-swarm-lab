@@ -31,7 +31,15 @@ pub fn replay(log: &EventLog) -> ReplayState {
             } => {
                 state
                     .assigned_tasks
+                    .retain(|(assigned_task_id, _, _)| assigned_task_id != task_id);
+                state
+                    .assigned_tasks
                     .push((task_id.clone(), agent_id.clone(), *tick));
+            }
+            Event::WildfirePriorityTaskReleased { task_id, .. } => {
+                state
+                    .assigned_tasks
+                    .retain(|(assigned_task_id, _, _)| assigned_task_id != task_id);
             }
             Event::MessageSent { .. } => {
                 state.messages_sent += 1;

@@ -282,7 +282,8 @@ fn event_category(event: &Event) -> ReplayEventCategory {
         | Event::AgentObservation { .. }
         | Event::HazardMapUpdated { .. }
         | Event::TaskPriorityUpdated { .. }
-        | Event::WildfirePriorityReallocationRequested { .. } => ReplayEventCategory::Generic,
+        | Event::WildfirePriorityReallocationRequested { .. }
+        | Event::WildfirePriorityTaskReleased { .. } => ReplayEventCategory::Generic,
     }
 }
 
@@ -326,6 +327,9 @@ fn event_agent_id(event: &Event) -> Option<AgentId> {
         | Event::HazardMapUpdated { .. }
         | Event::TaskPriorityUpdated { .. }
         | Event::WildfirePriorityReallocationRequested { .. } => None,
+        Event::WildfirePriorityTaskReleased {
+            previous_agent_id, ..
+        } => previous_agent_id.clone(),
     }
 }
 
@@ -352,6 +356,7 @@ fn event_tick(event: &Event) -> u64 {
         | Event::HazardMapUpdated { tick, .. }
         | Event::TaskPriorityUpdated { tick, .. }
         | Event::WildfirePriorityReallocationRequested { tick, .. }
+        | Event::WildfirePriorityTaskReleased { tick, .. }
         | Event::UrbanRoutePlanned { tick, .. }
         | Event::UrbanSegmentEntered { tick, .. }
         | Event::UrbanSegmentCompleted { tick, .. }
@@ -397,6 +402,7 @@ fn event_name(event: &Event) -> &'static str {
         Event::WildfirePriorityReallocationRequested { .. } => {
             "WildfirePriorityReallocationRequested"
         }
+        Event::WildfirePriorityTaskReleased { .. } => "WildfirePriorityTaskReleased",
         Event::UrbanRoutePlanned { .. } => "UrbanRoutePlanned",
         Event::UrbanSegmentEntered { .. } => "UrbanSegmentEntered",
         Event::UrbanSegmentCompleted { .. } => "UrbanSegmentCompleted",
@@ -477,6 +483,19 @@ fn event_details(event: &Event) -> String {
             ..
         } => format!("task={task_id} old_priority={old_priority} new_priority={new_priority}"),
         Event::WildfirePriorityReallocationRequested {
+            task_id,
+            old_priority,
+            new_priority,
+            previous_agent_id,
+            ..
+        } => format!(
+            "task={task_id} old_priority={old_priority} new_priority={new_priority} previous_agent={}",
+            previous_agent_id
+                .as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "none".to_owned())
+        ),
+        Event::WildfirePriorityTaskReleased {
             task_id,
             old_priority,
             new_priority,

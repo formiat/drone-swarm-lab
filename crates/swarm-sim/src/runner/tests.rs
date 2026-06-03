@@ -452,15 +452,49 @@ fn wildfire_priority_trigger_reallocates_agent() {
         ScenarioRunner::run_with_log(&scenario, cfg, swarm_alloc::GreedyAllocator::default());
     let event_log = event_log.expect("run_with_log should return an event log");
 
-    assert!(event_log.events.iter().any(|event| {
-        matches!(
-            event,
+    let request_tick = event_log
+        .events
+        .iter()
+        .find_map(|event| match event {
             swarm_replay::Event::WildfirePriorityReallocationRequested {
                 task_id,
                 old_priority: 7,
                 new_priority: 8,
+                tick,
                 ..
+            } if task_id.to_string() == "zone-0" => Some(*tick),
+            _ => None,
+        })
+        .expect("priority reallocation request should be recorded");
+
+    let release_tick = event_log
+        .events
+        .iter()
+        .find_map(|event| match event {
+            swarm_replay::Event::WildfirePriorityTaskReleased {
+                task_id,
+                old_priority: 7,
+                new_priority: 8,
+                previous_agent_id: Some(agent_id),
+                tick,
+            } if task_id.to_string() == "zone-0" && agent_id.to_string() == "agent-0" => {
+                Some(*tick)
+            }
+            _ => None,
+        })
+        .expect("priority-triggered task release should be recorded");
+
+    assert_eq!(release_tick, request_tick);
+    assert!(event_log.events.iter().any(|event| {
+        matches!(
+            event,
+            swarm_replay::Event::TaskAssigned {
+                task_id,
+                agent_id,
+                tick,
             } if task_id.to_string() == "zone-0"
+                && agent_id.to_string() == "agent-0"
+                && *tick > release_tick
         )
     }));
 }

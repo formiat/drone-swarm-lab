@@ -143,17 +143,35 @@ fn cbba_bundle_updated_render_includes_conflict_count() {
 #[test]
 fn wildfire_priority_reallocation_event_round_trips_and_summarizes() {
     let mut builder = EventLogBuilder::new("wildfire", 0, "s");
+    let task_id = TaskId::from("zone-0".to_owned());
+    let agent_id = AgentId::from("agent-0".to_owned());
+    builder.push(Event::TaskAssigned {
+        task_id: task_id.clone(),
+        agent_id: agent_id.clone(),
+        tick: 4,
+    });
     builder.push(Event::WildfirePriorityReallocationRequested {
-        task_id: TaskId::from("zone-0".to_owned()),
+        task_id: task_id.clone(),
         old_priority: 4,
         new_priority: 8,
-        previous_agent_id: Some(AgentId::from("agent-0".to_owned())),
+        previous_agent_id: Some(agent_id.clone()),
+        tick: 5,
+    });
+    builder.push(Event::WildfirePriorityTaskReleased {
+        task_id,
+        old_priority: 4,
+        new_priority: 8,
+        previous_agent_id: Some(agent_id),
         tick: 5,
     });
     let log = builder.build();
     let encoded = serde_json::to_string(&log).unwrap();
     let decoded: EventLog = serde_json::from_str(&encoded).unwrap();
     assert_eq!(summarize(&decoded).priority_reallocation_requests, 1);
+    assert_eq!(summarize(&decoded).priority_task_releases, 1);
+    assert!(replay(&decoded).assigned_tasks.is_empty());
+    let timeline = format_timeline(&decoded, &ReplayTimelineFilter::default());
+    assert!(timeline.contains("WildfirePriorityTaskReleased"));
 }
 
 #[test]
