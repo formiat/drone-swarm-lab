@@ -238,6 +238,65 @@ fn sitl_docs_explain_portable_and_manual_boundaries() {
 }
 
 #[test]
+fn m78_benchmark_evidence_docs_are_synchronized() {
+    for required in [
+        "Benchmark Evidence Layer",
+        "support_status",
+        "support_reason",
+        "artifact_kind",
+        "--mission urban",
+        "--degradation coverage-packet-loss",
+    ] {
+        assert!(README.contains(required), "README missing {required}");
+        assert!(STATUS.contains(required), "STATUS missing {required}");
+    }
+
+    for required in [
+        "success_stderr",
+        "success_ci95_low",
+        "failure_rate",
+        "support_status",
+        "support_reason",
+        "artifact_kind",
+        "historical evidence",
+        "probability_of_detection",
+        "run_config.sar_success_threshold",
+        "simulation degradation evidence",
+        "hardware evidence",
+    ] {
+        assert!(
+            BENCHMARK_RESULTS.contains(required),
+            "BENCHMARK_RESULTS missing {required}"
+        );
+    }
+
+    for required in [
+        "run_config.sar_success_threshold",
+        "strict legacy predicate",
+        "targets_found / targets_total",
+        "Benchmark artifacts must document",
+    ] {
+        assert!(
+            SCENARIO_DSL.contains(required),
+            "SCENARIO_DSL missing {required}"
+        );
+    }
+
+    for required in [
+        "Evidence Metadata And Degradation Presets",
+        "BenchmarkManifest.artifact_kind",
+        "supported-with-caveats",
+        "--degradation coverage-packet-loss",
+        "hardware claims",
+    ] {
+        assert!(
+            EXTENSION_GUIDE.contains(required),
+            "EXTENSION_GUIDE missing {required}"
+        );
+    }
+}
+
+#[test]
 fn m71_docs_describe_preflight_safety_contract() {
     for required in [
         "M71 Preflight Safety And Invariant Contract",

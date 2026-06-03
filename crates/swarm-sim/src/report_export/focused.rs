@@ -24,6 +24,8 @@ pub fn generate_focused_report(reports: &[(String, crate::ComparisonReport)]) ->
     out.push_str("## Methodology\n\n");
     out.push_str("- Mode: quick (10 seeds)  \n");
     out.push_str("- Strategies: greedy, auction, connectivity-aware, centralized, cbba  \n");
+    out.push_str("- M78 evidence fields: full JSON/CSV/Markdown exports include stderr/stddev/95% CI, failure rate, and `support_status` / `support_reason`; this focused report is an interpretation aid, not a replacement for artifact metadata.  \n");
+    out.push_str("- SAR success is binary mission success. `probability_of_detection` and `targets_found` remain quality metrics and may diverge from strict all-targets-found success unless a scenario explicitly sets `run_config.sar_success_threshold`.  \n");
     out.push_str("- Run: `cargo run -p swarm-examples --bin strategy_comparison -- --quick --mission <mission> --output-dir results/<mission>_quick/`  \n\n");
 
     // Per-mission tables

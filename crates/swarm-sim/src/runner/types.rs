@@ -213,6 +213,9 @@ pub struct RunConfig {
     /// Success threshold for inspection (fraction of edges that must be covered).
     #[serde(default = "default_inspection_threshold")]
     pub inspection_coverage_threshold: f64,
+    /// Optional SAR success threshold by found-target ratio; None keeps strict all-targets success.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sar_success_threshold: Option<f64>,
     // v0.37 Realism Scenario Pack
     /// Realism profile name (light, medium, heavy).
     #[serde(default)]
@@ -259,6 +262,7 @@ pub(super) fn compute_mission_success(
     strategy_name: &Option<String>,
     wildfire_success_threshold: f64,
     inspection_coverage_threshold: f64,
+    sar_success_threshold: Option<f64>,
     all_tasks_assigned: bool,
     all_expected_failures_detected: bool,
     max_task_unassigned_ticks: u64,
@@ -277,7 +281,16 @@ pub(super) fn compute_mission_success(
 
     // SAR mission
     if let Some(ref gs) = grid_state {
-        let sar_success = gs.all_targets_found()
+        let target_total = gs.targets.len() as f64;
+        let found_ratio = if target_total > 0.0 {
+            gs.targets_found as f64 / target_total
+        } else {
+            1.0
+        };
+        let sar_goal_satisfied = sar_success_threshold
+            .map(|threshold| found_ratio >= threshold)
+            .unwrap_or_else(|| gs.all_targets_found());
+        let sar_success = sar_goal_satisfied
             && all_expected_failures_detected
             && max_task_unassigned_ticks <= max_unassigned_ticks_config;
 

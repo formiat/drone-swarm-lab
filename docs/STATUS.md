@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-03
 **HEAD commit:** see `git rev-parse HEAD`
-**Last audit:** M77 Algorithm Differentiation
+**Last audit:** M78 Benchmark Evidence Layer
 
 This document is the current status summary for the repository. It supersedes
 the older M39b-only audit and should be read together with the README current
@@ -53,6 +53,7 @@ status table.
 | M75 Urban Mission Realism Follow-up | Complete as deterministic simulation-only mission semantics | `UrbanBusRoute` and `UrbanBusStop` add scheduled moving mocked bus targets over Urban map nodes. The detector samples `pose_at_tick` from the current map/tick and keeps static-bus behavior backward-compatible. `UrbanPerimeterPatrol` and `perimeter_waypoints` add deterministic closed perimeter waypoint generation, a `perimeter-square` profile, and perimeter metrics/export fields (`perimeter_completion_rate`, `perimeter_length_m`, `time_to_complete_perimeter`, `perimeter_violations`). This is mission-level simulation realism only; no lidar/raycast, physics engine, real perception, PX4/SITL execution evidence, hardware validation, or certified obstacle avoidance. |
 | M76 Synthetic Scenario Testbed | Complete as deterministic generator infrastructure | Scenario DSL now has optional `generator_manifest` metadata with manifest-schema validation and legacy compatibility. `swarm-scenarios` exposes `SyntheticUrbanGenerator`, typed Urban generator configs, library presets, and deterministic generated suites with static obstacles, temporary blocked edges, optional mocked bus/failure/comms overlays. `generate_scenario_suite` can regenerate `scenarios/urban.generated.tiny.json`. This is testbed/regression infrastructure only; no benchmark refresh, PX4/SITL evidence, hardware validation, physics engine, real perception, or certified obstacle avoidance. |
 | M77 Algorithm Differentiation | Complete as targeted algorithm/diagnostic implementation | `RunConfig` now has neutral-default `comms_penalty_weight`, `wildfire_priority_realloc_threshold`, and `dynamic_belief_updates`. Greedy/auction/connectivity-aware scoring can use communication range when opted in; wildfire dynamic priority threshold crossings emit a dedicated replay event and release tasks for deterministic reassignment; SAR can re-rank unfinished scan tasks by entropy; CBBA bundle replay events include `conflict_count`. `strategy_comparison --profiles ...` supports targeted deltas, and `results/m77_algorithm_delta/coverage/` contains a 1-seed release smoke artifact. This is not a 1000-seed publication benchmark, hardware/PX4 evidence, or a CBBA gossip-burst fix. |
+| M78 Benchmark Evidence Layer | Complete as simulation reporting/evidence layer | `AggregateMetrics` and JSON/CSV/Markdown reports expose stderr/stddev/95% CI/min/max/failure-rate fields for key binary metrics. Report rows include machine-readable `support_status` / `support_reason`, `BenchmarkManifest` records `artifact_kind`, SAR can opt into `run_config.sar_success_threshold`, `--mission urban` is explicit while legacy `--mission all` remains M69-comparable, and `--degradation coverage-packet-loss` writes a bounded simulation degradation artifact in `results/m78_degradation_coverage_packet_loss_2026-06-03/`. This is not a new 1000-seed run, PX4/SITL evidence, hardware evidence, or publication-grade statistical study. |
 
 ## Current Known Limitations
 
@@ -99,6 +100,10 @@ status table.
   release benchmark for code commit `5d1d3cd17cacba7482c1d9b93eb5acc107af8f71`
   is in `results/all_1000_jobs14_m69_release/` and is summarized in
   `docs/BENCHMARK_RESULTS.md`.
+- **M78 adds interpretation metadata, not a replacement long run.** New
+  benchmark packs record `artifact_kind`, exports include confidence interval
+  fields and support classification, and stale packs remain historical unless
+  their manifest `git_commit` matches the checked-out HEAD.
 - **M62 remains historical simulation evidence.** The 500-seed release baseline
   is preserved in `results/all_500_jobs14_m62_release/` for commit
   `81260ca7afa114a5d9add7b832f6c5d7875b88cd`.
@@ -106,7 +111,9 @@ status table.
   simulation behavior only; live PX4 SITL requires local PX4/SIH runs.
 - **Urban is not part of current `--mission all`.** M69 covers the built-in
   coverage/emergency-mesh/SAR/inspection/wildfire benchmark suite. Urban
-  algorithm evidence remains the separate M68 scenario-suite artifact.
+  algorithm evidence remains the separate M68 scenario-suite artifact. M78 adds
+  explicit `--mission urban` for future Urban benchmark evidence without
+  changing the M69-compatible `--mission all` suite.
 
 ### Algorithmic
 
@@ -186,7 +193,7 @@ status table.
 | Real multi-agent PX4/SIH | Experimental local workflow with M60 hardening | Upload-only, execute, and controlled failure/reallocation SIH evidence exists. `sitl_supervisor --connection --execute --reupload-on-failure --output-dir ... --run-id ...` can produce stable artifacts and exit codes for local runs; automated PX4 CI, Gazebo/HIL, hardware, broader failure modes, and production safety remain future work. |
 | Artifact validation | Ready for local SITL packs | Use `artifact_validator --output-dir <pack> --mode supervisor-run --strict` for new supervisor output dirs. Historical M58/M59 packs can be checked with `--allow-historical`; live harness scripts remain manual-only. |
 | Degraded supervisor evidence | Ready for fake-tested/pre-hardware packs | New supervisor packs with failures should include `degraded` records and matching `supervisor_failure_detected` / `supervisor_failure_classified` / recovery events. Use `docs/DEGRADED_SUPERVISOR.md` as the boundary document. |
-| Large benchmark publication | Evidence captured, interpretation still needed | M69 provides a current-head 1000-seed release simulation pack, but publication claims still need explicit interpretation of SAR/wildfire/CBBA weak rows and must not be presented as PX4/SITL or hardware evidence. |
+| Large benchmark publication | Evidence captured, interpretation improved but still not publication-grade | M69 provides a 1000-seed release simulation pack for its recorded commit. M78 adds stats/support metadata and one degradation-sweep entrypoint, but publication claims still need broader degradation curves, paired comparisons, and must not be presented as PX4/SITL or hardware evidence. |
 | Hardware experiment | Not product-ready | Requires external safety process; see `docs/HARDWARE_READINESS.md`. |
 
 ## Recommended Next Steps

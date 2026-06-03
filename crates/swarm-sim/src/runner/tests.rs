@@ -1,10 +1,10 @@
 use super::*;
 use swarm_alloc::{AllocationAgent, AllocationTask, Allocator};
 use swarm_types::{
-    Aabb, Agent, Capability, CellState, EdgeId, Health, InspectionEdge, Pose, Role, SearchGrid,
-    SensorModel, Task, TaskKind, TaskStatus, UrbanBus, UrbanBusId, UrbanDetectorConfig, UrbanEdge,
-    UrbanEdgeId, UrbanNode, UrbanNodeId, UrbanObstacleId, UrbanPerimeterPatrol, UrbanRouteLoop,
-    UrbanSearchState, UrbanStaticObstacle,
+    Aabb, Agent, Capability, CellState, EdgeId, Health, HiddenTarget, InspectionEdge, Pose, Role,
+    SearchGrid, SensorModel, Task, TaskKind, TaskStatus, UrbanBus, UrbanBusId, UrbanDetectorConfig,
+    UrbanEdge, UrbanEdgeId, UrbanNode, UrbanNodeId, UrbanObstacleId, UrbanPerimeterPatrol,
+    UrbanRouteLoop, UrbanSearchState, UrbanStaticObstacle,
 };
 
 fn scenario(seed: u64, agent_count: usize, task_count: usize) -> Scenario {
@@ -75,6 +75,66 @@ fn config(failures: Vec<FailureEvent>) -> RunConfig {
         enable_cbba: false,
         ..Default::default()
     }
+}
+
+fn sar_grid_state(targets_found: u32, targets_total: u32) -> GridState {
+    let targets = (0..targets_total)
+        .map(|index| HiddenTarget {
+            id: format!("target-{index}"),
+            cell_x: index,
+            cell_y: 0,
+        })
+        .collect();
+    let mut grid_state = GridState::new(
+        SearchGrid::new(targets_total.max(1), 1, 10.0),
+        targets,
+        SensorModel::new(1.0, 1.0, 1.0),
+    );
+    grid_state.targets_found = targets_found;
+    grid_state
+}
+
+fn compute_sar_success_for_threshold(
+    targets_found: u32,
+    targets_total: u32,
+    sar_success_threshold: Option<f64>,
+) -> bool {
+    let grid_state = Some(sar_grid_state(targets_found, targets_total));
+    compute_mission_success(
+        5,
+        &None,
+        0.8,
+        0.8,
+        sar_success_threshold,
+        true,
+        true,
+        0,
+        &grid_state,
+        &None,
+        &None,
+        &None,
+        false,
+        0,
+        false,
+        false,
+    )
+    .0
+}
+
+#[test]
+fn sar_success_without_threshold_requires_all_targets_found() {
+    assert!(compute_sar_success_for_threshold(2, 2, None));
+    assert!(!compute_sar_success_for_threshold(1, 2, None));
+}
+
+#[test]
+fn sar_success_threshold_accepts_partial_detection_above_threshold() {
+    assert!(compute_sar_success_for_threshold(1, 2, Some(0.5)));
+}
+
+#[test]
+fn sar_success_threshold_rejects_partial_detection_below_threshold() {
+    assert!(!compute_sar_success_for_threshold(1, 3, Some(0.5)));
 }
 
 #[test]

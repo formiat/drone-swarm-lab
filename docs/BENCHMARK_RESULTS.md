@@ -1,13 +1,22 @@
 # Benchmark Results
 
-This document records the current M69 simulation benchmark refresh and the
-older historical M62 baseline.
+This document records the current M69 simulation benchmark refresh, the older
+historical M62 baseline, and the M78 benchmark evidence layer that makes future
+packs easier to interpret.
 
 The latest committed full release benchmark pack is
 `results/all_1000_jobs14_m69_release/`, generated from benchmark code commit
 `5d1d3cd17cacba7482c1d9b93eb5acc107af8f71`. The older
 `results/all_500_jobs14_m62_release/` pack remains historical validation
 evidence for commit `81260ca7afa114a5d9add7b832f6c5d7875b88cd`.
+
+M78 does not replace the M69 1000-seed pack and does not rerun it by default.
+It adds report metadata: `success_stddev`, `success_stderr`, `success_ci95_low`,
+`success_ci95_high`, `success_min`, `success_max`, `failure_rate`,
+task-completion CI fields, and `support_status` / `support_reason`. New
+`BenchmarkManifest` files also record `artifact_kind`; an artifact is current
+evidence only for the `git_commit` recorded in its manifest. If the checked-out
+HEAD differs, treat the pack as historical evidence until rerun.
 
 M64 adds Urban foundation code and documentation, M65 adds Urban Patrol v0
 simulation semantics, M66 adds Urban Search v1 with a deterministic mocked bus
@@ -29,12 +38,21 @@ evidence only.
 M69 has now captured a 1000-seed release run for the built-in `--mission all`
 benchmark suite. Current `--mission all` covers coverage, emergency-mesh, SAR,
 inspection, and wildfire. Urban scenario-suite fixtures are not part of this
-entrypoint yet, so Urban evidence remains the separate M68 artifact.
+entrypoint yet, so Urban evidence remains the separate M68 artifact. M78 adds
+explicit `--mission urban` for future Urban benchmark evidence without changing
+the M69-compatible `--mission all` suite.
 
 For live PX4/SIH evidence, see `docs/STATUS.md` and the `results/m48_*`,
 `results/m55_*`, `results/m58_*`, and `results/m59_*` artifacts. Simulation
 benchmark results must not be used as a substitute for PX4/SIH or hardware
 validation.
+
+M78 adds `--degradation coverage-packet-loss` as the first bounded degradation
+sweep preset. Its output is simulation degradation evidence with
+`artifact_kind: "degradation"`; the current artifact is
+`results/m78_degradation_coverage_packet_loss_2026-06-03/`. It is not a
+publication benchmark, PX4/SITL evidence, Gazebo/HIL evidence, hardware
+evidence, or production safety evidence.
 
 M72 `artifact_validator` validates local SITL supervisor packs, including event
 log/report/replay summary/safety consistency and replacement seq semantics. It
@@ -315,12 +333,15 @@ artifact.
    0.828 average success and 1.000 completion with zero conflicts. The other
    strategies cluster around 0.39-0.43 success and 0.56-0.60 completion.
 
-4. **SAR success remains effectively zero under the current success predicate.**
+4. **SAR success remains effectively zero under the current strict predicate.**
    Auction, connectivity-aware, centralized, and greedy still reach high task
    completion for SAR, but success is only 0.000-0.002 per row. CBBA is much
-   lower on completion. Treat SAR as an explicitly weak/open benchmark area
-   until the mission success predicate and target-found expectations are
-   reviewed.
+   lower on completion. M78 distinguishes `probability_of_detection` and
+   `targets_found` quality metrics from binary success. Legacy scenarios keep
+   strict success (`all targets found`), while future SAR scenarios can opt into
+   `run_config.sar_success_threshold` to define threshold success by
+   found-target ratio. Treat SAR as an explicitly weak/open benchmark area
+   unless the selected predicate is documented with the artifact.
 
 5. **Inspection is now success-stable, but metrics still distinguish quality.**
    Every inspection row reports success 1.000. CBBA has lower task completion
@@ -390,13 +411,17 @@ why `Success` remains below `Completion` in the M62 pack.
 ## Next Steps
 
 1. Treat `results/all_1000_jobs14_m69_release/` as current release simulation
-   benchmark evidence for the built-in benchmark suite.
+   benchmark evidence for the built-in benchmark suite at its recorded
+   `git_commit`; after code changes, treat it as historical until rerun.
 2. Treat `results/all_500_jobs14_m62_release/` as historical evidence for
    commit `81260ca7afa114a5d9add7b832f6c5d7875b88cd`.
 3. Do not present M69 as PX4/SITL, hardware, or Urban scenario-suite evidence.
 4. Inspect SAR, wildfire, emergency-mesh, and CBBA weak rows before making
-   publication-level algorithm claims.
-5. If broader Urban claims are needed, add Urban scenario suites to an explicit
-   benchmark entrypoint instead of assuming `--mission all` already covers them.
+   publication-level algorithm claims. Use `support_status` and
+   `support_reason` to avoid treating unsupported, known-bug, or caveated rows
+   as success claims.
+5. If broader Urban claims are needed, use explicit `--mission urban` or
+   scenario-suite evidence instead of assuming `--mission all` already covers
+   Urban.
 6. Keep this document aligned with `README.md`, `docs/STATUS.md`, and the
    committed M69/M62 result artifacts.

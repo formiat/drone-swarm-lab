@@ -279,6 +279,7 @@ cargo run -p swarm-examples --bin replay -- \
 | Feature | Status | Since | Notes |
 |---|---|---|---|
 | Benchmark (smoke/quick/full) | ✅ Stable | M21/M62/M63/M69 | `--output-dir`, `--report`, `BenchmarkManifest`; M69 current-head 1000-seed release benchmark is in `results/all_1000_jobs14_m69_release/`; M62 500-seed baseline remains historical evidence for commit `81260ca7afa114a5d9add7b832f6c5d7875b88cd` |
+| Benchmark Evidence Layer | ✅ Stable simulation reporting | M78 | Reports export `success_stddev`, `success_stderr`, 95% CI, min/max, `failure_rate`, task-completion CI, and `support_status` / `support_reason`; `BenchmarkManifest` records `artifact_kind`; `--mission urban` is explicit while legacy `--mission all` remains comparable to M69; `--degradation coverage-packet-loss` writes simulation degradation evidence in `results/m78_degradation_coverage_packet_loss_2026-06-03/`, not PX4/SITL or hardware evidence |
 | Mission DSL | ✅ Stable | M19 | `schema_version: "0.1"`, validation API |
 | Platform Extension Guide | ✅ Stable-ish | M61 | `docs/EXTENSION_GUIDE.md` documents mission, strategy, metrics, crate boundary, and schema-version extension paths without promising semver-stable public API |
 | Safety Layer | ✅ Stable | M20 | `SafetyAllocator` wrapper, no-fly/geofence/separation |
@@ -564,6 +565,7 @@ See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known l
 | sar | greedy, auction, connectivity-aware | targeted M77 evidence | `dynamic_belief_updates` can re-rank unfinished SAR tasks by posterior entropy; disabled by default |
 | sar | cbba | unsupported | CBBA re-convergence delay after `release_task()` exceeds `max_unassigned_ticks`; explicit `unsupported_reason: delayed_reconvergence` (M35) |
 | sar | centralized | unsupported | Static pre-planning incompatible with SAR dynamic task release; agents revisit stale cell assignments |
+| emergency-mesh | centralized | supported with caveats | Oracle/static baseline is useful for comparison but should not be presented as deployable distributed coordination |
 | inspection (linear/random) | all | stable | — |
 | inspection (perimeter) | greedy, auction, connectivity-aware | experimental | Battery/time constraint limits coverage; success rate ~0–0.4 |
 | inspection (perimeter) | centralized | experimental | Static plan; moderate coverage |
@@ -576,8 +578,10 @@ See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known l
 
 **Status meanings:**
 - **stable** — success_rate > 0 across standard seeds; suitable for benchmarking.
+- **supported with caveats** — usable evidence row, but interpretation requires an explicit caveat such as oracle/static behavior or dynamic-threat drift.
 - **experimental** — works but constrained by battery/time or algorithmic limits; use with awareness.
 - **unsupported** — consistently 0% success due to a known root cause; tracked for future milestones.
+- **known bug / diagnostic only / not evaluated** — machine-readable report rows use `support_status` and `support_reason`; do not treat these rows as success claims.
 
 ---
 
@@ -674,6 +678,7 @@ points, not a published semver-stable SDK.
 | M75 | ✅ | Urban Mission Realism Follow-up: `UrbanBusRoute` scheduled moving bus targets, map-aware detector sampling, deterministic `perimeter_waypoints`, optional `urban_state.perimeter_patrol`, `perimeter-square` / `search-moving-bus` profiles, and perimeter metrics/export fields; simulation-only, no real sensors, no physics, no hardware evidence |
 | M76 | ✅ | Synthetic Scenario Testbed: `ScenarioSuite.generator_manifest` records generator identity/seed/category/parameters; `SyntheticUrbanGenerator` creates deterministic Urban grid suites with static obstacles, temporary blocked edges, optional bus/failure/comms overlays, and library presets; `generate_scenario_suite` can regenerate `scenarios/urban.generated.tiny.json`; no benchmark refresh, PX4/SITL evidence, or hardware claim |
 | M77 | ✅ | Algorithm Differentiation: communication-aware greedy/auction scoring via neutral-default `comms_penalty_weight`, wildfire priority-triggered reallocation requests via neutral-default threshold, SAR entropy re-ranking behind `dynamic_belief_updates`, CBBA replay `conflict_count` diagnostics, `--profiles` targeted benchmark filter, and a small release smoke artifact in `results/m77_algorithm_delta/coverage/`; no 1000-seed publication run or CBBA gossip-burst fix |
+| M78 | ✅ | Benchmark Evidence Layer: aggregate reports include stderr/stddev/95% CI/min/max/failure-rate fields for key binary metrics, JSON/CSV rows include `support_status` / `support_reason`, `BenchmarkManifest` records `artifact_kind`, SAR can opt into `run_config.sar_success_threshold`, Urban has explicit `--mission urban`, and `--degradation coverage-packet-loss` produces bounded simulation degradation evidence in `results/m78_degradation_coverage_packet_loss_2026-06-03/` without rerunning the 1000-seed benchmark |
 
 ---
 

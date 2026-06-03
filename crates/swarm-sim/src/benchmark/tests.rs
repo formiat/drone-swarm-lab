@@ -215,6 +215,18 @@ fn determinism_jobs_1_vs_4() {
         m1.avg_task_completion_rate, m4.avg_task_completion_rate,
         "avg_task_completion_rate must be identical for jobs=1 and jobs=4"
     );
+    assert_eq!(
+        m1.success_stats, m4.success_stats,
+        "success_stats must be identical for jobs=1 and jobs=4"
+    );
+    assert_eq!(
+        m1.task_completion_stats, m4.task_completion_stats,
+        "task_completion_stats must be identical for jobs=1 and jobs=4"
+    );
+    assert_eq!(
+        m1.failure_rate, m4.failure_rate,
+        "failure_rate must be identical for jobs=1 and jobs=4"
+    );
 }
 
 #[test]
@@ -303,19 +315,28 @@ fn report_completion_is_not_tasks_injected() {
     let report_text = format!("{}", report);
 
     // Parse the markdown table and check the "Completion" column specifically.
-    // Column layout: | Mission | Scenario | Strategy | Profile | Seeds | Success | Completion | ...
-    // After splitting by '|', index 7 is the completion column.
+    let header_cols: Vec<&str> = report_text
+        .lines()
+        .next()
+        .expect("report has header")
+        .split('|')
+        .map(str::trim)
+        .collect();
+    let completion_index = header_cols
+        .iter()
+        .position(|column| *column == "Completion")
+        .expect("report has Completion column");
     let rows: Vec<&str> = report_text.lines().skip(2).collect();
     for row in &rows {
         if row.contains("greedy") {
             let cols: Vec<&str> = row.split('|').collect();
-            let completion_col = cols.get(7).map(|s| s.trim());
+            let completion_col = cols.get(completion_index).map(|s| s.trim());
             assert_eq!(
-                    completion_col,
-                    Some("1.000"),
-                    "Completion column (index 7) should be 1.000 when all_tasks_assigned=true, got cols: {:?}",
-                    cols
-                );
+                completion_col,
+                Some("1.000"),
+                "Completion column should be 1.000 when all_tasks_assigned=true, got cols: {:?}",
+                cols
+            );
         }
     }
 }

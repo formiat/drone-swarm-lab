@@ -138,6 +138,12 @@ These fields are optional and default to the old behavior when omitted:
 - `run_config.dynamic_belief_updates` — `false` by default. When `true`, SAR
   scan tasks that are not completed/failed are re-ranked by the current
   `BeliefMap` entropy after scan events.
+- `run_config.sar_success_threshold` — absent by default. When absent, SAR
+  success keeps the strict legacy predicate: every hidden target must be found.
+  When set, SAR success uses `targets_found / targets_total >=
+  sar_success_threshold`, while `probability_of_detection` and `targets_found`
+  remain quality metrics in benchmark reports. Benchmark artifacts must document
+  which predicate they used.
 
 The `strategy_comparison` CLI also accepts `--profiles <a,b,c>` for targeted
 profile subsets. M77 adds profile aliases such as `m77-comms-heavy-loss`,
@@ -149,7 +155,7 @@ full benchmark profiles.
 
 | Mission | Required Fields | Validation Rule |
 |---|---|---|
-| `sar` | `run_config.grid_state` | Must have `grid_state` with non-empty grid; tasks must have `grid_cell` |
+| `sar` | `run_config.grid_state` | Must have `grid_state` with non-empty grid; tasks must have `grid_cell`; optional `sar_success_threshold` changes binary success from strict all-targets-found to a found-target-ratio threshold |
 | `inspection` | `run_config.enable_movement` | Must be `true`; tasks must have `edge_id` |
 | `cbba-stress` | `run_config.enable_cbba` | Must be `true`; `gossip_interval_ticks <= 5` |
 | `sitl` | tasks with `pose` | At least one task must have a `pose` |

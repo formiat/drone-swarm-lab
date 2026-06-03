@@ -1,3 +1,3 @@
 pub mod metrics;
 
-pub use metrics::{AggregateMetrics, RunMetrics};
+pub use metrics::{AggregateMetrics, MetricStats, RunMetrics};

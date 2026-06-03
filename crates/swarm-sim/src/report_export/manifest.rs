@@ -13,6 +13,10 @@ pub struct BenchmarkManifest {
     pub strategy_names: Vec<String>,
     pub profile_names: Vec<String>,
     pub metric_schema_version: String,
+    #[serde(default = "default_artifact_kind")]
+    pub artifact_kind: String,
+    #[serde(default)]
+    pub artifact_status_note: String,
     // v0.31 Realism metadata
     #[serde(default)]
     pub realism_profile: Option<String>,
@@ -57,12 +61,14 @@ impl BenchmarkManifest {
             git_commit,
             command_line,
             suite_name: suite_name.into(),
-            schema_version: "0.1".to_owned(),
+            schema_version: "0.2".to_owned(),
             seed_range_start,
             seed_range_end,
             strategy_names,
             profile_names,
-            metric_schema_version: "0.1".to_owned(),
+            metric_schema_version: "0.2".to_owned(),
+            artifact_kind: default_artifact_kind(),
+            artifact_status_note: "current only when git_commit matches the checked-out HEAD; otherwise historical evidence".to_owned(),
             realism_profile: None,
             wind_enabled: false,
             pose_noise_m: 0.0,
@@ -79,4 +85,8 @@ impl BenchmarkManifest {
             ),
         }
     }
+}
+
+fn default_artifact_kind() -> String {
+    "benchmark".to_owned()
 }

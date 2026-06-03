@@ -257,6 +257,7 @@ mod tests {
             realism: false,
             realism_profile: None,
             profiles_filter: None,
+            degradation: None,
         }
     }
 

@@ -75,6 +75,11 @@ pub(crate) fn main() {
         return;
     }
 
+    if let Some(preset) = &cli.degradation {
+        run_degradation_sweep(&cli, preset);
+        return;
+    }
+
     if let Some(suite_path) = &cli.scenario_suite_path {
         run_from_suite(suite_path, &cli);
         return;
@@ -201,6 +206,7 @@ pub(crate) fn main() {
             &all_replay_logs,
             profile_name.as_deref(),
             cli.jobs,
+            "benchmark",
         ) {
             eprintln!("Failed to write benchmark pack: {}", e);
             std::process::exit(1);
@@ -384,6 +390,7 @@ fn run_from_suite(suite_path: &str, cli: &CliArgs) {
             &all_replay_logs,
             profile_name.as_deref(),
             cli.jobs,
+            "benchmark",
         ) {
             eprintln!("Failed to write benchmark pack: {}", e);
             std::process::exit(1);
@@ -413,6 +420,7 @@ pub(super) fn write_benchmark_pack(
     replay_logs: &[swarm_replay::EventLog],
     realism_profile: Option<&str>,
     jobs: Option<usize>,
+    artifact_kind: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     std::fs::create_dir_all(output_dir)?;
 
@@ -433,6 +441,7 @@ pub(super) fn write_benchmark_pack(
         report.profile_names.clone(),
     );
     manifest.jobs = jobs;
+    manifest.artifact_kind = artifact_kind.to_owned();
     if let Some(profile) = realism_profile {
         let params = RealismProfile::parse(profile)
             .unwrap_or(RealismProfile::Medium)
@@ -466,6 +475,108 @@ pub(super) fn write_benchmark_pack(
 
     println!("Benchmark pack written to {}", output_dir);
     Ok(())
+}
+
+fn run_degradation_sweep(cli: &CliArgs, preset: &str) {
+    let (mission, profiles, axis_name) = match preset {
+        "coverage-packet-loss" => (
+            super::cli::Mission::Coverage,
+            vec![
+                "ideal-no-failures".to_owned(),
+                "medium-loss-no-failures".to_owned(),
+                "heavy-loss-no-failures".to_owned(),
+            ],
+            "packet_loss",
+        ),
+        other => {
+            eprintln!(
+                "Unknown degradation preset '{}'. Valid: coverage-packet-loss",
+                other
+            );
+            std::process::exit(1);
+        }
+    };
+
+    let factories = make_factories(&cli.planner);
+    let descriptor = mission_descriptor(mission);
+    let builder = descriptor.scenario_builder();
+    let options = BenchmarkOptions {
+        prefix: cli.run_id_prefix.as_deref(),
+        enable_replay_log: false,
+        mission_name: descriptor.name,
+        jobs: cli.jobs,
+    };
+    let result = match cli.mode {
+        RunMode::Smoke => {
+            BenchmarkHarness::run_smoke_with_options(&factories, &profiles, &builder, options)
+        }
+        RunMode::Quick => {
+            BenchmarkHarness::run_quick_with_options(&factories, &profiles, &builder, options)
+        }
+        RunMode::Full => {
+            BenchmarkHarness::run_full_with_options(&factories, &profiles, &builder, options)
+        }
+        RunMode::Custom(seed_count) => BenchmarkHarness::run_with_seed_count_with_options(
+            &factories, &profiles, &builder, seed_count, options,
+        ),
+    };
+    let mut report = result.report;
+    report.mission_names = vec![descriptor.name.to_owned()];
+    report.scenario_names = vec![descriptor.name.to_owned()];
+
+    println!("{}", report);
+
+    let output_dir = cli
+        .output_dir
+        .as_deref()
+        .unwrap_or("results/m78_degradation");
+    if let Err(e) = write_benchmark_pack(
+        output_dir,
+        &report,
+        None,
+        &[],
+        None,
+        cli.jobs,
+        "degradation",
+    ) {
+        eprintln!("Failed to write degradation benchmark pack: {}", e);
+        std::process::exit(1);
+    }
+
+    let degradation_json = serde_json::json!({
+        "artifact_kind": "degradation",
+        "preset": preset,
+        "axis": axis_name,
+        "mission": descriptor.name,
+        "profiles": profiles,
+        "seed_range_start": report.seed_range_start,
+        "seed_range_end": report.seed_range_end,
+        "rows": report.results.iter().map(|((strategy, profile), metrics)| {
+            serde_json::json!({
+                "strategy": strategy,
+                "profile": profile,
+                "success_rate": metrics.success_rate,
+                "success_stderr": metrics.success_stats.stderr,
+                "success_ci95_low": metrics.success_stats.ci95_low,
+                "success_ci95_high": metrics.success_stats.ci95_high,
+                "failure_rate": metrics.failure_rate,
+                "task_completion_rate": metrics.avg_task_completion_rate,
+                "network_availability": metrics.avg_network_availability,
+            })
+        }).collect::<Vec<_>>(),
+    });
+    write_file_creating_parent(
+        format!("{output_dir}/degradation.json"),
+        serde_json::to_string_pretty(&degradation_json).expect("degradation JSON should serialize"),
+    )
+    .expect("Failed to write degradation.json");
+
+    let readme = format!(
+        "# M78 Degradation Sweep\n\nPreset: `{preset}`\n\nAxis: `{axis_name}`\n\nMission: `{}`\n\nSeeds: {}-{}\n\nThis is simulation degradation evidence. It is not a 1000-seed publication benchmark, PX4/SITL evidence, Gazebo/HIL evidence, hardware evidence, or production safety evidence.\n",
+        descriptor.name, report.seed_range_start, report.seed_range_end
+    );
+    write_file_creating_parent(format!("{output_dir}/README.md"), readme)
+        .expect("Failed to write degradation README");
 }
 
 fn write_replay_logs_to_dir(dir: &str, replay_logs: &[swarm_replay::EventLog]) {

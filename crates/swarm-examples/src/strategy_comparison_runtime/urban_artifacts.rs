@@ -344,6 +344,7 @@ mod tests {
             &[],
             None,
             Some(14),
+            "benchmark",
         )
         .unwrap();
 
@@ -352,6 +353,7 @@ mod tests {
             serde_json::from_str(&std::fs::read_to_string(manifest_path).unwrap()).unwrap();
         assert_eq!(manifest.jobs, Some(14));
         assert_eq!(manifest.suite_name, "coverage");
+        assert_eq!(manifest.artifact_kind, "benchmark");
         assert!(manifest.build_profile.is_some());
 
         assert!(dir.path().join("results.json").exists());

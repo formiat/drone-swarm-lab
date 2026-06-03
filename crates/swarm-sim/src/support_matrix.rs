@@ -2,16 +2,31 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SupportStatus {
     Supported,
+    SupportedWithCaveats,
     Experimental,
     Unsupported,
     KnownBug,
     NotEvaluated,
 }
 
+impl SupportStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Supported => "supported",
+            Self::SupportedWithCaveats => "supported_with_caveats",
+            Self::Experimental => "experimental",
+            Self::Unsupported => "unsupported",
+            Self::KnownBug => "known_bug",
+            Self::NotEvaluated => "not_evaluated",
+        }
+    }
+}
+
 /// Machine-readable reason for the current support classification.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SupportReason {
     StableBaseline,
+    OracleBaselineCaveat,
     DelayedReconvergence,
     StaticPrePlan,
     DynamicThreatDrift,
@@ -21,6 +36,24 @@ pub enum SupportReason {
     AlgorithmDifferentiationTargeted,
     CbbaConflictDiagnostic,
     MissingEvidence,
+}
+
+impl SupportReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::StableBaseline => "stable_baseline",
+            Self::OracleBaselineCaveat => "oracle_baseline_caveat",
+            Self::DelayedReconvergence => "delayed_reconvergence",
+            Self::StaticPrePlan => "static_pre_plan",
+            Self::DynamicThreatDrift => "dynamic_threat_drift",
+            Self::RelayPlacementExperimental => "relay_placement_experimental",
+            Self::ProfileConstrained => "profile_constrained",
+            Self::CorridorPlannerExperimental => "corridor_planner_experimental",
+            Self::AlgorithmDifferentiationTargeted => "algorithm_differentiation_targeted",
+            Self::CbbaConflictDiagnostic => "cbba_conflict_diagnostic",
+            Self::MissingEvidence => "missing_evidence",
+        }
+    }
 }
 
 /// Descriptive support-matrix entry.
@@ -35,6 +68,8 @@ pub struct SupportMatrixEntry {
 
 /// Classify a known mission/profile/strategy combination without running a simulation.
 pub fn classify_support(mission: &str, profile: &str, strategy: &str) -> SupportMatrixEntry {
+    let mission_prefix = format!("{mission}/");
+    let profile = profile.strip_prefix(&mission_prefix).unwrap_or(profile);
     let (status, reason) = match (mission, profile, strategy) {
         ("sar", _, "cbba") => (
             SupportStatus::Unsupported,
@@ -53,8 +88,12 @@ pub fn classify_support(mission: &str, profile: &str, strategy: &str) -> Support
             (SupportStatus::Supported, SupportReason::StableBaseline)
         }
         ("wildfire", "medium-dynamic", "greedy") => (
-            SupportStatus::Experimental,
+            SupportStatus::SupportedWithCaveats,
             SupportReason::DynamicThreatDrift,
+        ),
+        ("emergency-mesh", _, "centralized") => (
+            SupportStatus::SupportedWithCaveats,
+            SupportReason::OracleBaselineCaveat,
         ),
         ("urban-patrol", "patrol-small-block", "greedy") => {
             (SupportStatus::Supported, SupportReason::StableBaseline)
@@ -128,6 +167,23 @@ mod tests {
         let entry = classify_support("emergency-mesh", "ideal", "connectivity-aware");
         assert_eq!(entry.status, SupportStatus::Experimental);
         assert_eq!(entry.reason, SupportReason::RelayPlacementExperimental);
+    }
+
+    #[test]
+    fn emergency_mesh_centralized_is_supported_with_oracle_caveat() {
+        let entry = classify_support("emergency-mesh", "ideal", "centralized");
+        assert_eq!(entry.status, SupportStatus::SupportedWithCaveats);
+        assert_eq!(entry.reason, SupportReason::OracleBaselineCaveat);
+        assert_eq!(entry.status.as_str(), "supported_with_caveats");
+        assert_eq!(entry.reason.as_str(), "oracle_baseline_caveat");
+    }
+
+    #[test]
+    fn mission_scoped_profiles_are_normalized_before_classification() {
+        let entry = classify_support("sar", "sar/ideal", "cbba");
+        assert_eq!(entry.profile, "ideal");
+        assert_eq!(entry.status, SupportStatus::Unsupported);
+        assert_eq!(entry.reason, SupportReason::DelayedReconvergence);
     }
 
     #[test]

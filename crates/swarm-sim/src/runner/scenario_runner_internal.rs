@@ -69,6 +69,7 @@ impl ScenarioRunner {
             &config.strategy_name,
             config.wildfire_success_threshold,
             config.inspection_coverage_threshold,
+            config.sar_success_threshold,
             all_tasks_assigned,
             all_expected_failures_detected,
             state.max_task_unassigned_ticks,

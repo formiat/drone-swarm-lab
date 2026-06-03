@@ -3,9 +3,64 @@ use serde::{Deserialize, Serialize};
 use super::RunMetrics;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct MetricStats {
+    pub mean: f64,
+    pub stddev: f64,
+    pub stderr: f64,
+    pub ci95_low: f64,
+    pub ci95_high: f64,
+    pub min: f64,
+    pub max: f64,
+}
+
+impl MetricStats {
+    pub fn from_values(values: &[f64]) -> Self {
+        if values.is_empty() {
+            return Self::default();
+        }
+
+        let n = values.len() as f64;
+        let mean = values.iter().sum::<f64>() / n;
+        let min = values.iter().copied().fold(f64::INFINITY, f64::min);
+        let max = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let variance = if values.len() > 1 {
+            values
+                .iter()
+                .map(|value| {
+                    let delta = value - mean;
+                    delta * delta
+                })
+                .sum::<f64>()
+                / (n - 1.0)
+        } else {
+            0.0
+        };
+        let stddev = variance.sqrt();
+        let stderr = stddev / n.sqrt();
+        let ci95_half_width = 1.96 * stderr;
+
+        Self {
+            mean,
+            stddev,
+            stderr,
+            ci95_low: mean - ci95_half_width,
+            ci95_high: mean + ci95_half_width,
+            min,
+            max,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct AggregateMetrics {
     pub total_runs: u64,
     pub success_rate: f64,
+    #[serde(default)]
+    pub success_stats: MetricStats,
+    #[serde(default)]
+    pub task_completion_stats: MetricStats,
+    #[serde(default)]
+    pub failure_rate: f64,
     pub avg_detection_ticks: f64,
     pub avg_reallocation_ticks: f64,
     pub avg_messages_attempted: f64,
@@ -151,6 +206,9 @@ impl AggregateMetrics {
             return Self {
                 total_runs: 0,
                 success_rate: 0.0,
+                success_stats: MetricStats::default(),
+                task_completion_stats: MetricStats::default(),
+                failure_rate: 0.0,
                 avg_detection_ticks: 0.0,
                 avg_reallocation_ticks: 0.0,
                 avg_messages_attempted: 0.0,
@@ -231,6 +289,14 @@ impl AggregateMetrics {
 
         let total_runs = runs.len() as u64;
         let success_count = runs.iter().filter(|run| run.success).count() as f64;
+        let success_values: Vec<f64> = runs
+            .iter()
+            .map(|run| if run.success { 1.0 } else { 0.0 })
+            .collect();
+        let task_completion_values: Vec<f64> = runs
+            .iter()
+            .map(|run| if run.all_tasks_assigned { 1.0 } else { 0.0 })
+            .collect();
         let total_messages_attempted: u64 = runs.iter().map(|run| run.messages_attempted).sum();
         let total_messages_dropped: u64 = runs.iter().map(|run| run.messages_dropped).sum();
         let total_tasks_injected: u64 = runs.iter().map(|run| run.tasks_injected).sum();
@@ -368,6 +434,9 @@ impl AggregateMetrics {
         Self {
             total_runs,
             success_rate: success_count / n,
+            success_stats: MetricStats::from_values(&success_values),
+            task_completion_stats: MetricStats::from_values(&task_completion_values),
+            failure_rate: 1.0 - (success_count / n),
             avg_detection_ticks: average_optional(runs.iter().map(|run| run.detection_time_ticks)),
             avg_reallocation_ticks: average_optional(
                 runs.iter().map(|run| run.reallocation_time_ticks),
@@ -492,5 +561,43 @@ fn average_optional(values: impl Iterator<Item = Option<u64>>) -> f64 {
         0.0
     } else {
         sum as f64 / count as f64
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn metric_stats_empty_values_are_zeroed() {
+        let stats = MetricStats::from_values(&[]);
+
+        assert_eq!(stats, MetricStats::default());
+    }
+
+    #[test]
+    fn metric_stats_single_value_has_zero_variance() {
+        let stats = MetricStats::from_values(&[0.75]);
+
+        assert_eq!(stats.mean, 0.75);
+        assert_eq!(stats.stddev, 0.0);
+        assert_eq!(stats.stderr, 0.0);
+        assert_eq!(stats.ci95_low, 0.75);
+        assert_eq!(stats.ci95_high, 0.75);
+        assert_eq!(stats.min, 0.75);
+        assert_eq!(stats.max, 0.75);
+    }
+
+    #[test]
+    fn metric_stats_binary_success_values_include_stderr_and_ci() {
+        let stats = MetricStats::from_values(&[1.0, 0.0, 1.0, 1.0]);
+
+        assert!((stats.mean - 0.75).abs() < 1e-9);
+        assert!((stats.stddev - 0.5).abs() < 1e-9);
+        assert!((stats.stderr - 0.25).abs() < 1e-9);
+        assert!((stats.ci95_low - 0.26).abs() < 1e-9);
+        assert!((stats.ci95_high - 1.24).abs() < 1e-9);
+        assert_eq!(stats.min, 0.0);
+        assert_eq!(stats.max, 1.0);
     }
 }

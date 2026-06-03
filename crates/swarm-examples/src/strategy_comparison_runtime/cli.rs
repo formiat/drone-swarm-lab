@@ -43,6 +43,7 @@ fn parse_mission(arg: &str) -> Vec<Mission> {
         "wildfire" => vec![Mission::Wildfire],
         "urban-patrol" => vec![Mission::UrbanPatrol],
         "urban-search" => vec![Mission::UrbanSearch],
+        "urban" => vec![Mission::UrbanPatrol, Mission::UrbanSearch],
         "all" => vec![
             Mission::Coverage,
             Mission::EmergencyMesh,
@@ -51,7 +52,7 @@ fn parse_mission(arg: &str) -> Vec<Mission> {
             Mission::Wildfire,
         ],
         _ => {
-            panic!("unknown mission: {arg}. Valid: coverage, emergency-mesh, sar, inspection, wildfire, urban-patrol, urban-search, all")
+            panic!("unknown mission: {arg}. Valid: coverage, emergency-mesh, sar, inspection, wildfire, urban-patrol, urban-search, urban, all")
         }
     }
 }
@@ -82,6 +83,8 @@ pub(super) struct CliArgs {
     pub(super) realism_profile: Option<String>,
     /// Optional comma-separated profile filter for targeted benchmark runs.
     pub(super) profiles_filter: Option<Vec<String>>,
+    /// Optional degradation sweep preset name.
+    pub(super) degradation: Option<String>,
 }
 
 pub(super) fn parse_args() -> CliArgs {
@@ -104,6 +107,7 @@ pub(super) fn parse_args() -> CliArgs {
         realism: false,
         realism_profile: None,
         profiles_filter: None,
+        degradation: None,
     };
 
     let mut i = 1;
@@ -224,6 +228,12 @@ pub(super) fn parse_args() -> CliArgs {
                     cli.profiles_filter = Some(profiles);
                 }
             }
+            "--degradation" => {
+                i += 1;
+                if i < args.len() {
+                    cli.degradation = Some(args[i].clone());
+                }
+            }
             "--compare-baseline" => {
                 i += 1;
                 if i < args.len() {
@@ -242,4 +252,30 @@ pub(super) fn parse_args() -> CliArgs {
     }
 
     cli
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mission_urban_expands_to_urban_patrol_and_search() {
+        assert_eq!(
+            parse_mission("urban"),
+            vec![Mission::UrbanPatrol, Mission::UrbanSearch]
+        );
+    }
+
+    #[test]
+    fn mission_all_remains_legacy_non_urban_suite() {
+        let missions = parse_mission("all");
+
+        assert!(missions.contains(&Mission::Coverage));
+        assert!(missions.contains(&Mission::EmergencyMesh));
+        assert!(missions.contains(&Mission::Sar));
+        assert!(missions.contains(&Mission::Inspection));
+        assert!(missions.contains(&Mission::Wildfire));
+        assert!(!missions.contains(&Mission::UrbanPatrol));
+        assert!(!missions.contains(&Mission::UrbanSearch));
+    }
 }

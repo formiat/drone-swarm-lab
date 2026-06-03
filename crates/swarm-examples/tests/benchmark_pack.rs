@@ -33,6 +33,10 @@ fn m62_benchmark_manifest_identity_is_historical() {
         manifest["command_line"],
         "target/release/strategy_comparison --seeds 500 --mission all --jobs 14 --output-dir results/all_500_jobs14_m62_release"
     );
+    assert!(
+        manifest.get("artifact_kind").is_none(),
+        "M62 predates M78 artifact_kind and remains historical evidence by git_commit"
+    );
 }
 
 #[test]
@@ -62,6 +66,12 @@ fn strategy_comparison_output_contains_manifest() {
     let content = std::fs::read_to_string(&manifest_path).unwrap();
     assert!(content.contains("git_commit"));
     assert!(content.contains("command_line"));
+    let manifest: serde_json::Value = serde_json::from_str(&content).unwrap();
+    assert_eq!(manifest["artifact_kind"], "benchmark");
+    assert!(manifest["artifact_status_note"]
+        .as_str()
+        .unwrap()
+        .contains("historical evidence"));
 }
 
 #[test]
@@ -351,4 +361,38 @@ fn strategy_comparison_mission_all_has_all_benchmark_id() {
     );
 
     let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn strategy_comparison_degradation_preset_writes_degradation_artifacts() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let dir = tmp.path().to_str().unwrap();
+    let output = run_strategy_comparison(&[
+        "--smoke",
+        "--degradation",
+        "coverage-packet-loss",
+        "--jobs",
+        "2",
+        "--output-dir",
+        dir,
+    ]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "strategy_comparison degradation preset failed: {stderr}"
+    );
+
+    let manifest: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(tmp.path().join("manifest.json")).unwrap())
+            .unwrap();
+    assert_eq!(manifest["artifact_kind"], "degradation");
+    assert_eq!(manifest["profile_names"].as_array().unwrap().len(), 3);
+
+    let degradation: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(tmp.path().join("degradation.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(degradation["preset"], "coverage-packet-loss");
+    assert_eq!(degradation["axis"], "packet_loss");
+    assert!(tmp.path().join("README.md").exists());
 }

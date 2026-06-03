@@ -1,7 +1,7 @@
 use serde::Serialize;
 
 use super::identity::row_identity;
-use crate::ComparisonReport;
+use crate::{classify_support, ComparisonReport};
 
 /// Export a ComparisonReport to JSON.
 pub fn export_json(report: &ComparisonReport) -> Result<String, serde_json::Error> {
@@ -11,6 +11,11 @@ pub fn export_json(report: &ComparisonReport) -> Result<String, serde_json::Erro
             let key = (strategy_name.clone(), profile_name.clone());
             if let Some(metrics) = report.results.get(&key) {
                 let identity = row_identity(strategy_name, profile_name, metrics);
+                let support = classify_support(
+                    identity.mission.as_str(),
+                    identity.profile.as_str(),
+                    identity.strategy.as_str(),
+                );
                 let safe_profile = identity.profile.replace('/', "_");
                 let row_id = format!(
                     "{}_{}_{}_{}",
@@ -27,7 +32,22 @@ pub fn export_json(report: &ComparisonReport) -> Result<String, serde_json::Erro
                     profile: identity.profile,
                     total_runs: metrics.total_runs,
                     success_rate: metrics.success_rate,
+                    success_stddev: metrics.success_stats.stddev,
+                    success_stderr: metrics.success_stats.stderr,
+                    success_ci95_low: metrics.success_stats.ci95_low,
+                    success_ci95_high: metrics.success_stats.ci95_high,
+                    success_min: metrics.success_stats.min,
+                    success_max: metrics.success_stats.max,
+                    failure_rate: metrics.failure_rate,
                     avg_task_completion_rate: metrics.avg_task_completion_rate,
+                    task_completion_stddev: metrics.task_completion_stats.stddev,
+                    task_completion_stderr: metrics.task_completion_stats.stderr,
+                    task_completion_ci95_low: metrics.task_completion_stats.ci95_low,
+                    task_completion_ci95_high: metrics.task_completion_stats.ci95_high,
+                    task_completion_min: metrics.task_completion_stats.min,
+                    task_completion_max: metrics.task_completion_stats.max,
+                    support_status: support.status.as_str().to_owned(),
+                    support_reason: support.reason.as_str().to_owned(),
                     avg_detection_ticks: metrics.avg_detection_ticks,
                     avg_reallocation_ticks: metrics.avg_reallocation_ticks,
                     avg_messages_attempted: metrics.avg_messages_attempted,
@@ -138,7 +158,22 @@ struct ReportRow {
     profile: String,
     total_runs: u64,
     success_rate: f64,
+    success_stddev: f64,
+    success_stderr: f64,
+    success_ci95_low: f64,
+    success_ci95_high: f64,
+    success_min: f64,
+    success_max: f64,
+    failure_rate: f64,
     avg_task_completion_rate: f64,
+    task_completion_stddev: f64,
+    task_completion_stderr: f64,
+    task_completion_ci95_low: f64,
+    task_completion_ci95_high: f64,
+    task_completion_min: f64,
+    task_completion_max: f64,
+    support_status: String,
+    support_reason: String,
     avg_detection_ticks: f64,
     avg_reallocation_ticks: f64,
     avg_messages_attempted: f64,

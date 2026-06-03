@@ -131,6 +131,11 @@ mod tests {
         assert!(csv.contains("benchmark_run_id"));
         assert!(csv.contains("mission"));
         assert!(csv.contains("strategy"));
+        assert!(csv.contains("success_stderr"));
+        assert!(csv.contains("success_ci95_low"));
+        assert!(csv.contains("failure_rate"));
+        assert!(csv.contains("support_status"));
+        assert!(csv.contains("support_reason"));
         assert!(csv.contains("avg_urban_route_length_m"));
         assert!(csv.contains("avg_urban_route_risk_score"));
         assert!(csv.contains("urban_route_planned_rate"));
@@ -157,6 +162,20 @@ mod tests {
     }
 
     #[test]
+    fn json_export_contains_stats_and_support_fields() {
+        let report = make_report();
+        let json: serde_json::Value = serde_json::from_str(&export_json(&report).unwrap()).unwrap();
+        let row = &json["rows"][0];
+
+        assert!(row["success_stderr"].is_number());
+        assert!(row["success_ci95_low"].is_number());
+        assert!(row["success_ci95_high"].is_number());
+        assert!(row["failure_rate"].is_number());
+        assert_eq!(row["support_status"], "supported");
+        assert_eq!(row["support_reason"], "stable_baseline");
+    }
+
+    #[test]
     fn csv_export_contains_mission_column() {
         let report = make_report();
         let csv = export_csv(&report).unwrap();
@@ -176,6 +195,8 @@ mod tests {
             strategy_names: vec!["greedy".to_owned()],
             profile_names: vec!["ideal".to_owned()],
             metric_schema_version: "0.1".to_owned(),
+            artifact_kind: "benchmark".to_owned(),
+            artifact_status_note: "test note".to_owned(),
             realism_profile: None,
             wind_enabled: false,
             pose_noise_m: 0.0,
@@ -225,8 +246,12 @@ mod tests {
         );
         assert!(!manifest.git_commit.is_empty());
         assert!(!manifest.timestamp.is_empty());
-        assert_eq!(manifest.schema_version, "0.1");
-        assert_eq!(manifest.metric_schema_version, "0.1");
+        assert_eq!(manifest.schema_version, "0.2");
+        assert_eq!(manifest.metric_schema_version, "0.2");
+        assert_eq!(manifest.artifact_kind, "benchmark");
+        assert!(manifest
+            .artifact_status_note
+            .contains("historical evidence"));
         assert!(manifest.build_profile.is_some());
     }
 
@@ -307,6 +332,8 @@ mod tests {
         let decoded: BenchmarkManifest = serde_json::from_str(json_without_jobs).unwrap();
         assert!(decoded.jobs.is_none());
         assert!(decoded.build_profile.is_none());
+        assert_eq!(decoded.artifact_kind, "benchmark");
+        assert!(decoded.artifact_status_note.is_empty());
     }
 
     fn make_aggregate(mission: &str, scenario: &str, success_rate: f64) -> AggregateMetrics {

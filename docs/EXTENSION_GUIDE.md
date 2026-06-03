@@ -177,8 +177,8 @@ This is intentionally a mission-level substrate. The M66 detector is mocked and
 distance/probability based. The M67 two-agent fixture is diagnostic only. The
 M68 corridor-aware planner is a route scoring extension, not physical
 avoidance. Do not add real lidar/raycast, dynamic obstacles, multi-agent route
-deconfliction, PX4/SITL export, hardware claims, visual UI, or arbitrary polygon
-dependencies as part of this path. M76 generated suites are deterministic input
+deconfliction, PX4/SITL export, hardware claims, visual UI, or arbitrary polygon dependencies
+as part of this path. M76 generated suites are deterministic input
 generation only; they are not benchmark, PX4, hardware, or physics evidence.
 Those belong to later milestones with their own tests and docs.
 
@@ -201,6 +201,25 @@ changing legacy scenario behavior:
 
 Targeted benchmark extensions should prefer `strategy_comparison --profiles`
 with explicit profile aliases over broad `--mission all` runs.
+
+## Evidence Metadata And Degradation Presets
+
+M78 adds benchmark evidence metadata for extension authors:
+
+- New benchmark packs record `BenchmarkManifest.artifact_kind`. Use
+  `"benchmark"` for normal benchmark packs, `"degradation"` for sweep artifacts,
+  and `"smoke"` only for intentionally tiny engineering checks.
+- A pack is current evidence only for the exact `git_commit` recorded in its
+  manifest. If HEAD differs, treat the pack as historical evidence.
+- New report rows include `support_status` and `support_reason`. Mark unsupported,
+  known-bug, not-evaluated, and supported-with-caveats combinations explicitly
+  instead of relying on low success rates to communicate limitations.
+- Degradation presets should be narrow and named by axis, for example
+  `--degradation coverage-packet-loss`. Prefer a bounded first sweep before
+  adding larger generated suites.
+- Degradation and smoke artifacts are simulation evidence unless a separate
+  PX4/SITL, Gazebo/HIL, or hardware run proves otherwise. Do not promote
+  extension artifacts into hardware claims without separate evidence.
 
 ## Add A Strategy
 

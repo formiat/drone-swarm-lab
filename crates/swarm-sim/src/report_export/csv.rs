@@ -1,5 +1,5 @@
 use super::identity::row_identity;
-use crate::ComparisonReport;
+use crate::{classify_support, ComparisonReport};
 
 /// Export a ComparisonReport to CSV.
 pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
@@ -16,7 +16,22 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
         "profile",
         "total_runs",
         "success_rate",
+        "success_stddev",
+        "success_stderr",
+        "success_ci95_low",
+        "success_ci95_high",
+        "success_min",
+        "success_max",
+        "failure_rate",
         "avg_task_completion_rate",
+        "task_completion_stddev",
+        "task_completion_stderr",
+        "task_completion_ci95_low",
+        "task_completion_ci95_high",
+        "task_completion_min",
+        "task_completion_max",
+        "support_status",
+        "support_reason",
         "avg_detection_ticks",
         "avg_reallocation_ticks",
         "avg_messages_attempted",
@@ -94,6 +109,11 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
             let key = (strategy_name.clone(), profile_name.clone());
             if let Some(m) = report.results.get(&key) {
                 let identity = row_identity(strategy_name, profile_name, m);
+                let support = classify_support(
+                    identity.mission.as_str(),
+                    identity.profile.as_str(),
+                    identity.strategy.as_str(),
+                );
                 let safe_profile = identity.profile.replace('/', "_");
                 let row_id = format!(
                     "{}_{}_{}_{}",
@@ -110,7 +130,22 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
                     identity.profile.as_str(),
                     m.total_runs.to_string().as_str(),
                     format!("{:.3}", m.success_rate).as_str(),
+                    format!("{:.3}", m.success_stats.stddev).as_str(),
+                    format!("{:.3}", m.success_stats.stderr).as_str(),
+                    format!("{:.3}", m.success_stats.ci95_low).as_str(),
+                    format!("{:.3}", m.success_stats.ci95_high).as_str(),
+                    format!("{:.3}", m.success_stats.min).as_str(),
+                    format!("{:.3}", m.success_stats.max).as_str(),
+                    format!("{:.3}", m.failure_rate).as_str(),
                     format!("{:.3}", m.avg_task_completion_rate).as_str(),
+                    format!("{:.3}", m.task_completion_stats.stddev).as_str(),
+                    format!("{:.3}", m.task_completion_stats.stderr).as_str(),
+                    format!("{:.3}", m.task_completion_stats.ci95_low).as_str(),
+                    format!("{:.3}", m.task_completion_stats.ci95_high).as_str(),
+                    format!("{:.3}", m.task_completion_stats.min).as_str(),
+                    format!("{:.3}", m.task_completion_stats.max).as_str(),
+                    support.status.as_str(),
+                    support.reason.as_str(),
                     format!("{:.3}", m.avg_detection_ticks).as_str(),
                     format!("{:.3}", m.avg_reallocation_ticks).as_str(),
                     format!("{:.3}", m.avg_messages_attempted).as_str(),
