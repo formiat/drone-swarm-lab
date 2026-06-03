@@ -1,7 +1,7 @@
 {
-  "timestamp": "2026-06-03T13:25:38.338753343+00:00",
-  "git_commit": "778feeb198fd9f0e1edd541237b5e28ca1513867",
-  "command_line": "target/release/strategy_comparison --mission coverage --profiles m77-comms-heavy-loss,m77-comms-partition-prone --seeds 1 --jobs 1 --output-dir results/m77_algorithm_delta/coverage --run-id-prefix m77-coverage-smoke",
+  "timestamp": "2026-06-03T13:44:29.280965230+00:00",
+  "git_commit": "736d3c75bd60e5f086aa29e8f9ca047545560d5e",
+  "command_line": "target/release/strategy_comparison --mission coverage --profiles m77-comms-heavy-loss,m77-comms-partition-prone --seeds 1 --jobs 1 --output-dir results/m77_algorithm_delta/coverage --run-id-prefix m77-coverage-smoke --force",
   "suite_name": "coverage",
   "schema_version": "0.1",
   "seed_range_start": 0,
