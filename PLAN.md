@@ -363,14 +363,14 @@ timeout 300 env PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 /home/formi/.local/bin/ru
 Targeted run commands after tests pass:
 
 ```bash
-cargo build --release
+timeout 300 cargo build --release
 timeout 300 /home/formi/.local/bin/runlim cargo run --release -p swarm-examples --bin strategy_comparison -- --mission coverage --profiles heavy-loss,partition-prone --seeds 10 --jobs 4 --output-dir results/m77_algorithm_delta/coverage --run-id-prefix m77-coverage
 timeout 300 /home/formi/.local/bin/runlim cargo run --release -p swarm-examples --bin strategy_comparison -- --mission wildfire --profiles m77-priority-realloc --seeds 10 --jobs 4 --output-dir results/m77_algorithm_delta/wildfire --run-id-prefix m77-wildfire
 timeout 300 /home/formi/.local/bin/runlim cargo run --release -p swarm-examples --bin strategy_comparison -- --mission sar --profiles m77-dynamic-belief --seeds 10 --jobs 4 --output-dir results/m77_algorithm_delta/sar --run-id-prefix m77-sar
 timeout 300 /home/formi/.local/bin/runlim cargo run --release -p swarm-examples --bin strategy_comparison -- --mission coverage --profiles m77-cbba-heavy-loss --seeds 10 --jobs 4 --output-dir results/m77_algorithm_delta/cbba --run-id-prefix m77-cbba
 ```
 
-If a targeted run exceeds 5 minutes, stop it, keep the failed/partial run log only if useful, lower seed count for local smoke evidence, and document the skipped longer run explicitly in `docs/BENCHMARK_RESULTS.md` and the final report.
+If the release build or a targeted run exceeds 5 minutes, stop it, keep the failed/partial run log only if useful, lower seed count for local smoke evidence, and document the skipped longer run explicitly in `docs/BENCHMARK_RESULTS.md` and the final report.
 
 ## Risks and tradeoffs
 
