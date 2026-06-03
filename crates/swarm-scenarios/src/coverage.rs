@@ -1,3 +1,18 @@
+/// # Coverage — Benchmark Baseline Only
+///
+/// This module provides the "hello world" of multi-agent task allocation:
+/// N agents assigned to N waypoint tasks. It is the primary benchmark baseline
+/// used to compare allocator strategies under varying communication and failure
+/// conditions.
+///
+/// It is **not** an area survey mission. It does **not** model:
+/// - camera footprint or image overlap;
+/// - ground sampling distance or altitude-dependent coverage width;
+/// - lawnmower / boustrophedon path planning;
+/// - real area coverage percentage of a region.
+///
+/// Do not extend this toward real area-survey behavior without a dedicated
+/// mission design that includes footprint geometry and path planning.
 use swarm_sim::{FailureEvent, RunConfig, Scenario};
 use swarm_types::{Agent, AgentId, Health, Pose, Role, Task, TaskId, TaskKind, TaskStatus};
 

@@ -5,26 +5,6 @@ edition = "2021"
 license.workspace = true
 
 [[bin]]
-name = "empty_scenario"
-path = "src/bin/empty_scenario.rs"
-
-[[bin]]
-name = "coverage_with_failure"
-path = "src/bin/coverage_with_failure.rs"
-
-[[bin]]
-name = "dynamic_auction"
-path = "src/bin/dynamic_auction.rs"
-
-[[bin]]
-name = "agent_process"
-path = "src/bin/agent_process.rs"
-
-[[bin]]
-name = "multiprocess_scenario"
-path = "src/bin/multiprocess_scenario.rs"
-
-[[bin]]
 name = "partition_scenario"
 path = "src/bin/partition_scenario.rs"
 

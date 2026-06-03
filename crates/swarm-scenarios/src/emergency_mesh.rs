@@ -1,3 +1,19 @@
+/// # Emergency Mesh — Research / Benchmark Only
+///
+/// This module is an **allocation benchmark**, not a model of real RF mesh
+/// networking. The scenario exercises multi-role allocation (scout + relay
+/// agents, ground relay nodes) and is useful for comparing allocator behavior
+/// under varied comms topologies.
+///
+/// It does **not** model:
+/// - real radio propagation or RSSI;
+/// - RF interference, frequency planning, or link budgets;
+/// - actual MAVLink relay or MAVLink-over-mesh behavior;
+/// - hardware mesh protocols (e.g. DJI O3, Ubiquiti, dedicated mesh radios).
+///
+/// In real hardware systems, mesh relay is a concern of the radio and
+/// protocol layer — not the mission planner. Do not extend this module toward
+/// production readiness without a separate hardware-adjacent design.
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use swarm_sim::{FailureEvent, RunConfig, Scenario};

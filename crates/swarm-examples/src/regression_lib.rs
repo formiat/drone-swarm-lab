@@ -12,7 +12,7 @@ use swarm_sim::{
 };
 use swarm_types::AgentId;
 
-use crate::realism::{apply_realism_preset, RealismProfile};
+use crate::benchmark_stress_profile::{apply_realism_preset, RealismProfile};
 
 pub type ScenarioBuilder = Box<dyn Fn(u64, &str) -> (Scenario, RunConfig) + Send + Sync>;
 pub type StrategyFactory = Box<dyn Fn(&Scenario, &RunConfig) -> Box<dyn Strategy> + Send + Sync>;

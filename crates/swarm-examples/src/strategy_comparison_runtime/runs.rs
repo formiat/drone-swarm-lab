@@ -8,7 +8,7 @@ use swarm_sim::{
     RegressionReport,
 };
 
-use crate::realism::{apply_realism_preset, RealismProfile};
+use crate::benchmark_stress_profile::{apply_realism_preset, RealismProfile};
 
 use super::cli::{parse_args, CliArgs, RunMode};
 use super::missions::mission_descriptor;

@@ -1,6 +1,25 @@
+/// # Benchmark Stress Profile (formerly "realism")
+///
+/// Injects synthetic noise into benchmark runs to stress-test allocator
+/// robustness: Gaussian pose noise, simulated wind drift, comms jitter, and a
+/// simplified battery drain model.
+///
+/// These are **made-up numbers**, not calibrated to any real airframe or sensor.
+/// They are useful for producing varied benchmark conditions and catching
+/// regressions under non-ideal simulation, but they do **not** represent:
+/// - real aerodynamic behavior or flight physics;
+/// - real battery discharge curves or voltage sag;
+/// - real RF propagation, link budget, or interference;
+/// - real sensor noise characteristics.
+///
+/// When real hardware appears, replace this module with parameters derived from
+/// actual airframe measurements rather than extending these synthetic values.
 use swarm_types::BatteryModel;
 
-/// Realism profile affecting simulation fidelity.
+/// Synthetic noise and stress parameters for benchmark runs.
+///
+/// Previously called `RealismProfile`; renamed to reflect that these are
+/// benchmark stress knobs, not a physics model.
 #[derive(Clone, Debug, PartialEq)]
 pub enum RealismProfile {
     /// Minimal realism — small noise, low wind, conservative battery drain.
