@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use swarm_safety::preflight::{SafetyValidationReport, ViolationSeverity};
 use swarm_sim::{
-    export_route_loop_to_waypoints, validate_scenario_suite, GeoOrigin, ScenarioSuite,
-    ScenarioSuiteEntry, UrbanRouteExportOptions,
+    export_route_loop_to_waypoints, validate_scenario_suite, GeoOrigin, PrimitiveMission,
+    ScenarioSuite, ScenarioSuiteEntry, UrbanRouteExportOptions,
 };
 
 pub const DEFAULT_SITL_GEO_ORIGIN: GeoOrigin = GeoOrigin {
@@ -107,6 +107,9 @@ pub struct SitlPlan {
     pub waypoint_count: usize,
     pub waypoints: Vec<SitlWaypointItem>,
     pub safety_report: SafetyValidationReport,
+    /// Present for `hover`, `orbit` and `takeoff-land` missions. Used by the
+    /// real-connection upload path to build typed MAVLink `MissionItem`s.
+    pub primitive_mission: Option<PrimitiveMission>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -392,6 +395,16 @@ fn build_sitl_plan_with_task_filter(
         );
     }
 
+    if matches!(entry.mission.as_str(), "hover" | "orbit" | "takeoff-land") {
+        return build_primitive_sitl_plan(
+            &suite.name,
+            entry,
+            scenario_path,
+            agent_id,
+            safety_report,
+        );
+    }
+
     let task_ids: Option<HashSet<&str>> =
         task_ids.map(|ids| ids.iter().map(String::as_str).collect());
 
@@ -491,6 +504,70 @@ fn build_sitl_plan_with_task_filter(
         waypoint_count: waypoints.len(),
         waypoints,
         safety_report,
+        primitive_mission: None,
+    })
+}
+
+fn build_primitive_sitl_plan(
+    suite_name: &str,
+    entry: &ScenarioSuiteEntry,
+    scenario_path: PathBuf,
+    agent_id: String,
+    safety_report: SafetyValidationReport,
+) -> Result<SitlPlan, SitlError> {
+    let prim =
+        entry
+            .run_config
+            .primitive_mission
+            .as_ref()
+            .ok_or_else(|| SitlError::InvalidScenario {
+                path: scenario_path.clone(),
+                message: format!(
+                    "{} mission requires run_config.primitive_mission",
+                    entry.mission
+                ),
+            })?;
+
+    // Build human-readable waypoint items for dry-run display. No tasks exist
+    // for primitive missions, so these are derived directly from the mission
+    // parameters.
+    let items = prim.describe_items();
+    let waypoints: Vec<SitlWaypointItem> = items
+        .iter()
+        .enumerate()
+        .map(|(seq, item)| SitlWaypointItem {
+            seq: seq as u16,
+            task_id: format!("primitive-{}-{}", item.label, seq),
+            x: item.x,
+            y: item.y,
+            z: item.z,
+            source: format!("primitive_{}", item.label),
+            edge_id: None,
+            from_node_id: None,
+            to_node_id: None,
+            segment_index: None,
+            point_index_on_segment: None,
+        })
+        .collect();
+
+    Ok(SitlPlan {
+        agent_id,
+        scenario_path,
+        suite_name: suite_name.to_owned(),
+        scenario_name: entry.scenario.name.clone(),
+        mission: entry.mission.clone(),
+        profile: entry.profile.clone(),
+        coordinate_frame: SitlCoordinateFrame::LocalSimulation,
+        altitude_source: "primitive_mission.altitude_m".to_owned(),
+        geo_origin: entry.scenario.geo_origin,
+        export_kind: "primitive_mission".to_owned(),
+        planner_or_adapter: format!("primitive_{}", entry.mission),
+        route_length_m: None,
+        segment_count: None,
+        waypoint_count: waypoints.len(),
+        waypoints,
+        safety_report,
+        primitive_mission: Some(prim.clone()),
     })
 }
 
@@ -574,6 +651,7 @@ fn build_urban_route_sitl_plan(
         waypoint_count: export.metadata.waypoint_count,
         waypoints,
         safety_report,
+        primitive_mission: None,
     })
 }
 

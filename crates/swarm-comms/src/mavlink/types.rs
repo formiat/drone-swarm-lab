@@ -151,6 +151,59 @@ pub struct MavlinkFlightReport {
     pub lifecycle: MissionLifecycleReport,
 }
 
+/// A typed MAVLink mission item that maps to a concrete `MAV_CMD_NAV_*`.
+///
+/// Used by `upload_mission_items` to upload primitive missions without the
+/// allocation or simulation layers.
+#[cfg(feature = "mavlink-transport")]
+#[derive(Debug, Clone, PartialEq)]
+pub enum MissionItem {
+    /// Fly to position (`MAV_CMD_NAV_WAYPOINT`).
+    Goto { position: Waypoint },
+    /// Loiter at position for `hold_seconds` (`MAV_CMD_NAV_LOITER_TIME`).
+    ///
+    /// `radius_m` sets the loiter radius in metres; 0.0 uses the autopilot
+    /// default. Positive = counter-clockwise, negative = clockwise.
+    LoiterTime {
+        position: Waypoint,
+        hold_seconds: f32,
+        radius_m: f32,
+    },
+    /// Complete `turns` full circles of `radius_m` (`MAV_CMD_NAV_LOITER_TURNS`).
+    ///
+    /// Positive turns = counter-clockwise, negative = clockwise.
+    LoiterTurns {
+        position: Waypoint,
+        turns: f32,
+        radius_m: f32,
+    },
+    /// Land at position (`MAV_CMD_NAV_LAND`).
+    Land { position: Waypoint },
+}
+
+#[cfg(feature = "mavlink-transport")]
+impl MissionItem {
+    /// The x/y/z position of this item.
+    pub fn position(&self) -> &Waypoint {
+        match self {
+            Self::Goto { position }
+            | Self::LoiterTime { position, .. }
+            | Self::LoiterTurns { position, .. }
+            | Self::Land { position } => position,
+        }
+    }
+
+    /// Short label for dry-run display.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Goto { .. } => "waypoint",
+            Self::LoiterTime { .. } => "loiter_time",
+            Self::LoiterTurns { .. } => "loiter_turns",
+            Self::Land { .. } => "land",
+        }
+    }
+}
+
 /// Convert a Task to a Waypoint.
 pub fn task_to_waypoint(task: &swarm_types::Task) -> Option<Waypoint> {
     task.pose.map(|pose| Waypoint {

@@ -229,6 +229,107 @@ pub struct RunConfig {
     /// Re-rank unfinished SAR tasks by posterior uncertainty after scan events.
     #[serde(default)]
     pub dynamic_belief_updates: bool,
+    /// Single-vehicle parametric mission executed directly via MAVLink without
+    /// task allocation or simulation-side routing. Absent for all other mission
+    /// types.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub primitive_mission: Option<PrimitiveMission>,
+}
+
+/// A minimal real-hardware mission expressed as a single parametric command
+/// sequence. No task allocation or simulation is performed; the plan is
+/// converted directly into MAVLink `MISSION_ITEM_INT` messages.
+///
+/// Positions are in local simulation coordinates (x = east m, y = north m,
+/// z = altitude above takeoff point m). The upload layer converts to WGS84
+/// using the scenario `geo_origin`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum PrimitiveMission {
+    /// Climb to `altitude_m`, loiter in place for `hold_seconds`, land.
+    Hover { altitude_m: f64, hold_seconds: f32 },
+    /// Climb to `altitude_m`, fly `turns` full circles of `radius_m`, land.
+    Orbit {
+        altitude_m: f64,
+        turns: f32,
+        radius_m: f32,
+    },
+    /// Climb to `altitude_m` and immediately descend and land.
+    TakeoffLand { altitude_m: f64 },
+}
+
+impl PrimitiveMission {
+    /// Human-readable items for dry-run display.
+    /// value: `(label, x, y, z, params)` where params is a short description.
+    pub fn describe_items(&self) -> Vec<PrimitiveMissionItemDesc> {
+        match self {
+            Self::Hover {
+                altitude_m,
+                hold_seconds,
+            } => vec![
+                PrimitiveMissionItemDesc {
+                    label: "loiter_time".to_owned(),
+                    x: 0.0,
+                    y: 0.0,
+                    z: *altitude_m,
+                    params: format!("hold_seconds={hold_seconds:.1}"),
+                },
+                PrimitiveMissionItemDesc {
+                    label: "land".to_owned(),
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                    params: String::new(),
+                },
+            ],
+            Self::Orbit {
+                altitude_m,
+                turns,
+                radius_m,
+            } => vec![
+                PrimitiveMissionItemDesc {
+                    label: "loiter_turns".to_owned(),
+                    x: 0.0,
+                    y: 0.0,
+                    z: *altitude_m,
+                    params: format!("turns={turns:.1} radius_m={radius_m:.1}"),
+                },
+                PrimitiveMissionItemDesc {
+                    label: "land".to_owned(),
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                    params: String::new(),
+                },
+            ],
+            Self::TakeoffLand { altitude_m } => vec![
+                PrimitiveMissionItemDesc {
+                    label: "waypoint".to_owned(),
+                    x: 0.0,
+                    y: 0.0,
+                    z: *altitude_m,
+                    params: "brief hover before land".to_owned(),
+                },
+                PrimitiveMissionItemDesc {
+                    label: "land".to_owned(),
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                    params: String::new(),
+                },
+            ],
+        }
+    }
+}
+
+/// One item in the dry-run summary of a `PrimitiveMission`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PrimitiveMissionItemDesc {
+    pub label: String,
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+    pub params: String,
 }
 
 fn default_max_unassigned() -> u64 {

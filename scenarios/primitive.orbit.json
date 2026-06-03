@@ -1,0 +1,48 @@
+{
+  "schema_version": "0.1",
+  "name": "Primitive Orbit",
+  "description": "Single-agent mission: climb to 3 m, fly 3 counter-clockwise circles of 2 m radius, land. No task allocation. Upload with sitl_agent --dry-run or --connection.",
+  "scenarios": [
+    {
+      "mission": "orbit",
+      "profile": "orbit-3m-3turns-2m",
+      "scenario": {
+        "name": "primitive_orbit_3m_3turns_2m",
+        "seed": 0,
+        "agents": [
+          {
+            "id": "agent-0",
+            "role": "scout",
+            "health": "alive",
+            "pose": { "x": 0.0, "y": 0.0, "z": 0.0 },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 1000.0,
+            "generation": 1,
+            "speed": 0.0,
+            "max_range": 1000.0,
+            "battery_drain_rate": 0.0
+          }
+        ],
+        "tasks": [],
+        "ground_nodes": [],
+        "base_station": null,
+        "geo_origin": {
+          "lat_deg": 47.397742,
+          "lon_deg": 8.545594,
+          "alt_m": 0.0
+        }
+      },
+      "run_config": {
+        "max_ticks": 200,
+        "primitive_mission": {
+          "kind": "orbit",
+          "altitude_m": 3.0,
+          "turns": 3.0,
+          "radius_m": 2.0
+        }
+      }
+    }
+  ]
+}

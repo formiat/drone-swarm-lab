@@ -14,13 +14,13 @@ use super::{
     lifecycle::execute_uploaded_mission_with_connection_observed,
     mission_upload::{
         upload_and_execute_mission_with_connection_observed,
-        upload_mission_with_connection_observed,
+        upload_mission_items_with_connection_observed, upload_mission_with_connection_observed,
     },
     telemetry::{poll_telemetry_event_with_connection, wait_next_telemetry_event_with_connection},
     AbortCommandResult, CommonMessage, MavlinkFlightError, MavlinkFlightReport,
     MavlinkLifecycleError, MavlinkMissionError, MavlinkMissionObserver, MavlinkTelemetryError,
-    MavlinkTelemetryEvent, MissionLifecycleOptions, MissionLifecycleReport, MissionUploadOptions,
-    MissionUploadReport, NoopMavlinkMissionObserver,
+    MavlinkTelemetryEvent, MissionItem, MissionLifecycleOptions, MissionLifecycleReport,
+    MissionUploadOptions, MissionUploadReport, NoopMavlinkMissionObserver,
 };
 
 /// Mock MAVLink transport for unit tests and --mock mode.
@@ -116,6 +116,31 @@ impl MavlinkTransport {
         observer: &mut O,
     ) -> Result<MissionUploadReport, MavlinkMissionError> {
         upload_mission_with_connection_observed(&mut self.conn, waypoints, &options, observer)
+    }
+
+    /// Upload a typed `MissionItem` list (loiter, orbit, land, …) to the vehicle.
+    pub fn upload_mission_items(
+        &mut self,
+        items: &[MissionItem],
+        options: MissionUploadOptions,
+    ) -> Result<MissionUploadReport, MavlinkMissionError> {
+        let mut observer = NoopMavlinkMissionObserver;
+        upload_mission_items_with_connection_observed(
+            &mut self.conn,
+            items,
+            &options,
+            &mut observer,
+        )
+    }
+
+    /// Upload a typed `MissionItem` list with event observation.
+    pub fn upload_mission_items_observed<O: MavlinkMissionObserver>(
+        &mut self,
+        items: &[MissionItem],
+        options: MissionUploadOptions,
+        observer: &mut O,
+    ) -> Result<MissionUploadReport, MavlinkMissionError> {
+        upload_mission_items_with_connection_observed(&mut self.conn, items, &options, observer)
     }
 
     pub fn execute_uploaded_mission(

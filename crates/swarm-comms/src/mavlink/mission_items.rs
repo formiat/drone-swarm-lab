@@ -4,7 +4,7 @@ use mavlink::dialects::common;
 use swarm_types::TaskStatus;
 
 #[cfg(feature = "mavlink-transport")]
-use super::{CommonMessage, MavlinkMissionError, MissionUploadOptions, Waypoint};
+use super::{CommonMessage, MavlinkMissionError, MissionItem, MissionUploadOptions, Waypoint};
 /// Convert a local waypoint to a MAVLink global mission item.
 #[cfg(feature = "mavlink-transport")]
 pub fn waypoint_to_mission_item_int(
@@ -113,6 +113,112 @@ fn ensure_finite(label: &str, value: f64) -> Result<(), MavlinkMissionError> {
             "{label} must be finite"
         )))
     }
+}
+
+/// Convert a typed `MissionItem` to a MAVLink `MISSION_ITEM_INT` message.
+///
+/// `seq` in `item.position()` is overridden by the caller during upload.
+#[cfg(feature = "mavlink-transport")]
+pub fn mission_item_to_int(
+    item: &MissionItem,
+    options: &MissionUploadOptions,
+) -> Result<CommonMessage, MavlinkMissionError> {
+    let pos = item.position();
+    let lat = local_to_lat_deg(pos.y, options.home_origin.lat_deg)?;
+    let lon = local_to_lon_deg(
+        pos.x,
+        options.home_origin.lat_deg,
+        options.home_origin.lon_deg,
+    )?;
+    let lat = scaled_coordinate(lat, "latitude")?;
+    let lon = scaled_coordinate(lon, "longitude")?;
+    let z = relative_altitude(pos.z)?;
+    let seq = pos.seq;
+    let is_first = seq == 0;
+
+    let data = match item {
+        MissionItem::Goto { .. } => common::MISSION_ITEM_INT_DATA {
+            param1: 0.0,
+            param2: 0.0,
+            param3: 0.0,
+            param4: f32::NAN,
+            x: lat,
+            y: lon,
+            z,
+            seq,
+            command: common::MavCmd::MAV_CMD_NAV_WAYPOINT,
+            target_system: options.target_system,
+            target_component: options.target_component,
+            frame: options.frame.to_mav_frame()?,
+            current: if is_first { 1 } else { 0 },
+            autocontinue: 1,
+        },
+        MissionItem::LoiterTime {
+            hold_seconds,
+            radius_m,
+            ..
+        } => common::MISSION_ITEM_INT_DATA {
+            // param1: hold time in seconds
+            param1: *hold_seconds,
+            // param2: radius in metres (0 = autopilot default)
+            param2: *radius_m,
+            param3: 0.0,
+            // param4: xtrack location (0 = center exit)
+            param4: 0.0,
+            x: lat,
+            y: lon,
+            z,
+            seq,
+            command: common::MavCmd::MAV_CMD_NAV_LOITER_TIME,
+            target_system: options.target_system,
+            target_component: options.target_component,
+            frame: options.frame.to_mav_frame()?,
+            current: if is_first { 1 } else { 0 },
+            autocontinue: 1,
+        },
+        MissionItem::LoiterTurns {
+            turns, radius_m, ..
+        } => common::MISSION_ITEM_INT_DATA {
+            // param1: number of turns (positive = CCW)
+            param1: *turns,
+            // param2: heading required on exit (0 = no heading required)
+            param2: 0.0,
+            // param3: radius in metres (positive = CCW)
+            param3: *radius_m,
+            // param4: exit xtrack location
+            param4: 0.0,
+            x: lat,
+            y: lon,
+            z,
+            seq,
+            command: common::MavCmd::MAV_CMD_NAV_LOITER_TURNS,
+            target_system: options.target_system,
+            target_component: options.target_component,
+            frame: options.frame.to_mav_frame()?,
+            current: if is_first { 1 } else { 0 },
+            autocontinue: 1,
+        },
+        MissionItem::Land { .. } => common::MISSION_ITEM_INT_DATA {
+            param1: 0.0,
+            param2: 0.0,
+            param3: 0.0,
+            // param4: desired yaw (NAN = unchanged)
+            param4: f32::NAN,
+            // x/y = 0 means land at current position
+            x: 0,
+            y: 0,
+            z: 0.0,
+            seq,
+            command: common::MavCmd::MAV_CMD_NAV_LAND,
+            target_system: options.target_system,
+            target_component: options.target_component,
+            frame: options.frame.to_mav_frame()?,
+            current: if is_first { 1 } else { 0 },
+            autocontinue: 1,
+        },
+    };
+
+    Ok(CommonMessage::MISSION_ITEM_INT(data))
 }
 
 /// Convert a Task to a MAVLink mission item int message (requires mavlink feature).

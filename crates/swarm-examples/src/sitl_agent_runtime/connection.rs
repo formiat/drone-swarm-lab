@@ -24,7 +24,9 @@ use crate::sitl_plan::{validate_connection_string, SitlError, SitlPlan};
 #[cfg(feature = "mavlink-transport")]
 use crate::sitl_report::SitlRunFinalStatus;
 #[cfg(feature = "mavlink-transport")]
-use swarm_comms::Waypoint;
+use swarm_comms::{MissionItem, Waypoint};
+#[cfg(feature = "mavlink-transport")]
+use swarm_sim::{PrimitiveMission, PrimitiveMissionItemDesc};
 
 pub(super) fn run_connection(
     plan: &SitlPlan,
@@ -59,6 +61,13 @@ pub(super) fn run_connection(
         if let Some(recorder) = event_recorder.as_mut() {
             recorder.push_connection_opened();
         }
+        // For primitive missions, build typed MissionItems from the config
+        // instead of converting pose-task waypoints.
+        let mission_items: Option<Vec<MissionItem>> = plan
+            .primitive_mission
+            .as_ref()
+            .map(primitive_mission_to_items);
+
         let waypoints: Vec<Waypoint> = plan
             .waypoints
             .iter()
@@ -69,12 +78,27 @@ pub(super) fn run_connection(
                 seq: waypoint.seq,
             })
             .collect();
-        for waypoint in &waypoints {
-            eprintln!(
-                "WAYPOINT seq={} x={:.1} y={:.1} z={:.1}",
-                waypoint.seq, waypoint.x, waypoint.y, waypoint.z
-            );
+
+        if let Some(items) = &mission_items {
+            for (seq, item) in items.iter().enumerate() {
+                let pos = item.position();
+                eprintln!(
+                    "PRIMITIVE_ITEM seq={seq} cmd={} x={:.1} y={:.1} z={:.1}",
+                    item.label(),
+                    pos.x,
+                    pos.y,
+                    pos.z,
+                );
+            }
+        } else {
+            for waypoint in &waypoints {
+                eprintln!(
+                    "WAYPOINT seq={} x={:.1} y={:.1} z={:.1}",
+                    waypoint.seq, waypoint.x, waypoint.y, waypoint.z
+                );
+            }
         }
+
         let task_id_by_seq = sitl_task_ids_by_seq(plan);
 
         let upload_options = MissionUploadOptions {
@@ -93,7 +117,9 @@ pub(super) fn run_connection(
         };
         match lifecycle.mode {
             LifecycleMode::UploadOnly => {
-                let upload_result = if let Some(recorder) = event_recorder.as_mut() {
+                let upload_result = if let Some(items) = &mission_items {
+                    transport.upload_mission_items(items, upload_options)
+                } else if let Some(recorder) = event_recorder.as_mut() {
                     let mut observer = SitlMavlinkObserver {
                         recorder,
                         task_id_by_seq: &task_id_by_seq,
@@ -487,5 +513,68 @@ pub(super) fn telemetry_error_to_execution_failure(
             error: error.to_string(),
             abort_result: None,
         },
+    }
+}
+
+/// Convert a `PrimitiveMission` into the ordered list of `MissionItem`s to be
+/// uploaded to the autopilot.
+///
+/// Positions are at the home origin (x=0, y=0); altitude is taken from the
+/// mission parameters. All items use `seq = 0` — the upload path re-sequences
+/// them.
+#[cfg(feature = "mavlink-transport")]
+fn primitive_mission_to_items(mission: &PrimitiveMission) -> Vec<MissionItem> {
+    let _ = PrimitiveMissionItemDesc {
+        label: String::new(),
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+        params: String::new(),
+    }; // keep import used
+    let origin = Waypoint {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+        seq: 0,
+    };
+    match mission {
+        PrimitiveMission::Hover {
+            altitude_m,
+            hold_seconds,
+        } => vec![
+            MissionItem::LoiterTime {
+                position: Waypoint {
+                    z: *altitude_m,
+                    ..origin.clone()
+                },
+                hold_seconds: *hold_seconds,
+                radius_m: 0.0,
+            },
+            MissionItem::Land { position: origin },
+        ],
+        PrimitiveMission::Orbit {
+            altitude_m,
+            turns,
+            radius_m,
+        } => vec![
+            MissionItem::LoiterTurns {
+                position: Waypoint {
+                    z: *altitude_m,
+                    ..origin.clone()
+                },
+                turns: *turns,
+                radius_m: *radius_m,
+            },
+            MissionItem::Land { position: origin },
+        ],
+        PrimitiveMission::TakeoffLand { altitude_m } => vec![
+            MissionItem::Goto {
+                position: Waypoint {
+                    z: *altitude_m,
+                    ..origin.clone()
+                },
+            },
+            MissionItem::Land { position: origin },
+        ],
     }
 }

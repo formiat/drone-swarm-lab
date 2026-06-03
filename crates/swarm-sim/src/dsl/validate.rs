@@ -124,7 +124,8 @@ pub fn validate_entry(entry: &ScenarioSuiteEntry) -> Vec<ValidationError> {
         });
     }
 
-    if entry.scenario.tasks.is_empty() {
+    let is_primitive = matches!(entry.mission.as_str(), "hover" | "orbit" | "takeoff-land");
+    if !is_primitive && entry.scenario.tasks.is_empty() {
         errors.push(ValidationError {
             field: "scenario.tasks".to_owned(),
             message: "Scenario must contain at least one task".to_owned(),
@@ -249,6 +250,23 @@ pub fn validate_mission_specific(entry: &ScenarioSuiteEntry) -> Vec<ValidationEr
         }
         "urban-patrol" => validate_urban_patrol_entry(entry, &mut errors),
         "urban-search" => validate_urban_search_entry(entry, &mut errors),
+        "hover" | "orbit" | "takeoff-land" => {
+            if entry.run_config.primitive_mission.is_none() {
+                errors.push(ValidationError {
+                    field: "run_config.primitive_mission".to_owned(),
+                    message: format!(
+                        "{} mission requires run_config.primitive_mission",
+                        entry.mission
+                    ),
+                });
+            }
+            if !entry.scenario.tasks.is_empty() {
+                errors.push(ValidationError {
+                    field: "scenario.tasks".to_owned(),
+                    message: format!("{} mission must have an empty task list", entry.mission),
+                });
+            }
+        }
         _ => {}
     }
 

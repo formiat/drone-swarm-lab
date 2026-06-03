@@ -31,8 +31,8 @@ pub use report_export::{
     BenchmarkManifest,
 };
 pub use runner::{
-    DynamicTaskEvent, FailureEvent, InspectionState, PartitionEvent, RunConfig, ScenarioRunner,
-    UrbanState, WildfireState, WildfireZone,
+    DynamicTaskEvent, FailureEvent, InspectionState, PartitionEvent, PrimitiveMission,
+    PrimitiveMissionItemDesc, RunConfig, ScenarioRunner, UrbanState, WildfireState, WildfireZone,
 };
 pub use scenario::{GeoOrigin, Scenario};
 pub use support_matrix::{classify_support, SupportMatrixEntry, SupportReason, SupportStatus};

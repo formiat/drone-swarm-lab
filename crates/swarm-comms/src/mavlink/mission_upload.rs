@@ -11,9 +11,10 @@ use super::NoopMavlinkMissionObserver;
 #[cfg(feature = "mavlink-transport")]
 use super::{
     lifecycle::execute_uploaded_mission_with_connection_observed,
-    mission_items::waypoint_to_mission_item_int, CommonHeader, CommonMessage, MavlinkFlightError,
-    MavlinkFlightReport, MavlinkMissionError, MavlinkMissionEvent, MavlinkMissionObserver,
-    MissionLifecycleOptions, MissionUploadOptions, MissionUploadReport, Waypoint,
+    mission_items::{mission_item_to_int, waypoint_to_mission_item_int},
+    CommonHeader, CommonMessage, MavlinkFlightError, MavlinkFlightReport, MavlinkMissionError,
+    MavlinkMissionEvent, MavlinkMissionObserver, MissionItem, MissionLifecycleOptions,
+    MissionUploadOptions, MissionUploadReport, Waypoint,
 };
 #[cfg(feature = "mavlink-transport")]
 pub(super) trait MavlinkVehicleConnection {
@@ -88,6 +89,130 @@ where
     }
 
     Err(last_error.unwrap_or(MavlinkMissionError::MissionAckTimeout))
+}
+
+/// Upload a typed `MissionItem` list to the vehicle.
+///
+/// Unlike `upload_mission_with_connection_observed`, each item may carry a
+/// different `MAV_CMD_NAV_*` command (loiter, turns, land, …).
+#[cfg(all(feature = "mavlink-transport", test))]
+pub(super) fn upload_mission_items_with_connection<C: MavlinkVehicleConnection>(
+    conn: &mut C,
+    items: &[MissionItem],
+    options: &MissionUploadOptions,
+) -> Result<MissionUploadReport, MavlinkMissionError> {
+    let mut observer = NoopMavlinkMissionObserver;
+    upload_mission_items_with_connection_observed(conn, items, options, &mut observer)
+}
+
+#[cfg(feature = "mavlink-transport")]
+pub(super) fn upload_mission_items_with_connection_observed<C, O>(
+    conn: &mut C,
+    items: &[MissionItem],
+    options: &MissionUploadOptions,
+    observer: &mut O,
+) -> Result<MissionUploadReport, MavlinkMissionError>
+where
+    C: MavlinkVehicleConnection,
+    O: MavlinkMissionObserver,
+{
+    if items.is_empty() {
+        return Err(MavlinkMissionError::EmptyMission);
+    }
+    if items.len() > u16::MAX as usize {
+        return Err(MavlinkMissionError::TooManyWaypoints { count: items.len() });
+    }
+
+    let mut last_error = None;
+    for _attempt in 0..=options.retry_count {
+        match upload_mission_items_attempt(conn, items, options, observer) {
+            Ok(report) => return Ok(report),
+            Err(error) if error.is_retryable() => {
+                last_error = Some(error);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+
+    Err(last_error.unwrap_or(MavlinkMissionError::MissionAckTimeout))
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn upload_mission_items_attempt<C: MavlinkVehicleConnection>(
+    conn: &mut C,
+    items: &[MissionItem],
+    options: &MissionUploadOptions,
+    observer: &mut impl MavlinkMissionObserver,
+) -> Result<MissionUploadReport, MavlinkMissionError> {
+    wait_for_heartbeat(conn, options.timeout)?;
+    observer.on_event(MavlinkMissionEvent::HeartbeatSeen);
+
+    if options.clear_existing {
+        conn.send_message(CommonMessage::MISSION_CLEAR_ALL(
+            common::MISSION_CLEAR_ALL_DATA {
+                target_system: options.target_system,
+                target_component: options.target_component,
+            },
+        ))?;
+        observer.on_event(MavlinkMissionEvent::MissionClearSent);
+    }
+
+    conn.send_message(CommonMessage::MISSION_COUNT(common::MISSION_COUNT_DATA {
+        count: items.len() as u16,
+        target_system: options.target_system,
+        target_component: options.target_component,
+    }))?;
+    observer.on_event(MavlinkMissionEvent::MissionCountSent { count: items.len() });
+
+    for (seq, item) in items.iter().enumerate() {
+        let seq = seq as u16;
+        wait_for_mission_request(conn, seq, options.timeout)?;
+        observer.on_event(MavlinkMissionEvent::MissionItemRequested { seq });
+
+        // Build a copy of the item with the correct sequence number.
+        let mut pos = item.position().clone();
+        pos.seq = seq;
+        let sequenced = match item {
+            MissionItem::Goto { .. } => MissionItem::Goto { position: pos },
+            MissionItem::LoiterTime {
+                hold_seconds,
+                radius_m,
+                ..
+            } => MissionItem::LoiterTime {
+                position: pos,
+                hold_seconds: *hold_seconds,
+                radius_m: *radius_m,
+            },
+            MissionItem::LoiterTurns {
+                turns, radius_m, ..
+            } => MissionItem::LoiterTurns {
+                position: pos,
+                turns: *turns,
+                radius_m: *radius_m,
+            },
+            MissionItem::Land { .. } => MissionItem::Land { position: pos },
+        };
+
+        conn.send_message(mission_item_to_int(&sequenced, options)?)?;
+        observer.on_event(MavlinkMissionEvent::MissionItemSent { seq });
+    }
+
+    let ack = wait_for_mission_ack(conn, options.timeout)?;
+    observer.on_event(MavlinkMissionEvent::MissionAckReceived {
+        result: format!("{ack:?}"),
+        accepted: ack == common::MavMissionResult::MAV_MISSION_ACCEPTED,
+    });
+    if ack != common::MavMissionResult::MAV_MISSION_ACCEPTED {
+        return Err(MavlinkMissionError::MissionRejected(ack));
+    }
+
+    Ok(MissionUploadReport {
+        uploaded_count: items.len(),
+        target_system: options.target_system,
+        target_component: options.target_component,
+        ack,
+        cleared_existing: options.clear_existing,
+    })
 }
 
 #[cfg(feature = "mavlink-transport")]

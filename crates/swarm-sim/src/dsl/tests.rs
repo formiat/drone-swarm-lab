@@ -741,3 +741,136 @@ fn validate_suite_rejects_duplicate_generator_manifest_parameters() {
         .iter()
         .any(|error| error.field == "generator_manifest.parameters[1].key"));
 }
+
+#[test]
+fn primitive_hover_scenario_validates() {
+    use crate::PrimitiveMission;
+
+    let suite = ScenarioSuite {
+        schema_version: "0.1".to_owned(),
+        name: "Primitive".to_owned(),
+        description: "hover test".to_owned(),
+        generator_manifest: None,
+        scenarios: vec![ScenarioSuiteEntry {
+            mission: "hover".to_owned(),
+            profile: "hover-3m-10s".to_owned(),
+            scenario: Scenario {
+                name: "primitive_hover".to_owned(),
+                seed: 0,
+                agents: vec![Agent {
+                    id: swarm_types::AgentId::from("agent-0".to_owned()),
+                    role: Role::Scout,
+                    health: Health::Alive,
+                    pose: Pose::default(),
+                    capabilities: vec![],
+                    current_task: None,
+                    battery: 100.0,
+                    comms_range: f64::INFINITY,
+                    generation: 1,
+                    speed: 0.0,
+                    max_range: 1000.0,
+                    battery_drain_rate: 0.0,
+                    battery_model: None,
+                }],
+                tasks: vec![],
+                ground_nodes: vec![],
+                base_station: None,
+                geo_origin: None,
+            },
+            run_config: RunConfig {
+                max_ticks: 200,
+                primitive_mission: Some(PrimitiveMission::Hover {
+                    altitude_m: 3.0,
+                    hold_seconds: 10.0,
+                }),
+                ..Default::default()
+            },
+        }],
+    };
+
+    let errors = validate_scenario_suite(&suite);
+    assert!(errors.is_empty(), "Expected no errors, got: {errors:?}");
+}
+
+#[test]
+fn primitive_missing_config_fails_validation() {
+    let suite = ScenarioSuite {
+        schema_version: "0.1".to_owned(),
+        name: "Primitive".to_owned(),
+        description: "hover test".to_owned(),
+        generator_manifest: None,
+        scenarios: vec![ScenarioSuiteEntry {
+            mission: "hover".to_owned(),
+            profile: "hover-bad".to_owned(),
+            scenario: Scenario {
+                name: "bad_hover".to_owned(),
+                seed: 0,
+                agents: vec![Agent {
+                    id: swarm_types::AgentId::from("agent-0".to_owned()),
+                    role: Role::Scout,
+                    health: Health::Alive,
+                    pose: Pose::default(),
+                    capabilities: vec![],
+                    current_task: None,
+                    battery: 100.0,
+                    comms_range: f64::INFINITY,
+                    generation: 1,
+                    speed: 0.0,
+                    max_range: 1000.0,
+                    battery_drain_rate: 0.0,
+                    battery_model: None,
+                }],
+                tasks: vec![],
+                ground_nodes: vec![],
+                base_station: None,
+                geo_origin: None,
+            },
+            run_config: RunConfig {
+                max_ticks: 200,
+                primitive_mission: None, // intentionally absent
+                ..Default::default()
+            },
+        }],
+    };
+
+    let errors = validate_scenario_suite(&suite);
+    assert!(
+        errors.iter().any(|e| e.field.contains("primitive_mission")),
+        "Expected primitive_mission error, got: {errors:?}"
+    );
+}
+
+#[test]
+fn primitive_mission_describe_items_hover() {
+    use crate::PrimitiveMission;
+
+    let mission = PrimitiveMission::Hover {
+        altitude_m: 5.0,
+        hold_seconds: 15.0,
+    };
+    let items = mission.describe_items();
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0].label, "loiter_time");
+    assert!((items[0].z - 5.0).abs() < 1e-9);
+    assert!(items[0].params.contains("15"));
+    assert_eq!(items[1].label, "land");
+    assert!((items[1].z).abs() < 1e-9);
+}
+
+#[test]
+fn primitive_mission_describe_items_orbit() {
+    use crate::PrimitiveMission;
+
+    let mission = PrimitiveMission::Orbit {
+        altitude_m: 4.0,
+        turns: 3.0,
+        radius_m: 2.0,
+    };
+    let items = mission.describe_items();
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0].label, "loiter_turns");
+    assert!((items[0].z - 4.0).abs() < 1e-9);
+    assert!(items[0].params.contains("3"));
+    assert!(items[0].params.contains("2"));
+    assert_eq!(items[1].label, "land");
+}

@@ -1,0 +1,47 @@
+{
+  "schema_version": "0.1",
+  "name": "Primitive Hover",
+  "description": "Single-agent mission: climb to 3 m, loiter in place for 10 s, land. No task allocation. Upload with sitl_agent --dry-run or --connection.",
+  "scenarios": [
+    {
+      "mission": "hover",
+      "profile": "hover-3m-10s",
+      "scenario": {
+        "name": "primitive_hover_3m_10s",
+        "seed": 0,
+        "agents": [
+          {
+            "id": "agent-0",
+            "role": "scout",
+            "health": "alive",
+            "pose": { "x": 0.0, "y": 0.0, "z": 0.0 },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 1000.0,
+            "generation": 1,
+            "speed": 0.0,
+            "max_range": 1000.0,
+            "battery_drain_rate": 0.0
+          }
+        ],
+        "tasks": [],
+        "ground_nodes": [],
+        "base_station": null,
+        "geo_origin": {
+          "lat_deg": 47.397742,
+          "lon_deg": 8.545594,
+          "alt_m": 0.0
+        }
+      },
+      "run_config": {
+        "max_ticks": 200,
+        "primitive_mission": {
+          "kind": "hover",
+          "altitude_m": 3.0,
+          "hold_seconds": 10.0
+        }
+      }
+    }
+  ]
+}
