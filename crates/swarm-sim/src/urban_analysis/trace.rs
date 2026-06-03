@@ -102,6 +102,7 @@ pub fn build_urban_route_trace(log: &EventLog) -> UrbanRouteTrace {
             | Event::AgentObservation { .. }
             | Event::HazardMapUpdated { .. }
             | Event::TaskPriorityUpdated { .. }
+            | Event::WildfirePriorityReallocationRequested { .. }
             | Event::UrbanPatrolCompleted { .. }
             | Event::BusObserved { .. }
             | Event::BusDetected { .. }

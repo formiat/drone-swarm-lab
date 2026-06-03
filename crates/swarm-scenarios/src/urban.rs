@@ -850,7 +850,7 @@ fn blocked_route_wait_replay_contains_expected_events() {
     let (metrics, log) = swarm_sim::ScenarioRunner::run_with_log(
         &scenario,
         run_config,
-        swarm_alloc::GreedyAllocator,
+        swarm_alloc::GreedyAllocator::default(),
     );
     assert!(metrics.urban_patrol_completed);
     let log = log.expect("replay log should be present");
@@ -882,7 +882,7 @@ fn blocked_route_replan_replay_contains_replanned_event() {
     let (_, log) = swarm_sim::ScenarioRunner::run_with_log(
         &scenario,
         run_config,
-        swarm_alloc::GreedyAllocator,
+        swarm_alloc::GreedyAllocator::default(),
     );
     let log = log.expect("replay log should be present");
     assert!(
@@ -902,7 +902,7 @@ fn blocked_route_no_alt_replay_contains_no_route_event() {
     let (_, log) = swarm_sim::ScenarioRunner::run_with_log(
         &scenario,
         run_config,
-        swarm_alloc::GreedyAllocator,
+        swarm_alloc::GreedyAllocator::default(),
     );
     let log = log.expect("replay log should be present");
     assert!(

@@ -19,6 +19,9 @@ pub(super) struct MissionDescriptor {
 
 impl MissionDescriptor {
     pub(super) fn profile_names(&self, cli: &CliArgs) -> Vec<String> {
+        if let Some(profiles) = &cli.profiles_filter {
+            return profiles.clone();
+        }
         (self.profiles)(cli)
     }
 
@@ -101,7 +104,26 @@ fn coverage_profiles(cli: &CliArgs) -> Vec<String> {
 }
 
 fn coverage_builder() -> ScenarioBuilder {
-    Box::new(|seed: u64, profile_name: &str| build_coverage_profile(seed, profile_name))
+    Box::new(|seed: u64, profile_name: &str| {
+        let (scenario, mut run_config) = match profile_name {
+            "m77-comms-heavy-loss" => build_coverage_profile(seed, "heavy-loss-single-failure"),
+            "m77-comms-partition-prone" => {
+                build_coverage_profile(seed, "partition-prone-single-failure")
+            }
+            "m77-cbba-heavy-loss" => build_coverage_profile(seed, "heavy-loss-single-failure"),
+            other => build_coverage_profile(seed, other),
+        };
+        if matches!(
+            profile_name,
+            "m77-comms-heavy-loss" | "m77-comms-partition-prone"
+        ) {
+            run_config.comms_penalty_weight = 50.0;
+        }
+        if profile_name == "m77-cbba-heavy-loss" {
+            run_config.enable_cbba = true;
+        }
+        (scenario, run_config)
+    })
 }
 
 fn emergency_mesh_profiles(_cli: &CliArgs) -> Vec<String> {
@@ -125,8 +147,16 @@ fn sar_profiles(_cli: &CliArgs) -> Vec<String> {
 
 fn sar_builder() -> ScenarioBuilder {
     Box::new(|seed: u64, profile_name: &str| {
-        let profile = SarProfile::from_str(profile_name).unwrap_or(SarProfile::Ideal);
-        build_sar_scenario(&profile.config(seed))
+        let profile = if profile_name == "m77-dynamic-belief" {
+            SarProfile::Standard
+        } else {
+            SarProfile::from_str(profile_name).unwrap_or(SarProfile::Ideal)
+        };
+        let (scenario, mut run_config) = build_sar_scenario(&profile.config(seed));
+        if profile_name == "m77-dynamic-belief" {
+            run_config.dynamic_belief_updates = true;
+        }
+        (scenario, run_config)
     })
 }
 
@@ -156,9 +186,16 @@ fn wildfire_profiles(_cli: &CliArgs) -> Vec<String> {
 
 fn wildfire_builder() -> ScenarioBuilder {
     Box::new(|seed: u64, profile_name: &str| {
-        let profile =
-            WildfireProfile::from_str(profile_name).unwrap_or(WildfireProfile::SmallStatic);
-        build_wildfire_scenario(&profile.config(seed))
+        let profile = if profile_name == "m77-priority-realloc" {
+            WildfireProfile::MediumDynamic
+        } else {
+            WildfireProfile::from_str(profile_name).unwrap_or(WildfireProfile::SmallStatic)
+        };
+        let (scenario, mut run_config) = build_wildfire_scenario(&profile.config(seed));
+        if profile_name == "m77-priority-realloc" {
+            run_config.wildfire_priority_realloc_threshold = Some(8);
+        }
+        (scenario, run_config)
     })
 }
 
@@ -219,6 +256,7 @@ mod tests {
             update_baseline: None,
             realism: false,
             realism_profile: None,
+            profiles_filter: None,
         }
     }
 
@@ -258,5 +296,36 @@ mod tests {
 
         assert_eq!(smoke_profiles.len(), 4);
         assert!(custom_profiles.len() > smoke_profiles.len());
+    }
+
+    #[test]
+    fn explicit_profiles_filter_overrides_default_profiles() {
+        let mut cli = cli_args(RunMode::Smoke);
+        cli.profiles_filter = Some(vec![
+            "m77-comms-heavy-loss".to_owned(),
+            "m77-comms-partition-prone".to_owned(),
+        ]);
+
+        let profiles = mission_descriptor(Mission::Coverage).profile_names(&cli);
+
+        assert_eq!(
+            profiles,
+            vec!["m77-comms-heavy-loss", "m77-comms-partition-prone"]
+        );
+    }
+
+    #[test]
+    fn m77_profile_aliases_enable_algorithm_flags() {
+        let coverage = mission_descriptor(Mission::Coverage).scenario_builder();
+        let (_scenario, coverage_config) = coverage(0, "m77-comms-heavy-loss");
+        assert!(coverage_config.comms_penalty_weight > 0.0);
+
+        let sar = mission_descriptor(Mission::Sar).scenario_builder();
+        let (_scenario, sar_config) = sar(0, "m77-dynamic-belief");
+        assert!(sar_config.dynamic_belief_updates);
+
+        let wildfire = mission_descriptor(Mission::Wildfire).scenario_builder();
+        let (_scenario, wildfire_config) = wildfire(0, "m77-priority-realloc");
+        assert_eq!(wildfire_config.wildfire_priority_realloc_threshold, Some(8));
     }
 }

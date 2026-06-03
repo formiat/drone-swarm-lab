@@ -25,7 +25,7 @@ fn main() {
     let greedy_runs: Vec<_> = (0..1000)
         .map(|seed| {
             let (scenario, run_config) = build_dynamic_auction_scenario(&make_config(seed));
-            ScenarioRunner::run_with(&scenario, run_config, GreedyAllocator)
+            ScenarioRunner::run_with(&scenario, run_config, GreedyAllocator::default())
         })
         .collect();
 

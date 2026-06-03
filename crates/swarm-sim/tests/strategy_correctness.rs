@@ -18,7 +18,7 @@ use swarm_types::{SearchGrid, SensorModel};
 fn inspection_linear_success_equals_edge_coverage() {
     let config = InspectionProfile::Linear.config(42);
     let (scenario, run_config) = build_inspection_scenario(&config);
-    let metrics = ScenarioRunner::run_with(&scenario, run_config, GreedyAllocator);
+    let metrics = ScenarioRunner::run_with(&scenario, run_config, GreedyAllocator::default());
     eprintln!(
         "inspection_linear_success_equals_edge_coverage: edge_coverage={}, success={}",
         metrics.edge_coverage_rate, metrics.success

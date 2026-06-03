@@ -1,0 +1,28 @@
+{
+  "timestamp": "2026-06-03T13:25:38.338753343+00:00",
+  "git_commit": "778feeb198fd9f0e1edd541237b5e28ca1513867",
+  "command_line": "target/release/strategy_comparison --mission coverage --profiles m77-comms-heavy-loss,m77-comms-partition-prone --seeds 1 --jobs 1 --output-dir results/m77_algorithm_delta/coverage --run-id-prefix m77-coverage-smoke",
+  "suite_name": "coverage",
+  "schema_version": "0.1",
+  "seed_range_start": 0,
+  "seed_range_end": 1,
+  "strategy_names": [
+    "auction",
+    "cbba",
+    "centralized",
+    "connectivity-aware",
+    "greedy"
+  ],
+  "profile_names": [
+    "coverage/m77-comms-heavy-loss",
+    "coverage/m77-comms-partition-prone"
+  ],
+  "metric_schema_version": "0.1",
+  "realism_profile": null,
+  "wind_enabled": false,
+  "pose_noise_m": 0.0,
+  "comms_jitter_ticks": 0,
+  "battery_model": null,
+  "jobs": 1,
+  "build_profile": "release"
+}

@@ -77,7 +77,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     let mut node = AgentNode::new(config.agent_id.clone(), peer_ids, coordinator, transport);
 
-    let mut allocator = GreedyAllocator;
+    let mut allocator = GreedyAllocator::default();
     let mut detected_failures: Vec<AgentId> = Vec::new();
     let mut reallocation_metrics = ReallocationMetrics::default();
 

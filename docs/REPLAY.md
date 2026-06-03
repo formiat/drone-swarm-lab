@@ -28,7 +28,8 @@ Each simulation run can optionally produce an `EventLog` — a JSON file contain
 | `EdgeVisited` | Inspection edge visited | `edge_id`, `agent_id`, `tick` |
 | `SafetyViolation` | Safety constraint violated | `agent_id`, `violation_type`, `tick` |
 | `CbbaConverged` | CBBA reached consensus | `tick` |
-| `CbbaBundleUpdated` | CBBA bundle changed | `agent_id`, `bundle_size`, `tick` |
+| `CbbaBundleUpdated` | CBBA bundle changed | `agent_id`, `bundle_size`, `conflict_count`, `tick` |
+| `WildfirePriorityReallocationRequested` | Wildfire priority crossed a configured reallocation threshold | `task_id`, `old_priority`, `new_priority`, optional `previous_agent_id`, `tick` |
 | `UrbanRoutePlanned` | Urban Patrol route planned | `agent_id`, `tick`, `edge_ids`, `route_length_m` |
 | `UrbanSegmentEntered` | Urban route segment entered | `agent_id`, `tick`, `segment_index`, `edge_id`, `from`, `to` |
 | `UrbanSegmentCompleted` | Urban route segment completed | `agent_id`, `tick`, `segment_index`, `edge_id` |
@@ -70,7 +71,16 @@ simulation replay event schema and does not add new replay events.
 Event logs without `schema_version` default to `"0.2"` and are fully backward
 compatible with the v0.1 format (which only had the first 8 event types).
 Additive optional fields such as M67 `UrbanViolation.obstacle_id` default to
-`null` when absent.
+`null` when absent. M77 `CbbaBundleUpdated.conflict_count` defaults to `0` for
+old logs that were written before the diagnostic field existed.
+
+M77 adds algorithm-differentiation diagnostics. `CbbaBundleUpdated` now renders
+`conflict_count` so heavy-loss CBBA convergence gaps can be inspected without
+claiming a fix. Wildfire dynamic priority changes may additionally emit
+`WildfirePriorityReallocationRequested` when
+`run_config.wildfire_priority_realloc_threshold` is enabled and a task crosses
+the threshold. This event is distinct from `TaskPriorityUpdated`; it records the
+trigger for release/reassignment rather than a normal priority mutation.
 
 For extension work, use [`docs/EXTENSION_GUIDE.md`](EXTENSION_GUIDE.md) as the
 schema policy checklist. Prefer additive replay events or defaulted fields.

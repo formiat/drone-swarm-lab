@@ -18,6 +18,8 @@ pub enum SupportReason {
     RelayPlacementExperimental,
     ProfileConstrained,
     CorridorPlannerExperimental,
+    AlgorithmDifferentiationTargeted,
+    CbbaConflictDiagnostic,
     MissingEvidence,
 }
 
@@ -67,6 +69,26 @@ pub fn classify_support(mission: &str, profile: &str, strategy: &str) -> Support
         ("urban-search", "search-static-bus", "greedy") => {
             (SupportStatus::Supported, SupportReason::StableBaseline)
         }
+        (
+            "coverage",
+            "m77-comms-heavy-loss" | "m77-comms-partition-prone",
+            "greedy" | "auction" | "connectivity-aware",
+        ) => (
+            SupportStatus::Experimental,
+            SupportReason::AlgorithmDifferentiationTargeted,
+        ),
+        ("coverage", "m77-cbba-heavy-loss", "cbba") => (
+            SupportStatus::KnownBug,
+            SupportReason::CbbaConflictDiagnostic,
+        ),
+        ("sar", "m77-dynamic-belief", "greedy" | "auction" | "connectivity-aware") => (
+            SupportStatus::Experimental,
+            SupportReason::AlgorithmDifferentiationTargeted,
+        ),
+        ("wildfire", "m77-priority-realloc", "greedy" | "auction" | "connectivity-aware") => (
+            SupportStatus::Experimental,
+            SupportReason::AlgorithmDifferentiationTargeted,
+        ),
         ("emergency-mesh", _, "connectivity-aware") => (
             SupportStatus::Experimental,
             SupportReason::RelayPlacementExperimental,
@@ -113,5 +135,22 @@ mod tests {
         let entry = classify_support("urban-patrol", "corridor-delta-corridor-aware", "greedy");
         assert_eq!(entry.status, SupportStatus::Experimental);
         assert_eq!(entry.reason, SupportReason::CorridorPlannerExperimental);
+    }
+
+    #[test]
+    fn m77_targeted_profiles_are_experimental() {
+        let entry = classify_support("coverage", "m77-comms-heavy-loss", "auction");
+        assert_eq!(entry.status, SupportStatus::Experimental);
+        assert_eq!(
+            entry.reason,
+            SupportReason::AlgorithmDifferentiationTargeted
+        );
+    }
+
+    #[test]
+    fn m77_cbba_heavy_loss_is_diagnostic_known_bug() {
+        let entry = classify_support("coverage", "m77-cbba-heavy-loss", "cbba");
+        assert_eq!(entry.status, SupportStatus::KnownBug);
+        assert_eq!(entry.reason, SupportReason::CbbaConflictDiagnostic);
     }
 }

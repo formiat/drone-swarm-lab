@@ -19,6 +19,7 @@ pub struct ReplaySummary {
     pub zones_mapped: usize,
     pub hazard_updates: usize,
     pub observations: usize,
+    pub priority_reallocation_requests: usize,
     // M65 Urban Patrol v0
     pub urban_routes_planned: usize,
     pub urban_segments_entered: usize,
@@ -79,6 +80,9 @@ pub fn summarize(log: &EventLog) -> ReplaySummary {
             }
             Event::HazardMapUpdated { .. } => {
                 summary.hazard_updates += 1;
+            }
+            Event::WildfirePriorityReallocationRequested { .. } => {
+                summary.priority_reallocation_requests += 1;
             }
             Event::UrbanRoutePlanned { .. } => {
                 summary.urban_routes_planned += 1;

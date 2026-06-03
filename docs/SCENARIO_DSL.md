@@ -122,6 +122,27 @@ including `geofence.waypoint_outside`, `nofly.waypoint_inside`,
 - `scenario.tasks` — non-empty array
 - `run_config.max_ticks` — must be > 0
 
+## M77 Algorithm Differentiation Fields
+
+These fields are optional and default to the old behavior when omitted:
+
+- `run_config.comms_penalty_weight` — `0.0` by default. Non-zero values add a
+  communication-range penalty to greedy/auction-style scoring when a task lies
+  beyond an `AllocationAgent.comms_range`.
+- `run_config.wildfire_priority_realloc_threshold` — absent by default. When
+  set, a wildfire mapping task whose dynamic priority crosses the threshold
+  emits `WildfirePriorityReallocationRequested`, is released from the current
+  owner, and is reassigned through the normal runtime allocation path.
+- `run_config.dynamic_belief_updates` — `false` by default. When `true`, SAR
+  scan tasks that are not completed/failed are re-ranked by the current
+  `BeliefMap` entropy after scan events.
+
+The `strategy_comparison` CLI also accepts `--profiles <a,b,c>` for targeted
+profile subsets. M77 adds profile aliases such as `m77-comms-heavy-loss`,
+`m77-comms-partition-prone`, `m77-priority-realloc`, and
+`m77-dynamic-belief`. These aliases are targeted engineering fixtures, not
+full benchmark profiles.
+
 ## Mission-Specific Constraints
 
 | Mission | Required Fields | Validation Rule |

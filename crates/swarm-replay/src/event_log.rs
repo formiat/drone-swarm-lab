@@ -107,6 +107,8 @@ pub enum Event {
     CbbaBundleUpdated {
         agent_id: AgentId,
         bundle_size: usize,
+        #[serde(default)]
+        conflict_count: u64,
         tick: u64,
     },
     // M30: Wildfire Mapping
@@ -125,6 +127,14 @@ pub enum Event {
         task_id: TaskId,
         old_priority: u8,
         new_priority: u8,
+        tick: u64,
+    },
+    WildfirePriorityReallocationRequested {
+        task_id: TaskId,
+        old_priority: u8,
+        new_priority: u8,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        previous_agent_id: Option<AgentId>,
         tick: u64,
     },
     // M65: Urban Patrol v0
@@ -566,6 +576,7 @@ mod tests {
             Event::CbbaBundleUpdated {
                 agent_id: AgentId::from("a0".to_owned()),
                 bundle_size: 3,
+                conflict_count: 2,
                 tick: 9,
             },
             Event::AgentObservation {
@@ -584,6 +595,13 @@ mod tests {
                 old_priority: 3,
                 new_priority: 6,
                 tick: 12,
+            },
+            Event::WildfirePriorityReallocationRequested {
+                task_id: TaskId::from("t2".to_owned()),
+                old_priority: 3,
+                new_priority: 8,
+                previous_agent_id: Some(AgentId::from("a0".to_owned())),
+                tick: 13,
             },
         ];
         let log = EventLog {

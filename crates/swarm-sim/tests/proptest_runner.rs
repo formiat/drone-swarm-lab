@@ -138,7 +138,7 @@ proptest! {
     ) {
         let scenario = scenario_from_agents_tasks(agents, tasks);
         let config = default_run_config();
-        let (metrics, log_opt) = ScenarioRunner::run_with_log(&scenario, config, GreedyAllocator);
+        let (metrics, log_opt) = ScenarioRunner::run_with_log(&scenario, config, GreedyAllocator::default());
         // run_with_log should return Some(EventLog)
         prop_assert!(log_opt.is_some(), "run_with_log should return EventLog");
         let log = log_opt.unwrap();
@@ -164,7 +164,7 @@ proptest! {
         config.latency_ticks = 0;
         config.latency_per_hop = 0;
         config.failures.clear();
-        let greedy_metrics = ScenarioRunner::run_with(&scenario, config.clone(), GreedyAllocator);
+        let greedy_metrics = ScenarioRunner::run_with(&scenario, config.clone(), GreedyAllocator::default());
         let centralized_metrics = ScenarioRunner::run_with(&scenario, config, swarm_alloc::CentralizedPlanner::new(
             &scenario.tasks.iter().map(|t| swarm_alloc::AllocationTask { task: t }).collect::<Vec<_>>(),
             &scenario.agents.iter().map(|a| swarm_alloc::AllocationAgent {

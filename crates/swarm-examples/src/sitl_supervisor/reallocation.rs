@@ -93,7 +93,7 @@ pub(super) fn live_reallocation_after_failure(
         });
     }
 
-    let mut allocator = GreedyAllocator;
+    let mut allocator = GreedyAllocator::default();
     let output = node
         .process_inbox_and_allocate(tick, &mut allocator, Vec::new())
         .map_err(|error| SitlError::ConnectionFailed {

@@ -217,6 +217,15 @@ pub struct RunConfig {
     /// Realism profile name (light, medium, heavy).
     #[serde(default)]
     pub realism_profile: Option<String>,
+    /// Penalty weight for assigning tasks outside an agent's communication range.
+    #[serde(default)]
+    pub comms_penalty_weight: f64,
+    /// Wildfire priority threshold that forces release/reallocation when crossed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wildfire_priority_realloc_threshold: Option<u8>,
+    /// Re-rank unfinished SAR tasks by posterior uncertainty after scan events.
+    #[serde(default)]
+    pub dynamic_belief_updates: bool,
 }
 
 fn default_max_unassigned() -> u64 {

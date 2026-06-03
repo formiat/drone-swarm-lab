@@ -92,7 +92,7 @@ fn safety_nofly_tasks_not_assigned() {
         ..Default::default()
     };
 
-    let metrics = ScenarioRunner::run_with(&scenario, config, GreedyAllocator);
+    let metrics = ScenarioRunner::run_with(&scenario, config, GreedyAllocator::default());
     assert!(
         !metrics.all_tasks_assigned,
         "task in no-fly should not be assigned"
@@ -144,7 +144,7 @@ fn safety_violations_counted() {
         ..Default::default()
     };
 
-    let metrics = ScenarioRunner::run_with(&scenario, config, GreedyAllocator);
+    let metrics = ScenarioRunner::run_with(&scenario, config, GreedyAllocator::default());
     assert!(
         metrics.safety_violations > 0,
         "expected geofence violations, got {}",
@@ -194,7 +194,7 @@ fn safety_separation_no_panic() {
         ..Default::default()
     };
 
-    let metrics = ScenarioRunner::run_with(&scenario, config, GreedyAllocator);
+    let metrics = ScenarioRunner::run_with(&scenario, config, GreedyAllocator::default());
     assert!(
         metrics.safety_violations > 0,
         "expected separation violations"

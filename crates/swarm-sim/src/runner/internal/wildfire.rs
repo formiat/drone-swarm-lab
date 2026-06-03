@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use swarm_comms::InMemAgentTransport;
 use swarm_runtime::AgentNode;
-use swarm_types::{AgentId, TaskKind};
+use swarm_types::{AgentId, TaskId, TaskKind, TaskStatus};
 
 use crate::runner::WildfireState;
 
@@ -13,13 +13,25 @@ pub(in crate::runner) struct WildfireTickMetrics {
     pub time_to_map_first_high_risk: Option<u64>,
     pub zone_observations: u64,
     pub avg_threat_level: f64,
+    pub priority_reallocation_requests: Vec<PriorityReallocationRequest>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(in crate::runner) struct PriorityReallocationRequest {
+    pub task_id: TaskId,
+    pub old_priority: u8,
+    pub new_priority: u8,
+    pub previous_agent_id: Option<AgentId>,
+    pub tick: u64,
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(in crate::runner) fn process_wildfire_mapping_tick(
     nodes: &mut [(AgentNode<InMemAgentTransport>, AgentId)],
     crashed_agents: &HashSet<AgentId>,
     wildfire_state: &mut WildfireState,
     wind: Option<(f64, f64, f64)>,
+    priority_realloc_threshold: Option<u8>,
     current_tick: u64,
     first_high_risk_already_mapped: bool,
     log_builder: &mut Option<swarm_replay::EventLogBuilder>,
@@ -82,6 +94,7 @@ pub(in crate::runner) fn process_wildfire_mapping_tick(
         nodes,
         wildfire_state,
         wind,
+        priority_realloc_threshold,
         current_tick,
         log_builder,
         &mut metrics,
@@ -94,6 +107,7 @@ fn update_dynamic_threat(
     nodes: &mut [(AgentNode<InMemAgentTransport>, AgentId)],
     wildfire_state: &mut WildfireState,
     wind: Option<(f64, f64, f64)>,
+    priority_realloc_threshold: Option<u8>,
     current_tick: u64,
     log_builder: &mut Option<swarm_replay::EventLogBuilder>,
     metrics: &mut WildfireTickMetrics,
@@ -154,9 +168,13 @@ fn update_dynamic_threat(
         }
     }
 
+    let mut requested_task_ids = HashSet::new();
     for (node, _) in nodes {
         for task in node.coordinator.registry.tasks_mut() {
             if task.kind != Some(TaskKind::MappingZone) {
+                continue;
+            }
+            if matches!(task.status, TaskStatus::Completed | TaskStatus::Failed) {
                 continue;
             }
             if let Some(zone) = wildfire_state
@@ -175,6 +193,32 @@ fn update_dynamic_threat(
                             new_priority: task.priority,
                             tick: current_tick,
                         });
+                    }
+                    if let Some(threshold) = priority_realloc_threshold {
+                        if old_priority < threshold
+                            && task.priority >= threshold
+                            && requested_task_ids.insert(task.id.clone())
+                        {
+                            let request = PriorityReallocationRequest {
+                                task_id: task.id.clone(),
+                                old_priority,
+                                new_priority: task.priority,
+                                previous_agent_id: task.assigned_to.clone(),
+                                tick: current_tick,
+                            };
+                            if let Some(builder) = log_builder {
+                                builder.push(
+                                    swarm_replay::Event::WildfirePriorityReallocationRequested {
+                                        task_id: request.task_id.clone(),
+                                        old_priority: request.old_priority,
+                                        new_priority: request.new_priority,
+                                        previous_agent_id: request.previous_agent_id.clone(),
+                                        tick: request.tick,
+                                    },
+                                );
+                            }
+                            metrics.priority_reallocation_requests.push(request);
+                        }
                     }
                 }
             }

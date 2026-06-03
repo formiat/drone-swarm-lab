@@ -326,7 +326,7 @@ fn extension_fixture_runs_mapping_mission_with_replay_log() {
     };
 
     let (metrics, event_log) =
-        ScenarioRunner::run_with_log(&scenario, cfg, swarm_alloc::GreedyAllocator);
+        ScenarioRunner::run_with_log(&scenario, cfg, swarm_alloc::GreedyAllocator::default());
     let event_log = event_log.expect("run_with_log should return an event log");
 
     assert!(metrics.success);
@@ -337,6 +337,99 @@ fn extension_fixture_runs_mapping_mission_with_replay_log() {
         swarm_replay::Event::TaskCompleted { task_id, .. }
             if task_id.to_string() == "zone-0"
     )));
+}
+
+#[test]
+fn wildfire_priority_trigger_reallocates_agent() {
+    let mut scenario = scenario(0, 1, 0);
+    scenario.name = "wildfire_priority_realloc".to_owned();
+    let mut task = semantic_task("zone-0", TaskKind::MappingZone);
+    task.priority = 7;
+    task.pose = Some(Pose {
+        x: 100.0,
+        y: 0.0,
+        ..Default::default()
+    });
+    scenario.tasks = vec![task];
+
+    let cfg = RunConfig {
+        max_ticks: 3,
+        enable_movement: true,
+        wildfire_priority_realloc_threshold: Some(8),
+        wildfire_state: Some(WildfireState {
+            zones: vec![WildfireZone {
+                id: "zone-0".to_owned(),
+                threat_level: 0.0,
+                priority: 7,
+            }],
+            mapped_zone_ids: std::collections::HashSet::new(),
+            update_interval_ticks: 1,
+            enable_dynamic_threat: true,
+            enable_zone_expansion: false,
+            enable_spatial_spread: false,
+        }),
+        ..config(vec![])
+    };
+
+    let (_metrics, event_log) =
+        ScenarioRunner::run_with_log(&scenario, cfg, swarm_alloc::GreedyAllocator::default());
+    let event_log = event_log.expect("run_with_log should return an event log");
+
+    assert!(event_log.events.iter().any(|event| {
+        matches!(
+            event,
+            swarm_replay::Event::WildfirePriorityReallocationRequested {
+                task_id,
+                old_priority: 7,
+                new_priority: 8,
+                ..
+            } if task_id.to_string() == "zone-0"
+        )
+    }));
+}
+
+#[test]
+fn wildfire_priority_below_threshold_no_realloc() {
+    let mut scenario = scenario(0, 1, 0);
+    scenario.name = "wildfire_priority_no_realloc".to_owned();
+    let mut task = semantic_task("zone-0", TaskKind::MappingZone);
+    task.priority = 7;
+    task.pose = Some(Pose {
+        x: 100.0,
+        y: 0.0,
+        ..Default::default()
+    });
+    scenario.tasks = vec![task];
+
+    let cfg = RunConfig {
+        max_ticks: 1,
+        enable_movement: true,
+        wildfire_priority_realloc_threshold: Some(10),
+        wildfire_state: Some(WildfireState {
+            zones: vec![WildfireZone {
+                id: "zone-0".to_owned(),
+                threat_level: 0.0,
+                priority: 7,
+            }],
+            mapped_zone_ids: std::collections::HashSet::new(),
+            update_interval_ticks: 1,
+            enable_dynamic_threat: true,
+            enable_zone_expansion: false,
+            enable_spatial_spread: false,
+        }),
+        ..config(vec![])
+    };
+
+    let (_metrics, event_log) =
+        ScenarioRunner::run_with_log(&scenario, cfg, swarm_alloc::GreedyAllocator::default());
+    let event_log = event_log.expect("run_with_log should return an event log");
+
+    assert!(!event_log.events.iter().any(|event| {
+        matches!(
+            event,
+            swarm_replay::Event::WildfirePriorityReallocationRequested { .. }
+        )
+    }));
 }
 
 #[test]
@@ -687,8 +780,11 @@ fn urban_patrol_violation_fails_before_completion() {
     };
     let (scenario, run_config) = urban_test_run_config(50, vec![obstacle]);
 
-    let (metrics, event_log) =
-        ScenarioRunner::run_with_log(&scenario, run_config, swarm_alloc::GreedyAllocator);
+    let (metrics, event_log) = ScenarioRunner::run_with_log(
+        &scenario,
+        run_config,
+        swarm_alloc::GreedyAllocator::default(),
+    );
     let event_log = event_log.expect("urban run should produce replay log");
 
     assert!(metrics.urban_route_planned);
@@ -705,8 +801,11 @@ fn urban_patrol_violation_fails_before_completion() {
 fn urban_patrol_replay_records_ordered_route_events() {
     let (scenario, run_config) = urban_test_run_config(50, vec![]);
 
-    let (metrics, event_log) =
-        ScenarioRunner::run_with_log(&scenario, run_config, swarm_alloc::GreedyAllocator);
+    let (metrics, event_log) = ScenarioRunner::run_with_log(
+        &scenario,
+        run_config,
+        swarm_alloc::GreedyAllocator::default(),
+    );
     let event_log = event_log.expect("urban run should produce replay log");
 
     assert!(metrics.success);
@@ -859,8 +958,11 @@ fn urban_search_replay_records_detection_events() {
         50,
     );
 
-    let (metrics, event_log) =
-        ScenarioRunner::run_with_log(&scenario, run_config, swarm_alloc::GreedyAllocator);
+    let (metrics, event_log) = ScenarioRunner::run_with_log(
+        &scenario,
+        run_config,
+        swarm_alloc::GreedyAllocator::default(),
+    );
     let event_log = event_log.expect("urban search run should produce replay log");
 
     assert!(metrics.success);

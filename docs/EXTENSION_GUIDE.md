@@ -182,6 +182,26 @@ dependencies as part of this path. M76 generated suites are deterministic input
 generation only; they are not benchmark, PX4, hardware, or physics evidence.
 Those belong to later milestones with their own tests and docs.
 
+## Algorithm Differentiation Knobs
+
+M77 adds neutral-default knobs that extension work can opt into without
+changing legacy scenario behavior:
+
+- `RunConfig.comms_penalty_weight`: use when a strategy/profile should prefer
+  assignments within an agent communication range. Keep it `0.0` unless the
+  scenario is explicitly communication-aware.
+- `RunConfig.wildfire_priority_realloc_threshold`: use for wildfire-style
+  dynamic priority escalation where crossing the threshold should release and
+  reassign an unfinished mapping task.
+- `RunConfig.dynamic_belief_updates`: use for SAR profiles where unfinished
+  scan tasks should follow posterior uncertainty instead of static priority.
+- Replay `CbbaBundleUpdated.conflict_count`: use as diagnostic evidence before
+  changing CBBA recovery behavior. Do not add gossip-burst behavior unless a
+  focused replay artifact supports the hypothesis.
+
+Targeted benchmark extensions should prefer `strategy_comparison --profiles`
+with explicit profile aliases over broad `--mission all` runs.
+
 ## Add A Strategy
 
 1. Implement `Allocator` from `crates/swarm-alloc/src/allocator.rs`.

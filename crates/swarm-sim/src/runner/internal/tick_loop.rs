@@ -175,6 +175,7 @@ pub(in crate::runner) fn run_tick_loop<A: Allocator>(
                 grid_state,
                 scenario.seed,
                 current_tick,
+                config.dynamic_belief_updates,
                 &mut state.log_builder,
             );
             state
@@ -188,6 +189,7 @@ pub(in crate::runner) fn run_tick_loop<A: Allocator>(
                 &state.crashed_agents,
                 wildfire_state,
                 config.wind,
+                config.wildfire_priority_realloc_threshold,
                 current_tick,
                 state.time_to_map_first_high_risk.is_some(),
                 &mut state.log_builder,
@@ -201,6 +203,14 @@ pub(in crate::runner) fn run_tick_loop<A: Allocator>(
             state
                 .threat_level_over_time
                 .push(wildfire_tick.avg_threat_level);
+            for request in wildfire_tick.priority_reallocation_requests {
+                for (node, agent_id) in &mut state.nodes {
+                    if state.crashed_agents.contains(agent_id) {
+                        continue;
+                    }
+                    node.coordinator.registry.release_task(&request.task_id);
+                }
+            }
         }
 
         if let Some(connectivity) = connectivity_metrics_tick(
@@ -257,6 +267,26 @@ pub(in crate::runner) fn run_tick_loop<A: Allocator>(
                 })
             {
                 state.time_to_first_exhaustion = Some(current_tick);
+            }
+        }
+
+        if let Some(ref mut builder) = state.log_builder {
+            for (node, agent_id) in &state.nodes {
+                if state.crashed_agents.contains(agent_id) {
+                    continue;
+                }
+                if let Some(cbba) = node.cbba.as_ref() {
+                    builder.push(swarm_replay::Event::CbbaBundleUpdated {
+                        agent_id: agent_id.clone(),
+                        bundle_size: cbba.bundles.get(agent_id).map(Vec::len).unwrap_or_default(),
+                        conflict_count: tick_outputs
+                            .iter()
+                            .find(|(output_agent_id, _)| output_agent_id == agent_id)
+                            .map(|(_, output)| output.conflicting_assignments)
+                            .unwrap_or_default(),
+                        tick: current_tick,
+                    });
+                }
             }
         }
 

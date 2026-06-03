@@ -159,6 +159,38 @@ testbed infrastructure, not a benchmark refresh. The fixture carries
 but no M69/M62 benchmark conclusions should be extended to generated Urban
 suites without a dedicated run.
 
+## M77 Targeted Algorithm Delta
+
+M77 is an algorithm-differentiation milestone. It intentionally does not rerun
+the full 1000-seed publication-style benchmark. The committed artifact is a
+small release smoke run that validates the new targeted profile plumbing and
+communication-aware allocation knobs.
+
+Captured artifact:
+
+- Output: `results/m77_algorithm_delta/coverage/`
+- Command:
+  `timeout 300 /home/formi/.local/bin/runlim cargo run --release -p swarm-examples --bin strategy_comparison -- --mission coverage --profiles m77-comms-heavy-loss,m77-comms-partition-prone --seeds 1 --jobs 1 --output-dir results/m77_algorithm_delta/coverage --run-id-prefix m77-coverage-smoke`
+- Profiles:
+  - `m77-comms-heavy-loss`
+  - `m77-comms-partition-prone`
+- New setting: `RunConfig.comms_penalty_weight = 50.0`
+- Seeds: `1`
+- Jobs: `1`
+
+Interpretation:
+
+- This is smoke evidence that targeted M77 profiles execute in release mode and
+  that result manifests record the filtered profile set.
+- It is not statistical evidence and must not be compared with M69 or M62 as a
+  benchmark refresh.
+- Controlled unit tests are the primary evidence that
+  `comms_penalty_weight = 0.0` preserves old allocation behavior and non-zero
+  weight changes constructed assignment cases.
+- M77 also adds wildfire priority reallocation and SAR entropy-ordering tests,
+  plus CBBA `conflict_count` replay diagnostics. It does not add a CBBA
+  gossip-burst fix.
+
 ## M68 Urban Corridor Delta
 
 M68 compares two `urban-patrol` profiles over the same deterministic road

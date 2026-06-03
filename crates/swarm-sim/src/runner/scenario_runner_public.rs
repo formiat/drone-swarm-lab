@@ -7,7 +7,7 @@ use swarm_alloc::Allocator;
 impl ScenarioRunner {
     pub fn run(scenario: &Scenario, config: RunConfig) -> RunMetrics {
         use swarm_alloc::GreedyAllocator;
-        Self::run_with(scenario, config, GreedyAllocator)
+        Self::run_with(scenario, config, GreedyAllocator::default())
     }
 
     pub fn run_with<A: Allocator>(

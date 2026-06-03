@@ -106,6 +106,57 @@ fn summarize_counts_events_correctly() {
 }
 
 #[test]
+fn cbba_bundle_updated_defaults_conflict_count_for_old_logs() {
+    let json = r#"{
+        "schema_version":"0.2",
+        "run_id":"legacy-cbba",
+        "seed":0,
+        "scenario_name":"s",
+        "events":[
+            {"type":"cbba_bundle_updated","agent_id":"agent-0","bundle_size":2,"tick":4}
+        ]
+    }"#;
+
+    let log: EventLog = serde_json::from_str(json).unwrap();
+    assert!(matches!(
+        &log.events[0],
+        Event::CbbaBundleUpdated {
+            conflict_count: 0,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn cbba_bundle_updated_render_includes_conflict_count() {
+    let mut builder = EventLogBuilder::new("cbba", 0, "s");
+    builder.push(Event::CbbaBundleUpdated {
+        agent_id: AgentId::from("agent-0".to_owned()),
+        bundle_size: 2,
+        conflict_count: 3,
+        tick: 4,
+    });
+    let timeline = format_timeline(&builder.build(), &ReplayTimelineFilter::default());
+    assert!(timeline.contains("bundle_size=2 conflict_count=3"));
+}
+
+#[test]
+fn wildfire_priority_reallocation_event_round_trips_and_summarizes() {
+    let mut builder = EventLogBuilder::new("wildfire", 0, "s");
+    builder.push(Event::WildfirePriorityReallocationRequested {
+        task_id: TaskId::from("zone-0".to_owned()),
+        old_priority: 4,
+        new_priority: 8,
+        previous_agent_id: Some(AgentId::from("agent-0".to_owned())),
+        tick: 5,
+    });
+    let log = builder.build();
+    let encoded = serde_json::to_string(&log).unwrap();
+    let decoded: EventLog = serde_json::from_str(&encoded).unwrap();
+    assert_eq!(summarize(&decoded).priority_reallocation_requests, 1);
+}
+
+#[test]
 fn summarize_counts_urban_events() {
     let mut builder = EventLogBuilder::new("urban", 0, "urban_patrol_small_block");
     let agent_id = AgentId::from("agent-0".to_owned());

@@ -561,7 +561,7 @@ pub(super) fn run_supervisor_with_controllers<C: AgentController>(
         MockMavlinkTransport::new(),
     );
     node.gossip_interval_ticks = config.max_ticks.saturating_add(10);
-    let mut allocator = GreedyAllocator;
+    let mut allocator = GreedyAllocator::default();
     let mut recorder = SitlEventRecorder::new(SitlEventLogMetadata {
         run_id: config
             .run_id

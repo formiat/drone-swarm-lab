@@ -62,7 +62,7 @@ fn main() {
     };
 
     let (scenario, run_config) = build_partition_scenario(&config);
-    let metrics = ScenarioRunner::run_with(&scenario, run_config, GreedyAllocator);
+    let metrics = ScenarioRunner::run_with(&scenario, run_config, GreedyAllocator::default());
 
     assert!(
         metrics.success,
@@ -154,7 +154,7 @@ mod tests {
         };
 
         let (scenario, run_config) = build_partition_scenario(&config);
-        let metrics = ScenarioRunner::run_with(&scenario, run_config, GreedyAllocator);
+        let metrics = ScenarioRunner::run_with(&scenario, run_config, GreedyAllocator::default());
 
         assert!(metrics.success);
         assert!(metrics.partitions_active);

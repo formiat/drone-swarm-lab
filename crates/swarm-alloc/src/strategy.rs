@@ -76,7 +76,7 @@ impl StrategyRegistry {
 impl Default for StrategyRegistry {
     fn default() -> Self {
         let mut reg = Self::new();
-        reg.register(Box::new(GreedyAllocator));
+        reg.register(Box::new(GreedyAllocator::default()));
         reg.register(Box::new(AuctionAllocator::default()));
         reg.register(Box::new(ConnectivityAwareAllocator {
             base_allocator: AuctionAllocator::default(),

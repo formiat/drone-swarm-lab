@@ -120,7 +120,7 @@ mod tests {
         let (metrics, log) = swarm_sim::ScenarioRunner::run_with_log(
             &entry.scenario,
             entry.run_config.clone(),
-            swarm_alloc::GreedyAllocator,
+            swarm_alloc::GreedyAllocator::default(),
         );
         let log = log.expect("urban multi-agent run should produce replay log");
         let trace = swarm_sim::build_urban_route_trace(&log);

@@ -6,8 +6,11 @@ fn smoke_run(path: &str) {
     let full_path = format!("{}{}", abs, path);
     let suite = load_scenario_suite(&full_path).unwrap();
     let entry = &suite.scenarios[0];
-    let metrics =
-        ScenarioRunner::run_with(&entry.scenario, entry.run_config.clone(), GreedyAllocator);
+    let metrics = ScenarioRunner::run_with(
+        &entry.scenario,
+        entry.run_config.clone(),
+        GreedyAllocator::default(),
+    );
     // Smoke test: must not panic, must complete within max_ticks
     assert!(
         metrics.total_ticks > 0,

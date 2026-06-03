@@ -49,13 +49,23 @@ fn make_cbba_allocator() -> CbbaAllocator {
 
 fn make_factories() -> Vec<StrategyFactory> {
     vec![
-        Box::new(|_scenario: &Scenario, _run_config: &RunConfig| Box::new(GreedyAllocator)),
-        Box::new(|_scenario: &Scenario, _run_config: &RunConfig| {
-            Box::new(AuctionAllocator::default())
+        Box::new(|_scenario: &Scenario, run_config: &RunConfig| {
+            Box::new(GreedyAllocator {
+                comms_penalty_weight: run_config.comms_penalty_weight,
+            })
         }),
-        Box::new(|_scenario: &Scenario, _run_config: &RunConfig| {
+        Box::new(|_scenario: &Scenario, run_config: &RunConfig| {
+            Box::new(AuctionAllocator {
+                comms_penalty_weight: run_config.comms_penalty_weight,
+                ..AuctionAllocator::default()
+            })
+        }),
+        Box::new(|_scenario: &Scenario, run_config: &RunConfig| {
             Box::new(ConnectivityAwareAllocator {
-                base_allocator: AuctionAllocator::default(),
+                base_allocator: AuctionAllocator {
+                    comms_penalty_weight: run_config.comms_penalty_weight,
+                    ..AuctionAllocator::default()
+                },
             })
         }),
         Box::new(|scenario: &Scenario, _run_config: &RunConfig| {

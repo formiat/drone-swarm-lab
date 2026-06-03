@@ -110,7 +110,7 @@ fn dispatch_heartbeat_updates_membership() {
     );
     node.gossip_interval_ticks = 999;
 
-    let mut allocator = GreedyAllocator;
+    let mut allocator = GreedyAllocator::default();
     node.tick(1, &mut allocator, vec![]).unwrap();
 
     let entry = node
@@ -157,7 +157,7 @@ fn dispatch_gossip_does_not_affect_heartbeat_senders() {
     );
     node.gossip_interval_ticks = 999;
 
-    let mut allocator = GreedyAllocator;
+    let mut allocator = GreedyAllocator::default();
     let out = node.tick(1, &mut allocator, vec![]).unwrap();
 
     // Gossip-only message should NOT count as heartbeat
@@ -190,7 +190,7 @@ fn dispatch_unknown_payload_is_discarded() {
     );
     node.gossip_interval_ticks = 999;
 
-    let mut allocator = GreedyAllocator;
+    let mut allocator = GreedyAllocator::default();
     let out = node.tick(1, &mut allocator, vec![]).unwrap();
     assert_eq!(out.discarded_messages, 1);
 }
@@ -505,7 +505,7 @@ fn reallocation_recovers_failed_agent_tasks_by_survivor() {
     );
     node.gossip_interval_ticks = 999;
 
-    let mut allocator = GreedyAllocator;
+    let mut allocator = GreedyAllocator::default();
     let out = node
         .process_inbox_and_allocate(4, &mut allocator, vec![])
         .unwrap();
@@ -542,7 +542,7 @@ fn reallocation_unassignable_released_task_is_not_counted_as_recovered() {
     );
     node.gossip_interval_ticks = 999;
 
-    let mut allocator = GreedyAllocator;
+    let mut allocator = GreedyAllocator::default();
     let out = node
         .process_inbox_and_allocate(4, &mut allocator, vec![])
         .unwrap();

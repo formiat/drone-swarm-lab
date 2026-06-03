@@ -80,6 +80,8 @@ pub(super) struct CliArgs {
     pub(super) realism: bool,
     /// Realism profile: light, medium, or heavy (default: medium).
     pub(super) realism_profile: Option<String>,
+    /// Optional comma-separated profile filter for targeted benchmark runs.
+    pub(super) profiles_filter: Option<Vec<String>>,
 }
 
 pub(super) fn parse_args() -> CliArgs {
@@ -101,6 +103,7 @@ pub(super) fn parse_args() -> CliArgs {
         update_baseline: None,
         realism: false,
         realism_profile: None,
+        profiles_filter: None,
     };
 
     let mut i = 1;
@@ -203,6 +206,22 @@ pub(super) fn parse_args() -> CliArgs {
                 i += 1;
                 if i < args.len() {
                     cli.realism_profile = Some(args[i].clone());
+                }
+            }
+            "--profiles" => {
+                i += 1;
+                if i < args.len() {
+                    let profiles = args[i]
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|profile| !profile.is_empty())
+                        .map(ToOwned::to_owned)
+                        .collect::<Vec<_>>();
+                    if profiles.is_empty() {
+                        eprintln!("Invalid --profiles value. Expected comma-separated names.");
+                        std::process::exit(1);
+                    }
+                    cli.profiles_filter = Some(profiles);
                 }
             }
             "--compare-baseline" => {

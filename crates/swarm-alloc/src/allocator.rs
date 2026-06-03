@@ -81,7 +81,18 @@ pub trait Allocator {
     }
 }
 
-pub struct GreedyAllocator;
+#[derive(Clone, Debug)]
+pub struct GreedyAllocator {
+    pub comms_penalty_weight: f64,
+}
+
+impl Default for GreedyAllocator {
+    fn default() -> Self {
+        Self {
+            comms_penalty_weight: 0.0,
+        }
+    }
+}
 
 impl Allocator for GreedyAllocator {
     fn allocate(
@@ -118,7 +129,9 @@ impl Allocator for GreedyAllocator {
                 continue;
             }
 
-            let agent = capable[global_idx % capable.len()];
+            let agent = self
+                .best_greedy_agent(at.task, &capable, global_idx)
+                .unwrap_or(capable[global_idx % capable.len()]);
             tracing::debug!(
                 task_id = %at.task.id,
                 agent_id = %agent.id,
@@ -166,14 +179,26 @@ impl Allocator for GreedyAllocator {
                 continue;
             }
 
-            // Use adapter score to pick the best agent; fallback to round-robin
             let best = capable
                 .iter()
                 .max_by(|a, b| {
-                    adapter
-                        .score(a, at.task)
-                        .partial_cmp(&adapter.score(b, at.task))
-                        .unwrap()
+                    greedy_adapter_score(
+                        self.comms_penalty_weight,
+                        adapter,
+                        at.task,
+                        a,
+                        global_idx,
+                        &capable,
+                    )
+                    .partial_cmp(&greedy_adapter_score(
+                        self.comms_penalty_weight,
+                        adapter,
+                        at.task,
+                        b,
+                        global_idx,
+                        &capable,
+                    ))
+                    .unwrap()
                 })
                 .copied()
                 .unwrap_or(capable[global_idx % capable.len()]);
@@ -196,7 +221,7 @@ impl Allocator for GreedyAllocator {
         agents: &[AllocationAgent],
         _connectivity: &ConnectivityContext,
     ) -> Vec<(TaskId, AgentId)> {
-        // GreedyAllocator ignores connectivity; use registry-aware scoring when tasks have kind.
+        // GreedyAllocator uses its local communication-range scoring when configured.
         self.allocate_with_registry(tasks, agents, &AdapterRegistry::new())
     }
 }
@@ -209,6 +234,8 @@ pub struct AuctionAllocator {
     pub weight_battery: f64,
     /// Weight for role bonus (matching preferred_role → cost reduction).
     pub weight_role: f64,
+    /// Weight for assigning tasks beyond an agent's communication range.
+    pub comms_penalty_weight: f64,
 }
 
 impl Default for AuctionAllocator {
@@ -217,6 +244,7 @@ impl Default for AuctionAllocator {
             weight_distance: 1.0,
             weight_battery: 0.5,
             weight_role: 0.3,
+            comms_penalty_weight: 0.0,
         }
     }
 }
@@ -298,9 +326,11 @@ impl Allocator for AuctionAllocator {
                         0.0
                     };
                     let score_bonus = -adapter.score(agent, at.task) * 0.001;
+                    let comms_penalty =
+                        communication_penalty(self.comms_penalty_weight, at.task, agent);
                     (
                         agent,
-                        base_cost + battery_penalty + role_bonus + score_bonus,
+                        base_cost + battery_penalty + role_bonus + score_bonus + comms_penalty,
                     )
                 })
                 .filter(|(_, cost)| cost.is_finite())
@@ -325,7 +355,7 @@ impl Allocator for AuctionAllocator {
         agents: &[AllocationAgent],
         _connectivity: &ConnectivityContext,
     ) -> Vec<(TaskId, AgentId)> {
-        // AuctionAllocator ignores connectivity; use registry-aware scoring when tasks have kind.
+        // AuctionAllocator uses its local communication-range scoring when configured.
         self.allocate_with_registry(tasks, agents, &AdapterRegistry::new())
     }
 }
@@ -356,8 +386,87 @@ impl AuctionAllocator {
             0.0
         };
 
-        distance_cost + battery_cost + role_bonus
+        distance_cost
+            + battery_cost
+            + role_bonus
+            + communication_penalty(self.comms_penalty_weight, task, agent)
     }
+}
+
+impl GreedyAllocator {
+    fn best_greedy_agent<'a>(
+        &self,
+        task: &Task,
+        capable: &[&'a AllocationAgent],
+        global_idx: usize,
+    ) -> Option<&'a AllocationAgent> {
+        if self.comms_penalty_weight <= 0.0 {
+            return None;
+        }
+        capable
+            .iter()
+            .enumerate()
+            .min_by(|(idx_a, a), (idx_b, b)| {
+                let score_a =
+                    greedy_comms_score(self.comms_penalty_weight, task, a, global_idx, *idx_a);
+                let score_b =
+                    greedy_comms_score(self.comms_penalty_weight, task, b, global_idx, *idx_b);
+                score_a.partial_cmp(&score_b).unwrap()
+            })
+            .map(|(_, agent)| *agent)
+    }
+}
+
+fn communication_penalty(weight: f64, task: &Task, agent: &AllocationAgent) -> f64 {
+    if weight <= 0.0 {
+        return 0.0;
+    }
+    let Some(task_pose) = task.pose else {
+        return 0.0;
+    };
+    if !agent.comms_range.is_finite() || agent.comms_range <= 0.0 {
+        return 0.0;
+    }
+    let over_range = agent.pose.distance_to(&task_pose) - agent.comms_range;
+    weight * over_range.max(0.0)
+}
+
+fn greedy_comms_score(
+    weight: f64,
+    task: &Task,
+    agent: &AllocationAgent,
+    global_idx: usize,
+    capable_idx: usize,
+) -> f64 {
+    let rotation_penalty = if capable_idx >= global_idx {
+        capable_idx - global_idx
+    } else {
+        capable_idx + global_idx
+    } as f64
+        * 1e-9;
+    communication_penalty(weight, task, agent) + rotation_penalty
+}
+
+fn greedy_adapter_score(
+    comms_penalty_weight: f64,
+    adapter: &dyn MissionAdapter,
+    task: &Task,
+    agent: &AllocationAgent,
+    global_idx: usize,
+    capable: &[&AllocationAgent],
+) -> f64 {
+    let capable_idx = capable
+        .iter()
+        .position(|candidate| candidate.id == agent.id)
+        .unwrap_or(0);
+    adapter.score(agent, task)
+        - greedy_comms_score(
+            comms_penalty_weight,
+            task,
+            agent,
+            global_idx % capable.len(),
+            capable_idx,
+        )
 }
 
 pub(crate) fn has_all_capabilities(agent: &AllocationAgent, required: &[Capability]) -> bool {
@@ -490,14 +599,16 @@ mod tests {
     fn greedy_assigns_to_alive_agents() {
         let tasks = [task("t0", 1), task("t1", 1), task("t2", 1)];
         let agents = [agent("a0"), agent("a1"), agent("a2")];
-        let result = GreedyAllocator.allocate(&tasks.iter().map(at).collect::<Vec<_>>(), &agents);
+        let result =
+            GreedyAllocator::default().allocate(&tasks.iter().map(at).collect::<Vec<_>>(), &agents);
         assert_eq!(result.len(), 3);
     }
 
     #[test]
     fn greedy_no_agents_returns_empty() {
         let tasks = [task("t0", 1)];
-        let result = GreedyAllocator.allocate(&tasks.iter().map(at).collect::<Vec<_>>(), &[]);
+        let result =
+            GreedyAllocator::default().allocate(&tasks.iter().map(at).collect::<Vec<_>>(), &[]);
         assert!(result.is_empty());
     }
 
@@ -511,7 +622,8 @@ mod tests {
             task("t4", 1),
         ];
         let agents = [agent("a0"), agent("a1")];
-        let result = GreedyAllocator.allocate(&tasks.iter().map(at).collect::<Vec<_>>(), &agents);
+        let result =
+            GreedyAllocator::default().allocate(&tasks.iter().map(at).collect::<Vec<_>>(), &agents);
         assert_eq!(result.len(), 5);
     }
 
@@ -519,7 +631,7 @@ mod tests {
     fn greedy_capability_gate_passes() {
         let t = task_with_cap("t0", "thermal");
         let a = agent_with_cap("a0", "thermal");
-        let result = GreedyAllocator.allocate(&[at(&t)], &[a]);
+        let result = GreedyAllocator::default().allocate(&[at(&t)], &[a]);
         assert_eq!(result.len(), 1);
     }
 
@@ -527,7 +639,7 @@ mod tests {
     fn greedy_capability_gate_blocks() {
         let t = task_with_cap("t0", "thermal");
         let a = agent("a0");
-        let result = GreedyAllocator.allocate(&[at(&t)], &[a]);
+        let result = GreedyAllocator::default().allocate(&[at(&t)], &[a]);
         assert!(result.is_empty());
     }
 
@@ -535,7 +647,8 @@ mod tests {
     fn greedy_with_rich_context_same_behavior() {
         let tasks = [task("t0", 1), task("t1", 1), task("t2", 1)];
         let agents = [agent("a0"), agent("a1")];
-        let result = GreedyAllocator.allocate(&tasks.iter().map(at).collect::<Vec<_>>(), &agents);
+        let result =
+            GreedyAllocator::default().allocate(&tasks.iter().map(at).collect::<Vec<_>>(), &agents);
         assert_eq!(result.len(), 3);
     }
 
@@ -547,6 +660,73 @@ mod tests {
         let result = AuctionAllocator::default().allocate(&[at(&t)], &[near, far]);
         assert_eq!(result.len(), 1);
         assert_eq!(*result[0].1, "near");
+    }
+
+    #[test]
+    fn comms_penalty_zero_no_effect() {
+        let t = task_at("t0", 10.0, 0.0);
+        let mut near = agent_at("near", 9.0, 0.0);
+        near.comms_range = 1.0;
+        let mut far = agent_at("far", 30.0, 0.0);
+        far.comms_range = 100.0;
+
+        let baseline =
+            AuctionAllocator::default().allocate(&[at(&t)], &[near.clone(), far.clone()]);
+        let configured = AuctionAllocator {
+            comms_penalty_weight: 0.0,
+            ..AuctionAllocator::default()
+        }
+        .allocate(&[at(&t)], &[near, far]);
+
+        assert_eq!(baseline, configured);
+    }
+
+    #[test]
+    fn comms_penalty_reduces_score_beyond_range() {
+        let t = task_at("t0", 10.0, 0.0);
+        let mut close_out_of_range = agent_at("close", 9.0, 0.0);
+        close_out_of_range.comms_range = 0.1;
+        let mut farther_in_range = agent_at("in-range", 20.0, 0.0);
+        farther_in_range.comms_range = 100.0;
+
+        let result = AuctionAllocator {
+            comms_penalty_weight: 100.0,
+            ..AuctionAllocator::default()
+        }
+        .allocate(&[at(&t)], &[close_out_of_range, farther_in_range]);
+
+        assert_eq!(*result[0].1, "in-range");
+    }
+
+    #[test]
+    fn comms_penalty_infinite_range_no_effect() {
+        let t = task_at("t0", 10.0, 0.0);
+        let near = agent_at("near", 9.0, 0.0);
+        let far = agent_at("far", 50.0, 0.0);
+
+        let result = AuctionAllocator {
+            comms_penalty_weight: 100.0,
+            ..AuctionAllocator::default()
+        }
+        .allocate(&[at(&t)], &[near, far]);
+
+        assert_eq!(*result[0].1, "near");
+    }
+
+    #[test]
+    fn greedy_comms_penalty_prefers_in_range_agent() {
+        let t = task_at("t0", 10.0, 0.0);
+        let mut first_out_of_range = agent_at("first", 0.0, 0.0);
+        first_out_of_range.comms_range = 1.0;
+        let mut second_in_range = agent_at("second", 30.0, 0.0);
+        second_in_range.comms_range = 100.0;
+
+        let result = GreedyAllocator {
+            comms_penalty_weight: 100.0,
+        }
+        .allocate(&[at(&t)], &[first_out_of_range, second_in_range]);
+
+        assert_eq!(*result[0].1, "second");
     }
 
     #[test]
@@ -663,7 +843,7 @@ mod tests {
         let mut t = task("t0", 1);
         t.required_role = Some(Role::Relay);
         let a_scout = agent("scout");
-        let result = GreedyAllocator.allocate(&[at(&t)], &[a_scout]);
+        let result = GreedyAllocator::default().allocate(&[at(&t)], &[a_scout]);
         assert!(result.is_empty());
     }
 
@@ -686,7 +866,7 @@ mod tests {
             max_range: 0.0,
             battery_drain_rate: 0.0,
         };
-        let result = GreedyAllocator.allocate(&[at(&t)], &[a_relay]);
+        let result = GreedyAllocator::default().allocate(&[at(&t)], &[a_relay]);
         assert_eq!(result.len(), 1);
     }
 
@@ -704,7 +884,8 @@ mod tests {
         let tasks = [task("t0", 1)];
         let mut a = agent("a0");
         a.battery = 0.0;
-        let result = GreedyAllocator.allocate(&tasks.iter().map(at).collect::<Vec<_>>(), &[a]);
+        let result =
+            GreedyAllocator::default().allocate(&tasks.iter().map(at).collect::<Vec<_>>(), &[a]);
         assert!(result.is_empty());
     }
 
@@ -720,6 +901,6 @@ mod tests {
 
     #[test]
     fn greedy_is_not_distributed() {
-        assert!(!GreedyAllocator.is_distributed());
+        assert!(!GreedyAllocator::default().is_distributed());
     }
 }

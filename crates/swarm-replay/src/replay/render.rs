@@ -281,7 +281,8 @@ fn event_category(event: &Event) -> ReplayEventCategory {
         | Event::CbbaBundleUpdated { .. }
         | Event::AgentObservation { .. }
         | Event::HazardMapUpdated { .. }
-        | Event::TaskPriorityUpdated { .. } => ReplayEventCategory::Generic,
+        | Event::TaskPriorityUpdated { .. }
+        | Event::WildfirePriorityReallocationRequested { .. } => ReplayEventCategory::Generic,
     }
 }
 
@@ -323,7 +324,8 @@ fn event_agent_id(event: &Event) -> Option<AgentId> {
         | Event::TaskExpired { .. }
         | Event::CbbaConverged { .. }
         | Event::HazardMapUpdated { .. }
-        | Event::TaskPriorityUpdated { .. } => None,
+        | Event::TaskPriorityUpdated { .. }
+        | Event::WildfirePriorityReallocationRequested { .. } => None,
     }
 }
 
@@ -349,6 +351,7 @@ fn event_tick(event: &Event) -> u64 {
         | Event::AgentObservation { tick, .. }
         | Event::HazardMapUpdated { tick, .. }
         | Event::TaskPriorityUpdated { tick, .. }
+        | Event::WildfirePriorityReallocationRequested { tick, .. }
         | Event::UrbanRoutePlanned { tick, .. }
         | Event::UrbanSegmentEntered { tick, .. }
         | Event::UrbanSegmentCompleted { tick, .. }
@@ -391,6 +394,9 @@ fn event_name(event: &Event) -> &'static str {
         Event::AgentObservation { .. } => "AgentObservation",
         Event::HazardMapUpdated { .. } => "HazardMapUpdated",
         Event::TaskPriorityUpdated { .. } => "TaskPriorityUpdated",
+        Event::WildfirePriorityReallocationRequested { .. } => {
+            "WildfirePriorityReallocationRequested"
+        }
         Event::UrbanRoutePlanned { .. } => "UrbanRoutePlanned",
         Event::UrbanSegmentEntered { .. } => "UrbanSegmentEntered",
         Event::UrbanSegmentCompleted { .. } => "UrbanSegmentCompleted",
@@ -450,7 +456,11 @@ fn event_details(event: &Event) -> String {
             violation_type, ..
         } => format!("violation_type={violation_type:?}"),
         Event::CbbaConverged { .. } => "converged=true".to_owned(),
-        Event::CbbaBundleUpdated { bundle_size, .. } => format!("bundle_size={bundle_size}"),
+        Event::CbbaBundleUpdated {
+            bundle_size,
+            conflict_count,
+            ..
+        } => format!("bundle_size={bundle_size} conflict_count={conflict_count}"),
         Event::AgentObservation { zone_id, .. } => format!("zone={zone_id}"),
         Event::HazardMapUpdated {
             zone_id,
@@ -466,6 +476,19 @@ fn event_details(event: &Event) -> String {
             new_priority,
             ..
         } => format!("task={task_id} old_priority={old_priority} new_priority={new_priority}"),
+        Event::WildfirePriorityReallocationRequested {
+            task_id,
+            old_priority,
+            new_priority,
+            previous_agent_id,
+            ..
+        } => format!(
+            "task={task_id} old_priority={old_priority} new_priority={new_priority} previous_agent={}",
+            previous_agent_id
+                .as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "none".to_owned())
+        ),
         Event::UrbanRoutePlanned {
             edge_ids,
             route_length_m,

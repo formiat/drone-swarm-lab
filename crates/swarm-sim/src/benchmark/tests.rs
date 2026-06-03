@@ -78,7 +78,7 @@ fn make_scenario_builder() -> ScenarioBuilder {
 fn harness_runs_and_produces_report() {
     let factories: Vec<StrategyFactory> =
         vec![Box::new(|_scenario: &Scenario, _run_config: &RunConfig| {
-            Box::new(GreedyAllocator) as Box<dyn Strategy>
+            Box::new(GreedyAllocator::default()) as Box<dyn Strategy>
         })];
     let profiles = vec!["ideal".to_owned()];
     let builder = make_scenario_builder();
@@ -92,7 +92,7 @@ fn harness_runs_and_produces_report() {
 fn centralized_present_in_report() {
     let factories: Vec<StrategyFactory> = vec![
         Box::new(|_scenario: &Scenario, _run_config: &RunConfig| {
-            Box::new(GreedyAllocator) as Box<dyn Strategy>
+            Box::new(GreedyAllocator::default()) as Box<dyn Strategy>
         }),
         Box::new(|scenario: &Scenario, _run_config: &RunConfig| {
             let allocation_tasks: Vec<AllocationTask<'_>> = scenario
@@ -133,7 +133,7 @@ fn centralized_present_in_report() {
 fn centralized_matches_or_beats_greedy_on_ideal() {
     let factories: Vec<StrategyFactory> = vec![
         Box::new(|_scenario: &Scenario, _run_config: &RunConfig| {
-            Box::new(GreedyAllocator) as Box<dyn Strategy>
+            Box::new(GreedyAllocator::default()) as Box<dyn Strategy>
         }),
         Box::new(|scenario: &Scenario, _run_config: &RunConfig| {
             let allocation_tasks: Vec<AllocationTask<'_>> = scenario
@@ -182,7 +182,7 @@ fn centralized_matches_or_beats_greedy_on_ideal() {
 fn determinism_jobs_1_vs_4() {
     let factories: Vec<StrategyFactory> =
         vec![Box::new(|_scenario: &Scenario, _run_config: &RunConfig| {
-            Box::new(GreedyAllocator) as Box<dyn Strategy>
+            Box::new(GreedyAllocator::default()) as Box<dyn Strategy>
         })];
     let profiles = vec!["ideal".to_owned()];
     let builder = make_scenario_builder();
@@ -223,7 +223,7 @@ fn report_row_order_stable_across_jobs() {
     // are identical regardless of rayon thread count.
     let factories: Vec<StrategyFactory> = vec![
         Box::new(|_scenario: &Scenario, _run_config: &RunConfig| {
-            Box::new(GreedyAllocator) as Box<dyn Strategy>
+            Box::new(GreedyAllocator::default()) as Box<dyn Strategy>
         }),
         Box::new(|scenario: &Scenario, _run_config: &RunConfig| {
             let allocation_tasks: Vec<AllocationTask<'_>> = scenario
@@ -295,7 +295,7 @@ fn report_completion_is_not_tasks_injected() {
     // tasks, completion should be 1.000, not 0.000.
     let factories: Vec<StrategyFactory> =
         vec![Box::new(|_scenario: &Scenario, _run_config: &RunConfig| {
-            Box::new(GreedyAllocator) as Box<dyn Strategy>
+            Box::new(GreedyAllocator::default()) as Box<dyn Strategy>
         })];
     let profiles = vec!["ideal".to_owned()];
     let builder = make_scenario_builder();
@@ -324,7 +324,7 @@ fn report_completion_is_not_tasks_injected() {
 fn custom_seed_count_produces_custom_report_id() {
     let factories: Vec<StrategyFactory> =
         vec![Box::new(|_scenario: &Scenario, _run_config: &RunConfig| {
-            Box::new(GreedyAllocator) as Box<dyn Strategy>
+            Box::new(GreedyAllocator::default()) as Box<dyn Strategy>
         })];
     let profiles = vec!["ideal".to_owned()];
     let builder = make_scenario_builder();

@@ -63,6 +63,7 @@ pub fn replay(log: &EventLog) -> ReplayState {
             | Event::AgentObservation { .. }
             | Event::HazardMapUpdated { .. }
             | Event::TaskPriorityUpdated { .. }
+            | Event::WildfirePriorityReallocationRequested { .. }
             | Event::UrbanRoutePlanned { .. }
             | Event::UrbanSegmentEntered { .. }
             | Event::UrbanSegmentCompleted { .. }

@@ -559,7 +559,9 @@ See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known l
 | Mission | Strategy | Status | Notes |
 |---------|----------|--------|-------|
 | coverage | all | stable | All strategies produce success_rate > 0.9 on ideal/standard profiles |
+| coverage | greedy, auction, connectivity-aware | targeted M77 evidence | `comms_penalty_weight` can make allocation communication-range aware; default `0.0` preserves previous scoring, while `results/m77_algorithm_delta/coverage/` is a 1-seed smoke artifact, not statistical evidence |
 | sar | greedy, auction, connectivity-aware | stable | — |
+| sar | greedy, auction, connectivity-aware | targeted M77 evidence | `dynamic_belief_updates` can re-rank unfinished SAR tasks by posterior entropy; disabled by default |
 | sar | cbba | unsupported | CBBA re-convergence delay after `release_task()` exceeds `max_unassigned_ticks`; explicit `unsupported_reason: delayed_reconvergence` (M35) |
 | sar | centralized | unsupported | Static pre-planning incompatible with SAR dynamic task release; agents revisit stale cell assignments |
 | inspection (linear/random) | all | stable | — |
@@ -569,6 +571,8 @@ See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known l
 | urban-patrol | greedy + dijkstra corridor-delta baseline | stable | M68 baseline profile uses shortest route over the same Urban road graph |
 | urban-patrol | greedy + corridor-aware corridor-delta | experimental | M68 lowers route-risk on the synthetic corridor fixture, with longer route/time tradeoff; broader benchmark refresh remains M69 |
 | urban-search | greedy | stable | Static mocked-bus search fixture with deterministic detector |
+| wildfire | greedy, auction, connectivity-aware | targeted M77 evidence | `wildfire_priority_realloc_threshold` can request deterministic release/reassignment when a dynamic priority update crosses the threshold; disabled by default |
+| coverage/cbba heavy-loss | cbba | diagnostic only | M77 adds `conflict_count` to CBBA bundle replay events; no gossip-burst fix or success claim is made without further evidence |
 
 **Status meanings:**
 - **stable** — success_rate > 0 across standard seeds; suitable for benchmarking.
@@ -669,6 +673,7 @@ points, not a published semver-stable SDK.
 | M74 | ✅ | Urban Blocked-Route Decision Logic: `UrbanTemporaryObstacle` + `UrbanBlockedPolicy` (Wait/Replan/Abort), graph lookahead detector, `plan_route_excluding` with M71 gate, 8 replay events, 4 metrics, 3 scenario profiles; mission-level reactivity only, no real sensors or physics |
 | M75 | ✅ | Urban Mission Realism Follow-up: `UrbanBusRoute` scheduled moving bus targets, map-aware detector sampling, deterministic `perimeter_waypoints`, optional `urban_state.perimeter_patrol`, `perimeter-square` / `search-moving-bus` profiles, and perimeter metrics/export fields; simulation-only, no real sensors, no physics, no hardware evidence |
 | M76 | ✅ | Synthetic Scenario Testbed: `ScenarioSuite.generator_manifest` records generator identity/seed/category/parameters; `SyntheticUrbanGenerator` creates deterministic Urban grid suites with static obstacles, temporary blocked edges, optional bus/failure/comms overlays, and library presets; `generate_scenario_suite` can regenerate `scenarios/urban.generated.tiny.json`; no benchmark refresh, PX4/SITL evidence, or hardware claim |
+| M77 | ✅ | Algorithm Differentiation: communication-aware greedy/auction scoring via neutral-default `comms_penalty_weight`, wildfire priority-triggered reallocation requests via neutral-default threshold, SAR entropy re-ranking behind `dynamic_belief_updates`, CBBA replay `conflict_count` diagnostics, `--profiles` targeted benchmark filter, and a small release smoke artifact in `results/m77_algorithm_delta/coverage/`; no 1000-seed publication run or CBBA gossip-burst fix |
 
 ---
 
