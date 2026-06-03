@@ -3,6 +3,7 @@ use std::error::Error;
 use std::fmt;
 use std::path::PathBuf;
 
+use chrono::Utc;
 use swarm_scenarios::{
     ScenarioGenerator, SyntheticScenarioCategory, SyntheticScenarioLibrary, SyntheticUrbanConfig,
     SyntheticUrbanGenerator,
@@ -84,7 +85,11 @@ fn run(args: impl IntoIterator<Item = String>) -> Result<(), Box<dyn Error>> {
     }
 
     let config = config_from_args(&args)?;
-    let generated = SyntheticUrbanGenerator.generate(&config)?;
+    let mut generated = SyntheticUrbanGenerator.generate(&config)?;
+    let now = Utc::now();
+    if let Some(manifest) = generated.suite.generator_manifest.as_mut() {
+        manifest.generated_at = Some(now);
+    }
     let json = export_suite(&generated.suite)?;
 
     if let Some(parent) = args

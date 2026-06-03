@@ -10,7 +10,7 @@ use swarm_sim::{
     UrbanState, ValidationError, SCENARIO_GENERATOR_MANIFEST_SCHEMA_VERSION,
 };
 use swarm_types::{
-    Aabb, Agent, AgentId, Health, Pose, Role, Task, TaskId, TaskKind, TaskStatus,
+    Aabb, Agent, AgentId, Health, ObstacleSeverity, Pose, Role, Task, TaskId, TaskKind, TaskStatus,
     UrbanBlockedPolicy, UrbanBus, UrbanBusId, UrbanBusRoute, UrbanBusStop, UrbanDetectorConfig,
     UrbanEdge, UrbanEdgeId, UrbanMap, UrbanNode, UrbanNodeId, UrbanObstacleId,
     UrbanPerimeterPatrol, UrbanRouteLoop, UrbanSearchState, UrbanStaticObstacle,
@@ -643,7 +643,7 @@ fn build_temporary_obstacles(
             appears_at_tick: 1 + index as u64,
             disappears_at_tick: Some(6 + index as u64),
             reason: Some("synthetic-road-work".to_owned()),
-            severity: Some("soft".to_owned()),
+            severity: Some(ObstacleSeverity::Soft),
         })
         .collect()
 }
@@ -839,6 +839,10 @@ fn build_manifest(config: &SyntheticUrbanConfig) -> ScenarioGeneratorManifest {
         seed: config.seed,
         category: config.category.as_str().to_owned(),
         parameters,
+        // Deterministic in-memory generation leaves this unset; the CLI stamps
+        // it after calling generate() so the same seed always produces the same
+        // JSON in tests.
+        generated_at: None,
     }
 }
 

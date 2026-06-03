@@ -49,6 +49,7 @@ name = "artifact_validator"
 path = "src/bin/artifact_validator.rs"
 
 [dependencies]
+chrono             = { workspace = true }
 serde              = { workspace = true }
 serde_json         = { workspace = true }
 swarm-alloc        = { workspace = true }

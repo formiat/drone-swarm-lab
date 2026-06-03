@@ -698,6 +698,7 @@ fn validate_suite_accepts_valid_generator_manifest() {
                 key: "rows".to_owned(),
                 value: "3".to_owned(),
             }],
+            generated_at: None,
         }),
         scenarios: vec![make_minimal_entry()],
     };
@@ -729,6 +730,7 @@ fn validate_suite_rejects_duplicate_generator_manifest_parameters() {
                     value: "4".to_owned(),
                 },
             ],
+            generated_at: None,
         }),
         scenarios: vec![make_minimal_entry()],
     };

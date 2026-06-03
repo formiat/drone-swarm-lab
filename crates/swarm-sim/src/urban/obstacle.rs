@@ -7,7 +7,9 @@ pub const URBAN_BLOCKED_LOOKAHEAD_SEGMENTS: usize = 3;
 
 /// Returns the set of edge IDs effectively blocked at `tick`.
 ///
-/// Combines static map `blocked` flags with active temporary obstacles.
+/// Combines static map `blocked` flags with active temporary obstacles whose
+/// severity is `Hard` or absent. `Soft` obstacles are advisory and are not
+/// included in this set.
 pub fn effective_blocked_edges(
     map: &UrbanMap,
     obstacles: &[UrbanTemporaryObstacle],
@@ -20,7 +22,7 @@ pub fn effective_blocked_edges(
         .map(|e| e.id.clone())
         .collect();
     for obstacle in obstacles {
-        if obstacle.is_active(tick) {
+        if obstacle.is_active(tick) && obstacle.is_hard_block() {
             blocked.insert(obstacle.edge_id.clone());
         }
     }
@@ -49,7 +51,9 @@ pub fn detect_blocked_ahead(
 
 #[cfg(test)]
 mod tests {
-    use swarm_types::{UrbanEdge, UrbanNode, UrbanPlannedRoute, UrbanRouteSegment};
+    use swarm_types::{
+        ObstacleSeverity, UrbanEdge, UrbanNode, UrbanPlannedRoute, UrbanRouteSegment,
+    };
 
     use super::*;
 
@@ -194,5 +198,52 @@ mod tests {
         assert!(detect_blocked_ahead(&route, 0, &blocked, 2).is_none());
         // lookahead=3 should see it
         assert!(detect_blocked_ahead(&route, 0, &blocked, 3).is_some());
+    }
+
+    #[test]
+    fn judge_rejects_agent_on_hard_blocked_edge() {
+        let map = make_map(None);
+
+        // Hard obstacle (or absent severity) is included in the effective blocked set.
+        let hard_obstacle = UrbanTemporaryObstacle {
+            edge_id: make_edge_id("e0"),
+            appears_at_tick: 0,
+            disappears_at_tick: None,
+            reason: None,
+            severity: Some(ObstacleSeverity::Hard),
+        };
+        let blocked = effective_blocked_edges(&map, &[hard_obstacle], 5);
+        assert!(
+            blocked.contains(&make_edge_id("e0")),
+            "hard obstacle must be in blocked set"
+        );
+
+        // Soft obstacle is advisory only — not in the blocked set.
+        let soft_obstacle = UrbanTemporaryObstacle {
+            edge_id: make_edge_id("e0"),
+            appears_at_tick: 0,
+            disappears_at_tick: None,
+            reason: None,
+            severity: Some(ObstacleSeverity::Soft),
+        };
+        let blocked_soft = effective_blocked_edges(&map, &[soft_obstacle], 5);
+        assert!(
+            !blocked_soft.contains(&make_edge_id("e0")),
+            "soft obstacle must not be in blocked set"
+        );
+
+        // Absent severity defaults to Hard.
+        let default_obstacle = UrbanTemporaryObstacle {
+            edge_id: make_edge_id("e1"),
+            appears_at_tick: 0,
+            disappears_at_tick: None,
+            reason: None,
+            severity: None,
+        };
+        let blocked_default = effective_blocked_edges(&map, &[default_obstacle], 5);
+        assert!(
+            blocked_default.contains(&make_edge_id("e1")),
+            "obstacle with absent severity must be treated as hard"
+        );
     }
 }

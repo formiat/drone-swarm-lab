@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::{RunConfig, Scenario};
@@ -29,6 +30,11 @@ pub struct ScenarioGeneratorManifest {
     pub seed: u64,
     pub category: String,
     pub parameters: Vec<ScenarioGeneratorParameter>,
+    /// Wall-clock time when the suite was generated. Set by the caller (e.g.
+    /// the CLI binary); absent in purely deterministic in-memory generation so
+    /// the same seed always produces the same JSON in tests.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generated_at: Option<DateTime<Utc>>,
 }
 
 /// A stable key/value setting captured in a generator manifest.

@@ -252,6 +252,19 @@ pub struct UrbanSearchState {
     pub detector: UrbanDetectorConfig,
 }
 
+/// Whether a temporary obstacle causes a hard routing block or is advisory only.
+///
+/// `Hard` obstacles (and obstacles with no severity set) are included in the
+/// effective blocked-edge set: the route planner avoids them and traversal is a
+/// judge violation. `Soft` obstacles are advisory — they appear in lookahead
+/// events but do not block routing and are not counted as violations.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ObstacleSeverity {
+    Hard,
+    Soft,
+}
+
 /// A time-gated edge blockage injected into an Urban scenario.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct UrbanTemporaryObstacle {
@@ -261,11 +274,17 @@ pub struct UrbanTemporaryObstacle {
     pub disappears_at_tick: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    /// Defaults to `Hard` when absent for backward compatibility.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub severity: Option<String>,
+    pub severity: Option<ObstacleSeverity>,
 }
 
 impl UrbanTemporaryObstacle {
+    /// Returns `true` if this obstacle blocks routing (severity is `Hard` or absent).
+    pub fn is_hard_block(&self) -> bool {
+        !matches!(self.severity, Some(ObstacleSeverity::Soft))
+    }
+
     /// Returns true if the obstacle is active at `tick`.
     pub fn is_active(&self, tick: u64) -> bool {
         tick >= self.appears_at_tick && self.disappears_at_tick.is_none_or(|d| tick < d)
