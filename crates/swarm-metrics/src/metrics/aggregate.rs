@@ -293,10 +293,8 @@ impl AggregateMetrics {
             .iter()
             .map(|run| if run.success { 1.0 } else { 0.0 })
             .collect();
-        let task_completion_values: Vec<f64> = runs
-            .iter()
-            .map(|run| if run.all_tasks_assigned { 1.0 } else { 0.0 })
-            .collect();
+        let task_completion_values: Vec<f64> =
+            runs.iter().map(|run| run.task_completion_rate).collect();
         let total_messages_attempted: u64 = runs.iter().map(|run| run.messages_attempted).sum();
         let total_messages_dropped: u64 = runs.iter().map(|run| run.messages_dropped).sum();
         let total_tasks_injected: u64 = runs.iter().map(|run| run.tasks_injected).sum();
@@ -310,7 +308,7 @@ impl AggregateMetrics {
         let total_stale_state_age: u64 = runs.iter().map(|run| run.stale_state_age_ticks).sum();
         let total_battery_margin_min: f64 = runs.iter().map(|run| run.battery_margin_min).sum();
         let total_battery_margin_avg: f64 = runs.iter().map(|run| run.battery_margin_avg).sum();
-        let task_completion_count = runs.iter().filter(|run| run.all_tasks_assigned).count() as f64;
+        let total_task_completion_rate: f64 = runs.iter().map(|run| run.task_completion_rate).sum();
         let total_time_to_find: u64 = runs.iter().filter_map(|run| run.time_to_find).sum();
         let time_to_find_count =
             runs.iter().filter(|run| run.time_to_find.is_some()).count() as f64;
@@ -457,7 +455,7 @@ impl AggregateMetrics {
             avg_stale_state_age_ticks: total_stale_state_age as f64 / n,
             avg_battery_margin_min: total_battery_margin_min / n,
             avg_battery_margin_avg: total_battery_margin_avg / n,
-            avg_task_completion_rate: task_completion_count / n,
+            avg_task_completion_rate: total_task_completion_rate / n,
             avg_time_to_find: if time_to_find_count > 0.0 {
                 total_time_to_find as f64 / time_to_find_count
             } else {

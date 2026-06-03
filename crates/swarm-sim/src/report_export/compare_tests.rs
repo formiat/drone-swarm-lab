@@ -3,7 +3,7 @@ mod tests {
     use super::super::*;
     use crate::ComparisonReport;
     use std::collections::HashMap;
-    use swarm_metrics::AggregateMetrics;
+    use swarm_metrics::{AggregateMetrics, MetricStats};
 
     fn make_report() -> ComparisonReport {
         let mut results = HashMap::new();
@@ -173,6 +173,102 @@ mod tests {
         assert!(row["failure_rate"].is_number());
         assert_eq!(row["support_status"], "supported");
         assert_eq!(row["support_reason"], "stable_baseline");
+    }
+
+    #[test]
+    fn exports_include_fractional_task_completion_stats() {
+        let completion_stats = MetricStats::from_values(&[1.0, 0.5, 0.0]);
+        let mut results = HashMap::new();
+        results.insert(
+            ("greedy".to_owned(), "ideal".to_owned()),
+            AggregateMetrics {
+                total_runs: 3,
+                success_rate: 1.0,
+                success_stats: MetricStats::from_values(&[1.0, 1.0, 1.0]),
+                failure_rate: 0.0,
+                avg_task_completion_rate: completion_stats.mean,
+                task_completion_stats: completion_stats,
+                avg_network_availability: 1.0,
+                mission: "sar".to_owned(),
+                scenario: "sar".to_owned(),
+                ..AggregateMetrics::default()
+            },
+        );
+        let report = ComparisonReport {
+            benchmark_run_id: "fractional".to_owned(),
+            seed_range_start: 0,
+            seed_range_end: 2,
+            total_runs_per_cell: 3,
+            mission_names: vec!["sar".to_owned()],
+            scenario_names: vec!["sar".to_owned()],
+            strategy_names: vec!["greedy".to_owned()],
+            profile_names: vec!["ideal".to_owned()],
+            results,
+        };
+
+        let json: serde_json::Value = serde_json::from_str(&export_json(&report).unwrap()).unwrap();
+        let row = &json["rows"][0];
+        assert_eq!(row["avg_task_completion_rate"], 0.5);
+        assert_eq!(row["task_completion_stddev"], 0.5);
+        assert!(
+            (row["task_completion_stderr"].as_f64().unwrap() - 0.288_675_134_594_812_9).abs()
+                < 1e-12
+        );
+        assert!(
+            (row["task_completion_ci95_low"].as_f64().unwrap() - -0.065_803_263_805_833_3).abs()
+                < 1e-12
+        );
+        assert!(
+            (row["task_completion_ci95_high"].as_f64().unwrap() - 1.065_803_263_805_833_3).abs()
+                < 1e-12
+        );
+        assert_eq!(row["task_completion_min"], 0.0);
+        assert_eq!(row["task_completion_max"], 1.0);
+
+        let csv = export_csv(&report).unwrap();
+        let mut reader = ::csv::Reader::from_reader(csv.as_bytes());
+        let headers = reader.headers().unwrap().clone();
+        let record = reader.records().next().unwrap().unwrap();
+        let get = |name: &str| {
+            let index = headers
+                .iter()
+                .position(|header| header == name)
+                .expect("CSV header should exist");
+            record.get(index).expect("CSV value should exist")
+        };
+        assert_eq!(get("avg_task_completion_rate"), "0.500");
+        assert_eq!(get("task_completion_stddev"), "0.500");
+        assert_eq!(get("task_completion_stderr"), "0.289");
+        assert_eq!(get("task_completion_ci95_low"), "-0.066");
+        assert_eq!(get("task_completion_ci95_high"), "1.066");
+        assert_eq!(get("task_completion_min"), "0.000");
+        assert_eq!(get("task_completion_max"), "1.000");
+
+        let markdown = export_markdown(&report);
+        let header: Vec<&str> = markdown
+            .lines()
+            .next()
+            .expect("markdown has header")
+            .split('|')
+            .map(str::trim)
+            .collect();
+        let completion_index = header
+            .iter()
+            .position(|column| *column == "Completion")
+            .expect("Completion column exists");
+        let completion_ci_index = header
+            .iter()
+            .position(|column| *column == "CompletionCI95")
+            .expect("CompletionCI95 column exists");
+        let row: Vec<&str> = markdown
+            .lines()
+            .find(|line| line.contains("greedy"))
+            .expect("markdown has greedy row")
+            .split('|')
+            .map(str::trim)
+            .collect();
+        assert_eq!(row.get(completion_index), Some(&"0.500"));
+        assert_eq!(row.get(completion_ci_index), Some(&"-0.066-1.066"));
     }
 
     #[test]

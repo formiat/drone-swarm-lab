@@ -10,6 +10,8 @@ pub struct RunMetrics {
     pub reallocation_time_ticks: Option<u64>,
     pub max_task_unassigned_ticks: u64,
     pub all_tasks_assigned: bool,
+    #[serde(default)]
+    pub task_completion_rate: f64,
     pub success: bool,
     pub tasks_injected: u64,
     pub tasks_expired: u64,

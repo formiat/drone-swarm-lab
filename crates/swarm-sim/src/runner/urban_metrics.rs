@@ -76,6 +76,7 @@ pub(super) fn urban_patrol_metrics(
         reallocation_time_ticks: None,
         max_task_unassigned_ticks: 0,
         all_tasks_assigned: urban_patrol_completed,
+        task_completion_rate: if urban_patrol_completed { 1.0 } else { 0.0 },
         success,
         tasks_injected: 0,
         tasks_expired: 0,
@@ -199,6 +200,7 @@ pub(super) fn urban_search_metrics(
         0,
     );
     metrics.all_tasks_assigned = bus_detected;
+    metrics.task_completion_rate = if bus_detected { 1.0 } else { 0.0 };
     metrics.bus_detected = bus_detected;
     metrics.time_to_detect_bus = time_to_detect_bus;
     metrics.false_positive_count = false_positive_count;

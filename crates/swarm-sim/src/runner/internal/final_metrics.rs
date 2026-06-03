@@ -4,7 +4,7 @@ use swarm_alloc::{route_cost, BatteryAwarePlanner, NearestNeighbourPlanner, Rout
 use swarm_comms::InMemAgentTransport;
 use swarm_metrics::RunMetrics;
 use swarm_runtime::{AgentNode, GridState};
-use swarm_types::{AgentId, Pose, Task};
+use swarm_types::{AgentId, Pose, Task, TaskStatus};
 
 use super::super::{InspectionState, WildfireState};
 use super::events::record_final_poses;
@@ -136,26 +136,16 @@ pub(in crate::runner) fn assemble_final_metrics(
     };
 
     // v0.6: coverage_progress as fraction of tasks with assigned agents
-    let coverage_progress = if let Some((node, _)) = input
+    let task_completion_rate = if let Some((node, _)) = input
         .nodes
         .iter()
         .find(|(_, id)| !input.crashed_agents.contains(id))
     {
-        let total_tasks = node.coordinator.registry.tasks().count() as f64;
-        let assigned_tasks = node
-            .coordinator
-            .registry
-            .tasks()
-            .filter(|t| t.assigned_to.is_some())
-            .count() as f64;
-        if total_tasks > 0.0 {
-            assigned_tasks / total_tasks
-        } else {
-            1.0
-        }
+        task_completion_rate(node.coordinator.registry.tasks())
     } else {
         0.0
     };
+    let coverage_progress = task_completion_rate;
 
     let mut log_builder = input.log_builder;
     record_final_poses(&input.nodes, input.total_ticks, &mut log_builder);
@@ -315,6 +305,7 @@ pub(in crate::runner) fn assemble_final_metrics(
             reallocation_time_ticks: input.reallocation_time_ticks,
             max_task_unassigned_ticks: input.max_task_unassigned_ticks,
             all_tasks_assigned: input.all_tasks_assigned,
+            task_completion_rate,
             success: input.success,
             tasks_injected: input.tasks_injected,
             tasks_expired: input.tasks_expired,
@@ -458,4 +449,24 @@ pub(in crate::runner) fn assemble_final_metrics(
         },
         event_log,
     )
+}
+
+fn task_completion_rate<'a>(tasks: impl Iterator<Item = &'a Task>) -> f64 {
+    let mut total = 0_u64;
+    let mut completed_or_active = 0_u64;
+
+    for task in tasks {
+        total += 1;
+        if task.status == TaskStatus::Completed
+            || (task.status != TaskStatus::Unassigned && task.assigned_to.is_some())
+        {
+            completed_or_active += 1;
+        }
+    }
+
+    if total == 0 {
+        1.0
+    } else {
+        completed_or_active as f64 / total as f64
+    }
 }

@@ -9,6 +9,7 @@ fn run(success: bool, detection_time_ticks: Option<u64>) -> RunMetrics {
         reallocation_time_ticks: Some(1),
         max_task_unassigned_ticks: 1,
         all_tasks_assigned: success,
+        task_completion_rate: if success { 1.0 } else { 0.0 },
         success,
         tasks_injected: 0,
         tasks_expired: 0,
@@ -175,8 +176,6 @@ fn aggregate_avg_tasks_expired() {
 #[test]
 fn aggregate_avg_task_completion_rate() {
     let runs = vec![run(true, None), run(true, None), run(false, None)];
-    // 2 out of 3 runs have all_tasks_assigned=true (set by run(success, ...))
-    // The third run has success=false, so all_tasks_assigned=false
     let metrics = AggregateMetrics::from_runs(&runs);
 
     assert!(
@@ -184,6 +183,28 @@ fn aggregate_avg_task_completion_rate() {
         "Expected ~0.666667 for 2/3 completed runs, got {}",
         metrics.avg_task_completion_rate
     );
+}
+
+#[test]
+fn aggregate_task_completion_stats_use_fractional_run_rates() {
+    let mut runs = vec![run(true, None), run(true, None), run(false, None)];
+    runs[0].all_tasks_assigned = true;
+    runs[0].task_completion_rate = 1.0;
+    runs[1].all_tasks_assigned = false;
+    runs[1].task_completion_rate = 0.5;
+    runs[2].all_tasks_assigned = false;
+    runs[2].task_completion_rate = 0.0;
+
+    let metrics = AggregateMetrics::from_runs(&runs);
+
+    assert!((metrics.avg_task_completion_rate - 0.5).abs() < 1e-9);
+    assert!((metrics.task_completion_stats.mean - 0.5).abs() < 1e-9);
+    assert!((metrics.task_completion_stats.stddev - 0.5).abs() < 1e-9);
+    assert!((metrics.task_completion_stats.stderr - 0.288_675_134_594_812_9).abs() < 1e-9);
+    assert!((metrics.task_completion_stats.ci95_low - -0.065_803_263_805_833_3).abs() < 1e-9);
+    assert!((metrics.task_completion_stats.ci95_high - 1.065_803_263_805_833_3).abs() < 1e-9);
+    assert_eq!(metrics.task_completion_stats.min, 0.0);
+    assert_eq!(metrics.task_completion_stats.max, 1.0);
 }
 
 #[test]
