@@ -3,8 +3,8 @@ use swarm_alloc::{AllocationAgent, AllocationTask, Allocator};
 use swarm_types::{
     Aabb, Agent, Capability, CellState, EdgeId, Health, InspectionEdge, Pose, Role, SearchGrid,
     SensorModel, Task, TaskKind, TaskStatus, UrbanBus, UrbanBusId, UrbanDetectorConfig, UrbanEdge,
-    UrbanEdgeId, UrbanNode, UrbanNodeId, UrbanObstacleId, UrbanRouteLoop, UrbanSearchState,
-    UrbanStaticObstacle,
+    UrbanEdgeId, UrbanNode, UrbanNodeId, UrbanObstacleId, UrbanPerimeterPatrol, UrbanRouteLoop,
+    UrbanSearchState, UrbanStaticObstacle,
 };
 
 fn scenario(seed: u64, agent_count: usize, task_count: usize) -> Scenario {
@@ -539,6 +539,7 @@ fn urban_test_run_config(
             planner: "dijkstra".to_owned(),
             temporary_obstacles: vec![],
             blocked_route_policy: swarm_types::UrbanBlockedPolicy::default(),
+            perimeter_patrol: None,
         }),
         ..config(vec![])
     };
@@ -560,6 +561,7 @@ fn urban_search_test_run_config(
             pose: bus_pose,
             active_from_tick: None,
             active_until_tick: None,
+            route: None,
         }],
         detector: UrbanDetectorConfig {
             detection_range_m,
@@ -622,6 +624,39 @@ fn urban_patrol_rejects_agent_pose_away_from_start_node() {
         .unsupported_reason
         .as_deref()
         .is_some_and(|reason| reason.contains("starts")));
+}
+
+#[test]
+fn urban_patrol_rejects_invalid_perimeter_config() {
+    let (scenario, mut run_config) = urban_test_run_config(50, vec![]);
+    run_config.urban_state.as_mut().unwrap().perimeter_patrol = Some(UrbanPerimeterPatrol {
+        polygon: vec![
+            Pose {
+                x: 0.0,
+                y: 0.0,
+                ..Default::default()
+            },
+            Pose {
+                x: 10.0,
+                y: 0.0,
+                ..Default::default()
+            },
+            Pose {
+                x: 10.0,
+                y: 10.0,
+                ..Default::default()
+            },
+        ],
+        spacing_m: 0.0,
+    });
+
+    let metrics = ScenarioRunner::run(&scenario, run_config);
+
+    assert!(!metrics.success);
+    assert!(metrics
+        .unsupported_reason
+        .as_deref()
+        .is_some_and(|reason| reason.contains("urban_perimeter_invalid")));
 }
 
 #[test]
@@ -792,6 +827,7 @@ fn urban_search_violation_prevents_success() {
             pose: Pose::default(),
             active_from_tick: None,
             active_until_tick: None,
+            route: None,
         }],
         detector: UrbanDetectorConfig {
             detection_range_m: 10.0,

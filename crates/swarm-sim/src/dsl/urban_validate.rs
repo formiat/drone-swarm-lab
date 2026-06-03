@@ -25,7 +25,13 @@ pub(super) fn validate_urban_search_entry(
 
     match &entry.run_config.urban_search_state {
         Some(search_state) => {
-            for error in search_state.validate() {
+            let validation_errors = entry
+                .run_config
+                .urban_state
+                .as_ref()
+                .map(|urban_state| search_state.validate_with_map(&urban_state.map))
+                .unwrap_or_else(|| search_state.validate());
+            for error in validation_errors {
                 errors.push(ValidationError {
                     field: format!("run_config.urban_search_state.{}", error.field),
                     message: error.message,

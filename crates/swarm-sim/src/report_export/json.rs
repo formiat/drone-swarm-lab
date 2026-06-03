@@ -100,6 +100,11 @@ pub fn export_json(report: &ComparisonReport) -> Result<String, serde_json::Erro
                     avg_urban_separation_violation_count: metrics
                         .avg_urban_separation_violation_count,
                     avg_urban_route_conflict_count: metrics.avg_urban_route_conflict_count,
+                    // v0.75 Urban Mission Realism Follow-up
+                    avg_perimeter_completion_rate: metrics.avg_perimeter_completion_rate,
+                    avg_perimeter_length_m: metrics.avg_perimeter_length_m,
+                    avg_time_to_complete_perimeter: metrics.avg_time_to_complete_perimeter,
+                    avg_perimeter_violations: metrics.avg_perimeter_violations,
                 });
             }
         }
@@ -200,4 +205,9 @@ struct ReportRow {
     avg_urban_min_agent_separation_m: f64,
     avg_urban_separation_violation_count: f64,
     avg_urban_route_conflict_count: f64,
+    // v0.75 Urban Mission Realism Follow-up
+    avg_perimeter_completion_rate: f64,
+    avg_perimeter_length_m: f64,
+    avg_time_to_complete_perimeter: f64,
+    avg_perimeter_violations: f64,
 }

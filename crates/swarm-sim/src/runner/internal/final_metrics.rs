@@ -451,6 +451,10 @@ pub(in crate::runner) fn assemble_final_metrics(
             urban_blocked_edge_count: 0,
             urban_replan_success_rate: 0.0,
             urban_unresolved_blockage_count: 0,
+            perimeter_completion_rate: 0.0,
+            perimeter_length_m: 0.0,
+            time_to_complete_perimeter: None,
+            perimeter_violations: 0,
         },
         event_log,
     )

@@ -243,6 +243,38 @@ impl ScenarioRunner {
             .unwrap_or(crate::urban::UrbanPlannerMode::Dijkstra);
         let initial_route_length_m = initial_route.total_length_m;
         let initial_route_risk = crate::urban::route_risk_score(&urban_state.map, &initial_route);
+        let perimeter_length_m = match urban_state.perimeter_patrol.as_ref() {
+            Some(perimeter) => {
+                match crate::urban::perimeter_waypoints(&perimeter.polygon, perimeter.spacing_m) {
+                    Ok(waypoints) => Some(perimeter_length_m(&waypoints)),
+                    Err(error) => {
+                        return (
+                            urban_patrol_metrics(
+                                scenario,
+                                0,
+                                false,
+                                true,
+                                initial_route_length_m,
+                                initial_route_risk,
+                                0,
+                                false,
+                                None,
+                                0.0,
+                                0.0,
+                                Some(format!("urban_perimeter_invalid: {error}")),
+                                0,
+                                0,
+                                0,
+                                0.0,
+                                0,
+                            ),
+                            log_builder.map(|builder| builder.build()),
+                        );
+                    }
+                }
+            }
+            None => None,
+        };
 
         let speed_m_per_tick = speed_m_per_tick(agent, config.tick_duration_ms);
         let mut route = initial_route;
@@ -568,7 +600,7 @@ impl ScenarioRunner {
         let route_eff = route_efficiency(initial_route_length_m, total_distance_travelled);
         let replan_rate = brs.replan_success_rate();
 
-        let metrics = urban_patrol_metrics(
+        let mut metrics = urban_patrol_metrics(
             scenario,
             total_ticks,
             success,
@@ -587,8 +619,27 @@ impl ScenarioRunner {
             replan_rate,
             brs.unresolved_blockages,
         );
+        if let Some(perimeter_length_m) = perimeter_length_m {
+            metrics.perimeter_length_m = perimeter_length_m;
+            metrics.perimeter_completion_rate = if perimeter_length_m > 0.0 {
+                (total_distance_travelled / perimeter_length_m).clamp(0.0, 1.0)
+            } else if completed {
+                1.0
+            } else {
+                0.0
+            };
+            metrics.time_to_complete_perimeter = completion_tick;
+            metrics.perimeter_violations = violation_count;
+        }
         finish_urban_run_metrics(metrics, log_builder)
     }
+}
+
+fn perimeter_length_m(waypoints: &[swarm_types::Pose]) -> f64 {
+    waypoints
+        .windows(2)
+        .map(|pair| pair[0].distance_to(&pair[1]))
+        .sum()
 }
 
 /// Attempt to replan the remaining route from `current_from`, avoiding

@@ -35,6 +35,83 @@ pub fn pose_along_segment(
     })
 }
 
+/// Generate deterministic waypoints along a closed perimeter polygon.
+///
+/// The input is treated as closed even when the final point does not repeat the
+/// first point. Output always includes the starting point and a final return to
+/// the starting point.
+pub fn perimeter_waypoints(polygon: &[Pose], spacing_m: f64) -> Result<Vec<Pose>, UrbanRouteError> {
+    if polygon.len() < 3 {
+        return Err(UrbanRouteError::InvalidInput {
+            field: "perimeter.polygon".to_owned(),
+            message: "Perimeter polygon requires at least three points".to_owned(),
+        });
+    }
+    if !spacing_m.is_finite() || spacing_m <= 0.0 {
+        return Err(UrbanRouteError::InvalidInput {
+            field: "perimeter.spacing_m".to_owned(),
+            message: "Perimeter spacing must be finite and > 0".to_owned(),
+        });
+    }
+    for (index, pose) in polygon.iter().enumerate() {
+        if !pose.x.is_finite() || !pose.y.is_finite() || !pose.z.is_finite() {
+            return Err(UrbanRouteError::InvalidInput {
+                field: format!("perimeter.polygon[{index}]"),
+                message: "Perimeter coordinates must be finite".to_owned(),
+            });
+        }
+    }
+
+    let mut points = polygon.to_vec();
+    if points.len() > 1 && same_pose(points[0], *points.last().unwrap()) {
+        points.pop();
+    }
+    if points.len() < 3 {
+        return Err(UrbanRouteError::InvalidInput {
+            field: "perimeter.polygon".to_owned(),
+            message: "Perimeter polygon requires at least three distinct points".to_owned(),
+        });
+    }
+
+    let mut waypoints = vec![points[0]];
+    for index in 0..points.len() {
+        let from = points[index];
+        let to = points[(index + 1) % points.len()];
+        let length_m = from.distance_to(&to);
+        if !length_m.is_finite() {
+            return Err(UrbanRouteError::InvalidInput {
+                field: format!("perimeter.edge[{index}]"),
+                message: "Perimeter edge length must be finite".to_owned(),
+            });
+        }
+        if length_m <= f64::EPSILON {
+            continue;
+        }
+        let steps = (length_m / spacing_m).ceil().max(1.0) as usize;
+        for step in 1..=steps {
+            let ratio = step as f64 / steps as f64;
+            waypoints.push(Pose {
+                x: from.x + (to.x - from.x) * ratio,
+                y: from.y + (to.y - from.y) * ratio,
+                z: from.z + (to.z - from.z) * ratio,
+            });
+        }
+    }
+    if !waypoints
+        .last()
+        .is_some_and(|last| same_pose(waypoints[0], *last))
+    {
+        waypoints.push(waypoints[0]);
+    }
+    Ok(waypoints)
+}
+
+fn same_pose(left: Pose, right: Pose) -> bool {
+    (left.x - right.x).abs() <= f64::EPSILON
+        && (left.y - right.y).abs() <= f64::EPSILON
+        && (left.z - right.z).abs() <= f64::EPSILON
+}
+
 pub(super) fn midpoint(from: Pose, to: Pose) -> Pose {
     Pose {
         x: (from.x + to.x) / 2.0,

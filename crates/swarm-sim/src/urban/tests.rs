@@ -2,9 +2,9 @@ use std::collections::HashSet;
 
 use super::*;
 use swarm_types::{
-    Aabb, Pose, UrbanBus, UrbanBusId, UrbanDetectorConfig, UrbanEdge, UrbanEdgeId, UrbanMap,
-    UrbanNode, UrbanNodeId, UrbanPlannedRoute, UrbanRouteLoop, UrbanRouteSegment, UrbanSearchState,
-    UrbanStaticObstacle, UrbanViolation,
+    Aabb, Pose, UrbanBus, UrbanBusId, UrbanBusRoute, UrbanBusStop, UrbanDetectorConfig, UrbanEdge,
+    UrbanEdgeId, UrbanMap, UrbanNode, UrbanNodeId, UrbanPlannedRoute, UrbanRouteLoop,
+    UrbanRouteSegment, UrbanSearchState, UrbanStaticObstacle, UrbanViolation,
 };
 
 fn node(id: &str, x: f64, y: f64) -> UrbanNode {
@@ -92,6 +92,7 @@ fn search_state(
             pose: bus_pose,
             active_from_tick: None,
             active_until_tick: None,
+            route: None,
         }],
         detector: UrbanDetectorConfig {
             detection_range_m: range,
@@ -469,6 +470,66 @@ fn urban_pose_along_segment_interpolates_and_clamps() {
     assert_eq!(clamped.y, 0.0);
 }
 
+fn square_perimeter() -> Vec<Pose> {
+    vec![
+        Pose {
+            x: 0.0,
+            y: 0.0,
+            ..Default::default()
+        },
+        Pose {
+            x: 20.0,
+            y: 0.0,
+            ..Default::default()
+        },
+        Pose {
+            x: 20.0,
+            y: 20.0,
+            ..Default::default()
+        },
+        Pose {
+            x: 0.0,
+            y: 20.0,
+            ..Default::default()
+        },
+    ]
+}
+
+#[test]
+fn perimeter_waypoints_square_correct_count() {
+    let waypoints = perimeter_waypoints(&square_perimeter(), 10.0).unwrap();
+
+    assert_eq!(waypoints.len(), 9);
+    assert_eq!(waypoints[0].x, 0.0);
+    assert_eq!(waypoints[1].x, 10.0);
+    assert_eq!(waypoints[2].x, 20.0);
+}
+
+#[test]
+fn perimeter_waypoints_is_deterministic() {
+    let first = perimeter_waypoints(&square_perimeter(), 10.0).unwrap();
+    let second = perimeter_waypoints(&square_perimeter(), 10.0).unwrap();
+
+    assert_eq!(first, second);
+}
+
+#[test]
+fn perimeter_waypoints_closed_route() {
+    let waypoints = perimeter_waypoints(&square_perimeter(), 10.0).unwrap();
+
+    assert_eq!(waypoints.first(), waypoints.last());
+}
+
+#[test]
+fn perimeter_waypoints_rejects_invalid_spacing() {
+    let err = perimeter_waypoints(&square_perimeter(), 0.0).unwrap_err();
+
+    assert!(matches!(
+        err,
+        UrbanRouteError::InvalidInput { field, .. } if field == "perimeter.spacing_m"
+    ));
+}
+
 #[test]
 fn detector_detects_in_range_bus_with_probability_one() {
     let state = search_state(
@@ -482,7 +543,7 @@ fn detector_detects_in_range_bus_with_probability_one() {
         0.0,
     );
 
-    let outcome = detect_buses(Pose::default(), 0, 42, &state);
+    let outcome = detect_buses(&block_map(), Pose::default(), 0, 42, &state);
 
     assert_eq!(outcome.observations.len(), 1);
     assert!(outcome.detection.is_some());
@@ -502,7 +563,7 @@ fn detector_ignores_out_of_range_bus() {
         0.0,
     );
 
-    let outcome = detect_buses(Pose::default(), 0, 42, &state);
+    let outcome = detect_buses(&block_map(), Pose::default(), 0, 42, &state);
 
     assert!(outcome.observations.is_empty());
     assert!(outcome.detection.is_none());
@@ -522,7 +583,7 @@ fn detector_probability_zero_never_detects_real_bus() {
         0.0,
     );
 
-    let outcome = detect_buses(Pose::default(), 0, 42, &state);
+    let outcome = detect_buses(&block_map(), Pose::default(), 0, 42, &state);
 
     assert_eq!(outcome.observations.len(), 1);
     assert!(outcome.detection.is_none());
@@ -542,7 +603,7 @@ fn detector_false_positive_is_seed_controlled() {
         1.0,
     );
 
-    let outcome = detect_buses(Pose::default(), 0, 42, &state);
+    let outcome = detect_buses(&block_map(), Pose::default(), 0, 42, &state);
 
     assert!(outcome.observations.is_empty());
     assert!(outcome.detection.is_none());
@@ -564,15 +625,129 @@ fn detector_respects_bus_active_window() {
     state.buses[0].active_from_tick = Some(5);
     state.buses[0].active_until_tick = Some(10);
 
-    assert!(detect_buses(Pose::default(), 4, 42, &state)
+    assert!(detect_buses(&block_map(), Pose::default(), 4, 42, &state)
         .observations
         .is_empty());
-    assert!(detect_buses(Pose::default(), 5, 42, &state)
+    assert!(detect_buses(&block_map(), Pose::default(), 5, 42, &state)
         .detection
         .is_some());
-    assert!(detect_buses(Pose::default(), 11, 42, &state)
+    assert!(detect_buses(&block_map(), Pose::default(), 11, 42, &state)
         .observations
         .is_empty());
+}
+
+#[test]
+fn detect_buses_finds_moving_bus_when_in_range() {
+    let mut state = search_state(Pose::default(), 0.5, 1.0, 0.0);
+    state.buses[0].pose = Pose {
+        x: 100.0,
+        y: 100.0,
+        ..Default::default()
+    };
+    state.buses[0].route = Some(UrbanBusRoute {
+        stops: vec![
+            UrbanBusStop {
+                node_id: UrbanNodeId::from("n0".to_owned()),
+                arrival_tick: 0,
+            },
+            UrbanBusStop {
+                node_id: UrbanNodeId::from("n1".to_owned()),
+                arrival_tick: 10,
+            },
+        ],
+        speed_m_per_tick: 1.0,
+    });
+
+    let outcome = detect_buses(
+        &block_map(),
+        Pose {
+            x: 5.0,
+            y: 0.0,
+            ..Default::default()
+        },
+        5,
+        42,
+        &state,
+    );
+
+    assert_eq!(outcome.observations.len(), 1);
+    assert!(outcome.detection.is_some());
+    assert_eq!(outcome.observations[0].pose.x, 5.0);
+}
+
+#[test]
+fn detect_buses_misses_moving_bus_out_of_range() {
+    let mut state = search_state(Pose::default(), 0.5, 1.0, 0.0);
+    state.buses[0].route = Some(UrbanBusRoute {
+        stops: vec![
+            UrbanBusStop {
+                node_id: UrbanNodeId::from("n0".to_owned()),
+                arrival_tick: 0,
+            },
+            UrbanBusStop {
+                node_id: UrbanNodeId::from("n1".to_owned()),
+                arrival_tick: 10,
+            },
+        ],
+        speed_m_per_tick: 1.0,
+    });
+
+    let outcome = detect_buses(
+        &block_map(),
+        Pose {
+            x: 0.0,
+            y: 10.0,
+            ..Default::default()
+        },
+        5,
+        42,
+        &state,
+    );
+
+    assert!(outcome.observations.is_empty());
+    assert!(outcome.detection.is_none());
+}
+
+#[test]
+fn detect_buses_records_sampled_moving_pose() {
+    let mut state = search_state(
+        Pose {
+            x: 99.0,
+            y: 99.0,
+            ..Default::default()
+        },
+        1.0,
+        1.0,
+        0.0,
+    );
+    state.buses[0].route = Some(UrbanBusRoute {
+        stops: vec![
+            UrbanBusStop {
+                node_id: UrbanNodeId::from("n0".to_owned()),
+                arrival_tick: 0,
+            },
+            UrbanBusStop {
+                node_id: UrbanNodeId::from("n1".to_owned()),
+                arrival_tick: 10,
+            },
+        ],
+        speed_m_per_tick: 1.0,
+    });
+
+    let outcome = detect_buses(
+        &block_map(),
+        Pose {
+            x: 5.0,
+            y: 0.0,
+            ..Default::default()
+        },
+        5,
+        42,
+        &state,
+    );
+
+    assert_eq!(outcome.observations[0].pose.x, 5.0);
+    assert_eq!(outcome.observations[0].pose.y, 0.0);
 }
 
 #[test]

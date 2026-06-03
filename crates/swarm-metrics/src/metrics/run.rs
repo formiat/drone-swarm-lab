@@ -175,4 +175,13 @@ pub struct RunMetrics {
     pub urban_replan_success_rate: f64,
     #[serde(default)]
     pub urban_unresolved_blockage_count: u64,
+    // v0.75 Urban Mission Realism Follow-up
+    #[serde(default)]
+    pub perimeter_completion_rate: f64,
+    #[serde(default)]
+    pub perimeter_length_m: f64,
+    #[serde(default)]
+    pub time_to_complete_perimeter: Option<u64>,
+    #[serde(default)]
+    pub perimeter_violations: u64,
 }

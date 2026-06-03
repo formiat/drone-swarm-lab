@@ -5,11 +5,11 @@ impl std::fmt::Display for ComparisonReport {
         let seeds = format!("{}-{}", self.seed_range_start, self.seed_range_end);
         writeln!(
             f,
-            "| Mission | Scenario | Strategy | Profile | Seeds | Success | Completion | Detection | Realloc | Coverage | Messages | Bytes | Conflicts | Stale | BatteryMin | BatteryAvg | Availability | TimeToFind | PoD | Targets | BeliefEntropy | FalsePosRate | ConfirmationScans | ConvP50 | ConvP95 | BundleDist | EdgeCoverage | MissedEdges | Revisits | RouteEfficiency | UrbanRouteLength | UrbanRisk | UrbanPlanned | UrbanViolations | UrbanCompleted | PatrolCompleted | TimeToLoop | UrbanDistance | UrbanEfficiency | UrbanReplans | BusDetected | TimeToBus | BusFalsePos | DistanceBeforeBus | SearchSuccessNoViolation |"
+            "| Mission | Scenario | Strategy | Profile | Seeds | Success | Completion | Detection | Realloc | Coverage | Messages | Bytes | Conflicts | Stale | BatteryMin | BatteryAvg | Availability | TimeToFind | PoD | Targets | BeliefEntropy | FalsePosRate | ConfirmationScans | ConvP50 | ConvP95 | BundleDist | EdgeCoverage | MissedEdges | Revisits | RouteEfficiency | UrbanRouteLength | UrbanRisk | UrbanPlanned | UrbanViolations | UrbanCompleted | PatrolCompleted | TimeToLoop | UrbanDistance | UrbanEfficiency | UrbanReplans | BusDetected | TimeToBus | BusFalsePos | DistanceBeforeBus | SearchSuccessNoViolation | PerimeterCompletion | PerimeterLength | TimeToPerimeter | PerimeterViolations |"
         )?;
         writeln!(
             f,
-            "|---------|----------|----------|---------|-------|---------|------------|-----------|---------|----------|----------|-------|-----------|-------|------------|------------|--------------|-----------|-----|---------|---------------|--------------|-------------------|---------|---------|------------|--------------|-------------|----------|-----------------|------------------|-----------|--------------|-----------------|----------------|-----------------|------------|---------------|-----------------|--------------|-------------|-----------|-------------|-------------------|--------------------------|"
+            "|---------|----------|----------|---------|-------|---------|------------|-----------|---------|----------|----------|-------|-----------|-------|------------|------------|--------------|-----------|-----|---------|---------------|--------------|-------------------|---------|---------|------------|--------------|-------------|----------|-----------------|------------------|-----------|--------------|-----------------|----------------|-----------------|------------|---------------|-----------------|--------------|-------------|-----------|-------------|-------------------|--------------------------|---------------------|-----------------|-----------------|---------------------|"
         )?;
         for strategy_name in &self.strategy_names {
             for profile_name in &self.profile_names {
@@ -22,7 +22,7 @@ impl std::fmt::Display for ComparisonReport {
                     };
                     writeln!(
                         f,
-                        "| {:7} | {:8} | {:8} | {:7} | {:5} | {:7.3} | {:10.3} | {:9.3} | {:7.3} | {:8.3} | {:8.3} | {:5.0} | {:9.3} | {:5.0} | {:10.3} | {:10.3} | {:12.3} | {:>10} | {:3.3} | {:7.1} | {:13.3} | {:12.3} | {:17.3} | {:7.3} | {:7.3} | {:10.3} | {:12.3} | {:11.3} | {:8.3} | {:15.3} | {:16.3} | {:9.3} | {:12.3} | {:15.3} | {:14.3} | {:15.3} | {:10.3} | {:13.3} | {:15.3} | {:12.3} | {:11.3} | {:9.3} | {:11.3} | {:17.3} | {:24.3} |",
+                        "| {:7} | {:8} | {:8} | {:7} | {:5} | {:7.3} | {:10.3} | {:9.3} | {:7.3} | {:8.3} | {:8.3} | {:5.0} | {:9.3} | {:5.0} | {:10.3} | {:10.3} | {:12.3} | {:>10} | {:3.3} | {:7.1} | {:13.3} | {:12.3} | {:17.3} | {:7.3} | {:7.3} | {:10.3} | {:12.3} | {:11.3} | {:8.3} | {:15.3} | {:16.3} | {:9.3} | {:12.3} | {:15.3} | {:14.3} | {:15.3} | {:10.3} | {:13.3} | {:15.3} | {:12.3} | {:11.3} | {:9.3} | {:11.3} | {:17.3} | {:24.3} | {:19.3} | {:15.3} | {:15.3} | {:19.3} |",
                         metrics.mission.as_str(),
                         metrics.scenario.as_str(),
                         strategy_name,
@@ -72,6 +72,11 @@ impl std::fmt::Display for ComparisonReport {
                         metrics.avg_false_positive_count,
                         metrics.avg_distance_before_detection,
                         metrics.search_success_without_violation_rate,
+                        // v0.75 Urban Mission Realism Follow-up metrics
+                        metrics.avg_perimeter_completion_rate,
+                        metrics.avg_perimeter_length_m,
+                        metrics.avg_time_to_complete_perimeter,
+                        metrics.avg_perimeter_violations,
                     )?;
                 }
             }

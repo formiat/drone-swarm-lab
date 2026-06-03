@@ -657,6 +657,7 @@ mod tests {
                     planner: "dijkstra".to_owned(),
                     temporary_obstacles: vec![],
                     blocked_route_policy: swarm_types::UrbanBlockedPolicy::default(),
+                    perimeter_patrol: None,
                 }),
                 ..Default::default()
             },

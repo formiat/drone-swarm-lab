@@ -126,6 +126,15 @@ pub struct AggregateMetrics {
     pub avg_urban_separation_violation_count: f64,
     #[serde(default)]
     pub avg_urban_route_conflict_count: f64,
+    // v0.75 Urban Mission Realism Follow-up
+    #[serde(default)]
+    pub avg_perimeter_completion_rate: f64,
+    #[serde(default)]
+    pub avg_perimeter_length_m: f64,
+    #[serde(default)]
+    pub avg_time_to_complete_perimeter: f64,
+    #[serde(default)]
+    pub avg_perimeter_violations: f64,
 }
 
 pub(super) fn percentile_of_sorted(sorted: &[u64], p: f64) -> f64 {
@@ -213,6 +222,10 @@ impl AggregateMetrics {
                 avg_urban_min_agent_separation_m: 0.0,
                 avg_urban_separation_violation_count: 0.0,
                 avg_urban_route_conflict_count: 0.0,
+                avg_perimeter_completion_rate: 0.0,
+                avg_perimeter_length_m: 0.0,
+                avg_time_to_complete_perimeter: 0.0,
+                avg_perimeter_violations: 0.0,
             };
         }
 
@@ -329,6 +342,19 @@ impl AggregateMetrics {
             .sum();
         let total_urban_route_conflict_count: u64 =
             runs.iter().map(|run| run.urban_route_conflict_count).sum();
+        // v0.75 Urban Mission Realism Follow-up
+        let total_perimeter_completion_rate: f64 =
+            runs.iter().map(|run| run.perimeter_completion_rate).sum();
+        let total_perimeter_length_m: f64 = runs.iter().map(|run| run.perimeter_length_m).sum();
+        let total_time_to_complete_perimeter: u64 = runs
+            .iter()
+            .filter_map(|run| run.time_to_complete_perimeter)
+            .sum();
+        let time_to_complete_perimeter_count = runs
+            .iter()
+            .filter(|run| run.time_to_complete_perimeter.is_some())
+            .count() as f64;
+        let total_perimeter_violations: u64 = runs.iter().map(|run| run.perimeter_violations).sum();
         let mut convergence_ticks: Vec<u64> = runs
             .iter()
             .filter_map(|run| run.cbba_convergence_tick)
@@ -441,6 +467,14 @@ impl AggregateMetrics {
             },
             avg_urban_separation_violation_count: total_urban_separation_violation_count as f64 / n,
             avg_urban_route_conflict_count: total_urban_route_conflict_count as f64 / n,
+            avg_perimeter_completion_rate: total_perimeter_completion_rate / n,
+            avg_perimeter_length_m: total_perimeter_length_m / n,
+            avg_time_to_complete_perimeter: if time_to_complete_perimeter_count > 0.0 {
+                total_time_to_complete_perimeter as f64 / time_to_complete_perimeter_count
+            } else {
+                0.0
+            },
+            avg_perimeter_violations: total_perimeter_violations as f64 / n,
         }
     }
 }

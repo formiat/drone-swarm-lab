@@ -1,9 +1,10 @@
 use swarm_sim::{GeoOrigin, RunConfig, Scenario, UrbanState};
 use swarm_types::{
     Aabb, Agent, AgentId, Health, Pose, Role, Task, TaskId, TaskKind, TaskStatus,
-    UrbanBlockedPolicy, UrbanBus, UrbanBusId, UrbanDetectorConfig, UrbanEdge, UrbanEdgeId,
-    UrbanMap, UrbanNode, UrbanNodeId, UrbanObstacleId, UrbanRouteLoop, UrbanSearchState,
-    UrbanStaticObstacle, UrbanTemporaryObstacle,
+    UrbanBlockedPolicy, UrbanBus, UrbanBusId, UrbanBusRoute, UrbanBusStop, UrbanDetectorConfig,
+    UrbanEdge, UrbanEdgeId, UrbanMap, UrbanNode, UrbanNodeId, UrbanObstacleId,
+    UrbanPerimeterPatrol, UrbanRouteLoop, UrbanSearchState, UrbanStaticObstacle,
+    UrbanTemporaryObstacle,
 };
 
 pub struct UrbanConfig {
@@ -16,8 +17,10 @@ pub enum UrbanProfile {
     PatrolSmallBlock,
     MultiAgentSmallBlock,
     SearchStaticBus,
+    SearchMovingBus,
     SearchOutOfRange,
     SearchFalsePositive,
+    PerimeterSquare,
     BlockedRouteWaitAndContinue,
     BlockedRouteReplan,
     BlockedRouteNoAlternative,
@@ -30,8 +33,10 @@ impl UrbanProfile {
             "patrol-small-block" | "patrolsmallblock" => Some(Self::PatrolSmallBlock),
             "multi-agent-small-block" | "multiagentsmallblock" => Some(Self::MultiAgentSmallBlock),
             "search-static-bus" | "searchstaticbus" => Some(Self::SearchStaticBus),
+            "search-moving-bus" | "searchmovingbus" => Some(Self::SearchMovingBus),
             "search-out-of-range" | "searchoutofrange" => Some(Self::SearchOutOfRange),
             "search-false-positive" | "searchfalsepositive" => Some(Self::SearchFalsePositive),
+            "perimeter-square" | "perimetersquare" => Some(Self::PerimeterSquare),
             "blocked-route-wait" | "blockedroutewait" => Some(Self::BlockedRouteWaitAndContinue),
             "blocked-route-replan" | "blockedroutereplan" => Some(Self::BlockedRouteReplan),
             "blocked-route-no-alt" | "blockedroutenoalt" => Some(Self::BlockedRouteNoAlternative),
@@ -41,11 +46,13 @@ impl UrbanProfile {
 
     pub fn config(&self, seed: u64) -> UrbanConfig {
         match self {
-            Self::PatrolSmallBlock | Self::MultiAgentSmallBlock => UrbanConfig {
-                seed,
-                max_ticks: 120,
-            },
-            Self::SearchStaticBus => UrbanConfig {
+            Self::PatrolSmallBlock | Self::MultiAgentSmallBlock | Self::PerimeterSquare => {
+                UrbanConfig {
+                    seed,
+                    max_ticks: 120,
+                }
+            }
+            Self::SearchStaticBus | Self::SearchMovingBus => UrbanConfig {
                 seed,
                 max_ticks: 60,
             },
@@ -78,7 +85,7 @@ impl UrbanStandardProfiles {
     }
 
     pub fn patrol_profile_names() -> Vec<&'static str> {
-        vec!["patrol-small-block"]
+        vec!["patrol-small-block", "perimeter-square"]
     }
 
     pub fn multi_agent_profile_names() -> Vec<&'static str> {
@@ -88,6 +95,7 @@ impl UrbanStandardProfiles {
     pub fn search_profile_names() -> Vec<&'static str> {
         vec![
             "search-static-bus",
+            "search-moving-bus",
             "search-out-of-range",
             "search-false-positive",
         ]
@@ -207,6 +215,7 @@ pub fn build_urban_patrol_scenario(config: &UrbanConfig) -> (Scenario, RunConfig
             planner: "dijkstra".to_owned(),
             temporary_obstacles: vec![],
             blocked_route_policy: UrbanBlockedPolicy::default(),
+            perimeter_patrol: None,
         }),
         ..Default::default()
     };
@@ -239,6 +248,18 @@ pub fn build_urban_multi_agent_scenario(config: &UrbanConfig) -> (Scenario, RunC
     (scenario, run_config)
 }
 
+pub fn build_urban_perimeter_scenario(config: &UrbanConfig) -> (Scenario, RunConfig) {
+    let (mut scenario, mut run_config) = build_urban_patrol_scenario(config);
+    scenario.name = "urban_perimeter_square".to_owned();
+    if let Some(urban_state) = run_config.urban_state.as_mut() {
+        urban_state.perimeter_patrol = Some(UrbanPerimeterPatrol {
+            polygon: square_block_polygon(),
+            spacing_m: 10.0,
+        });
+    }
+    (scenario, run_config)
+}
+
 pub fn build_urban_search_scenario(
     config: &UrbanConfig,
     profile: UrbanProfile,
@@ -251,6 +272,17 @@ pub fn build_urban_search_scenario(
                 Pose {
                     x: 4.0,
                     y: 0.0,
+                    ..Default::default()
+                },
+                0.1,
+                1.0,
+                0.0,
+            ),
+            UrbanProfile::SearchMovingBus => (
+                "urban_search_moving_bus",
+                Pose {
+                    x: 100.0,
+                    y: 100.0,
                     ..Default::default()
                 },
                 0.1,
@@ -301,6 +333,17 @@ pub fn build_urban_search_scenario(
                 1.0,
                 0.0,
             ),
+            UrbanProfile::PerimeterSquare => (
+                "urban_search_static_bus",
+                Pose {
+                    x: 4.0,
+                    y: 0.0,
+                    ..Default::default()
+                },
+                0.1,
+                1.0,
+                0.0,
+            ),
             UrbanProfile::BlockedRouteWaitAndContinue
             | UrbanProfile::BlockedRouteReplan
             | UrbanProfile::BlockedRouteNoAlternative => {
@@ -310,12 +353,26 @@ pub fn build_urban_search_scenario(
     scenario.name = scenario_name.to_owned();
     run_config.max_ticks = config.max_ticks;
     run_config.max_unassigned_ticks = config.max_ticks;
+    let route = matches!(profile, UrbanProfile::SearchMovingBus).then(|| UrbanBusRoute {
+        stops: vec![
+            UrbanBusStop {
+                node_id: UrbanNodeId::from("n1".to_owned()),
+                arrival_tick: 0,
+            },
+            UrbanBusStop {
+                node_id: UrbanNodeId::from("n0".to_owned()),
+                arrival_tick: 10,
+            },
+        ],
+        speed_m_per_tick: 2.0,
+    });
     run_config.urban_search_state = Some(UrbanSearchState {
         buses: vec![UrbanBus {
             id: UrbanBusId::from("bus-0".to_owned()),
             pose: bus_pose,
             active_from_tick: None,
             active_until_tick: None,
+            route,
         }],
         detector: UrbanDetectorConfig {
             detection_range_m,
@@ -325,6 +382,31 @@ pub fn build_urban_search_scenario(
         },
     });
     (scenario, run_config)
+}
+
+fn square_block_polygon() -> Vec<Pose> {
+    vec![
+        Pose {
+            x: 0.0,
+            y: 0.0,
+            ..Default::default()
+        },
+        Pose {
+            x: 20.0,
+            y: 0.0,
+            ..Default::default()
+        },
+        Pose {
+            x: 20.0,
+            y: 20.0,
+            ..Default::default()
+        },
+        Pose {
+            x: 0.0,
+            y: 20.0,
+            ..Default::default()
+        },
+    ]
 }
 
 /// Build a single-agent scenario for `BlockedRouteWaitAndContinue`:
@@ -382,6 +464,7 @@ pub fn build_blocked_route_wait_scenario(config: &UrbanConfig) -> (Scenario, Run
                 severity: None,
             }],
             blocked_route_policy: UrbanBlockedPolicy::Wait,
+            perimeter_patrol: None,
         }),
         ..Default::default()
     };
@@ -448,6 +531,7 @@ pub fn build_blocked_route_replan_scenario(config: &UrbanConfig) -> (Scenario, R
                 severity: None,
             }],
             blocked_route_policy: UrbanBlockedPolicy::Replan,
+            perimeter_patrol: None,
         }),
         ..Default::default()
     };
@@ -516,6 +600,7 @@ pub fn build_blocked_route_no_alternative_scenario(config: &UrbanConfig) -> (Sce
                 },
             ],
             blocked_route_policy: UrbanBlockedPolicy::Replan,
+            perimeter_patrol: None,
         }),
         ..Default::default()
     };
@@ -648,6 +733,19 @@ mod tests {
     }
 
     #[test]
+    fn urban_search_moving_bus_fixture_detects_target() {
+        let (scenario, run_config) = build_urban_search_scenario(
+            &UrbanProfile::SearchMovingBus.config(42),
+            UrbanProfile::SearchMovingBus,
+        );
+        let metrics = swarm_sim::ScenarioRunner::run(&scenario, run_config);
+        assert!(metrics.success);
+        assert!(metrics.bus_detected);
+        assert_eq!(metrics.time_to_detect_bus, Some(5));
+        assert!(metrics.search_success_without_violation);
+    }
+
+    #[test]
     fn urban_search_out_of_range_fixture_times_out() {
         let (scenario, run_config) = build_urban_search_scenario(
             &UrbanProfile::SearchOutOfRange.config(42),
@@ -657,6 +755,39 @@ mod tests {
         assert!(!metrics.success);
         assert!(!metrics.bus_detected);
         assert_eq!(metrics.time_to_detect_bus, None);
+    }
+
+    #[test]
+    fn urban_perimeter_fixture_completes_with_perimeter_metrics() {
+        let (scenario, run_config) =
+            build_urban_perimeter_scenario(&UrbanProfile::PerimeterSquare.config(42));
+        let metrics = swarm_sim::ScenarioRunner::run(&scenario, run_config);
+        assert!(metrics.success);
+        assert!(metrics.urban_patrol_completed);
+        assert_eq!(metrics.perimeter_length_m, 80.0);
+        assert_eq!(metrics.perimeter_completion_rate, 1.0);
+        assert_eq!(metrics.time_to_complete_perimeter, Some(40));
+        assert_eq!(metrics.perimeter_violations, 0);
+    }
+
+    #[test]
+    fn urban_perimeter_fixture_waypoints_are_deterministic() {
+        let (_, run_config) =
+            build_urban_perimeter_scenario(&UrbanProfile::PerimeterSquare.config(42));
+        let perimeter = run_config
+            .urban_state
+            .as_ref()
+            .and_then(|urban_state| urban_state.perimeter_patrol.as_ref())
+            .expect("perimeter patrol exists");
+        let waypoints =
+            swarm_sim::urban::perimeter_waypoints(&perimeter.polygon, perimeter.spacing_m)
+                .expect("perimeter waypoints are valid");
+        let waypoints_again =
+            swarm_sim::urban::perimeter_waypoints(&perimeter.polygon, perimeter.spacing_m)
+                .expect("perimeter waypoints are valid");
+        assert_eq!(waypoints, waypoints_again);
+        assert_eq!(waypoints.len(), 9);
+        assert_eq!(waypoints.first(), waypoints.last());
     }
 }
 

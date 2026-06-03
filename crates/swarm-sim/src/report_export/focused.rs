@@ -74,15 +74,15 @@ pub fn generate_focused_report(reports: &[(String, crate::ComparisonReport)]) ->
                 }
             }
             "urban-patrol" => {
-                out.push_str("| Strategy | Profile | Success | Completion | UrbanRouteLength | UrbanRisk | UrbanPlanned | UrbanViolations | UrbanCompleted | PatrolCompleted | TimeToLoop | Distance | RouteEfficiency | Replans | MinSeparation | SeparationViolations | RouteConflicts |\n");
+                out.push_str("| Strategy | Profile | Success | Completion | UrbanRouteLength | UrbanRisk | UrbanPlanned | UrbanViolations | UrbanCompleted | PatrolCompleted | TimeToLoop | Distance | RouteEfficiency | Replans | MinSeparation | SeparationViolations | RouteConflicts | PerimeterCompletion | PerimeterLength | TimeToPerimeter | PerimeterViolations |\n");
                 out.push_str(
-                    "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n",
+                    "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n",
                 );
                 for strategy in &report.strategy_names {
                     for profile in &report.profile_names {
                         if let Some(m) = report.results.get(&(strategy.clone(), profile.clone())) {
                             out.push_str(&format!(
-                                "| {} | {} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} |\n",
+                                "| {} | {} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} |\n",
                                 strategy,
                                 profile,
                                 m.success_rate,
@@ -99,7 +99,11 @@ pub fn generate_focused_report(reports: &[(String, crate::ComparisonReport)]) ->
                                 m.avg_urban_replan_count,
                                 m.avg_urban_min_agent_separation_m,
                                 m.avg_urban_separation_violation_count,
-                                m.avg_urban_route_conflict_count
+                                m.avg_urban_route_conflict_count,
+                                m.avg_perimeter_completion_rate,
+                                m.avg_perimeter_length_m,
+                                m.avg_time_to_complete_perimeter,
+                                m.avg_perimeter_violations
                             ));
                         }
                     }

@@ -238,6 +238,26 @@ impl fmt::Display for AggregateMetrics {
             "avg_urban_route_conflict_count: {:.3}",
             self.avg_urban_route_conflict_count
         )?;
+        writeln!(
+            f,
+            "avg_perimeter_completion_rate: {:.3}",
+            self.avg_perimeter_completion_rate
+        )?;
+        writeln!(
+            f,
+            "avg_perimeter_length_m: {:.3}",
+            self.avg_perimeter_length_m
+        )?;
+        writeln!(
+            f,
+            "avg_time_to_complete_perimeter: {:.3}",
+            self.avg_time_to_complete_perimeter
+        )?;
+        writeln!(
+            f,
+            "avg_perimeter_violations: {:.3}",
+            self.avg_perimeter_violations
+        )?;
         writeln!(f, "mission: {}", self.mission)?;
         write!(f, "scenario: {}", self.scenario)
     }

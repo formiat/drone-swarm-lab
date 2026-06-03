@@ -98,6 +98,10 @@ fn run(success: bool, detection_time_ticks: Option<u64>) -> RunMetrics {
         urban_blocked_edge_count: 0,
         urban_replan_success_rate: 0.0,
         urban_unresolved_blockage_count: 0,
+        perimeter_completion_rate: 0.0,
+        perimeter_length_m: 0.0,
+        time_to_complete_perimeter: None,
+        perimeter_violations: 0,
     }
 }
 
@@ -235,6 +239,14 @@ fn aggregate_urban_fields() {
     runs[1].urban_min_agent_separation_m = Some(5.0);
     runs[1].urban_separation_violation_count = 3;
     runs[1].urban_route_conflict_count = 4;
+    runs[0].perimeter_completion_rate = 1.0;
+    runs[0].perimeter_length_m = 40.0;
+    runs[0].time_to_complete_perimeter = Some(10);
+    runs[0].perimeter_violations = 0;
+    runs[1].perimeter_completion_rate = 0.5;
+    runs[1].perimeter_length_m = 60.0;
+    runs[1].time_to_complete_perimeter = Some(20);
+    runs[1].perimeter_violations = 2;
 
     let metrics = AggregateMetrics::from_runs(&runs);
 
@@ -251,6 +263,10 @@ fn aggregate_urban_fields() {
     assert_eq!(metrics.avg_urban_min_agent_separation_m, 4.0);
     assert_eq!(metrics.avg_urban_separation_violation_count, 2.0);
     assert_eq!(metrics.avg_urban_route_conflict_count, 3.0);
+    assert_eq!(metrics.avg_perimeter_completion_rate, 0.75);
+    assert_eq!(metrics.avg_perimeter_length_m, 50.0);
+    assert_eq!(metrics.avg_time_to_complete_perimeter, 15.0);
+    assert_eq!(metrics.avg_perimeter_violations, 1.0);
 }
 
 #[test]
@@ -260,6 +276,10 @@ fn urban_analysis_metric_fields_default_from_legacy_json() {
     run_object.remove("urban_min_agent_separation_m");
     run_object.remove("urban_separation_violation_count");
     run_object.remove("urban_route_conflict_count");
+    run_object.remove("perimeter_completion_rate");
+    run_object.remove("perimeter_length_m");
+    run_object.remove("time_to_complete_perimeter");
+    run_object.remove("perimeter_violations");
     run_object.remove("urban_route_risk_score");
 
     let run_metrics: RunMetrics = serde_json::from_value(run_json).unwrap();
@@ -267,6 +287,10 @@ fn urban_analysis_metric_fields_default_from_legacy_json() {
     assert_eq!(run_metrics.urban_min_agent_separation_m, None);
     assert_eq!(run_metrics.urban_separation_violation_count, 0);
     assert_eq!(run_metrics.urban_route_conflict_count, 0);
+    assert_eq!(run_metrics.perimeter_completion_rate, 0.0);
+    assert_eq!(run_metrics.perimeter_length_m, 0.0);
+    assert_eq!(run_metrics.time_to_complete_perimeter, None);
+    assert_eq!(run_metrics.perimeter_violations, 0);
 
     let mut aggregate_json =
         serde_json::to_value(AggregateMetrics::from_runs(&[run(true, None)])).unwrap();
@@ -274,6 +298,10 @@ fn urban_analysis_metric_fields_default_from_legacy_json() {
     aggregate_object.remove("avg_urban_min_agent_separation_m");
     aggregate_object.remove("avg_urban_separation_violation_count");
     aggregate_object.remove("avg_urban_route_conflict_count");
+    aggregate_object.remove("avg_perimeter_completion_rate");
+    aggregate_object.remove("avg_perimeter_length_m");
+    aggregate_object.remove("avg_time_to_complete_perimeter");
+    aggregate_object.remove("avg_perimeter_violations");
     aggregate_object.remove("avg_urban_route_risk_score");
 
     let aggregate_metrics: AggregateMetrics = serde_json::from_value(aggregate_json).unwrap();
@@ -281,6 +309,10 @@ fn urban_analysis_metric_fields_default_from_legacy_json() {
     assert_eq!(aggregate_metrics.avg_urban_min_agent_separation_m, 0.0);
     assert_eq!(aggregate_metrics.avg_urban_separation_violation_count, 0.0);
     assert_eq!(aggregate_metrics.avg_urban_route_conflict_count, 0.0);
+    assert_eq!(aggregate_metrics.avg_perimeter_completion_rate, 0.0);
+    assert_eq!(aggregate_metrics.avg_perimeter_length_m, 0.0);
+    assert_eq!(aggregate_metrics.avg_time_to_complete_perimeter, 0.0);
+    assert_eq!(aggregate_metrics.avg_perimeter_violations, 0.0);
 }
 
 #[test]

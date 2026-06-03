@@ -82,6 +82,11 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
         "avg_urban_min_agent_separation_m",
         "avg_urban_separation_violation_count",
         "avg_urban_route_conflict_count",
+        // v0.75 Urban Mission Realism Follow-up
+        "avg_perimeter_completion_rate",
+        "avg_perimeter_length_m",
+        "avg_time_to_complete_perimeter",
+        "avg_perimeter_violations",
     ])?;
 
     for strategy_name in &report.strategy_names {
@@ -171,6 +176,11 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
                     format!("{:.3}", m.avg_urban_min_agent_separation_m).as_str(),
                     format!("{:.3}", m.avg_urban_separation_violation_count).as_str(),
                     format!("{:.3}", m.avg_urban_route_conflict_count).as_str(),
+                    // v0.75 Urban Mission Realism Follow-up
+                    format!("{:.3}", m.avg_perimeter_completion_rate).as_str(),
+                    format!("{:.3}", m.avg_perimeter_length_m).as_str(),
+                    format!("{:.3}", m.avg_time_to_complete_perimeter).as_str(),
+                    format!("{:.3}", m.avg_perimeter_violations).as_str(),
                 ])?;
             }
         }

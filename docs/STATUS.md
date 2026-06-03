@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-02
 **HEAD commit:** see `git rev-parse HEAD`
-**Last audit:** M74 Urban Blocked-Route Decision Logic
+**Last audit:** M75 Urban Mission Realism Follow-up
 
 This document is the current status summary for the repository. It supersedes
 the older M39b-only audit and should be read together with the README current
@@ -50,6 +50,7 @@ status table.
 | M72 Artifact Validator + SITL Harness | Complete as local artifact discipline | `artifact_validator` validates supervisor output packs with stable rule ids such as `artifact.final_status_mismatch`, `artifact.replacement_seq_mismatch`, and `artifact.safety_report_missing`; it checks manifest metadata, run id/final status/event summary/replay summary/task completion/replacement seq/safety/limitations consistency, and supports historical mode for old M58/M59 packs. `sitl_supervisor --output-dir` now captures `scenario.snapshot.json`, `config.snapshot.json`, and `command.txt`. `scripts/run_m58_local.sh` and `scripts/run_m59_local.sh` are manual-only PX4/SIH harness helpers with `DRY_RUN=1`; this is not automated PX4 CI or hardware readiness. |
 | M73 Fault Injection And Degraded Supervisor | Complete as fake-tested pre-hardware boundary | The live supervisor now emits additive `degraded` report records, failure-mode counts, decision counts, abandoned-task/recovery-failure metrics, and degraded replay events. `artifact_validator` checks degraded report/event consistency for new packs while preserving historical mode for old M58/M59 evidence. See `docs/DEGRADED_SUPERVISOR.md`. This is not hardware failure validation, RF modeling, Gazebo/HIL coverage, or production failover. |
 | M74 Urban Blocked-Route Decision Logic | Complete as deterministic simulation-only decision layer | `UrbanTemporaryObstacle` and `UrbanBlockedPolicy` (Wait/Replan/Abort) are implemented. The patrol runner checks an effective blocked-set each tick, runs a graph lookahead detector, and applies the selected policy. Replan finds an alternate route via `plan_route_excluding` and validates it through the M71 judge gate. Replay emits 8 new events (`UrbanEdgeBlocked`, `UrbanEdgeUnblocked`, `UrbanObstacleDetected`, `UrbanPolicyDecision`, `UrbanRouteReplanned`, `UrbanWaitStarted`, `UrbanWaitCompleted`, `UrbanNoRouteAvailable`). Four new metrics track wait time, blocked-edge count, replan success rate, and unresolved blockages. Preflight validates temporary obstacle declarations. Three new scenario profiles exercise Wait, Replan, and No-Alternative paths. This is mission-level reactivity only; no real sensors, no physics, no certified obstacle avoidance. |
+| M75 Urban Mission Realism Follow-up | Complete as deterministic simulation-only mission semantics | `UrbanBusRoute` and `UrbanBusStop` add scheduled moving mocked bus targets over Urban map nodes. The detector samples `pose_at_tick` from the current map/tick and keeps static-bus behavior backward-compatible. `UrbanPerimeterPatrol` and `perimeter_waypoints` add deterministic closed perimeter waypoint generation, a `perimeter-square` profile, and perimeter metrics/export fields (`perimeter_completion_rate`, `perimeter_length_m`, `time_to_complete_perimeter`, `perimeter_violations`). This is mission-level simulation realism only; no lidar/raycast, physics engine, real perception, PX4/SITL execution evidence, hardware validation, or certified obstacle avoidance. |
 
 ## Current Known Limitations
 
@@ -144,6 +145,12 @@ status table.
   low static-obstacle clearance to reduce `urban_route_risk_score` on the
   deterministic corridor-delta fixture. It is not lidar, physical collision
   avoidance, dynamic traffic handling, PX4 execution, or hardware evidence.
+- **Urban Mission Realism Follow-up**: M75 adds scheduled moving semantic bus
+  targets and deterministic perimeter patrol metrics inside the simulation
+  layer. The bus detector is still mocked and distance/probability based; the
+  perimeter path is still a mission-level route pattern over the Urban graph.
+  This is not real lidar/raycast, a physics engine, dynamic obstacle avoidance,
+  PX4 execution evidence, or hardware validation.
 
 ### Platform / API
 

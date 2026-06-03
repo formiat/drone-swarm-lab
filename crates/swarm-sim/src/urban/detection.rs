@@ -1,6 +1,6 @@
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use swarm_types::{Pose, UrbanBus, UrbanBusId, UrbanDetectorConfig, UrbanSearchState};
+use swarm_types::{Pose, UrbanBusId, UrbanDetectorConfig, UrbanMap, UrbanSearchState};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct UrbanBusObservation {
@@ -18,6 +18,7 @@ pub struct UrbanDetectionOutcome {
 
 /// Evaluate the mocked distance-based Urban Search detector for one tick.
 pub fn detect_buses(
+    map: &UrbanMap,
     agent_pose: Pose,
     tick: u64,
     scenario_seed: u64,
@@ -26,12 +27,12 @@ pub fn detect_buses(
     let mut observations: Vec<UrbanBusObservation> = search_state
         .buses
         .iter()
-        .filter(|bus| bus_is_active(bus, tick))
         .filter_map(|bus| {
-            let distance_m = agent_pose.distance_to(&bus.pose);
+            let pose = bus.pose_at_tick(map, tick)?;
+            let distance_m = agent_pose.distance_to(&pose);
             (distance_m <= search_state.detector.detection_range_m).then(|| UrbanBusObservation {
                 bus_id: bus.id.clone(),
-                pose: bus.pose,
+                pose,
                 distance_m,
             })
         })
@@ -66,11 +67,6 @@ pub fn detect_buses(
         detection,
         false_positive,
     }
-}
-
-fn bus_is_active(bus: &UrbanBus, tick: u64) -> bool {
-    bus.active_from_tick.is_none_or(|from| tick >= from)
-        && bus.active_until_tick.is_none_or(|until| tick <= until)
 }
 
 fn deterministic_probability_draw(

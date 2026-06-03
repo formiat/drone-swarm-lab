@@ -79,6 +79,20 @@ pub struct UrbanObstacleId(String);
 )]
 pub struct UrbanBusId(String);
 
+/// A scheduled stop for a mocked Urban bus target.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct UrbanBusStop {
+    pub node_id: UrbanNodeId,
+    pub arrival_tick: u64,
+}
+
+/// A deterministic graph-based route for a mocked Urban bus target.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct UrbanBusRoute {
+    pub stops: Vec<UrbanBusStop>,
+    pub speed_m_per_tick: f64,
+}
+
 /// An intersection or waypoint node in a road graph.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct UrbanNode {
@@ -168,6 +182,58 @@ pub struct UrbanBus {
     pub active_from_tick: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_until_tick: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route: Option<UrbanBusRoute>,
+}
+
+/// Optional perimeter-patrol declaration for Urban waypoint mission realism.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct UrbanPerimeterPatrol {
+    pub polygon: Vec<Pose>,
+    pub spacing_m: f64,
+}
+
+impl UrbanBus {
+    /// Return the mocked bus pose at `tick`.
+    ///
+    /// Static buses use `pose` and the legacy active window. Moving buses use
+    /// scheduled graph stops. The schedule, not `speed_m_per_tick`, is
+    /// authoritative for interpolation.
+    pub fn pose_at_tick(&self, map: &UrbanMap, tick: u64) -> Option<Pose> {
+        let Some(route) = &self.route else {
+            return bus_static_window_active(self, tick).then_some(self.pose);
+        };
+        let first = route.stops.first()?;
+        let last = route.stops.last()?;
+        if tick < first.arrival_tick || tick > last.arrival_tick {
+            return None;
+        }
+        if route.stops.len() == 1 {
+            return (tick == first.arrival_tick)
+                .then(|| map.node(&first.node_id).map(|node| node.pose))
+                .flatten();
+        }
+        for pair in route.stops.windows(2) {
+            let from = &pair[0];
+            let to = &pair[1];
+            if tick < from.arrival_tick || tick > to.arrival_tick {
+                continue;
+            }
+            let from_pose = map.node(&from.node_id)?.pose;
+            let to_pose = map.node(&to.node_id)?.pose;
+            let duration = to.arrival_tick.saturating_sub(from.arrival_tick);
+            if duration == 0 {
+                return None;
+            }
+            let ratio = (tick - from.arrival_tick) as f64 / duration as f64;
+            return Some(Pose {
+                x: from_pose.x + (to_pose.x - from_pose.x) * ratio,
+                y: from_pose.y + (to_pose.y - from_pose.y) * ratio,
+                z: from_pose.z + (to_pose.z - from_pose.z) * ratio,
+            });
+        }
+        None
+    }
 }
 
 /// Distance-based mocked detector config for Urban Search.
@@ -400,6 +466,15 @@ impl UrbanMap {
 impl UrbanSearchState {
     /// Validate bus target and mocked detector inputs.
     pub fn validate(&self) -> Vec<UrbanMapValidationError> {
+        self.validate_inner(None)
+    }
+
+    /// Validate bus target, route and mocked detector inputs against a map.
+    pub fn validate_with_map(&self, map: &UrbanMap) -> Vec<UrbanMapValidationError> {
+        self.validate_inner(Some(map))
+    }
+
+    fn validate_inner(&self, map: Option<&UrbanMap>) -> Vec<UrbanMapValidationError> {
         let mut errors = Vec::new();
         if self.buses.is_empty() {
             errors.push(UrbanMapValidationError::new(
@@ -430,6 +505,9 @@ impl UrbanSearchState {
                     ));
                 }
             }
+            if let Some(route) = &bus.route {
+                validate_bus_route(index, route, map, &mut errors);
+            }
         }
 
         if !self.detector.detection_range_m.is_finite() || self.detector.detection_range_m < 0.0 {
@@ -450,6 +528,49 @@ impl UrbanSearchState {
         );
 
         errors
+    }
+}
+
+fn bus_static_window_active(bus: &UrbanBus, tick: u64) -> bool {
+    bus.active_from_tick.is_none_or(|from| tick >= from)
+        && bus.active_until_tick.is_none_or(|until| tick <= until)
+}
+
+fn validate_bus_route(
+    bus_index: usize,
+    route: &UrbanBusRoute,
+    map: Option<&UrbanMap>,
+    errors: &mut Vec<UrbanMapValidationError>,
+) {
+    if route.stops.is_empty() {
+        errors.push(UrbanMapValidationError::new(
+            format!("buses[{bus_index}].route.stops"),
+            "Bus route requires at least one stop",
+        ));
+    }
+    if !route.speed_m_per_tick.is_finite() || route.speed_m_per_tick <= 0.0 {
+        errors.push(UrbanMapValidationError::new(
+            format!("buses[{bus_index}].route.speed_m_per_tick"),
+            "speed_m_per_tick must be finite and > 0",
+        ));
+    }
+    let mut previous_tick = None;
+    for (stop_index, stop) in route.stops.iter().enumerate() {
+        if previous_tick.is_some_and(|previous| stop.arrival_tick <= previous) {
+            errors.push(UrbanMapValidationError::new(
+                format!("buses[{bus_index}].route.stops[{stop_index}].arrival_tick"),
+                "arrival_tick values must be strictly increasing",
+            ));
+        }
+        previous_tick = Some(stop.arrival_tick);
+        if let Some(map) = map {
+            if map.node(&stop.node_id).is_none() {
+                errors.push(UrbanMapValidationError::new(
+                    format!("buses[{bus_index}].route.stops[{stop_index}].node_id"),
+                    format!("Unknown urban bus route stop node id '{}'", stop.node_id),
+                ));
+            }
+        }
     }
 }
 
@@ -517,6 +638,7 @@ mod tests {
                 },
                 active_from_tick: Some(1),
                 active_until_tick: Some(10),
+                route: None,
             }],
             detector: UrbanDetectorConfig {
                 detection_range_m: 4.0,
@@ -654,6 +776,110 @@ mod tests {
         assert!(errors
             .iter()
             .any(|error| error.field == "buses[0].active_until_tick"));
+    }
+
+    #[test]
+    fn bus_pose_at_tick_static_returns_fixed_pose() {
+        let bus = &search_state().buses[0];
+
+        let pose = bus.pose_at_tick(&map(), 5).unwrap();
+
+        assert_eq!(pose.x, 5.0);
+        assert_eq!(pose.y, 0.0);
+    }
+
+    #[test]
+    fn bus_pose_at_tick_static_returns_none_outside_window() {
+        let bus = &search_state().buses[0];
+
+        assert!(bus.pose_at_tick(&map(), 0).is_none());
+        assert!(bus.pose_at_tick(&map(), 11).is_none());
+    }
+
+    #[test]
+    fn bus_pose_at_tick_interpolates_between_stops() {
+        let mut bus = search_state().buses[0].clone();
+        bus.route = Some(UrbanBusRoute {
+            stops: vec![
+                UrbanBusStop {
+                    node_id: UrbanNodeId::from("n0".to_owned()),
+                    arrival_tick: 10,
+                },
+                UrbanBusStop {
+                    node_id: UrbanNodeId::from("n1".to_owned()),
+                    arrival_tick: 20,
+                },
+            ],
+            speed_m_per_tick: 1.0,
+        });
+
+        let pose = bus.pose_at_tick(&map(), 15).unwrap();
+
+        assert_eq!(pose.x, 5.0);
+        assert_eq!(pose.y, 0.0);
+    }
+
+    #[test]
+    fn bus_pose_at_tick_returns_none_outside_route_window() {
+        let mut bus = search_state().buses[0].clone();
+        bus.route = Some(UrbanBusRoute {
+            stops: vec![
+                UrbanBusStop {
+                    node_id: UrbanNodeId::from("n0".to_owned()),
+                    arrival_tick: 10,
+                },
+                UrbanBusStop {
+                    node_id: UrbanNodeId::from("n1".to_owned()),
+                    arrival_tick: 20,
+                },
+            ],
+            speed_m_per_tick: 1.0,
+        });
+
+        assert!(bus.pose_at_tick(&map(), 9).is_none());
+        assert!(bus.pose_at_tick(&map(), 21).is_none());
+    }
+
+    #[test]
+    fn urban_search_state_validation_rejects_unknown_bus_route_stop() {
+        let mut state = search_state();
+        state.buses[0].route = Some(UrbanBusRoute {
+            stops: vec![UrbanBusStop {
+                node_id: UrbanNodeId::from("missing".to_owned()),
+                arrival_tick: 1,
+            }],
+            speed_m_per_tick: 1.0,
+        });
+
+        let errors = state.validate_with_map(&map());
+
+        assert!(errors
+            .iter()
+            .any(|error| error.field == "buses[0].route.stops[0].node_id"));
+    }
+
+    #[test]
+    fn urban_search_state_validation_rejects_non_monotonic_bus_route() {
+        let mut state = search_state();
+        state.buses[0].route = Some(UrbanBusRoute {
+            stops: vec![
+                UrbanBusStop {
+                    node_id: UrbanNodeId::from("n0".to_owned()),
+                    arrival_tick: 5,
+                },
+                UrbanBusStop {
+                    node_id: UrbanNodeId::from("n1".to_owned()),
+                    arrival_tick: 5,
+                },
+            ],
+            speed_m_per_tick: 1.0,
+        });
+
+        let errors = state.validate_with_map(&map());
+
+        assert!(errors
+            .iter()
+            .any(|error| error.field == "buses[0].route.stops[1].arrival_tick"));
     }
 
     #[test]

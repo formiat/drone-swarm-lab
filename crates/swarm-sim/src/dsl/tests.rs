@@ -3,9 +3,9 @@ use crate::runner::UrbanState;
 use crate::scenario::{GeoOrigin, Scenario};
 use crate::RunConfig;
 use swarm_types::{
-    Agent, Health, Pose, Role, Task, TaskKind, TaskStatus, UrbanBus, UrbanBusId,
-    UrbanDetectorConfig, UrbanEdge, UrbanEdgeId, UrbanMap, UrbanNode, UrbanNodeId, UrbanRouteLoop,
-    UrbanSearchState,
+    Agent, Health, Pose, Role, Task, TaskKind, TaskStatus, UrbanBus, UrbanBusId, UrbanBusRoute,
+    UrbanBusStop, UrbanDetectorConfig, UrbanEdge, UrbanEdgeId, UrbanMap, UrbanNode, UrbanNodeId,
+    UrbanRouteLoop, UrbanSearchState,
 };
 
 fn make_minimal_entry() -> ScenarioSuiteEntry {
@@ -137,6 +137,7 @@ fn make_urban_entry() -> ScenarioSuiteEntry {
         planner: "dijkstra".to_owned(),
         temporary_obstacles: vec![],
         blocked_route_policy: swarm_types::UrbanBlockedPolicy::default(),
+        perimeter_patrol: None,
     });
     entry
 }
@@ -202,6 +203,7 @@ fn make_urban_search_entry() -> ScenarioSuiteEntry {
             },
             active_from_tick: None,
             active_until_tick: None,
+            route: None,
         }],
         detector: UrbanDetectorConfig {
             detection_range_m: 2.0,
@@ -598,6 +600,24 @@ fn validate_urban_search_rejects_invalid_bus() {
     assert!(errors
         .iter()
         .any(|error| error.field == "run_config.urban_search_state.buses[0].pose"));
+}
+
+#[test]
+fn validate_urban_search_rejects_unknown_bus_route_stop() {
+    let mut entry = make_urban_search_entry();
+    entry.run_config.urban_search_state.as_mut().unwrap().buses[0].route = Some(UrbanBusRoute {
+        stops: vec![UrbanBusStop {
+            node_id: UrbanNodeId::from("missing".to_owned()),
+            arrival_tick: 0,
+        }],
+        speed_m_per_tick: 1.0,
+    });
+
+    let errors = validate_entry(&entry);
+
+    assert!(errors.iter().any(|error| {
+        error.field == "run_config.urban_search_state.buses[0].route.stops[0].node_id"
+    }));
 }
 
 #[test]

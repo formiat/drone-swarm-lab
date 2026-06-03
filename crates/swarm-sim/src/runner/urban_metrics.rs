@@ -155,6 +155,10 @@ pub(super) fn urban_patrol_metrics(
         urban_blocked_edge_count,
         urban_replan_success_rate,
         urban_unresolved_blockage_count,
+        perimeter_completion_rate: 0.0,
+        perimeter_length_m: 0.0,
+        time_to_complete_perimeter: None,
+        perimeter_violations: 0,
     }
 }
 

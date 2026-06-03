@@ -147,6 +147,11 @@ or judge-report artifacts and does not include the newer diagnostic Urban
 separation/conflict metrics. Generate a new pack with `--replay-log` on current
 HEAD if those diagnostics are needed for Urban work.
 
+M75 adds moving mocked bus targets and Urban perimeter metrics in code, but it
+does not refresh the benchmark evidence. Treat M75 validation as targeted
+simulation/unit coverage unless a later milestone captures a dedicated Urban
+scenario-suite pack.
+
 ## M68 Urban Corridor Delta
 
 M68 compares two `urban-patrol` profiles over the same deterministic road

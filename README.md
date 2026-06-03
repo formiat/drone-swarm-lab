@@ -303,6 +303,7 @@ cargo run -p swarm-examples --bin replay -- \
 | Urban Replay / Analysis | ✅ Diagnostic tooling | M67 | Urban replay logs now support route-trace and judge-report artifacts under benchmark packs, timeline filtering, `UrbanViolation.obstacle_id`, a two-agent analysis fixture in `scenarios/urban.multi-agent.json`, and aggregate separation/conflict metrics; still diagnostic only, with no avoidance or physical simulation |
 | Urban Corridor Planner | 🧪 Experimental algorithm delta | M68 | Adds `planner: "corridor-aware"` for Urban route loops, route-risk metrics, `scenarios/urban.corridor-delta.json`, and a small before/after evidence pack; this is mission-level planning, not physical avoidance or PX4 proof |
 | Urban Blocked-Route Decision Logic | ✅ Simulation-only decision layer | M74 | `UrbanTemporaryObstacle`, `UrbanBlockedPolicy` (Wait/Replan/Abort), graph lookahead detector, `plan_route_excluding` with M71 gate check, 8 new replay events, 4 new metrics, 3 new scenario profiles; this is mission-level reactivity only — no real sensors, no physics, no certified obstacle avoidance |
+| Urban Mission Realism Follow-up | ✅ Simulation-only mission layer | M75 | Adds scheduled moving mocked bus targets, deterministic perimeter waypoint generation, a square perimeter patrol profile, and perimeter metrics. This improves Urban mission semantics without adding lidar/raycast, physics, real perception, PX4/SITL evidence, hardware claims, or certified obstacle avoidance |
 | Preflight Safety Contract | ✅ Static gate | M71 | `SafetyValidationReport`, rule-id based preflight violations, dry-run/supervisor preflight gates, `safety_validation_report.v1.json`, `docs/PREFLIGHT_SAFETY.md`, and stable exit code convention 2/3/4/5; not certified flight safety |
 | Planner Quality | ✅ Stable | M34 | `RoutePlanner` trait, 2-opt, battery-aware feasibility v2 (ordered-subset feasibility, battery model v2 integration, meaningful runner metrics) |
 | Dynamic Mission Correctness | ✅ Stable | M35/M63 | Mission-specific success semantics (SAR=targets-found, inspection=coverage-threshold, wildfire=mapped-ratio threshold plus failure/unassigned guards), SAR unsupported reasons (cbba=delayed-reconvergence, centralized=static-pre-plan), support matrix tests |
@@ -665,6 +666,7 @@ points, not a published semver-stable SDK.
 | M72 | ✅ | Artifact Validator + SITL Harness: `artifact_validator`, `artifact_validation_report.v1`, M72 manifest metadata, scenario/config/command snapshots, stable artifact rule ids, portable validator tests, and manual-only M58/M59 local PX4/SIH harness scripts; not automated PX4 CI or hardware readiness |
 | M73 | ✅ | M73 Fault Injection And Degraded Supervisor: structured failure modes, supervisor decisions, bounded recovery/abort reporting, degraded replay events, artifact-validator consistency checks, fake-controller coverage, and `docs/DEGRADED_SUPERVISOR.md`; not hardware failure validation |
 | M74 | ✅ | Urban Blocked-Route Decision Logic: `UrbanTemporaryObstacle` + `UrbanBlockedPolicy` (Wait/Replan/Abort), graph lookahead detector, `plan_route_excluding` with M71 gate, 8 replay events, 4 metrics, 3 scenario profiles; mission-level reactivity only, no real sensors or physics |
+| M75 | ✅ | Urban Mission Realism Follow-up: `UrbanBusRoute` scheduled moving bus targets, map-aware detector sampling, deterministic `perimeter_waypoints`, optional `urban_state.perimeter_patrol`, `perimeter-square` / `search-moving-bus` profiles, and perimeter metrics/export fields; simulation-only, no real sensors, no physics, no hardware evidence |
 
 ---
 
@@ -743,10 +745,20 @@ patrol.
 M66 adds `scenarios/urban.search.json` and the explicit `urban-search` mission
 type. It reuses the same road graph and start contract, then evaluates
 `run_config.urban_search_state`: bus targets, detector range, detection
-probability, false-positive rate, and deterministic detector seed. The v1
-runner stops on the first real bus detection and reports `bus_detected`,
-`time_to_detect_bus`, `false_positive_count`, `distance_before_detection`, and
-`search_success_without_violation`.
+probability, false-positive rate, and deterministic detector seed. M75 extends
+bus targets with optional scheduled `route.stops[]` over Urban map nodes, so
+the mocked detector samples the bus pose at the current tick before applying
+range/probability checks. The runner stops on the first real bus detection and
+reports `bus_detected`, `time_to_detect_bus`, `false_positive_count`,
+`distance_before_detection`, and `search_success_without_violation`.
+
+M75 also adds `urban_state.perimeter_patrol` for Urban perimeter patrol
+semantics. A perimeter patrol declares a polygon and waypoint spacing; the
+simulation generates deterministic closed perimeter waypoints and reports
+`perimeter_completion_rate`, `perimeter_length_m`,
+`time_to_complete_perimeter`, and `perimeter_violations`. The standard
+`urban-patrol` profile list now includes `perimeter-square`; the existing route
+events remain the replay representation for perimeter progress.
 
 M67 adds diagnostic analysis around those replay logs. When a benchmark pack is
 generated with `--replay-log`, Urban runs also write

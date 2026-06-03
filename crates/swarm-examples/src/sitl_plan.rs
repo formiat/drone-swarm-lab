@@ -912,6 +912,7 @@ mod tests {
                         planner: "dijkstra".to_owned(),
                         temporary_obstacles: vec![],
                         blocked_route_policy: UrbanBlockedPolicy::default(),
+                        perimeter_patrol: None,
                     }),
                     ..Default::default()
                 },

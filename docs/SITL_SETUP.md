@@ -187,6 +187,12 @@ does not add lidar/raycast, perception, dynamic traffic handling, Gazebo/HIL,
 certified safety, or low-level flight control. It only makes the mission-level
 Urban route export visible before optional manual SITL/PX4 upload experiments.
 
+M75 keeps this boundary unchanged for Urban perimeter work. The
+`perimeter-square` profile is a deterministic simulation fixture that records
+perimeter metrics and reuses the same Urban route/waypoint export shape. Moving
+bus targets are mocked semantic detections in simulation and are not exported
+as PX4 perception, traffic, or obstacle-avoidance behavior.
+
 ## Quick Start: Mock Mode
 
 Mock mode sends the same extracted waypoints to an in-memory

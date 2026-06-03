@@ -184,8 +184,15 @@ Urban Patrol road graph. It uses the same `run_config.urban_state` map,
 `route_loop`, `start_node`, and Urban planner constraints, plus
 `run_config.urban_search_state`:
 
-- `buses[]` — mocked bus targets with `id`, `pose`, and optional
-  `active_from_tick` / `active_until_tick` visibility windows.
+- `buses[]` — mocked bus targets with `id`, fallback static `pose`, optional
+  `active_from_tick` / `active_until_tick` visibility windows, and optional
+  M75 `route`.
+- `buses[].route.stops[]` — scheduled moving-bus stops over Urban map nodes.
+  Each stop has `node_id` and `arrival_tick`. Arrival ticks must be strictly
+  increasing and every node id must exist in `run_config.urban_state.map`.
+- `buses[].route.speed_m_per_tick` — finite positive route metadata for moving
+  buses. Current sampling uses the scheduled stop ticks; the speed field is
+  retained for future route-generation extensions and validation.
 - `detector.detection_range_m` — distance threshold for observable buses.
 - `detector.detection_probability` — probability in `[0, 1]` for turning an
   in-range observation into a real detection.
@@ -194,11 +201,35 @@ Urban Patrol road graph. It uses the same `run_config.urban_state` map,
 - `detector.seed` — deterministic detector RNG seed.
 
 The selected scout follows the route repeatedly until the first real bus
-detection or timeout. `BusObserved`, `BusDetected`, `BusFalsePositive`, and
-`UrbanSearchCompleted` replay events make the run inspectable. Search success
-means a real bus was detected with zero Urban judge violations and no runtime
-unsupported reason. False positives are counted but do not complete the
-mission.
+detection or timeout. For a moving bus, the detector samples the bus pose at the
+current tick from the declared route before applying range/probability checks.
+`BusObserved`, `BusDetected`, `BusFalsePositive`, and `UrbanSearchCompleted`
+replay events make the run inspectable and record the sampled bus pose for real
+observations/detections. Search success means a real bus was detected with zero
+Urban judge violations and no runtime unsupported reason. False positives are
+counted but do not complete the mission.
+
+## Urban Perimeter Patrol
+
+M75 adds optional perimeter patrol semantics under `run_config.urban_state`:
+
+- `perimeter_patrol.polygon[]` — at least three finite local poses. A duplicated
+  closing pose is accepted and normalized.
+- `perimeter_patrol.spacing_m` — finite positive waypoint spacing.
+
+The helper `perimeter_waypoints(polygon, spacing_m)` produces a deterministic
+closed waypoint list in input order. The standard `urban-patrol` profile list
+includes `perimeter-square`, which uses the same square block graph as
+`patrol-small-block` and reports:
+
+- `perimeter_completion_rate`
+- `perimeter_length_m`
+- `time_to_complete_perimeter`
+- `perimeter_violations`
+
+Perimeter progress reuses existing Urban route replay events
+(`UrbanRoutePlanned`, `UrbanSegmentEntered`, `UrbanSegmentCompleted`,
+`UrbanPatrolCompleted`) rather than adding a separate replay event family.
 
 This is a mocked detector, not lidar/raycast, computer vision, dynamic
 traffic, physical obstacle avoidance, PX4/SITL export, hardware readiness, or
@@ -298,6 +329,9 @@ The repository includes pre-built scenario files in `scenarios/`, including:
 - `urban.search.json` — M66 Urban Search static-bus simulation fixture
 - `urban.multi-agent.json` — M67 two-agent Urban replay-analysis fixture
 - `urban.corridor-delta.json` — M68 Dijkstra vs corridor-aware planner delta
+- standard generated Urban profiles also include M75 `search-moving-bus` and
+  `perimeter-square`; these are builder-level fixtures and do not imply
+  hardware or physics evidence.
 
 ## Export / Import
 

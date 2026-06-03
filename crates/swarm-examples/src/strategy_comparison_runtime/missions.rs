@@ -1,9 +1,9 @@
 use swarm_scenarios::{
     build_emergency_mesh_scenario, build_inspection_scenario, build_sar_scenario,
-    build_urban_patrol_scenario, build_urban_search_scenario, build_wildfire_scenario,
-    EmergencyMeshProfile, EmergencyMeshStandardProfiles, InspectionProfile,
-    InspectionStandardProfiles, SarProfile, StandardProfiles, UrbanProfile, UrbanStandardProfiles,
-    WildfireProfile,
+    build_urban_patrol_scenario, build_urban_perimeter_scenario, build_urban_search_scenario,
+    build_wildfire_scenario, EmergencyMeshProfile, EmergencyMeshStandardProfiles,
+    InspectionProfile, InspectionStandardProfiles, SarProfile, StandardProfiles, UrbanProfile,
+    UrbanStandardProfiles, WildfireProfile,
 };
 
 use crate::regression_lib::{build_coverage_profile, ScenarioBuilder};
@@ -173,7 +173,11 @@ fn urban_patrol_builder() -> ScenarioBuilder {
     Box::new(|seed: u64, profile_name: &str| {
         let profile =
             UrbanProfile::from_str(profile_name).unwrap_or(UrbanProfile::PatrolSmallBlock);
-        build_urban_patrol_scenario(&profile.config(seed))
+        if matches!(profile, UrbanProfile::PerimeterSquare) {
+            build_urban_perimeter_scenario(&profile.config(seed))
+        } else {
+            build_urban_patrol_scenario(&profile.config(seed))
+        }
     })
 }
 

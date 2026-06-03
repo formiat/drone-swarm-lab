@@ -180,7 +180,13 @@ impl ScenarioRunner {
         }
 
         let mut false_positive_count = 0;
-        let outcome = crate::urban::detect_buses(start_node.pose, 0, scenario.seed, &search_state);
+        let outcome = crate::urban::detect_buses(
+            &urban_state.map,
+            start_node.pose,
+            0,
+            scenario.seed,
+            &search_state,
+        );
         if let Some(ref mut builder) = log_builder {
             push_detection_events(
                 builder,
@@ -297,7 +303,13 @@ impl ScenarioRunner {
                 });
             }
 
-            let outcome = crate::urban::detect_buses(pose, tick, scenario.seed, &search_state);
+            let outcome = crate::urban::detect_buses(
+                &urban_state.map,
+                pose,
+                tick,
+                scenario.seed,
+                &search_state,
+            );
             if let Some(ref mut builder) = log_builder {
                 push_detection_events(
                     builder,

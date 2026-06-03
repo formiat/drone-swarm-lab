@@ -90,23 +90,27 @@ Internal or experimental:
 ### Urban Mission Path
 
 M64 adds an Urban foundation, M65 adds the first Urban Patrol simulation, M66
-adds Urban Search v1 with a deterministic mocked bus detector, and M67 adds
-diagnostic replay/analysis tooling. Future Urban work should reuse this
-road-graph path instead of starting with arbitrary polygons:
+adds Urban Search v1 with a deterministic mocked bus detector, M67 adds
+diagnostic replay/analysis tooling, and M75 adds scheduled moving bus targets
+plus perimeter patrol semantics. Future Urban work should reuse this road-graph
+path instead of starting with arbitrary polygons:
 
 - shared types live in `crates/swarm-types/src/urban.rs`;
 - deterministic Dijkstra planning, experimental M68 corridor-aware planning,
   and the initial judge live in
   `crates/swarm-sim/src/urban.rs`;
 - `run_config.urban_state` carries the road graph, route loop, optional
-  `start_node`, and planner choice in Scenario DSL;
+  `start_node`, planner choice, optional temporary obstacles, and optional
+  `perimeter_patrol` in Scenario DSL;
 - supported Urban planner values are `"dijkstra"` and the experimental
   `"corridor-aware"` planner;
 - M65 validates `start_node` against `route_loop.nodes[0]` and requires the
   selected alive agent pose to start within `0.01m` of that node;
-- `run_config.urban_search_state` carries M66 bus targets and mocked detector
-  settings (`detection_range_m`, `detection_probability`,
-  `false_positive_rate`, `seed`);
+- `run_config.urban_search_state` carries M66/M75 bus targets and mocked
+  detector settings (`detection_range_m`, `detection_probability`,
+  `false_positive_rate`, `seed`). Static buses use `pose` and optional active
+  windows; moving buses add `route.stops[]` over Urban map node ids plus
+  `speed_m_per_tick`;
 - `scenarios/urban.patrol.json` is the portable fixture for catalog tests;
 - `scenarios/urban.search.json` is the portable fixture for mocked bus-search
   catalog and regression tests;
@@ -116,6 +120,9 @@ road-graph path instead of starting with arbitrary polygons:
 - `scenarios/urban.corridor-delta.json` is the portable M68 before/after
   fixture for comparing Dijkstra against the experimental corridor-aware
   planner;
+- standard Urban builders also expose M75 `search-moving-bus` and
+  `perimeter-square` profiles for deterministic moving-target/perimeter
+  simulation tests;
 - metrics report route planning and patrol execution fields:
   `urban_route_length_m`, `urban_route_planned`,
   `urban_violation_count`, `urban_route_completed`,
@@ -126,6 +133,9 @@ road-graph path instead of starting with arbitrary polygons:
   `false_positive_count`, `distance_before_detection`, and
   `search_success_without_violation`, plus aggregate report fields with the
   same semantics;
+- M75 perimeter metrics add `perimeter_completion_rate`,
+  `perimeter_length_m`, `time_to_complete_perimeter`, and
+  `perimeter_violations`, plus aggregate/report export fields;
 - M67 diagnostic metrics add `urban_min_agent_separation_m`,
   `urban_separation_violation_count`, and `urban_route_conflict_count`, plus
   aggregate report fields. These are measured from replay traces and are not
@@ -144,7 +154,9 @@ road-graph path instead of starting with arbitrary polygons:
 - replay logs expose `UrbanRoutePlanned`, `UrbanSegmentEntered`,
   `UrbanSegmentCompleted`, `UrbanViolation`, `UrbanPatrolCompleted`,
   `BusObserved`, `BusDetected`, `BusFalsePositive`, and
-  `UrbanSearchCompleted`.
+  `UrbanSearchCompleted`. M75 moving buses reuse the bus event pose field for
+  the sampled pose at the event tick; perimeter patrol reuses route-progress
+  events rather than adding a new replay event family.
 - M67 benchmark packs with Urban replay logs can emit
   `urban_analysis/*.route-trace.json`, `*.route-trace.csv`,
   `*.judge-report.json`, `*.judge-report.csv`, and

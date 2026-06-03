@@ -43,9 +43,13 @@ M65 Urban Patrol v0 adds route-progress replay events. `replay --summary`
 prints Urban route planned, segment entered/completed, violation, patrol
 completion, and completion tick counters. M66 Urban Search v1 adds mocked bus
 observation/detection/false-positive/search-completion counters and detection
-ticks. The events are simulation-only and do not imply lidar, real obstacle
-avoidance, PX4/SITL execution, hardware readiness, dynamic obstacles, real
-perception, or multi-agent deconfliction.
+ticks. M75 moving-bus routes reuse `BusObserved` and `BusDetected`; their
+`pose` field is the sampled bus pose at the event tick, not merely the static
+fallback pose from the scenario. M75 perimeter patrol reuses the existing Urban
+route-progress events and adds metrics rather than new replay event variants.
+The events are simulation-only and do not imply lidar, real obstacle avoidance,
+PX4/SITL execution, hardware readiness, a physics engine, real perception, or
+multi-agent deconfliction.
 
 M67 adds diagnostic replay tooling for Urban work. `UrbanViolation.obstacle_id`
 is an additive optional field and old logs without it still deserialize.
