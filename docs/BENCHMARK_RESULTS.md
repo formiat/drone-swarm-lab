@@ -53,6 +53,7 @@ sweep preset. Its output is simulation degradation evidence with
 `results/m78_degradation_coverage_packet_loss_2026-06-03/`. It is not a
 publication benchmark, PX4/SITL evidence, Gazebo/HIL evidence, hardware
 evidence, or production safety evidence.
+It is not hardware evidence.
 
 M72 `artifact_validator` validates local SITL supervisor packs, including event
 log/report/replay summary/safety consistency and replacement seq semantics. It

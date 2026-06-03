@@ -887,6 +887,14 @@ The canonical boundary document is
 [`docs/HARDWARE_READINESS.md`](HARDWARE_READINESS.md). Read it before any
 hardware experiment.
 
+M79 adds operational runbooks in
+[`docs/OPERATIONAL_RUNBOOKS.md`](OPERATIONAL_RUNBOOKS.md). Use them as the
+entry gate before treating any simulation, Urban, dry-run, local PX4/SIH, or
+hardware-candidate result as evidence. They include the preflight checklist,
+go/no-go gates, post-run inspection, artifact validation procedure, and the
+required statement that first hardware experiment is still not product
+readiness.
+
 ### Connection Classes
 
 `sitl_agent` separates connection classes so real hardware paths are not enabled

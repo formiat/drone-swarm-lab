@@ -679,6 +679,7 @@ points, not a published semver-stable SDK.
 | M76 | ✅ | Synthetic Scenario Testbed: `ScenarioSuite.generator_manifest` records generator identity/seed/category/parameters; `SyntheticUrbanGenerator` creates deterministic Urban grid suites with static obstacles, temporary blocked edges, optional bus/failure/comms overlays, and library presets; `generate_scenario_suite` can regenerate `scenarios/urban.generated.tiny.json`; no benchmark refresh, PX4/SITL evidence, or hardware claim |
 | M77 | ✅ | Algorithm Differentiation: communication-aware greedy/auction scoring via neutral-default `comms_penalty_weight`, wildfire priority-triggered reallocation requests via neutral-default threshold, SAR entropy re-ranking behind `dynamic_belief_updates`, CBBA replay `conflict_count` diagnostics, `--profiles` targeted benchmark filter, and a small release smoke artifact in `results/m77_algorithm_delta/coverage/`; no 1000-seed publication run or CBBA gossip-burst fix |
 | M78 | ✅ | Benchmark Evidence Layer: aggregate reports include stderr/stddev/95% CI/min/max/failure-rate fields for key binary metrics, JSON/CSV rows include `support_status` / `support_reason`, `BenchmarkManifest` records `artifact_kind`, SAR can opt into `run_config.sar_success_threshold`, Urban has explicit `--mission urban`, and `--degradation coverage-packet-loss` produces bounded simulation degradation evidence in `results/m78_degradation_coverage_packet_loss_2026-06-03/` without rerunning the 1000-seed benchmark |
+| M79 | ✅ | M79 Operational Runbooks And Hardware Entry Gate: `docs/OPERATIONAL_RUNBOOKS.md` defines simulation, Urban, SITL dry-run/export, artifact validation, local PX4/SIH, and future hardware-candidate runbooks with preflight checklist, go/no-go gates, post-run inspection, command examples, and conservative boundary language; first hardware experiment is still not product readiness |
 
 ---
 
@@ -693,6 +694,7 @@ points, not a published semver-stable SDK.
 | [`docs/SITL_SETUP.md`](docs/SITL_SETUP.md) | Mock, dry-run, and experimental PX4 SITL setup |
 | [`docs/ARTIFACT_VALIDATION.md`](docs/ARTIFACT_VALIDATION.md) | M72 artifact validator contract, rule ids, and manual local SITL harness |
 | [`docs/DEGRADED_SUPERVISOR.md`](docs/DEGRADED_SUPERVISOR.md) | M73 degraded-supervisor failure matrix, report fields, replay events, and pre-hardware limits |
+| [`docs/OPERATIONAL_RUNBOOKS.md`](docs/OPERATIONAL_RUNBOOKS.md) | M79 operational runbooks, go/no-go gates, post-run inspection, and hardware entry boundary |
 
 ---
 

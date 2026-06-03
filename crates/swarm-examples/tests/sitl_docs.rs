@@ -9,6 +9,7 @@ const BENCHMARK_RESULTS: &str = include_str!("../../../docs/BENCHMARK_RESULTS.md
 const PREFLIGHT_SAFETY: &str = include_str!("../../../docs/PREFLIGHT_SAFETY.md");
 const ARTIFACT_VALIDATION: &str = include_str!("../../../docs/ARTIFACT_VALIDATION.md");
 const DEGRADED_SUPERVISOR: &str = include_str!("../../../docs/DEGRADED_SUPERVISOR.md");
+const OPERATIONAL_RUNBOOKS: &str = include_str!("../../../docs/OPERATIONAL_RUNBOOKS.md");
 const M62_RESULT_README: &str =
     include_str!("../../../results/all_500_jobs14_m62_release/README.md");
 
@@ -292,6 +293,100 @@ fn m78_benchmark_evidence_docs_are_synchronized() {
         assert!(
             EXTENSION_GUIDE.contains(required),
             "EXTENSION_GUIDE missing {required}"
+        );
+    }
+}
+
+#[test]
+fn m79_docs_define_operational_runbooks_and_hardware_entry_gate() {
+    for required in [
+        "M79 Operational Runbooks And Hardware Entry Gate",
+        "docs/OPERATIONAL_RUNBOOKS.md",
+        "go/no-go gates",
+        "not product readiness",
+    ] {
+        assert!(README.contains(required), "README missing {required}");
+        assert!(STATUS.contains(required), "STATUS missing {required}");
+    }
+
+    for required in [
+        "Operational Runbooks And Hardware Entry Gate",
+        "first hardware experiment is still not product readiness",
+        "multi-agent hardware requires separate safety review",
+        "no regulatory or certified safety claim",
+        "simulation runbook",
+        "Urban scenario runbook",
+        "SITL dry-run/export runbook",
+        "local PX4/SIH runbook",
+        "artifact validation runbook",
+        "future hardware candidate runbook",
+        "Required Preflight Checklist",
+        "Go/No-Go Gates",
+        "Post-Run Inspection",
+        "API And Schema Boundary",
+    ] {
+        assert!(
+            OPERATIONAL_RUNBOOKS.contains(required),
+            "OPERATIONAL_RUNBOOKS missing {required}"
+        );
+    }
+
+    for required in [
+        "no hardware if simulation fails",
+        "no hardware if SITL dry-run/export fails",
+        "no hardware if preflight safety fails",
+        "no hardware if artifact validator fails",
+        "no hardware without external safety process",
+        "no multi-drone hardware before separate single-drone review",
+    ] {
+        assert!(
+            OPERATIONAL_RUNBOOKS.contains(required),
+            "OPERATIONAL_RUNBOOKS missing gate {required}"
+        );
+        assert!(
+            HARDWARE_READINESS.contains(required),
+            "HARDWARE_READINESS missing gate {required}"
+        );
+    }
+
+    for required in [
+        "cargo run -p swarm-examples --bin strategy_comparison",
+        "cargo run -p swarm-examples --bin sitl_agent",
+        "cargo run -p swarm-examples --bin artifact_validator",
+        "DRY_RUN=1 scripts/run_m58_local.sh",
+        "DRY_RUN=1 scripts/run_m59_local.sh",
+        "--dry-run-artifact",
+        "--allow-hardware-candidate",
+        "--mode supervisor-run",
+        "--strict",
+    ] {
+        assert!(
+            OPERATIONAL_RUNBOOKS.contains(required),
+            "OPERATIONAL_RUNBOOKS missing command example {required}"
+        );
+    }
+
+    for required in [
+        "docs/OPERATIONAL_RUNBOOKS.md",
+        "first hardware experiment is still not product readiness",
+        "multi-agent hardware requires separate safety review",
+        "no regulatory or certified safety claim",
+    ] {
+        assert!(
+            HARDWARE_READINESS.contains(required),
+            "HARDWARE_READINESS missing {required}"
+        );
+    }
+
+    for required in [
+        "docs/OPERATIONAL_RUNBOOKS.md",
+        "entry gate",
+        "preflight checklist",
+        "post-run inspection",
+    ] {
+        assert!(
+            SITL_SETUP.contains(required),
+            "SITL_SETUP missing {required}"
         );
     }
 }

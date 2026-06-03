@@ -4,6 +4,11 @@ This project is not hardware-ready. It is a research prototype with portable
 simulation checks and experimental PX4 SITL tooling. The current code does not
 provide flight certification, a certified safety layer, hardware-specific
 failsafe tuning, operator training, or a production flight workflow.
+Required M79 boundary phrases:
+
+- first hardware experiment is still not product readiness;
+- multi-agent hardware requires separate safety review;
+- no regulatory or certified safety claim.
 
 Use `sitl_agent` against real drones only as a deliberately planned hardware
 experiment in a controlled environment. The CLI treats remote, wildcard, TCP,
@@ -85,3 +90,18 @@ experiment. All items below must be true:
 
 This checklist is not flight certification. Passing it does not make the project
 production-ready or safe for real-world autonomous drone operations.
+
+## Operational Runbooks
+
+M79 adds the canonical operational runbook layer in
+[`docs/OPERATIONAL_RUNBOOKS.md`](OPERATIONAL_RUNBOOKS.md). Use it before any
+hardware-candidate experiment. It defines simulation, Urban, SITL dry-run,
+artifact validation, local PX4/SIH, and future hardware-candidate procedures,
+plus explicit go/no-go gates:
+
+- no hardware if simulation fails;
+- no hardware if SITL dry-run/export fails;
+- no hardware if preflight safety fails;
+- no hardware if artifact validator fails;
+- no hardware without external safety process;
+- no multi-drone hardware before separate single-drone review.
