@@ -761,8 +761,8 @@ mod tests {
     use super::*;
     use swarm_sim::{GeoOrigin, RunConfig, Scenario, ScenarioSuiteEntry, UrbanState};
     use swarm_types::{
-        Agent, AgentId, Health, Pose, Role, Task, TaskId, TaskKind, TaskStatus, UrbanEdge,
-        UrbanEdgeId, UrbanMap, UrbanNode, UrbanNodeId, UrbanRouteLoop,
+        Agent, AgentId, Health, Pose, Role, Task, TaskId, TaskKind, TaskStatus, UrbanBlockedPolicy,
+        UrbanEdge, UrbanEdgeId, UrbanMap, UrbanNode, UrbanNodeId, UrbanRouteLoop,
     };
 
     fn agent() -> Agent {
@@ -910,6 +910,8 @@ mod tests {
                         },
                         start_node: Some(UrbanNodeId::from("n0".to_owned())),
                         planner: "dijkstra".to_owned(),
+                        temporary_obstacles: vec![],
+                        blocked_route_policy: UrbanBlockedPolicy::default(),
                     }),
                     ..Default::default()
                 },

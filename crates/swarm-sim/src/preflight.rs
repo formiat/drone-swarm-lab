@@ -176,6 +176,16 @@ fn check_urban_safety(entry: &ScenarioSuiteEntry) -> Vec<SafetyViolation> {
     let Some(urban_state) = entry.run_config.urban_state.as_ref() else {
         return violations;
     };
+    for obstacle_error in urban_state
+        .map
+        .validate_temporary_obstacles(&urban_state.temporary_obstacles)
+    {
+        violations.push(error(
+            "urban.invalid_temporary_obstacle",
+            None,
+            obstacle_error.to_string(),
+        ));
+    }
     violations.extend(check_route_loop_blocked_edges(
         &urban_state.map,
         &urban_state.route_loop,
@@ -557,6 +567,31 @@ mod tests {
         assert!(report.passed, "{:?}", report.violations);
     }
 
+    #[test]
+    fn urban_invalid_temporary_obstacle_fails_preflight() {
+        let mut entry = urban_entry(false);
+        let urban = entry.run_config.urban_state.as_mut().unwrap();
+        urban.temporary_obstacles = vec![swarm_types::UrbanTemporaryObstacle {
+            edge_id: swarm_types::UrbanEdgeId::from("no-such-edge".to_owned()),
+            appears_at_tick: 1,
+            disappears_at_tick: None,
+            reason: None,
+            severity: None,
+        }];
+        let report = run_preflight(&entry);
+        assert!(
+            !report.passed,
+            "should fail due to invalid temporary obstacle"
+        );
+        assert!(
+            report
+                .violations
+                .iter()
+                .any(|v| v.rule_id == "urban.invalid_temporary_obstacle"),
+            "should have urban.invalid_temporary_obstacle violation"
+        );
+    }
+
     fn urban_entry(blocked: bool) -> ScenarioSuiteEntry {
         let n0 = UrbanNodeId::from("n0".to_owned());
         let n1 = UrbanNodeId::from("n1".to_owned());
@@ -620,6 +655,8 @@ mod tests {
                     },
                     start_node: None,
                     planner: "dijkstra".to_owned(),
+                    temporary_obstacles: vec![],
+                    blocked_route_policy: swarm_types::UrbanBlockedPolicy::default(),
                 }),
                 ..Default::default()
             },

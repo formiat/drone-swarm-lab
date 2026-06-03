@@ -101,6 +101,19 @@ pub struct UrbanEventCounts {
     pub bus_false_positive: u64,
     pub search_completed: u64,
     pub pose_updated: u64,
+    // M74 blocked-route events
+    #[serde(default)]
+    pub edge_blocked: u64,
+    #[serde(default)]
+    pub edge_unblocked: u64,
+    #[serde(default)]
+    pub route_replanned: u64,
+    #[serde(default)]
+    pub wait_started: u64,
+    #[serde(default)]
+    pub wait_completed: u64,
+    #[serde(default)]
+    pub no_route_available: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

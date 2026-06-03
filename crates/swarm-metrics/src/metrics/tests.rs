@@ -93,6 +93,11 @@ fn run(success: bool, detection_time_ticks: Option<u64>) -> RunMetrics {
         urban_min_agent_separation_m: None,
         urban_separation_violation_count: 0,
         urban_route_conflict_count: 0,
+        // v0.74 Urban Blocked-Route Decision Logic
+        urban_wait_time_ticks: 0,
+        urban_blocked_edge_count: 0,
+        urban_replan_success_rate: 0.0,
+        urban_unresolved_blockage_count: 0,
     }
 }
 

@@ -253,7 +253,15 @@ fn event_category(event: &Event) -> ReplayEventCategory {
         | Event::BusObserved { .. }
         | Event::BusDetected { .. }
         | Event::BusFalsePositive { .. }
-        | Event::UrbanSearchCompleted { .. } => ReplayEventCategory::Urban,
+        | Event::UrbanSearchCompleted { .. }
+        | Event::UrbanEdgeBlocked { .. }
+        | Event::UrbanEdgeUnblocked { .. }
+        | Event::UrbanObstacleDetected { .. }
+        | Event::UrbanPolicyDecision { .. }
+        | Event::UrbanRouteReplanned { .. }
+        | Event::UrbanWaitStarted { .. }
+        | Event::UrbanWaitCompleted { .. }
+        | Event::UrbanNoRouteAvailable { .. } => ReplayEventCategory::Urban,
         Event::TickStart { .. }
         | Event::AgentFailed { .. }
         | Event::TaskAssigned { .. }
@@ -298,7 +306,15 @@ fn event_agent_id(event: &Event) -> Option<AgentId> {
         | Event::BusObserved { agent_id, .. }
         | Event::BusDetected { agent_id, .. }
         | Event::BusFalsePositive { agent_id, .. }
-        | Event::UrbanSearchCompleted { agent_id, .. } => Some(agent_id.clone()),
+        | Event::UrbanSearchCompleted { agent_id, .. }
+        | Event::UrbanEdgeBlocked { agent_id, .. }
+        | Event::UrbanEdgeUnblocked { agent_id, .. }
+        | Event::UrbanObstacleDetected { agent_id, .. }
+        | Event::UrbanPolicyDecision { agent_id, .. }
+        | Event::UrbanRouteReplanned { agent_id, .. }
+        | Event::UrbanWaitStarted { agent_id, .. }
+        | Event::UrbanWaitCompleted { agent_id, .. }
+        | Event::UrbanNoRouteAvailable { agent_id, .. } => Some(agent_id.clone()),
         Event::MessageSent { from, .. }
         | Event::MessageDropped { from, .. }
         | Event::PartitionAdded { agent_a: from, .. }
@@ -341,7 +357,15 @@ fn event_tick(event: &Event) -> u64 {
         | Event::BusObserved { tick, .. }
         | Event::BusDetected { tick, .. }
         | Event::BusFalsePositive { tick, .. }
-        | Event::UrbanSearchCompleted { tick, .. } => *tick,
+        | Event::UrbanSearchCompleted { tick, .. }
+        | Event::UrbanEdgeBlocked { tick, .. }
+        | Event::UrbanEdgeUnblocked { tick, .. }
+        | Event::UrbanObstacleDetected { tick, .. }
+        | Event::UrbanPolicyDecision { tick, .. }
+        | Event::UrbanRouteReplanned { tick, .. }
+        | Event::UrbanWaitStarted { tick, .. }
+        | Event::UrbanWaitCompleted { tick, .. }
+        | Event::UrbanNoRouteAvailable { tick, .. } => *tick,
     }
 }
 
@@ -376,6 +400,14 @@ fn event_name(event: &Event) -> &'static str {
         Event::BusDetected { .. } => "BusDetected",
         Event::BusFalsePositive { .. } => "BusFalsePositive",
         Event::UrbanSearchCompleted { .. } => "UrbanSearchCompleted",
+        Event::UrbanEdgeBlocked { .. } => "UrbanEdgeBlocked",
+        Event::UrbanEdgeUnblocked { .. } => "UrbanEdgeUnblocked",
+        Event::UrbanObstacleDetected { .. } => "UrbanObstacleDetected",
+        Event::UrbanPolicyDecision { .. } => "UrbanPolicyDecision",
+        Event::UrbanRouteReplanned { .. } => "UrbanRouteReplanned",
+        Event::UrbanWaitStarted { .. } => "UrbanWaitStarted",
+        Event::UrbanWaitCompleted { .. } => "UrbanWaitCompleted",
+        Event::UrbanNoRouteAvailable { .. } => "UrbanNoRouteAvailable",
     }
 }
 
@@ -497,6 +529,39 @@ fn event_details(event: &Event) -> String {
             "detected={detected} bus={bus} reason={reason} distance_travelled_m={distance_travelled_m:.3}",
             bus = optional_display(bus_id.as_ref())
         ),
+        Event::UrbanEdgeBlocked { edge_id, reason, .. } => format!(
+            "edge={edge_id} reason={}",
+            optional_display(reason.as_ref())
+        ),
+        Event::UrbanEdgeUnblocked { edge_id, .. } => format!("edge={edge_id}"),
+        Event::UrbanObstacleDetected {
+            edge_id,
+            lookahead_segments,
+            ..
+        } => format!("edge={edge_id} lookahead_segments={lookahead_segments}"),
+        Event::UrbanPolicyDecision {
+            edge_id, policy, ..
+        } => format!("edge={edge_id} policy={policy}"),
+        Event::UrbanRouteReplanned {
+            edge_ids,
+            route_length_m,
+            ..
+        } => format!(
+            "edges={} route_length_m={route_length_m:.3}",
+            edge_ids.len()
+        ),
+        Event::UrbanWaitStarted { edge_id, .. } => format!("edge={edge_id}"),
+        Event::UrbanWaitCompleted {
+            edge_id,
+            waited_ticks,
+            ..
+        } => format!("edge={edge_id} waited_ticks={waited_ticks}"),
+        Event::UrbanNoRouteAvailable {
+            from,
+            to,
+            reason,
+            ..
+        } => format!("from={from} to={to} reason={reason}"),
     }
 }
 

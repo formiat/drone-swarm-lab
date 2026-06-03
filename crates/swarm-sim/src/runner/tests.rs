@@ -537,6 +537,8 @@ fn urban_test_run_config(
             },
             start_node: Some(UrbanNodeId::from("n0".to_owned())),
             planner: "dijkstra".to_owned(),
+            temporary_obstacles: vec![],
+            blocked_route_policy: swarm_types::UrbanBlockedPolicy::default(),
         }),
         ..config(vec![])
     };

@@ -17,6 +17,12 @@ pub fn count_urban_events(log: &EventLog) -> UrbanEventCounts {
             Event::BusFalsePositive { .. } => counts.bus_false_positive += 1,
             Event::UrbanSearchCompleted { .. } => counts.search_completed += 1,
             Event::PoseUpdated { .. } => counts.pose_updated += 1,
+            Event::UrbanEdgeBlocked { .. } => counts.edge_blocked += 1,
+            Event::UrbanEdgeUnblocked { .. } => counts.edge_unblocked += 1,
+            Event::UrbanRouteReplanned { .. } => counts.route_replanned += 1,
+            Event::UrbanWaitStarted { .. } => counts.wait_started += 1,
+            Event::UrbanWaitCompleted { .. } => counts.wait_completed += 1,
+            Event::UrbanNoRouteAvailable { .. } => counts.no_route_available += 1,
             _ => {}
         }
     }

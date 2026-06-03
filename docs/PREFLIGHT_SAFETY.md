@@ -22,6 +22,7 @@ not certified flight safety.
 | `urban.blocked_edge` | error | A planned Urban route uses a blocked edge. |
 | `urban.aabb_intersection` | error | A planned Urban waypoint intersects a static obstacle AABB. |
 | `urban.waypoint_outside_assumptions` | warning | A planned Urban waypoint is outside nominal map bounds. |
+| `urban.invalid_temporary_obstacle` | error | A `temporary_obstacles` entry references an unknown edge or has `appears_at_tick >= disappears_at_tick`. |
 | `semantics.unsupported_strategy_pair` | warning | A known weak mission/strategy pair is requested. |
 
 ## Reports

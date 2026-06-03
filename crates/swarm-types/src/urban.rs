@@ -186,6 +186,36 @@ pub struct UrbanSearchState {
     pub detector: UrbanDetectorConfig,
 }
 
+/// A time-gated edge blockage injected into an Urban scenario.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct UrbanTemporaryObstacle {
+    pub edge_id: UrbanEdgeId,
+    pub appears_at_tick: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disappears_at_tick: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub severity: Option<String>,
+}
+
+impl UrbanTemporaryObstacle {
+    /// Returns true if the obstacle is active at `tick`.
+    pub fn is_active(&self, tick: u64) -> bool {
+        tick >= self.appears_at_tick && self.disappears_at_tick.is_none_or(|d| tick < d)
+    }
+}
+
+/// Policy applied when the next segment on the route is blocked.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum UrbanBlockedPolicy {
+    #[default]
+    Wait,
+    Replan,
+    Abort,
+}
+
 /// Typed validation error for Urban map and route-loop inputs.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UrbanMapValidationError {
@@ -325,6 +355,34 @@ impl UrbanMap {
                     format!("route_loop.nodes[{index}]"),
                     format!("Unknown urban node id '{node_id}'"),
                 ));
+            }
+        }
+        errors
+    }
+
+    /// Validate temporary obstacles: edge_id must exist; appears_at_tick must be ≤ disappears_at_tick.
+    pub fn validate_temporary_obstacles(
+        &self,
+        obstacles: &[UrbanTemporaryObstacle],
+    ) -> Vec<UrbanMapValidationError> {
+        let edge_ids: HashSet<_> = self.edges.iter().map(|e| e.id.clone()).collect();
+        let mut errors = Vec::new();
+        for (index, obstacle) in obstacles.iter().enumerate() {
+            if !edge_ids.contains(&obstacle.edge_id) {
+                errors.push(UrbanMapValidationError::new(
+                    format!("temporary_obstacles[{index}].edge_id"),
+                    format!("Unknown urban edge id '{}'", obstacle.edge_id),
+                ));
+            }
+            if let (Some(appears), Some(disappears)) =
+                (Some(obstacle.appears_at_tick), obstacle.disappears_at_tick)
+            {
+                if appears >= disappears {
+                    errors.push(UrbanMapValidationError::new(
+                        format!("temporary_obstacles[{index}].disappears_at_tick"),
+                        "disappears_at_tick must be greater than appears_at_tick",
+                    ));
+                }
             }
         }
         errors
@@ -596,6 +654,107 @@ mod tests {
         assert!(errors
             .iter()
             .any(|error| error.field == "buses[0].active_until_tick"));
+    }
+
+    #[test]
+    fn temporary_obstacle_is_active_within_window() {
+        let obstacle = UrbanTemporaryObstacle {
+            edge_id: UrbanEdgeId::from("e0".to_owned()),
+            appears_at_tick: 5,
+            disappears_at_tick: Some(10),
+            reason: None,
+            severity: None,
+        };
+        assert!(!obstacle.is_active(4));
+        assert!(obstacle.is_active(5));
+        assert!(obstacle.is_active(9));
+        assert!(!obstacle.is_active(10));
+    }
+
+    #[test]
+    fn temporary_obstacle_no_disappears_stays_forever() {
+        let obstacle = UrbanTemporaryObstacle {
+            edge_id: UrbanEdgeId::from("e0".to_owned()),
+            appears_at_tick: 3,
+            disappears_at_tick: None,
+            reason: None,
+            severity: None,
+        };
+        assert!(!obstacle.is_active(2));
+        assert!(obstacle.is_active(3));
+        assert!(obstacle.is_active(u64::MAX));
+    }
+
+    #[test]
+    fn temporary_obstacle_inactive_before_appears() {
+        let obstacle = UrbanTemporaryObstacle {
+            edge_id: UrbanEdgeId::from("e0".to_owned()),
+            appears_at_tick: 100,
+            disappears_at_tick: Some(200),
+            reason: None,
+            severity: None,
+        };
+        assert!(!obstacle.is_active(0));
+        assert!(!obstacle.is_active(99));
+        assert!(obstacle.is_active(100));
+    }
+
+    #[test]
+    fn validate_temporary_obstacles_accepts_valid_obstacle() {
+        let map = map();
+        let obstacles = vec![UrbanTemporaryObstacle {
+            edge_id: UrbanEdgeId::from("e0".to_owned()),
+            appears_at_tick: 5,
+            disappears_at_tick: Some(10),
+            reason: None,
+            severity: None,
+        }];
+        assert!(map.validate_temporary_obstacles(&obstacles).is_empty());
+    }
+
+    #[test]
+    fn validate_temporary_obstacles_rejects_unknown_edge() {
+        let map = map();
+        let obstacles = vec![UrbanTemporaryObstacle {
+            edge_id: UrbanEdgeId::from("no-such-edge".to_owned()),
+            appears_at_tick: 1,
+            disappears_at_tick: None,
+            reason: None,
+            severity: None,
+        }];
+        let errors = map.validate_temporary_obstacles(&obstacles);
+        assert!(errors
+            .iter()
+            .any(|e| e.field == "temporary_obstacles[0].edge_id"));
+    }
+
+    #[test]
+    fn validate_temporary_obstacles_rejects_inverted_window() {
+        let map = map();
+        let obstacles = vec![UrbanTemporaryObstacle {
+            edge_id: UrbanEdgeId::from("e0".to_owned()),
+            appears_at_tick: 10,
+            disappears_at_tick: Some(5),
+            reason: None,
+            severity: None,
+        }];
+        let errors = map.validate_temporary_obstacles(&obstacles);
+        assert!(errors
+            .iter()
+            .any(|e| e.field == "temporary_obstacles[0].disappears_at_tick"));
+    }
+
+    #[test]
+    fn urban_blocked_policy_default_is_wait() {
+        assert_eq!(UrbanBlockedPolicy::default(), UrbanBlockedPolicy::Wait);
+    }
+
+    #[test]
+    fn urban_blocked_policy_serde_roundtrip() {
+        let policy = UrbanBlockedPolicy::Replan;
+        let json = serde_json::to_string(&policy).unwrap();
+        let parsed: UrbanBlockedPolicy = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, policy);
     }
 
     #[test]

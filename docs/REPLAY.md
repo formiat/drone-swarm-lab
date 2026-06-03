@@ -380,3 +380,52 @@ println!("{}", grid);
 let timeline = format_timeline(&log, &ReplayTimelineFilter::default());
 println!("{}", timeline);
 ```
+
+## M74 Urban Blocked-Route Events
+
+M74 adds 8 new Urban replay events to track blocked-route decision logic.
+
+### Event types
+
+| Event | When emitted |
+|-------|-------------|
+| `UrbanEdgeBlocked` | When Wait policy activates and the agent stops before a blocked edge |
+| `UrbanEdgeUnblocked` | When a previously blocked edge clears and the agent resumes |
+| `UrbanObstacleDetected` | When the lookahead detector finds a blocked edge ahead |
+| `UrbanPolicyDecision` | When the policy is applied; `policy` field: `"wait"`, `"replan"`, or `"abort"` |
+| `UrbanRouteReplanned` | When a successful replan is accepted; contains new `edge_ids` and `route_length_m` |
+| `UrbanWaitStarted` | Companion to `UrbanEdgeBlocked`; marks the first tick of a wait |
+| `UrbanWaitCompleted` | When wait ends; contains `waited_ticks` |
+| `UrbanNoRouteAvailable` | When no alternate route exists; contains `from`, `to`, and `reason` |
+
+### Typical blocked-route trace
+
+```
+tick 5  UrbanObstacleDetected  edge=e-n1-n2  lookahead_segments=3
+tick 5  UrbanEdgeBlocked       edge=e-n1-n2
+tick 5  UrbanWaitStarted       edge=e-n1-n2
+tick 5  UrbanPolicyDecision    edge=e-n1-n2  policy=wait
+...
+tick 15 UrbanEdgeUnblocked     edge=e-n1-n2
+tick 15 UrbanWaitCompleted     edge=e-n1-n2  waited_ticks=10
+...
+tick 40 UrbanPatrolCompleted   ...
+```
+
+For a replan scenario:
+
+```
+tick 1  UrbanObstacleDetected  edge=e-AB  lookahead_segments=3
+tick 1  UrbanRouteReplanned    edges=3  route_length_m=44.0
+tick 1  UrbanPolicyDecision    edge=e-AB  policy=replan
+...
+tick 22 UrbanPatrolCompleted   ...
+```
+
+For no-route-available:
+
+```
+tick 1  UrbanObstacleDetected  edge=e-AB  lookahead_segments=3
+tick 1  UrbanNoRouteAvailable  from=nA  to=nC  reason=no alternate route around blocked edge 'e-AB'
+tick 1  UrbanPolicyDecision    edge=e-AB  policy=abort
+```

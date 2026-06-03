@@ -32,6 +32,11 @@ pub(super) fn urban_patrol_metrics(
     urban_distance_travelled_m: f64,
     urban_route_efficiency: f64,
     unsupported_reason: Option<String>,
+    urban_replan_count: u64,
+    urban_wait_time_ticks: u64,
+    urban_blocked_edge_count: u64,
+    urban_replan_success_rate: f64,
+    urban_unresolved_blockage_count: u64,
 ) -> RunMetrics {
     let agent_count = scenario.agents.len() as f64;
     let battery_min = scenario
@@ -137,7 +142,7 @@ pub(super) fn urban_patrol_metrics(
         urban_time_to_complete_loop,
         urban_distance_travelled_m,
         urban_route_efficiency,
-        urban_replan_count: 0,
+        urban_replan_count,
         bus_detected: false,
         time_to_detect_bus: None,
         false_positive_count: 0,
@@ -146,6 +151,10 @@ pub(super) fn urban_patrol_metrics(
         urban_min_agent_separation_m: None,
         urban_separation_violation_count: 0,
         urban_route_conflict_count: 0,
+        urban_wait_time_ticks,
+        urban_blocked_edge_count,
+        urban_replan_success_rate,
+        urban_unresolved_blockage_count,
     }
 }
 
@@ -179,6 +188,11 @@ pub(super) fn urban_search_metrics(
         urban_distance_travelled_m,
         urban_route_efficiency,
         unsupported_reason,
+        0,
+        0,
+        0,
+        0.0,
+        0,
     );
     metrics.all_tasks_assigned = bus_detected;
     metrics.bus_detected = bus_detected;

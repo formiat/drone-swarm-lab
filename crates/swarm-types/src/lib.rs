@@ -22,7 +22,8 @@ pub use mission::{MissionAdapter, RunState};
 pub use pose::{Aabb, Pose, Velocity};
 pub use task::{Task, TaskId, TaskKind, TaskStatus};
 pub use urban::{
-    UrbanBus, UrbanBusId, UrbanDetectorConfig, UrbanEdge, UrbanEdgeId, UrbanMap,
-    UrbanMapValidationError, UrbanNode, UrbanNodeId, UrbanObstacleId, UrbanPlannedRoute,
-    UrbanRouteLoop, UrbanRouteSegment, UrbanSearchState, UrbanStaticObstacle, UrbanViolation,
+    UrbanBlockedPolicy, UrbanBus, UrbanBusId, UrbanDetectorConfig, UrbanEdge, UrbanEdgeId,
+    UrbanMap, UrbanMapValidationError, UrbanNode, UrbanNodeId, UrbanObstacleId, UrbanPlannedRoute,
+    UrbanRouteLoop, UrbanRouteSegment, UrbanSearchState, UrbanStaticObstacle,
+    UrbanTemporaryObstacle, UrbanViolation,
 };

@@ -1,10 +1,10 @@
 use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashMap};
+use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::error::Error;
 use std::fmt;
 
 use swarm_types::{
-    UrbanEdge, UrbanMap, UrbanNode, UrbanNodeId, UrbanPlannedRoute, UrbanRouteLoop,
+    UrbanEdge, UrbanEdgeId, UrbanMap, UrbanNode, UrbanNodeId, UrbanPlannedRoute, UrbanRouteLoop,
     UrbanRouteSegment,
 };
 
@@ -86,6 +86,109 @@ impl Ord for QueueState {
             .then_with(|| other.hops.cmp(&self.hops))
             .then_with(|| other.node.as_ref().cmp(self.node.as_ref()))
     }
+}
+
+/// Plan a route treating `extra_blocked` edge IDs as blocked in addition to the map's static flag.
+pub fn plan_route_excluding(
+    map: &UrbanMap,
+    from: &UrbanNodeId,
+    to: &UrbanNodeId,
+    extra_blocked: &HashSet<UrbanEdgeId>,
+    planner: UrbanPlannerMode,
+) -> Result<UrbanPlannedRoute, UrbanRouteError> {
+    ensure_valid_route_inputs(map, from, to)?;
+    if from == to {
+        return Ok(UrbanPlannedRoute::default());
+    }
+
+    let mut adjacency: HashMap<UrbanNodeId, Vec<&UrbanEdge>> = HashMap::new();
+    for edge in map
+        .edges
+        .iter()
+        .filter(|e| !e.blocked && !extra_blocked.contains(&e.id))
+    {
+        adjacency.entry(edge.from.clone()).or_default().push(edge);
+    }
+    for edges in adjacency.values_mut() {
+        edges.sort_by(|a, b| {
+            a.cost
+                .total_cmp(&b.cost)
+                .then_with(|| a.id.as_ref().cmp(b.id.as_ref()))
+                .then_with(|| a.to.as_ref().cmp(b.to.as_ref()))
+        });
+    }
+
+    let mut queue = BinaryHeap::new();
+    let mut dist: HashMap<UrbanNodeId, (f64, usize)> = HashMap::new();
+    let mut prev: HashMap<UrbanNodeId, (UrbanNodeId, UrbanRouteSegment)> = HashMap::new();
+
+    dist.insert(from.clone(), (0.0, 0));
+    queue.push(QueueState {
+        cost: 0.0,
+        hops: 0,
+        node: from.clone(),
+    });
+
+    while let Some(state) = queue.pop() {
+        if &state.node == to {
+            break;
+        }
+        if let Some((best_cost, best_hops)) = dist.get(&state.node) {
+            if state.cost > *best_cost || (state.cost == *best_cost && state.hops > *best_hops) {
+                continue;
+            }
+        }
+
+        for edge in adjacency.get(&state.node).into_iter().flatten() {
+            let edge_cost = planner_edge_cost(map, edge, planner);
+            let next_cost = state.cost + edge_cost;
+            let next_hops = state.hops + 1;
+            let should_update = match dist.get(&edge.to) {
+                None => true,
+                Some((old_cost, old_hops)) => {
+                    next_cost < *old_cost || (next_cost == *old_cost && next_hops < *old_hops)
+                }
+            };
+            if should_update {
+                let segment = UrbanRouteSegment {
+                    edge_id: edge.id.clone(),
+                    from: edge.from.clone(),
+                    to: edge.to.clone(),
+                    length_m: edge.length_m,
+                    cost: edge_cost,
+                };
+                dist.insert(edge.to.clone(), (next_cost, next_hops));
+                prev.insert(edge.to.clone(), (state.node.clone(), segment));
+                queue.push(QueueState {
+                    cost: next_cost,
+                    hops: next_hops,
+                    node: edge.to.clone(),
+                });
+            }
+        }
+    }
+
+    if !dist.contains_key(to) {
+        return Err(UrbanRouteError::NoRoute {
+            from: from.clone(),
+            to: to.clone(),
+        });
+    }
+
+    let mut segments = Vec::new();
+    let mut current = to.clone();
+    while &current != from {
+        let Some((previous, segment)) = prev.remove(&current) else {
+            return Err(UrbanRouteError::NoRoute {
+                from: from.clone(),
+                to: to.clone(),
+            });
+        };
+        segments.push(segment);
+        current = previous;
+    }
+    segments.reverse();
+    Ok(planned_route(segments))
 }
 
 /// Plan a deterministic shortest path over unblocked Urban road graph edges.

@@ -166,4 +166,13 @@ pub struct RunMetrics {
     pub urban_separation_violation_count: u64,
     #[serde(default)]
     pub urban_route_conflict_count: u64,
+    // v0.74 Urban Blocked-Route Decision Logic
+    #[serde(default)]
+    pub urban_wait_time_ticks: u64,
+    #[serde(default)]
+    pub urban_blocked_edge_count: u64,
+    #[serde(default)]
+    pub urban_replan_success_rate: f64,
+    #[serde(default)]
+    pub urban_unresolved_blockage_count: u64,
 }

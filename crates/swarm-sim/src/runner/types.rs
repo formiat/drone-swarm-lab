@@ -5,8 +5,8 @@ use swarm_alloc::Allocator;
 use swarm_runtime::GridState;
 use swarm_safety::SafetyConfig;
 use swarm_types::{
-    AgentId, EdgeId, InspectionGraph, Task, TaskId, UrbanMap, UrbanNodeId, UrbanRouteLoop,
-    UrbanSearchState,
+    AgentId, EdgeId, InspectionGraph, Task, TaskId, UrbanBlockedPolicy, UrbanMap, UrbanNodeId,
+    UrbanRouteLoop, UrbanSearchState, UrbanTemporaryObstacle,
 };
 
 /// Tracks coverage of inspection edges during a run.
@@ -146,6 +146,10 @@ pub struct UrbanState {
     pub start_node: Option<UrbanNodeId>,
     #[serde(default = "default_urban_planner")]
     pub planner: String,
+    #[serde(default)]
+    pub temporary_obstacles: Vec<UrbanTemporaryObstacle>,
+    #[serde(default)]
+    pub blocked_route_policy: UrbanBlockedPolicy,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

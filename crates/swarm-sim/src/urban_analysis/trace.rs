@@ -106,7 +106,15 @@ pub fn build_urban_route_trace(log: &EventLog) -> UrbanRouteTrace {
             | Event::BusObserved { .. }
             | Event::BusDetected { .. }
             | Event::BusFalsePositive { .. }
-            | Event::UrbanSearchCompleted { .. } => {}
+            | Event::UrbanSearchCompleted { .. }
+            | Event::UrbanEdgeBlocked { .. }
+            | Event::UrbanEdgeUnblocked { .. }
+            | Event::UrbanObstacleDetected { .. }
+            | Event::UrbanPolicyDecision { .. }
+            | Event::UrbanRouteReplanned { .. }
+            | Event::UrbanWaitStarted { .. }
+            | Event::UrbanWaitCompleted { .. }
+            | Event::UrbanNoRouteAvailable { .. } => {}
         }
     }
 

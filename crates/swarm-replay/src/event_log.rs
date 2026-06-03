@@ -195,6 +195,56 @@ pub enum Event {
         reason: String,
         distance_travelled_m: f64,
     },
+    // M74: Urban Blocked-Route Decision Logic
+    UrbanEdgeBlocked {
+        agent_id: AgentId,
+        tick: u64,
+        edge_id: UrbanEdgeId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+    },
+    UrbanEdgeUnblocked {
+        agent_id: AgentId,
+        tick: u64,
+        edge_id: UrbanEdgeId,
+    },
+    UrbanObstacleDetected {
+        agent_id: AgentId,
+        tick: u64,
+        edge_id: UrbanEdgeId,
+        lookahead_segments: usize,
+    },
+    UrbanPolicyDecision {
+        agent_id: AgentId,
+        tick: u64,
+        edge_id: UrbanEdgeId,
+        /// "wait" | "replan" | "abort"
+        policy: String,
+    },
+    UrbanRouteReplanned {
+        agent_id: AgentId,
+        tick: u64,
+        edge_ids: Vec<UrbanEdgeId>,
+        route_length_m: f64,
+    },
+    UrbanWaitStarted {
+        agent_id: AgentId,
+        tick: u64,
+        edge_id: UrbanEdgeId,
+    },
+    UrbanWaitCompleted {
+        agent_id: AgentId,
+        tick: u64,
+        edge_id: UrbanEdgeId,
+        waited_ticks: u64,
+    },
+    UrbanNoRouteAvailable {
+        agent_id: AgentId,
+        tick: u64,
+        from: UrbanNodeId,
+        to: UrbanNodeId,
+        reason: String,
+    },
 }
 
 /// Reason why a message was dropped.
@@ -546,5 +596,102 @@ mod tests {
         let json = serde_json::to_string(&log).unwrap();
         let restored: EventLog = serde_json::from_str(&json).unwrap();
         assert_eq!(log, restored);
+    }
+
+    fn agent_id() -> AgentId {
+        AgentId::from("agent-0".to_owned())
+    }
+
+    fn edge_id() -> UrbanEdgeId {
+        UrbanEdgeId::from("e0".to_owned())
+    }
+
+    fn node_id(s: &str) -> UrbanNodeId {
+        UrbanNodeId::from(s.to_owned())
+    }
+
+    fn roundtrip(event: Event) {
+        let json = serde_json::to_string(&event).unwrap();
+        let restored: Event = serde_json::from_str(&json).unwrap();
+        assert_eq!(event, restored);
+    }
+
+    #[test]
+    fn urban_edge_blocked_serde_roundtrip() {
+        roundtrip(Event::UrbanEdgeBlocked {
+            agent_id: agent_id(),
+            tick: 5,
+            edge_id: edge_id(),
+            reason: Some("construction".to_owned()),
+        });
+    }
+
+    #[test]
+    fn urban_edge_unblocked_serde_roundtrip() {
+        roundtrip(Event::UrbanEdgeUnblocked {
+            agent_id: agent_id(),
+            tick: 15,
+            edge_id: edge_id(),
+        });
+    }
+
+    #[test]
+    fn urban_obstacle_detected_serde_roundtrip() {
+        roundtrip(Event::UrbanObstacleDetected {
+            agent_id: agent_id(),
+            tick: 6,
+            edge_id: edge_id(),
+            lookahead_segments: 2,
+        });
+    }
+
+    #[test]
+    fn urban_policy_decision_serde_roundtrip() {
+        roundtrip(Event::UrbanPolicyDecision {
+            agent_id: agent_id(),
+            tick: 6,
+            edge_id: edge_id(),
+            policy: "wait".to_owned(),
+        });
+    }
+
+    #[test]
+    fn urban_route_replanned_serde_roundtrip() {
+        roundtrip(Event::UrbanRouteReplanned {
+            agent_id: agent_id(),
+            tick: 7,
+            edge_ids: vec![edge_id()],
+            route_length_m: 20.0,
+        });
+    }
+
+    #[test]
+    fn urban_wait_started_serde_roundtrip() {
+        roundtrip(Event::UrbanWaitStarted {
+            agent_id: agent_id(),
+            tick: 6,
+            edge_id: edge_id(),
+        });
+    }
+
+    #[test]
+    fn urban_wait_completed_serde_roundtrip() {
+        roundtrip(Event::UrbanWaitCompleted {
+            agent_id: agent_id(),
+            tick: 16,
+            edge_id: edge_id(),
+            waited_ticks: 10,
+        });
+    }
+
+    #[test]
+    fn urban_no_route_available_serde_roundtrip() {
+        roundtrip(Event::UrbanNoRouteAvailable {
+            agent_id: agent_id(),
+            tick: 8,
+            from: node_id("n0"),
+            to: node_id("n2"),
+            reason: "all paths blocked".to_owned(),
+        });
     }
 }

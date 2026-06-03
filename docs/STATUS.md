@@ -1,8 +1,8 @@
 # Project Status
 
-**Date:** 2026-05-31
+**Date:** 2026-06-02
 **HEAD commit:** see `git rev-parse HEAD`
-**Last audit:** M69 Benchmark Refresh / Research Evidence
+**Last audit:** M74 Urban Blocked-Route Decision Logic
 
 This document is the current status summary for the repository. It supersedes
 the older M39b-only audit and should be read together with the README current
@@ -49,6 +49,7 @@ status table.
 | M71 Preflight Safety And Invariant Contract | Complete as static input gate | `SafetyValidationReport` preflight checks now emit rule-id based violations with severity, affected id, and reason. Dry-run and supervisor inputs pass a preflight gate before execution, dry-run artifacts include the safety report, `sitl_supervisor --output-dir` writes `safety_validation_report.v1.json`, and stable exit codes use 2/3/4/5 for validation/runtime/artifact/environment categories. This is not certified flight safety or hardware validation. |
 | M72 Artifact Validator + SITL Harness | Complete as local artifact discipline | `artifact_validator` validates supervisor output packs with stable rule ids such as `artifact.final_status_mismatch`, `artifact.replacement_seq_mismatch`, and `artifact.safety_report_missing`; it checks manifest metadata, run id/final status/event summary/replay summary/task completion/replacement seq/safety/limitations consistency, and supports historical mode for old M58/M59 packs. `sitl_supervisor --output-dir` now captures `scenario.snapshot.json`, `config.snapshot.json`, and `command.txt`. `scripts/run_m58_local.sh` and `scripts/run_m59_local.sh` are manual-only PX4/SIH harness helpers with `DRY_RUN=1`; this is not automated PX4 CI or hardware readiness. |
 | M73 Fault Injection And Degraded Supervisor | Complete as fake-tested pre-hardware boundary | The live supervisor now emits additive `degraded` report records, failure-mode counts, decision counts, abandoned-task/recovery-failure metrics, and degraded replay events. `artifact_validator` checks degraded report/event consistency for new packs while preserving historical mode for old M58/M59 evidence. See `docs/DEGRADED_SUPERVISOR.md`. This is not hardware failure validation, RF modeling, Gazebo/HIL coverage, or production failover. |
+| M74 Urban Blocked-Route Decision Logic | Complete as deterministic simulation-only decision layer | `UrbanTemporaryObstacle` and `UrbanBlockedPolicy` (Wait/Replan/Abort) are implemented. The patrol runner checks an effective blocked-set each tick, runs a graph lookahead detector, and applies the selected policy. Replan finds an alternate route via `plan_route_excluding` and validates it through the M71 judge gate. Replay emits 8 new events (`UrbanEdgeBlocked`, `UrbanEdgeUnblocked`, `UrbanObstacleDetected`, `UrbanPolicyDecision`, `UrbanRouteReplanned`, `UrbanWaitStarted`, `UrbanWaitCompleted`, `UrbanNoRouteAvailable`). Four new metrics track wait time, blocked-edge count, replan success rate, and unresolved blockages. Preflight validates temporary obstacle declarations. Three new scenario profiles exercise Wait, Replan, and No-Alternative paths. This is mission-level reactivity only; no real sensors, no physics, no certified obstacle avoidance. |
 
 ## Current Known Limitations
 

@@ -129,15 +129,41 @@ executable one-agent patrol simulation. The DSL uses
   the map and match `route_loop.nodes[0]`.
 - `planner` — optional planner selector. Supported values are `"dijkstra"`
   and `"corridor-aware"`. Missing values default to `"dijkstra"`.
+- `temporary_obstacles[]` — (M74) optional list of time-gated edge blockages.
+  Each entry requires `edge_id` and `appears_at_tick`; `disappears_at_tick`,
+  `reason`, and `severity` are optional. An obstacle is active at tick `t` when
+  `t >= appears_at_tick` and (`disappears_at_tick` is absent or `t < disappears_at_tick`).
+- `blocked_route_policy` — (M74) optional policy applied when a blocked edge is
+  detected ahead. Supported values: `"wait"` (default), `"replan"`, `"abort"`.
+
+Example with a temporary obstacle and wait policy:
+
+```json
+"urban_state": {
+  "map": { "nodes": [...], "edges": [...], "static_obstacles": [] },
+  "route_loop": { "nodes": ["n0", "n1", "n2", "n0"] },
+  "start_node": "n0",
+  "planner": "dijkstra",
+  "temporary_obstacles": [
+    {
+      "edge_id": "e-n1-n2",
+      "appears_at_tick": 5,
+      "disappears_at_tick": 15,
+      "reason": "construction"
+    }
+  ],
+  "blocked_route_policy": "wait"
+}
+```
 
 The fixture still uses `TaskKind::Waypoint` placeholder tasks for compatibility,
 but Urban Patrol completion is now route-based rather than task-assignment
 based. Completion means the selected scout traverses every planned route
 segment in order before timeout with zero Urban judge violations. Failure means
-timeout, a static/execution judge violation, or an invalid start contract. The
-selected alive agent must start within `0.01m` of the validated start node pose;
-M65 v0 does not infer or silently teleport from an arbitrary `agent.pose`. M65
-v0 has no replanning, so `urban_replan_count = 0`.
+timeout, a static/execution judge violation, an invalid start contract, or an
+unresolvable blockage with `blocked_route_policy: "abort"` or `"replan"` when
+no alternate route exists. The selected alive agent must start within `0.01m` of
+the validated start node pose.
 
 Urban Patrol itself does not implement lidar/raycast, bus detection, dynamic
 obstacles, multi-agent route deconfliction, arbitrary polygons, PX4 execution,

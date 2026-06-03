@@ -1,8 +1,9 @@
 use swarm_sim::{GeoOrigin, RunConfig, Scenario, UrbanState};
 use swarm_types::{
-    Aabb, Agent, AgentId, Health, Pose, Role, Task, TaskId, TaskKind, TaskStatus, UrbanBus,
-    UrbanBusId, UrbanDetectorConfig, UrbanEdge, UrbanEdgeId, UrbanMap, UrbanNode, UrbanNodeId,
-    UrbanObstacleId, UrbanRouteLoop, UrbanSearchState, UrbanStaticObstacle,
+    Aabb, Agent, AgentId, Health, Pose, Role, Task, TaskId, TaskKind, TaskStatus,
+    UrbanBlockedPolicy, UrbanBus, UrbanBusId, UrbanDetectorConfig, UrbanEdge, UrbanEdgeId,
+    UrbanMap, UrbanNode, UrbanNodeId, UrbanObstacleId, UrbanRouteLoop, UrbanSearchState,
+    UrbanStaticObstacle, UrbanTemporaryObstacle,
 };
 
 pub struct UrbanConfig {
@@ -17,6 +18,9 @@ pub enum UrbanProfile {
     SearchStaticBus,
     SearchOutOfRange,
     SearchFalsePositive,
+    BlockedRouteWaitAndContinue,
+    BlockedRouteReplan,
+    BlockedRouteNoAlternative,
 }
 
 impl UrbanProfile {
@@ -28,6 +32,9 @@ impl UrbanProfile {
             "search-static-bus" | "searchstaticbus" => Some(Self::SearchStaticBus),
             "search-out-of-range" | "searchoutofrange" => Some(Self::SearchOutOfRange),
             "search-false-positive" | "searchfalsepositive" => Some(Self::SearchFalsePositive),
+            "blocked-route-wait" | "blockedroutewait" => Some(Self::BlockedRouteWaitAndContinue),
+            "blocked-route-replan" | "blockedroutereplan" => Some(Self::BlockedRouteReplan),
+            "blocked-route-no-alt" | "blockedroutenoalt" => Some(Self::BlockedRouteNoAlternative),
             _ => None,
         }
     }
@@ -47,6 +54,18 @@ impl UrbanProfile {
                 max_ticks: 12,
             },
             Self::SearchFalsePositive => UrbanConfig { seed, max_ticks: 6 },
+            Self::BlockedRouteWaitAndContinue => UrbanConfig {
+                seed,
+                max_ticks: 60,
+            },
+            Self::BlockedRouteReplan => UrbanConfig {
+                seed,
+                max_ticks: 60,
+            },
+            Self::BlockedRouteNoAlternative => UrbanConfig {
+                seed,
+                max_ticks: 30,
+            },
         }
     }
 }
@@ -186,6 +205,8 @@ pub fn build_urban_patrol_scenario(config: &UrbanConfig) -> (Scenario, RunConfig
             route_loop,
             start_node: Some(n0),
             planner: "dijkstra".to_owned(),
+            temporary_obstacles: vec![],
+            blocked_route_policy: UrbanBlockedPolicy::default(),
         }),
         ..Default::default()
     };
@@ -280,6 +301,11 @@ pub fn build_urban_search_scenario(
                 1.0,
                 0.0,
             ),
+            UrbanProfile::BlockedRouteWaitAndContinue
+            | UrbanProfile::BlockedRouteReplan
+            | UrbanProfile::BlockedRouteNoAlternative => {
+                ("urban_search_static_bus", Pose::default(), 1.0, 1.0, 0.0)
+            }
         };
     scenario.name = scenario_name.to_owned();
     run_config.max_ticks = config.max_ticks;
@@ -299,6 +325,223 @@ pub fn build_urban_search_scenario(
         },
     });
     (scenario, run_config)
+}
+
+/// Build a single-agent scenario for `BlockedRouteWaitAndContinue`:
+/// linear map A→B→C→D, obstacle on B→C from tick 5 to tick 15, policy=Wait.
+pub fn build_blocked_route_wait_scenario(config: &UrbanConfig) -> (Scenario, RunConfig) {
+    let n0 = UrbanNodeId::from("n0".to_owned());
+    let n1 = UrbanNodeId::from("n1".to_owned());
+    let n2 = UrbanNodeId::from("n2".to_owned());
+    let n3 = UrbanNodeId::from("n3".to_owned());
+
+    let map = UrbanMap {
+        nodes: vec![
+            node(&n0, 0.0, 0.0),
+            node(&n1, 10.0, 0.0),
+            node(&n2, 20.0, 0.0),
+            node(&n3, 30.0, 0.0),
+        ],
+        edges: vec![
+            edge("e-n0-n1", &n0, &n1, 10.0, false),
+            edge("e-n1-n2", &n1, &n2, 10.0, false),
+            edge("e-n2-n3", &n2, &n3, 10.0, false),
+            edge("e-n3-n0", &n3, &n0, 30.0, false),
+        ],
+        static_obstacles: vec![],
+    };
+    let route_loop = UrbanRouteLoop {
+        nodes: vec![n0.clone(), n1.clone(), n2.clone(), n3.clone(), n0.clone()],
+    };
+    let agent = patrol_agent("agent-0", 0.0, 0.0, 2.0);
+    let scenario = Scenario {
+        name: "blocked_route_wait_and_continue".to_owned(),
+        seed: config.seed,
+        agents: vec![agent],
+        tasks: vec![],
+        ground_nodes: vec![],
+        base_station: None,
+        geo_origin: None,
+    };
+    let run_config = RunConfig {
+        max_ticks: config.max_ticks,
+        timeout_ticks: 3,
+        max_unassigned_ticks: config.max_ticks,
+        enable_movement: true,
+        tick_duration_ms: 1000,
+        urban_state: Some(UrbanState {
+            map,
+            route_loop,
+            start_node: Some(n0),
+            planner: "dijkstra".to_owned(),
+            temporary_obstacles: vec![UrbanTemporaryObstacle {
+                edge_id: UrbanEdgeId::from("e-n1-n2".to_owned()),
+                appears_at_tick: 5,
+                disappears_at_tick: Some(15),
+                reason: Some("construction".to_owned()),
+                severity: None,
+            }],
+            blocked_route_policy: UrbanBlockedPolicy::Wait,
+        }),
+        ..Default::default()
+    };
+    (scenario, run_config)
+}
+
+/// Build a single-agent scenario for `BlockedRouteReplan`:
+/// map with two paths A→C (via B) and A→D→C; the direct edge A→B is blocked from tick 0.
+/// Policy=Replan → agent uses the alternate path A→D→C.
+pub fn build_blocked_route_replan_scenario(config: &UrbanConfig) -> (Scenario, RunConfig) {
+    let na = UrbanNodeId::from("nA".to_owned());
+    let nb = UrbanNodeId::from("nB".to_owned());
+    let nc = UrbanNodeId::from("nC".to_owned());
+    let nd = UrbanNodeId::from("nD".to_owned());
+
+    // A --(e-AB)--> B --(e-BC)--> C
+    // A --(e-AD)--> D --(e-DC)--> C
+    // C --(e-CA)--> A  (close loop)
+    let map = UrbanMap {
+        nodes: vec![
+            node(&na, 0.0, 0.0),
+            node(&nb, 10.0, 0.0),
+            node(&nc, 20.0, 0.0),
+            node(&nd, 10.0, 10.0),
+        ],
+        edges: vec![
+            edge("e-AB", &na, &nb, 10.0, false),
+            edge("e-BC", &nb, &nc, 10.0, false),
+            edge("e-AD", &na, &nd, 12.0, false),
+            edge("e-DC", &nd, &nc, 12.0, false),
+            edge("e-CA", &nc, &na, 20.0, false),
+        ],
+        static_obstacles: vec![],
+    };
+    let route_loop = UrbanRouteLoop {
+        nodes: vec![na.clone(), nc.clone(), na.clone()],
+    };
+    let agent = patrol_agent("agent-0", 0.0, 0.0, 2.0);
+    let scenario = Scenario {
+        name: "blocked_route_replan".to_owned(),
+        seed: config.seed,
+        agents: vec![agent],
+        tasks: vec![],
+        ground_nodes: vec![],
+        base_station: None,
+        geo_origin: None,
+    };
+    let run_config = RunConfig {
+        max_ticks: config.max_ticks,
+        timeout_ticks: 3,
+        max_unassigned_ticks: config.max_ticks,
+        enable_movement: true,
+        tick_duration_ms: 1000,
+        urban_state: Some(UrbanState {
+            map,
+            route_loop,
+            start_node: Some(na),
+            planner: "dijkstra".to_owned(),
+            temporary_obstacles: vec![UrbanTemporaryObstacle {
+                edge_id: UrbanEdgeId::from("e-AB".to_owned()),
+                appears_at_tick: 0,
+                disappears_at_tick: None,
+                reason: Some("road closed".to_owned()),
+                severity: None,
+            }],
+            blocked_route_policy: UrbanBlockedPolicy::Replan,
+        }),
+        ..Default::default()
+    };
+    (scenario, run_config)
+}
+
+/// Build a single-agent scenario for `BlockedRouteNoAlternative`:
+/// linear map A→B→C, both edges blocked from tick 0.
+/// Policy=Replan → no alternate route → abort with explicit reason.
+pub fn build_blocked_route_no_alternative_scenario(config: &UrbanConfig) -> (Scenario, RunConfig) {
+    let na = UrbanNodeId::from("nA".to_owned());
+    let nb = UrbanNodeId::from("nB".to_owned());
+    let nc = UrbanNodeId::from("nC".to_owned());
+
+    let map = UrbanMap {
+        nodes: vec![
+            node(&na, 0.0, 0.0),
+            node(&nb, 10.0, 0.0),
+            node(&nc, 20.0, 0.0),
+        ],
+        edges: vec![
+            edge("e-AB", &na, &nb, 10.0, false),
+            edge("e-BC", &nb, &nc, 10.0, false),
+            edge("e-CA", &nc, &na, 20.0, false),
+        ],
+        static_obstacles: vec![],
+    };
+    let route_loop = UrbanRouteLoop {
+        nodes: vec![na.clone(), nb.clone(), nc.clone(), na.clone()],
+    };
+    let agent = patrol_agent("agent-0", 0.0, 0.0, 2.0);
+    let scenario = Scenario {
+        name: "blocked_route_no_alternative".to_owned(),
+        seed: config.seed,
+        agents: vec![agent],
+        tasks: vec![],
+        ground_nodes: vec![],
+        base_station: None,
+        geo_origin: None,
+    };
+    let run_config = RunConfig {
+        max_ticks: config.max_ticks,
+        timeout_ticks: 3,
+        max_unassigned_ticks: config.max_ticks,
+        enable_movement: true,
+        tick_duration_ms: 1000,
+        urban_state: Some(UrbanState {
+            map,
+            route_loop,
+            start_node: Some(na),
+            planner: "dijkstra".to_owned(),
+            temporary_obstacles: vec![
+                UrbanTemporaryObstacle {
+                    edge_id: UrbanEdgeId::from("e-AB".to_owned()),
+                    appears_at_tick: 0,
+                    disappears_at_tick: None,
+                    reason: None,
+                    severity: None,
+                },
+                UrbanTemporaryObstacle {
+                    edge_id: UrbanEdgeId::from("e-BC".to_owned()),
+                    appears_at_tick: 0,
+                    disappears_at_tick: None,
+                    reason: None,
+                    severity: None,
+                },
+            ],
+            blocked_route_policy: UrbanBlockedPolicy::Replan,
+        }),
+        ..Default::default()
+    };
+    (scenario, run_config)
+}
+
+fn patrol_agent(id: &str, x: f64, y: f64, speed: f64) -> Agent {
+    Agent {
+        id: AgentId::from(id.to_owned()),
+        role: Role::Scout,
+        health: Health::Alive,
+        pose: Pose {
+            x,
+            y,
+            ..Default::default()
+        },
+        capabilities: vec![],
+        current_task: None,
+        battery: 100.0,
+        comms_range: 1000.0,
+        generation: 1,
+        speed,
+        max_range: 1000.0,
+        battery_drain_rate: 0.0,
+        battery_model: None,
+    }
 }
 
 fn node(id: &UrbanNodeId, x: f64, y: f64) -> UrbanNode {
@@ -415,4 +658,126 @@ mod tests {
         assert!(!metrics.bus_detected);
         assert_eq!(metrics.time_to_detect_bus, None);
     }
+}
+
+#[test]
+fn blocked_route_wait_scenario_completes_after_unblock() {
+    let (scenario, run_config) =
+        build_blocked_route_wait_scenario(&UrbanProfile::BlockedRouteWaitAndContinue.config(42));
+    let metrics = swarm_sim::ScenarioRunner::run(&scenario, run_config);
+    // Agent should complete the patrol after waiting for the obstacle to clear.
+    assert!(
+        metrics.urban_patrol_completed,
+        "patrol should complete after wait"
+    );
+    assert!(metrics.success, "run should succeed");
+    assert!(
+        metrics.urban_wait_time_ticks > 0,
+        "agent should have waited"
+    );
+    assert_eq!(metrics.urban_violation_count, 0, "no violations expected");
+}
+
+#[test]
+fn blocked_route_replan_scenario_uses_alternate_route() {
+    let (scenario, run_config) =
+        build_blocked_route_replan_scenario(&UrbanProfile::BlockedRouteReplan.config(42));
+    let metrics = swarm_sim::ScenarioRunner::run(&scenario, run_config);
+    assert!(
+        metrics.urban_patrol_completed,
+        "patrol should complete via alternate route"
+    );
+    assert!(metrics.success, "run should succeed");
+    assert!(
+        metrics.urban_replan_count > 0,
+        "route should have been replanned"
+    );
+    assert_eq!(metrics.urban_violation_count, 0, "no violations expected");
+}
+
+#[test]
+fn blocked_route_no_alternative_fails_safely() {
+    let (scenario, run_config) = build_blocked_route_no_alternative_scenario(
+        &UrbanProfile::BlockedRouteNoAlternative.config(42),
+    );
+    let metrics = swarm_sim::ScenarioRunner::run(&scenario, run_config);
+    assert!(
+        !metrics.success,
+        "run should fail when no route is available"
+    );
+    assert!(
+        metrics.urban_unresolved_blockage_count > 0,
+        "unresolved blockage should be recorded"
+    );
+}
+
+#[test]
+fn blocked_route_wait_replay_contains_expected_events() {
+    use swarm_replay::Event;
+    let (scenario, run_config) =
+        build_blocked_route_wait_scenario(&UrbanProfile::BlockedRouteWaitAndContinue.config(42));
+    let (metrics, log) = swarm_sim::ScenarioRunner::run_with_log(
+        &scenario,
+        run_config,
+        swarm_alloc::GreedyAllocator,
+    );
+    assert!(metrics.urban_patrol_completed);
+    let log = log.expect("replay log should be present");
+    assert!(
+        log.events
+            .iter()
+            .any(|e| matches!(e, Event::UrbanWaitStarted { .. })),
+        "replay should contain UrbanWaitStarted"
+    );
+    assert!(
+        log.events
+            .iter()
+            .any(|e| matches!(e, Event::UrbanWaitCompleted { .. })),
+        "replay should contain UrbanWaitCompleted"
+    );
+    assert!(
+        log.events
+            .iter()
+            .any(|e| matches!(e, Event::UrbanPolicyDecision { policy, .. } if policy == "wait")),
+        "replay should contain UrbanPolicyDecision(wait)"
+    );
+}
+
+#[test]
+fn blocked_route_replan_replay_contains_replanned_event() {
+    use swarm_replay::Event;
+    let (scenario, run_config) =
+        build_blocked_route_replan_scenario(&UrbanProfile::BlockedRouteReplan.config(42));
+    let (_, log) = swarm_sim::ScenarioRunner::run_with_log(
+        &scenario,
+        run_config,
+        swarm_alloc::GreedyAllocator,
+    );
+    let log = log.expect("replay log should be present");
+    assert!(
+        log.events
+            .iter()
+            .any(|e| matches!(e, Event::UrbanRouteReplanned { .. })),
+        "replay should contain UrbanRouteReplanned"
+    );
+}
+
+#[test]
+fn blocked_route_no_alt_replay_contains_no_route_event() {
+    use swarm_replay::Event;
+    let (scenario, run_config) = build_blocked_route_no_alternative_scenario(
+        &UrbanProfile::BlockedRouteNoAlternative.config(42),
+    );
+    let (_, log) = swarm_sim::ScenarioRunner::run_with_log(
+        &scenario,
+        run_config,
+        swarm_alloc::GreedyAllocator,
+    );
+    let log = log.expect("replay log should be present");
+    assert!(
+        log.events
+            .iter()
+            .any(|e| matches!(e, Event::UrbanNoRouteAvailable { .. })),
+        "replay should contain UrbanNoRouteAvailable"
+    );
 }

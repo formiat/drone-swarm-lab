@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use super::*;
 use swarm_types::{
     Aabb, Pose, UrbanBus, UrbanBusId, UrbanDetectorConfig, UrbanEdge, UrbanEdgeId, UrbanMap,
@@ -571,4 +573,55 @@ fn detector_respects_bus_active_window() {
     assert!(detect_buses(Pose::default(), 11, 42, &state)
         .observations
         .is_empty());
+}
+
+#[test]
+fn plan_route_excluding_finds_alternate_path() {
+    // Map: n0 -e01-> n1 -e12-> n2, plus shortcut n0 -e02-> n2
+    let map = UrbanMap {
+        nodes: vec![
+            node("n0", 0.0, 0.0),
+            node("n1", 10.0, 0.0),
+            node("n2", 20.0, 0.0),
+        ],
+        edges: vec![
+            edge("e01", "n0", "n1", 10.0),
+            edge("e12", "n1", "n2", 10.0),
+            edge("e02", "n0", "n2", 25.0),
+        ],
+        static_obstacles: vec![],
+    };
+    let from = UrbanNodeId::from("n0".to_owned());
+    let to = UrbanNodeId::from("n2".to_owned());
+    let mut extra_blocked = HashSet::new();
+    extra_blocked.insert(UrbanEdgeId::from("e01".to_owned()));
+
+    let route = plan_route_excluding(&map, &from, &to, &extra_blocked, UrbanPlannerMode::Dijkstra)
+        .expect("alternate route exists");
+    // Must not contain the excluded edge
+    assert!(!route
+        .segments
+        .iter()
+        .any(|s| s.edge_id == UrbanEdgeId::from("e01".to_owned())));
+    // Must arrive at n2
+    assert_eq!(
+        route.segments.last().unwrap().to,
+        UrbanNodeId::from("n2".to_owned())
+    );
+}
+
+#[test]
+fn plan_route_excluding_returns_no_route_if_all_blocked() {
+    let map = UrbanMap {
+        nodes: vec![node("n0", 0.0, 0.0), node("n1", 10.0, 0.0)],
+        edges: vec![edge("e01", "n0", "n1", 10.0)],
+        static_obstacles: vec![],
+    };
+    let from = UrbanNodeId::from("n0".to_owned());
+    let to = UrbanNodeId::from("n1".to_owned());
+    let mut extra_blocked = HashSet::new();
+    extra_blocked.insert(UrbanEdgeId::from("e01".to_owned()));
+
+    let result = plan_route_excluding(&map, &from, &to, &extra_blocked, UrbanPlannerMode::Dijkstra);
+    assert!(matches!(result, Err(UrbanRouteError::NoRoute { .. })));
 }
