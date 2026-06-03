@@ -1,5 +1,5 @@
 {
-  "benchmark_run_id": "2026-06-03T144303Z_coverage_20_custom",
+  "benchmark_run_id": "2026-06-03T145252Z_coverage_20_custom",
   "strategy_names": [
     "auction",
     "cbba",
@@ -14,8 +14,8 @@
   ],
   "rows": [
     {
-      "benchmark_run_id": "2026-06-03T144303Z_coverage_20_custom",
-      "run_id": "2026-06-03T144303Z_coverage_20_custom_coverage_auction_heavy-loss-no-failures",
+      "benchmark_run_id": "2026-06-03T145252Z_coverage_20_custom",
+      "run_id": "2026-06-03T145252Z_coverage_20_custom_coverage_auction_heavy-loss-no-failures",
       "mission": "coverage",
       "scenario": "coverage",
       "seed_range_start": 0,
@@ -104,8 +104,8 @@
       "avg_perimeter_violations": 0.0
     },
     {
-      "benchmark_run_id": "2026-06-03T144303Z_coverage_20_custom",
-      "run_id": "2026-06-03T144303Z_coverage_20_custom_coverage_auction_ideal-no-failures",
+      "benchmark_run_id": "2026-06-03T145252Z_coverage_20_custom",
+      "run_id": "2026-06-03T145252Z_coverage_20_custom_coverage_auction_ideal-no-failures",
       "mission": "coverage",
       "scenario": "coverage",
       "seed_range_start": 0,
@@ -194,8 +194,8 @@
       "avg_perimeter_violations": 0.0
     },
     {
-      "benchmark_run_id": "2026-06-03T144303Z_coverage_20_custom",
-      "run_id": "2026-06-03T144303Z_coverage_20_custom_coverage_auction_medium-loss-no-failures",
+      "benchmark_run_id": "2026-06-03T145252Z_coverage_20_custom",
+      "run_id": "2026-06-03T145252Z_coverage_20_custom_coverage_auction_medium-loss-no-failures",
       "mission": "coverage",
       "scenario": "coverage",
       "seed_range_start": 0,
@@ -284,8 +284,8 @@
       "avg_perimeter_violations": 0.0
     },
     {
-      "benchmark_run_id": "2026-06-03T144303Z_coverage_20_custom",
-      "run_id": "2026-06-03T144303Z_coverage_20_custom_coverage_cbba_heavy-loss-no-failures",
+      "benchmark_run_id": "2026-06-03T145252Z_coverage_20_custom",
+      "run_id": "2026-06-03T145252Z_coverage_20_custom_coverage_cbba_heavy-loss-no-failures",
       "mission": "coverage",
       "scenario": "coverage",
       "seed_range_start": 0,
@@ -374,8 +374,8 @@
       "avg_perimeter_violations": 0.0
     },
     {
-      "benchmark_run_id": "2026-06-03T144303Z_coverage_20_custom",
-      "run_id": "2026-06-03T144303Z_coverage_20_custom_coverage_cbba_ideal-no-failures",
+      "benchmark_run_id": "2026-06-03T145252Z_coverage_20_custom",
+      "run_id": "2026-06-03T145252Z_coverage_20_custom_coverage_cbba_ideal-no-failures",
       "mission": "coverage",
       "scenario": "coverage",
       "seed_range_start": 0,
@@ -464,8 +464,8 @@
       "avg_perimeter_violations": 0.0
     },
     {
-      "benchmark_run_id": "2026-06-03T144303Z_coverage_20_custom",
-      "run_id": "2026-06-03T144303Z_coverage_20_custom_coverage_cbba_medium-loss-no-failures",
+      "benchmark_run_id": "2026-06-03T145252Z_coverage_20_custom",
+      "run_id": "2026-06-03T145252Z_coverage_20_custom_coverage_cbba_medium-loss-no-failures",
       "mission": "coverage",
       "scenario": "coverage",
       "seed_range_start": 0,
@@ -554,8 +554,8 @@
       "avg_perimeter_violations": 0.0
     },
     {
-      "benchmark_run_id": "2026-06-03T144303Z_coverage_20_custom",
-      "run_id": "2026-06-03T144303Z_coverage_20_custom_coverage_centralized_heavy-loss-no-failures",
+      "benchmark_run_id": "2026-06-03T145252Z_coverage_20_custom",
+      "run_id": "2026-06-03T145252Z_coverage_20_custom_coverage_centralized_heavy-loss-no-failures",
       "mission": "coverage",
       "scenario": "coverage",
       "seed_range_start": 0,
@@ -644,8 +644,8 @@
       "avg_perimeter_violations": 0.0
     },
     {
-      "benchmark_run_id": "2026-06-03T144303Z_coverage_20_custom",
-      "run_id": "2026-06-03T144303Z_coverage_20_custom_coverage_centralized_ideal-no-failures",
+      "benchmark_run_id": "2026-06-03T145252Z_coverage_20_custom",
+      "run_id": "2026-06-03T145252Z_coverage_20_custom_coverage_centralized_ideal-no-failures",
       "mission": "coverage",
       "scenario": "coverage",
       "seed_range_start": 0,
@@ -734,8 +734,8 @@
       "avg_perimeter_violations": 0.0
     },
     {
-      "benchmark_run_id": "2026-06-03T144303Z_coverage_20_custom",
-      "run_id": "2026-06-03T144303Z_coverage_20_custom_coverage_centralized_medium-loss-no-failures",
+      "benchmark_run_id": "2026-06-03T145252Z_coverage_20_custom",
+      "run_id": "2026-06-03T145252Z_coverage_20_custom_coverage_centralized_medium-loss-no-failures",
       "mission": "coverage",
       "scenario": "coverage",
       "seed_range_start": 0,
@@ -824,8 +824,8 @@
       "avg_perimeter_violations": 0.0
     },
     {
-      "benchmark_run_id": "2026-06-03T144303Z_coverage_20_custom",
-      "run_id": "2026-06-03T144303Z_coverage_20_custom_coverage_connectivity-aware_heavy-loss-no-failures",
+      "benchmark_run_id": "2026-06-03T145252Z_coverage_20_custom",
+      "run_id": "2026-06-03T145252Z_coverage_20_custom_coverage_connectivity-aware_heavy-loss-no-failures",
       "mission": "coverage",
       "scenario": "coverage",
       "seed_range_start": 0,
@@ -914,8 +914,8 @@
       "avg_perimeter_violations": 0.0
     },
     {
-      "benchmark_run_id": "2026-06-03T144303Z_coverage_20_custom",
-      "run_id": "2026-06-03T144303Z_coverage_20_custom_coverage_connectivity-aware_ideal-no-failures",
+      "benchmark_run_id": "2026-06-03T145252Z_coverage_20_custom",
+      "run_id": "2026-06-03T145252Z_coverage_20_custom_coverage_connectivity-aware_ideal-no-failures",
       "mission": "coverage",
       "scenario": "coverage",
       "seed_range_start": 0,
@@ -1004,8 +1004,8 @@
       "avg_perimeter_violations": 0.0
     },
     {
-      "benchmark_run_id": "2026-06-03T144303Z_coverage_20_custom",
-      "run_id": "2026-06-03T144303Z_coverage_20_custom_coverage_connectivity-aware_medium-loss-no-failures",
+      "benchmark_run_id": "2026-06-03T145252Z_coverage_20_custom",
+      "run_id": "2026-06-03T145252Z_coverage_20_custom_coverage_connectivity-aware_medium-loss-no-failures",
       "mission": "coverage",
       "scenario": "coverage",
       "seed_range_start": 0,
@@ -1094,8 +1094,8 @@
       "avg_perimeter_violations": 0.0
     },
     {
-      "benchmark_run_id": "2026-06-03T144303Z_coverage_20_custom",
-      "run_id": "2026-06-03T144303Z_coverage_20_custom_coverage_greedy_heavy-loss-no-failures",
+      "benchmark_run_id": "2026-06-03T145252Z_coverage_20_custom",
+      "run_id": "2026-06-03T145252Z_coverage_20_custom_coverage_greedy_heavy-loss-no-failures",
       "mission": "coverage",
       "scenario": "coverage",
       "seed_range_start": 0,
@@ -1184,8 +1184,8 @@
       "avg_perimeter_violations": 0.0
     },
     {
-      "benchmark_run_id": "2026-06-03T144303Z_coverage_20_custom",
-      "run_id": "2026-06-03T144303Z_coverage_20_custom_coverage_greedy_ideal-no-failures",
+      "benchmark_run_id": "2026-06-03T145252Z_coverage_20_custom",
+      "run_id": "2026-06-03T145252Z_coverage_20_custom_coverage_greedy_ideal-no-failures",
       "mission": "coverage",
       "scenario": "coverage",
       "seed_range_start": 0,
@@ -1274,8 +1274,8 @@
       "avg_perimeter_violations": 0.0
     },
     {
-      "benchmark_run_id": "2026-06-03T144303Z_coverage_20_custom",
-      "run_id": "2026-06-03T144303Z_coverage_20_custom_coverage_greedy_medium-loss-no-failures",
+      "benchmark_run_id": "2026-06-03T145252Z_coverage_20_custom",
+      "run_id": "2026-06-03T145252Z_coverage_20_custom_coverage_greedy_medium-loss-no-failures",
       "mission": "coverage",
       "scenario": "coverage",
       "seed_range_start": 0,

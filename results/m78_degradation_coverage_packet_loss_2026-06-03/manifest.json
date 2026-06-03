@@ -1,6 +1,6 @@
 {
-  "timestamp": "2026-06-03T14:43:03.145717141+00:00",
-  "git_commit": "de191aaf1962564ffe2e259c4fbba6262917a109",
+  "timestamp": "2026-06-03T14:52:52.717565003+00:00",
+  "git_commit": "922e9a0f16a46d321a958f96712bf76c30b48a36",
   "command_line": "target/release/strategy_comparison --degradation coverage-packet-loss --seeds 20 --jobs 4 --output-dir results/m78_degradation_coverage_packet_loss_2026-06-03",
   "suite_name": "coverage",
   "schema_version": "0.2",
