@@ -6,7 +6,12 @@
 
 Текущий M78 описан в `docs_raw/BEFORE_HARDWARE_A.23.md:1001`: M69 уже дал полезный `1000`-seed artifact, а M78 должен улучшить reporting/interpretation вместо слепого повторения долгих прогонов (`docs_raw/BEFORE_HARDWARE_A.23.md:1007`). Done criteria требуют статистические поля, хотя бы один degradation sweep artifact, явную маркировку unsupported/caveat rows, явный Urban scope и различение simulation/SITL/hardware claims (`docs_raw/BEFORE_HARDWARE_A.23.md:1070`).
 
-Notion/GitLab контекст был проверен по локальным protocol-файлам. Notion task id и GitLab MR в запросе не указаны, поэтому удаленный доступ не нужен и не используется. `INVESTIGATION.md` в репозитории сейчас отсутствует, отдельного investigation context нет.
+## Investigation context
+
+- `INVESTIGATION.md` в репозитории сейчас отсутствует, поэтому confirmed findings/ruled-out hypotheses из отдельного investigation artifact нет.
+- Прочитан источник M78 в `docs_raw/BEFORE_HARDWARE_A.23.md:1001`: цель, scope, non-goals, done criteria и категории automated tests.
+- Прочитаны локальные Notion/GitLab protocol-файлы из `/home/formi/Documents/RustProjects/multi-agent-orchestrator-rs/docs`; prompt не содержит Notion task id или GitLab MR, `notion_policy` равен `optional`, поэтому удаленный доступ не нужен и не использовался.
+- Дополнительно проверены текущие user-facing docs: `README.md`, `docs/STATUS.md`, `docs/BENCHMARK_RESULTS.md`, `docs/SCENARIO_DSL.md`, `docs/EXTENSION_GUIDE.md`.
 
 ## Affected Components
 
@@ -23,7 +28,9 @@ Notion/GitLab контекст был проверен по локальным p
 - `crates/swarm-sim/src/report_export/focused.rs:24` - focused report сейчас содержит статичный methodology/answers block; его нужно синхронизировать с M78 interpretation.
 - `crates/swarm-examples/tests/benchmark_pack.rs:20` - уже есть manifest identity/output-dir tests; сюда добавить проверки новых manifest/export fields и Urban/degradation behavior.
 - `crates/swarm-sim/src/benchmark/tests.rs:181` - уже есть determinism test jobs 1 vs 4; сюда добавить unit tests для stats helper.
-- `README.md`, `docs/STATUS.md`, `docs/BENCHMARK_RESULTS.md` - user-facing docs должны объяснять что является current/historical evidence, где simulation/SITL/hardware граница, и что Urban не входит в старый M69 `--mission all`.
+- `docs/SCENARIO_DSL.md:152` - SAR DSL сейчас описывает `run_config.grid_state`, но не будущий `sar_success_threshold`; при добавлении поля нужно описать default/opt-in semantics.
+- `docs/EXTENSION_GUIDE.md:190` - guide уже объясняет M77 extension knobs (`comms_penalty_weight`, `wildfire_priority_realloc_threshold`, `dynamic_belief_updates`); M78 должен добавить evidence/degradation metadata conventions для авторов новых profiles/strategies.
+- `README.md`, `docs/STATUS.md`, `docs/BENCHMARK_RESULTS.md`, `docs/SCENARIO_DSL.md`, `docs/EXTENSION_GUIDE.md` - user-facing docs должны объяснять что является current/historical evidence, где simulation/SITL/hardware граница, что Urban не входит в старый M69 `--mission all`, и как новые DSL/evidence fields использовать без overclaiming.
 
 ## Implementation Steps
 
@@ -57,7 +64,20 @@ Notion/GitLab контекст был проверен по локальным p
    - В `compute_mission_success` (`crates/swarm-sim/src/runner/types.rs:257`) разделить:
      - strict SAR success: все targets found, как сейчас;
      - threshold SAR success: `targets_found / targets_total >= sar_success_threshold`, если threshold явно задан.
+   - Контракт логики должен быть явным, например:
+     ```rust
+     let found_ratio = if total_targets == 0 {
+         1.0
+     } else {
+         targets_found as f64 / total_targets as f64
+     };
+     let sar_goal_satisfied = match sar_success_threshold {
+         Some(threshold) => found_ratio >= threshold,
+         None => all_targets_found,
+     };
+     ```
    - В отчеты добавить текстовое объяснение: `probability_of_detection`/`targets_found` - mission-quality metrics; `success_rate` - binary predicate выбранной конфигурации.
+   - В `docs/SCENARIO_DSL.md:152` описать новое поле: default/opt-in behavior, отличие strict "all targets found" от threshold success, связь с `probability_of_detection` и почему benchmark docs должны указывать выбранный predicate.
    - Добавить tests для small SAR fixture: all targets found, partial targets found below threshold, partial targets found above threshold. Тесты должны быть in-memory, без внешних файлов.
 
 6. Обновить support matrix и связать ее с export/report.
@@ -84,20 +104,24 @@ Notion/GitLab контекст был проверен по локальным p
    - `docs/BENCHMARK_RESULTS.md:1`: добавить M78 section со stats meaning, current/historical rule, degradation artifact summary, SAR success vs PoD, Urban separate-track decision.
    - `docs/STATUS.md:47`: обновить milestone status, ограничения и "not hardware evidence" wording.
    - `README.md`: обновить current capabilities/support matrix summary, добавить ссылку на M78 evidence layer и degradation artifact.
+   - `docs/SCENARIO_DSL.md:152`: задокументировать `run_config.sar_success_threshold`, strict-vs-threshold SAR success semantics и пример minimal SAR config.
+   - `docs/EXTENSION_GUIDE.md:202`: добавить guidance для новых benchmark/evidence extensions: как выбирать `artifact_kind`, когда заводить degradation preset, как маркировать experimental/unsupported/caveat rows, и почему extension artifacts не становятся hardware/PX4 evidence без отдельного прогона.
    - Если result README/manifest notes нужны, обновить `results/all_1000_jobs14_m69_release/README.md` и/или `results/all_500_jobs14_m62_release/README.md` только как historical/current wording, без переписывания результатов.
 
 10. Проверить результат и зафиксировать.
-    - Запустить targeted tests через `/home/formi/.local/bin/runlim`:
-      - `PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 /home/formi/.local/bin/runlim cargo test -p swarm-metrics`
-      - `PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 /home/formi/.local/bin/runlim cargo test -p swarm-sim benchmark`
-      - `PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 /home/formi/.local/bin/runlim cargo test -p swarm-examples --test benchmark_pack`
-      - `PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 /home/formi/.local/bin/runlim cargo test -p swarm-examples --test docs`
+    - Запустить targeted tests через `/home/formi/.local/bin/runlim`, каждый с hard timeout:
+      - `timeout 300 env PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 /home/formi/.local/bin/runlim cargo test -p swarm-metrics`
+      - `timeout 300 env PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 /home/formi/.local/bin/runlim cargo test -p swarm-sim benchmark`
+      - `timeout 300 env PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 /home/formi/.local/bin/runlim cargo test -p swarm-examples --test benchmark_pack`
+      - `timeout 300 env PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 /home/formi/.local/bin/runlim cargo test -p swarm-examples --test docs`
     - После Rust изменений обязательно:
-      - `/home/formi/.local/bin/runlim cargo fmt --all`
-      - `/home/formi/.local/bin/runlim cargo clippy --workspace --all-targets --all-features -- -D warnings`
+      - `timeout 300 /home/formi/.local/bin/runlim cargo fmt --all`
+      - `timeout 300 /home/formi/.local/bin/runlim cargo clippy --workspace --all-targets --all-features -- -D warnings`
     - Сделать release build перед degradation artifact:
-      - `/home/formi/.local/bin/runlim cargo build --release --workspace`
-    - Запустить только M78 degradation sweep, не 1000-seed benchmark.
+      - `timeout 300 /home/formi/.local/bin/runlim cargo build --release --workspace`
+    - Запустить только M78 degradation sweep, не 1000-seed benchmark, bounded form:
+      - `timeout 300 /home/formi/.local/bin/runlim cargo run --release -p swarm-examples --bin strategy_comparison -- --degradation coverage-packet-loss --seeds 20 --jobs 4 --output-dir results/m78_degradation_coverage_packet_loss_YYYY-MM-DD/`
+    - Если release build или degradation sweep не укладывается в `300s`, остановить команду, не расширять прогон молча, и документировать skipped/timeout в result README и финальном отчете.
 
 ## Testing Strategy
 
@@ -110,7 +134,7 @@ Notion/GitLab контекст был проверен по локальным p
 - CLI parse tests: `--mission urban` expands to UrbanPatrol/UrbanSearch; `--mission all` remains old comparable suite.
 - SAR success predicate tests for all targets found and threshold cases.
 - Support matrix tests for `SupportedWithCaveats`.
-- Docs smoke tests for required M78 phrases: historical evidence, no hardware claim, Urban separate track, SAR success vs PoD.
+- Docs smoke tests for required M78 phrases: historical evidence, no hardware claim, Urban separate track, SAR success vs PoD, `sar_success_threshold` in `docs/SCENARIO_DSL.md`, and extension evidence conventions in `docs/EXTENSION_GUIDE.md`.
 
 ### Tests that need light refactoring
 
