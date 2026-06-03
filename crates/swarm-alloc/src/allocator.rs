@@ -403,14 +403,25 @@ impl GreedyAllocator {
         if self.comms_penalty_weight <= 0.0 {
             return None;
         }
+        let round_robin_start = global_idx % capable.len();
         capable
             .iter()
             .enumerate()
             .min_by(|(idx_a, a), (idx_b, b)| {
-                let score_a =
-                    greedy_comms_score(self.comms_penalty_weight, task, a, global_idx, *idx_a);
-                let score_b =
-                    greedy_comms_score(self.comms_penalty_weight, task, b, global_idx, *idx_b);
+                let score_a = greedy_comms_score(
+                    self.comms_penalty_weight,
+                    task,
+                    a,
+                    round_robin_start,
+                    *idx_a,
+                );
+                let score_b = greedy_comms_score(
+                    self.comms_penalty_weight,
+                    task,
+                    b,
+                    round_robin_start,
+                    *idx_b,
+                );
                 score_a.partial_cmp(&score_b).unwrap()
             })
             .map(|(_, agent)| *agent)
@@ -727,6 +738,34 @@ mod tests {
         .allocate(&[at(&t)], &[first_out_of_range, second_in_range]);
 
         assert_eq!(*result[0].1, "second");
+    }
+
+    #[test]
+    fn greedy_comms_penalty_preserves_round_robin_when_penalties_tie() {
+        let tasks = [
+            task("t0", 1),
+            task("t1", 1),
+            task("t2", 1),
+            task("t3", 1),
+            task("t4", 1),
+        ];
+        let agents = [agent("a0"), agent("a1")];
+
+        let baseline =
+            GreedyAllocator::default().allocate(&tasks.iter().map(at).collect::<Vec<_>>(), &agents);
+        let configured = GreedyAllocator {
+            comms_penalty_weight: 100.0,
+        }
+        .allocate(&tasks.iter().map(at).collect::<Vec<_>>(), &agents);
+
+        assert_eq!(configured, baseline);
+        assert_eq!(
+            configured
+                .iter()
+                .map(|(_, agent_id)| agent_id.as_ref())
+                .collect::<Vec<_>>(),
+            vec!["a0", "a1", "a0", "a1", "a0"]
+        );
     }
 
     #[test]

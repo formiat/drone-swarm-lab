@@ -157,6 +157,83 @@ fn runner_greedy_deterministic_with_capabilities() {
 }
 
 #[test]
+fn runner_run_applies_comms_penalty_weight_to_default_greedy() {
+    let mut s = scenario(0, 2, 2);
+    s.agents[0].pose = Pose {
+        x: 0.0,
+        y: 0.0,
+        ..Default::default()
+    };
+    s.agents[0].comms_range = 1.0;
+    s.agents[0].speed = 1.0;
+    s.agents[0].battery_drain_rate = 200.0;
+    s.agents[1].pose = Pose {
+        x: 100.0,
+        y: 0.0,
+        ..Default::default()
+    };
+    s.agents[1].comms_range = 100.0;
+    s.agents[1].speed = 1.0;
+    s.agents[1].battery_drain_rate = 200.0;
+    for task in &mut s.tasks {
+        task.pose = Some(Pose {
+            x: 100.0,
+            y: 0.0,
+            ..Default::default()
+        });
+    }
+
+    let (_, baseline_log) = ScenarioRunner::run_with_default_greedy(
+        &s,
+        RunConfig {
+            max_ticks: 2,
+            ..config(vec![])
+        },
+        Some(swarm_replay::EventLogBuilder::new(
+            "baseline".to_owned(),
+            s.seed,
+            &s.name,
+        )),
+    );
+    let (_, weighted_log) = ScenarioRunner::run_with_default_greedy(
+        &s,
+        RunConfig {
+            max_ticks: 2,
+            comms_penalty_weight: 100.0,
+            ..config(vec![])
+        },
+        Some(swarm_replay::EventLogBuilder::new(
+            "weighted".to_owned(),
+            s.seed,
+            &s.name,
+        )),
+    );
+
+    fn final_pose_x(log: &swarm_replay::EventLog, agent: &str) -> f64 {
+        log.events
+            .iter()
+            .rev()
+            .find_map(|event| match event {
+                swarm_replay::Event::PoseUpdated { agent_id, pose, .. }
+                    if agent_id.as_ref() == agent =>
+                {
+                    Some(pose.x)
+                }
+                _ => None,
+            })
+            .expect("final pose should be recorded")
+    }
+
+    let baseline_log = baseline_log.expect("baseline log should be captured");
+    let weighted_log = weighted_log.expect("weighted log should be captured");
+
+    assert_eq!(final_pose_x(&baseline_log, "agent-0"), 100.0);
+    assert_eq!(final_pose_x(&baseline_log, "agent-1"), 100.0);
+    assert_eq!(final_pose_x(&weighted_log, "agent-0"), 0.0);
+    assert_eq!(final_pose_x(&weighted_log, "agent-1"), 100.0);
+}
+
+#[test]
 fn runner_auction_deterministic() {
     use swarm_alloc::AuctionAllocator;
     let s = scenario(9, 5, 4);

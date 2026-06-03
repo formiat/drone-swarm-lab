@@ -6,8 +6,19 @@ use swarm_alloc::Allocator;
 
 impl ScenarioRunner {
     pub fn run(scenario: &Scenario, config: RunConfig) -> RunMetrics {
+        Self::run_with_default_greedy(scenario, config, None).0
+    }
+
+    pub(super) fn run_with_default_greedy(
+        scenario: &Scenario,
+        config: RunConfig,
+        log_builder: Option<swarm_replay::EventLogBuilder>,
+    ) -> (RunMetrics, Option<swarm_replay::EventLog>) {
         use swarm_alloc::GreedyAllocator;
-        Self::run_with(scenario, config, GreedyAllocator::default())
+        let allocator = GreedyAllocator {
+            comms_penalty_weight: config.comms_penalty_weight,
+        };
+        Self::run_internal(scenario, config, allocator, log_builder)
     }
 
     pub fn run_with<A: Allocator>(
