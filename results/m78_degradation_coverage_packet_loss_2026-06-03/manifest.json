@@ -1,0 +1,31 @@
+{
+  "timestamp": "2026-06-03T14:43:03.145717141+00:00",
+  "git_commit": "de191aaf1962564ffe2e259c4fbba6262917a109",
+  "command_line": "target/release/strategy_comparison --degradation coverage-packet-loss --seeds 20 --jobs 4 --output-dir results/m78_degradation_coverage_packet_loss_2026-06-03",
+  "suite_name": "coverage",
+  "schema_version": "0.2",
+  "seed_range_start": 0,
+  "seed_range_end": 20,
+  "strategy_names": [
+    "auction",
+    "cbba",
+    "centralized",
+    "connectivity-aware",
+    "greedy"
+  ],
+  "profile_names": [
+    "heavy-loss-no-failures",
+    "ideal-no-failures",
+    "medium-loss-no-failures"
+  ],
+  "metric_schema_version": "0.2",
+  "artifact_kind": "degradation",
+  "artifact_status_note": "current only when git_commit matches the checked-out HEAD; otherwise historical evidence",
+  "realism_profile": null,
+  "wind_enabled": false,
+  "pose_noise_m": 0.0,
+  "comms_jitter_ticks": 0,
+  "battery_model": null,
+  "jobs": 4,
+  "build_profile": "release"
+}
