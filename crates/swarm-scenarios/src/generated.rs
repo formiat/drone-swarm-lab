@@ -463,6 +463,13 @@ fn validate_config(config: &SyntheticUrbanConfig) -> Result<(), ScenarioGenerati
     {
         return invalid("static_obstacle_density", "must be finite and in 0.0..=1.0");
     }
+    let max_blocked_edges = available_perimeter_route_edge_count(config.rows, config.cols);
+    if config.blocked_edge_count > max_blocked_edges {
+        return invalid(
+            "blocked_edge_count",
+            format!("must be <= available perimeter route edges ({max_blocked_edges})"),
+        );
+    }
     if config.max_ticks == 0 {
         return invalid("max_ticks", "must be > 0");
     }
@@ -866,6 +873,13 @@ fn perimeter_route(rows: usize, cols: usize) -> Vec<UrbanNodeId> {
     nodes
 }
 
+fn available_perimeter_route_edge_count(rows: usize, cols: usize) -> usize {
+    if rows < 2 || cols < 2 {
+        return 0;
+    }
+    2 * rows + 2 * cols - 4
+}
+
 fn perimeter_patrol(rows: usize, cols: usize) -> UrbanPerimeterPatrol {
     let max_x = (cols.saturating_sub(1)) as f64 * 10.0;
     let max_y = (rows.saturating_sub(1)) as f64 * 10.0;
@@ -1015,6 +1029,22 @@ mod tests {
         assert!(matches!(
             error,
             ScenarioGenerationError::InvalidConfig { field, .. } if field == "rows"
+        ));
+    }
+
+    #[test]
+    fn blocked_edge_count_larger_than_route_edges_is_rejected() {
+        let generator = SyntheticUrbanGenerator;
+        let mut config = SyntheticScenarioLibrary::urban_tiny_regression(1);
+        config.rows = 2;
+        config.cols = 2;
+        config.blocked_edge_count = 5;
+
+        let error = generator.generate(&config).unwrap_err();
+
+        assert!(matches!(
+            error,
+            ScenarioGenerationError::InvalidConfig { field, .. } if field == "blocked_edge_count"
         ));
     }
 }
