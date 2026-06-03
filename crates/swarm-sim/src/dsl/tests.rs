@@ -242,6 +242,7 @@ fn scenario_suite_load_from_file() {
         schema_version: "0.1".to_owned(),
         name: "Test Suite".to_owned(),
         description: "A test suite".to_owned(),
+        generator_manifest: None,
         scenarios: vec![make_minimal_entry()],
     };
     let json = serde_json::to_string_pretty(&suite).unwrap();
@@ -297,6 +298,7 @@ fn scenario_suite_entry_integration_export() {
         schema_version: "0.1".to_owned(),
         name: "Export Suite".to_owned(),
         description: "Suite for export test".to_owned(),
+        generator_manifest: None,
         scenarios: vec![entry],
     };
     let suite_json = export_suite(&suite).unwrap();
@@ -633,6 +635,7 @@ fn validate_suite_rejects_empty_name() {
         schema_version: "0.1".to_owned(),
         name: "".to_owned(),
         description: "test".to_owned(),
+        generator_manifest: None,
         scenarios: vec![make_minimal_entry()],
     };
     let errors = validate_scenario_suite(&suite);
@@ -645,6 +648,7 @@ fn validate_suite_rejects_unsupported_version() {
         schema_version: "0.9".to_owned(),
         name: "Test".to_owned(),
         description: "test".to_owned(),
+        generator_manifest: None,
         scenarios: vec![make_minimal_entry()],
     };
     let errors = validate_scenario_suite(&suite);
@@ -657,8 +661,81 @@ fn validate_suite_accepts_valid() {
         schema_version: "0.1".to_owned(),
         name: "Test".to_owned(),
         description: "test".to_owned(),
+        generator_manifest: None,
         scenarios: vec![make_minimal_entry()],
     };
     let errors = validate_scenario_suite(&suite);
     assert!(errors.is_empty(), "Expected no errors, got: {:?}", errors);
+}
+
+#[test]
+fn scenario_suite_manifest_defaults_to_none_for_legacy_json() {
+    let json = r#"{
+      "schema_version": "0.1",
+      "name": "Legacy",
+      "description": "legacy suite",
+      "scenarios": []
+    }"#;
+
+    let suite: ScenarioSuite = serde_json::from_str(json).unwrap();
+
+    assert!(suite.generator_manifest.is_none());
+}
+
+#[test]
+fn validate_suite_accepts_valid_generator_manifest() {
+    let suite = ScenarioSuite {
+        schema_version: "0.1".to_owned(),
+        name: "Test".to_owned(),
+        description: "test".to_owned(),
+        generator_manifest: Some(ScenarioGeneratorManifest {
+            schema_version: SCENARIO_GENERATOR_MANIFEST_SCHEMA_VERSION.to_owned(),
+            generator_name: "synthetic-urban".to_owned(),
+            generator_version: "0.1.0".to_owned(),
+            seed: 42,
+            category: "tiny".to_owned(),
+            parameters: vec![ScenarioGeneratorParameter {
+                key: "rows".to_owned(),
+                value: "3".to_owned(),
+            }],
+        }),
+        scenarios: vec![make_minimal_entry()],
+    };
+
+    let errors = validate_scenario_suite(&suite);
+
+    assert!(errors.is_empty(), "Expected no errors, got: {errors:?}");
+}
+
+#[test]
+fn validate_suite_rejects_duplicate_generator_manifest_parameters() {
+    let suite = ScenarioSuite {
+        schema_version: "0.1".to_owned(),
+        name: "Test".to_owned(),
+        description: "test".to_owned(),
+        generator_manifest: Some(ScenarioGeneratorManifest {
+            schema_version: SCENARIO_GENERATOR_MANIFEST_SCHEMA_VERSION.to_owned(),
+            generator_name: "synthetic-urban".to_owned(),
+            generator_version: "0.1.0".to_owned(),
+            seed: 42,
+            category: "tiny".to_owned(),
+            parameters: vec![
+                ScenarioGeneratorParameter {
+                    key: "rows".to_owned(),
+                    value: "3".to_owned(),
+                },
+                ScenarioGeneratorParameter {
+                    key: "rows".to_owned(),
+                    value: "4".to_owned(),
+                },
+            ],
+        }),
+        scenarios: vec![make_minimal_entry()],
+    };
+
+    let errors = validate_scenario_suite(&suite);
+
+    assert!(errors
+        .iter()
+        .any(|error| error.field == "generator_manifest.parameters[1].key"));
 }

@@ -1,0 +1,637 @@
+{
+  "schema_version": "0.1",
+  "name": "Synthetic Urban tiny",
+  "description": "Deterministic generated Urban scenario suite",
+  "generator_manifest": {
+    "schema_version": "scenario_generator_manifest.v1",
+    "generator_name": "synthetic-urban",
+    "generator_version": "0.1.0",
+    "seed": 42,
+    "category": "tiny",
+    "parameters": [
+      {
+        "key": "agent_count",
+        "value": "1"
+      },
+      {
+        "key": "agent_failure_tick",
+        "value": "none"
+      },
+      {
+        "key": "blocked_edge_count",
+        "value": "1"
+      },
+      {
+        "key": "bus_mode",
+        "value": "none"
+      },
+      {
+        "key": "cols",
+        "value": "3"
+      },
+      {
+        "key": "comms_jitter_ticks",
+        "value": "0"
+      },
+      {
+        "key": "failure_type",
+        "value": "none"
+      },
+      {
+        "key": "latency_per_hop",
+        "value": "0"
+      },
+      {
+        "key": "latency_ticks",
+        "value": "0"
+      },
+      {
+        "key": "max_ticks",
+        "value": "180"
+      },
+      {
+        "key": "packet_loss_rate",
+        "value": "0"
+      },
+      {
+        "key": "partial_completion_target",
+        "value": "none"
+      },
+      {
+        "key": "partition_count",
+        "value": "0"
+      },
+      {
+        "key": "perimeter",
+        "value": "true"
+      },
+      {
+        "key": "replacement_policy",
+        "value": "none"
+      },
+      {
+        "key": "rows",
+        "value": "3"
+      },
+      {
+        "key": "static_obstacle_density",
+        "value": "0.1"
+      }
+    ]
+  },
+  "scenarios": [
+    {
+      "mission": "urban-patrol",
+      "profile": "generated-tiny-3x3-42",
+      "scenario": {
+        "name": "urban_generated_generated_tiny_3x3_42",
+        "seed": 42,
+        "agents": [
+          {
+            "id": "agent-0",
+            "role": "scout",
+            "health": "alive",
+            "pose": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 1000.0,
+            "generation": 1,
+            "speed": 2.0,
+            "max_range": 1000.0,
+            "battery_drain_rate": 0.0,
+            "battery_model": null
+          }
+        ],
+        "tasks": [
+          {
+            "id": "urban-waypoint-0-n0_1",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": "scout",
+            "expires_at": null,
+            "pose": {
+              "x": 10.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "grid_cell": null,
+            "kind": "waypoint"
+          },
+          {
+            "id": "urban-waypoint-1-n0_2",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": "scout",
+            "expires_at": null,
+            "pose": {
+              "x": 20.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "grid_cell": null,
+            "kind": "waypoint"
+          },
+          {
+            "id": "urban-waypoint-2-n1_2",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": "scout",
+            "expires_at": null,
+            "pose": {
+              "x": 20.0,
+              "y": 10.0,
+              "z": 0.0
+            },
+            "grid_cell": null,
+            "kind": "waypoint"
+          },
+          {
+            "id": "urban-waypoint-3-n2_2",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": "scout",
+            "expires_at": null,
+            "pose": {
+              "x": 20.0,
+              "y": 20.0,
+              "z": 0.0
+            },
+            "grid_cell": null,
+            "kind": "waypoint"
+          },
+          {
+            "id": "urban-waypoint-4-n2_1",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": "scout",
+            "expires_at": null,
+            "pose": {
+              "x": 10.0,
+              "y": 20.0,
+              "z": 0.0
+            },
+            "grid_cell": null,
+            "kind": "waypoint"
+          },
+          {
+            "id": "urban-waypoint-5-n2_0",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": "scout",
+            "expires_at": null,
+            "pose": {
+              "x": 0.0,
+              "y": 20.0,
+              "z": 0.0
+            },
+            "grid_cell": null,
+            "kind": "waypoint"
+          },
+          {
+            "id": "urban-waypoint-6-n1_0",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": "scout",
+            "expires_at": null,
+            "pose": {
+              "x": 0.0,
+              "y": 10.0,
+              "z": 0.0
+            },
+            "grid_cell": null,
+            "kind": "waypoint"
+          },
+          {
+            "id": "urban-waypoint-7-n0_0",
+            "status": "unassigned",
+            "assigned_to": null,
+            "priority": 1,
+            "required_capabilities": [],
+            "required_role": null,
+            "preferred_role": "scout",
+            "expires_at": null,
+            "pose": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "grid_cell": null,
+            "kind": "waypoint"
+          }
+        ],
+        "ground_nodes": [],
+        "base_station": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "geo_origin": {
+          "lat_deg": 47.397742,
+          "lon_deg": 8.545594,
+          "alt_m": 0.0
+        }
+      },
+      "run_config": {
+        "max_ticks": 180,
+        "timeout_ticks": 3,
+        "max_unassigned_ticks": 180,
+        "packet_loss_rate": 0.0,
+        "latency_ticks": 0,
+        "latency_per_hop": 0,
+        "comms_jitter_ticks": 0,
+        "failures": [],
+        "dynamic_tasks": [],
+        "partition_events": [],
+        "gossip_interval_ticks": 0,
+        "base_id": null,
+        "enable_movement": true,
+        "tick_duration_ms": 1000,
+        "grid_state": null,
+        "enable_cbba": false,
+        "safety_config": null,
+        "inspection_state": null,
+        "wildfire_state": null,
+        "urban_state": {
+          "map": {
+            "nodes": [
+              {
+                "id": "n0_0",
+                "pose": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "id": "n0_1",
+                "pose": {
+                  "x": 10.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "id": "n0_2",
+                "pose": {
+                  "x": 20.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "id": "n1_0",
+                "pose": {
+                  "x": 0.0,
+                  "y": 10.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "id": "n1_1",
+                "pose": {
+                  "x": 10.0,
+                  "y": 10.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "id": "n1_2",
+                "pose": {
+                  "x": 20.0,
+                  "y": 10.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "id": "n2_0",
+                "pose": {
+                  "x": 0.0,
+                  "y": 20.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "id": "n2_1",
+                "pose": {
+                  "x": 10.0,
+                  "y": 20.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "id": "n2_2",
+                "pose": {
+                  "x": 20.0,
+                  "y": 20.0,
+                  "z": 0.0
+                }
+              }
+            ],
+            "edges": [
+              {
+                "id": "road-n0_0-n0_1",
+                "from": "n0_0",
+                "to": "n0_1",
+                "cost": 10.0,
+                "length_m": 10.0,
+                "corridor_width_m": 5.0,
+                "blocked": false
+              },
+              {
+                "id": "road-n0_1-n0_0",
+                "from": "n0_1",
+                "to": "n0_0",
+                "cost": 10.0,
+                "length_m": 10.0,
+                "corridor_width_m": 8.0,
+                "blocked": false
+              },
+              {
+                "id": "road-n0_0-n1_0",
+                "from": "n0_0",
+                "to": "n1_0",
+                "cost": 10.0,
+                "length_m": 10.0,
+                "corridor_width_m": 7.0,
+                "blocked": false
+              },
+              {
+                "id": "road-n1_0-n0_0",
+                "from": "n1_0",
+                "to": "n0_0",
+                "cost": 10.0,
+                "length_m": 10.0,
+                "corridor_width_m": 6.0,
+                "blocked": false
+              },
+              {
+                "id": "road-n0_1-n0_2",
+                "from": "n0_1",
+                "to": "n0_2",
+                "cost": 10.0,
+                "length_m": 10.0,
+                "corridor_width_m": 4.0,
+                "blocked": false
+              },
+              {
+                "id": "road-n0_2-n0_1",
+                "from": "n0_2",
+                "to": "n0_1",
+                "cost": 10.0,
+                "length_m": 10.0,
+                "corridor_width_m": 7.0,
+                "blocked": false
+              },
+              {
+                "id": "road-n0_1-n1_1",
+                "from": "n0_1",
+                "to": "n1_1",
+                "cost": 10.0,
+                "length_m": 10.0,
+                "corridor_width_m": 6.0,
+                "blocked": false
+              },
+              {
+                "id": "road-n1_1-n0_1",
+                "from": "n1_1",
+                "to": "n0_1",
+                "cost": 10.0,
+                "length_m": 10.0,
+                "corridor_width_m": 8.0,
+                "blocked": false
+              },
+              {
+                "id": "road-n0_2-n1_2",
+                "from": "n0_2",
+                "to": "n1_2",
+                "cost": 10.0,
+                "length_m": 10.0,
+                "corridor_width_m": 7.0,
+                "blocked": false
+              },
+              {
+                "id": "road-n1_2-n0_2",
+                "from": "n1_2",
+                "to": "n0_2",
+                "cost": 10.0,
+                "length_m": 10.0,
+                "corridor_width_m": 6.0,
+                "blocked": false
+              },
+              {
+                "id": "road-n1_0-n1_1",
+                "from": "n1_0",
+                "to": "n1_1",
+                "cost": 10.0,
+                "length_m": 10.0,
+                "corridor_width_m": 4.0,
+                "blocked": false
+              },
+              {
+                "id": "road-n1_1-n1_0",
+                "from": "n1_1",
+                "to": "n1_0",
+                "cost": 10.0,
+                "length_m": 10.0,
+                "corridor_width_m": 8.0,
+                "blocked": false
+              },
+              {
+                "id": "road-n1_0-n2_0",
+                "from": "n1_0",
+                "to": "n2_0",
+                "cost": 10.0,
+                "length_m": 10.0,
+                "corridor_width_m": 6.0,
+                "blocked": false
+              },
+              {
+                "id": "road-n2_0-n1_0",
+                "from": "n2_0",
+                "to": "n1_0",
+                "cost": 10.0,
+                "length_m": 10.0,
+                "corridor_width_m": 8.0,
+                "blocked": false
+              },
+              {
+                "id": "road-n1_1-n1_2",
+                "from": "n1_1",
+                "to": "n1_2",
+                "cost": 10.0,
+                "length_m": 10.0,
+                "corridor_width_m": 7.0,
+                "blocked": false
+              },
+              {
+                "id": "road-n1_2-n1_1",
+                "from": "n1_2",
+                "to": "n1_1",
+                "cost": 10.0,
+                "length_m": 10.0,
+                "corridor_width_m": 8.0,
+                "blocked": false
+              },
+              {
+                "id": "road-n1_1-n2_1",
+                "from": "n1_1",
+                "to": "n2_1",
+                "cost": 10.0,
+                "length_m": 10.0,
+                "corridor_width_m": 6.0,
+                "blocked": false
+              },
+              {
+                "id": "road-n2_1-n1_1",
+                "from": "n2_1",
+                "to": "n1_1",
+                "cost": 10.0,
+                "length_m": 10.0,
+                "corridor_width_m": 8.0,
+                "blocked": false
+              },
+              {
+                "id": "road-n1_2-n2_2",
+                "from": "n1_2",
+                "to": "n2_2",
+                "cost": 10.0,
+                "length_m": 10.0,
+                "corridor_width_m": 5.0,
+                "blocked": false
+              },
+              {
+                "id": "road-n2_2-n1_2",
+                "from": "n2_2",
+                "to": "n1_2",
+                "cost": 10.0,
+                "length_m": 10.0,
+                "corridor_width_m": 7.0,
+                "blocked": false
+              },
+              {
+                "id": "road-n2_0-n2_1",
+                "from": "n2_0",
+                "to": "n2_1",
+                "cost": 10.0,
+                "length_m": 10.0,
+                "corridor_width_m": 4.0,
+                "blocked": false
+              },
+              {
+                "id": "road-n2_1-n2_0",
+                "from": "n2_1",
+                "to": "n2_0",
+                "cost": 10.0,
+                "length_m": 10.0,
+                "corridor_width_m": 6.0,
+                "blocked": false
+              },
+              {
+                "id": "road-n2_1-n2_2",
+                "from": "n2_1",
+                "to": "n2_2",
+                "cost": 10.0,
+                "length_m": 10.0,
+                "corridor_width_m": 6.0,
+                "blocked": false
+              },
+              {
+                "id": "road-n2_2-n2_1",
+                "from": "n2_2",
+                "to": "n2_1",
+                "cost": 10.0,
+                "length_m": 10.0,
+                "corridor_width_m": 4.0,
+                "blocked": false
+              }
+            ],
+            "static_obstacles": []
+          },
+          "route_loop": {
+            "nodes": [
+              "n0_0",
+              "n0_1",
+              "n0_2",
+              "n1_2",
+              "n2_2",
+              "n2_1",
+              "n2_0",
+              "n1_0",
+              "n0_0"
+            ]
+          },
+          "start_node": "n0_0",
+          "planner": "dijkstra",
+          "temporary_obstacles": [
+            {
+              "edge_id": "road-n0_0-n0_1",
+              "appears_at_tick": 1,
+              "disappears_at_tick": 6,
+              "reason": "synthetic-road-work",
+              "severity": "soft"
+            }
+          ],
+          "blocked_route_policy": "replan",
+          "perimeter_patrol": {
+            "polygon": [
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 20.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 20.0,
+                "y": 20.0,
+                "z": 0.0
+              },
+              {
+                "x": 0.0,
+                "y": 20.0,
+                "z": 0.0
+              }
+            ],
+            "spacing_m": 10.0
+          }
+        },
+        "urban_search_state": null,
+        "wind": null,
+        "pose_noise_m": 0.0,
+        "strategy_name": null,
+        "wildfire_success_threshold": 0.0,
+        "inspection_coverage_threshold": 0.0,
+        "realism_profile": null
+      }
+    }
+  ]
+}

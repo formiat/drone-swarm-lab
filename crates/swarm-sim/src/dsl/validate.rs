@@ -1,5 +1,10 @@
+use std::collections::HashSet;
+
 use super::urban_validate::{validate_urban_patrol_entry, validate_urban_search_entry};
-use super::{ScenarioSuite, ScenarioSuiteEntry, ValidationError};
+use super::{
+    ScenarioGeneratorManifest, ScenarioSuite, ScenarioSuiteEntry, ValidationError,
+    SCENARIO_GENERATOR_MANIFEST_SCHEMA_VERSION,
+};
 
 /// Validate a full scenario suite.
 pub fn validate_scenario_suite(suite: &ScenarioSuite) -> Vec<ValidationError> {
@@ -29,6 +34,10 @@ pub fn validate_scenario_suite(suite: &ScenarioSuite) -> Vec<ValidationError> {
         });
     }
 
+    if let Some(manifest) = &suite.generator_manifest {
+        validate_generator_manifest(manifest, &mut errors);
+    }
+
     for (i, entry) in suite.scenarios.iter().enumerate() {
         let mut entry_errors = validate_entry(entry);
         for e in &mut entry_errors {
@@ -38,6 +47,49 @@ pub fn validate_scenario_suite(suite: &ScenarioSuite) -> Vec<ValidationError> {
     }
 
     errors
+}
+
+fn validate_generator_manifest(
+    manifest: &ScenarioGeneratorManifest,
+    errors: &mut Vec<ValidationError>,
+) {
+    if manifest.schema_version != SCENARIO_GENERATOR_MANIFEST_SCHEMA_VERSION {
+        errors.push(ValidationError {
+            field: "generator_manifest.schema_version".to_owned(),
+            message: format!(
+                "Unsupported generator manifest schema version: {} (expected {SCENARIO_GENERATOR_MANIFEST_SCHEMA_VERSION})",
+                manifest.schema_version
+            ),
+        });
+    }
+    for (field, value) in [
+        ("generator_name", manifest.generator_name.as_str()),
+        ("generator_version", manifest.generator_version.as_str()),
+        ("category", manifest.category.as_str()),
+    ] {
+        if value.trim().is_empty() {
+            errors.push(ValidationError {
+                field: format!("generator_manifest.{field}"),
+                message: format!("{field} must not be empty"),
+            });
+        }
+    }
+
+    let mut keys = HashSet::new();
+    for (index, parameter) in manifest.parameters.iter().enumerate() {
+        if parameter.key.trim().is_empty() {
+            errors.push(ValidationError {
+                field: format!("generator_manifest.parameters[{index}].key"),
+                message: "parameter key must not be empty".to_owned(),
+            });
+        }
+        if !keys.insert(parameter.key.as_str()) {
+            errors.push(ValidationError {
+                field: format!("generator_manifest.parameters[{index}].key"),
+                message: format!("duplicate generator parameter key '{}'", parameter.key),
+            });
+        }
+    }
 }
 
 /// Validate a single scenario suite entry.

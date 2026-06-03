@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-02
 **HEAD commit:** see `git rev-parse HEAD`
-**Last audit:** M75 Urban Mission Realism Follow-up
+**Last audit:** M76 Synthetic Scenario Testbed
 
 This document is the current status summary for the repository. It supersedes
 the older M39b-only audit and should be read together with the README current
@@ -51,6 +51,7 @@ status table.
 | M73 Fault Injection And Degraded Supervisor | Complete as fake-tested pre-hardware boundary | The live supervisor now emits additive `degraded` report records, failure-mode counts, decision counts, abandoned-task/recovery-failure metrics, and degraded replay events. `artifact_validator` checks degraded report/event consistency for new packs while preserving historical mode for old M58/M59 evidence. See `docs/DEGRADED_SUPERVISOR.md`. This is not hardware failure validation, RF modeling, Gazebo/HIL coverage, or production failover. |
 | M74 Urban Blocked-Route Decision Logic | Complete as deterministic simulation-only decision layer | `UrbanTemporaryObstacle` and `UrbanBlockedPolicy` (Wait/Replan/Abort) are implemented. The patrol runner checks an effective blocked-set each tick, runs a graph lookahead detector, and applies the selected policy. Replan finds an alternate route via `plan_route_excluding` and validates it through the M71 judge gate. Replay emits 8 new events (`UrbanEdgeBlocked`, `UrbanEdgeUnblocked`, `UrbanObstacleDetected`, `UrbanPolicyDecision`, `UrbanRouteReplanned`, `UrbanWaitStarted`, `UrbanWaitCompleted`, `UrbanNoRouteAvailable`). Four new metrics track wait time, blocked-edge count, replan success rate, and unresolved blockages. Preflight validates temporary obstacle declarations. Three new scenario profiles exercise Wait, Replan, and No-Alternative paths. This is mission-level reactivity only; no real sensors, no physics, no certified obstacle avoidance. |
 | M75 Urban Mission Realism Follow-up | Complete as deterministic simulation-only mission semantics | `UrbanBusRoute` and `UrbanBusStop` add scheduled moving mocked bus targets over Urban map nodes. The detector samples `pose_at_tick` from the current map/tick and keeps static-bus behavior backward-compatible. `UrbanPerimeterPatrol` and `perimeter_waypoints` add deterministic closed perimeter waypoint generation, a `perimeter-square` profile, and perimeter metrics/export fields (`perimeter_completion_rate`, `perimeter_length_m`, `time_to_complete_perimeter`, `perimeter_violations`). This is mission-level simulation realism only; no lidar/raycast, physics engine, real perception, PX4/SITL execution evidence, hardware validation, or certified obstacle avoidance. |
+| M76 Synthetic Scenario Testbed | Complete as deterministic generator infrastructure | Scenario DSL now has optional `generator_manifest` metadata with manifest-schema validation and legacy compatibility. `swarm-scenarios` exposes `SyntheticUrbanGenerator`, typed Urban generator configs, library presets, and deterministic generated suites with static obstacles, temporary blocked edges, optional mocked bus/failure/comms overlays. `generate_scenario_suite` can regenerate `scenarios/urban.generated.tiny.json`. This is testbed/regression infrastructure only; no benchmark refresh, PX4/SITL evidence, hardware validation, physics engine, real perception, or certified obstacle avoidance. |
 
 ## Current Known Limitations
 
@@ -151,6 +152,11 @@ status table.
   perimeter path is still a mission-level route pattern over the Urban graph.
   This is not real lidar/raycast, a physics engine, dynamic obstacle avoidance,
   PX4 execution evidence, or hardware validation.
+- **Synthetic Scenario Testbed**: M76 adds deterministic generated Scenario DSL
+  inputs and generator manifests. It helps produce reproducible Urban regression
+  fixtures and extension inputs, but it is not a calibrated benchmark corpus,
+  PX4/SITL validation, physical simulation, hardware validation, real
+  perception, or obstacle-avoidance certification.
 
 ### Platform / API
 
@@ -168,7 +174,7 @@ status table.
 |---|---|---|
 | Portable SITL verification | Ready | Run `sitl_agent`/`sitl_docs` targeted tests. |
 | In-repository extension work | Ready with M61 boundaries | Use `docs/EXTENSION_GUIDE.md`; external semver-stable plugin/API work remains out of scope. |
-| Urban algorithm work | Has M68 local delta; not in full benchmark yet | M68 provides a corridor-aware planner delta and route-risk metric. The current M69 `--mission all` benchmark does not include Urban scenario suites; dynamic obstacles, richer judging, route deconfliction, and avoidance remain future work. |
+| Urban algorithm work | Has M68 local delta and M76 generated inputs; not in full benchmark yet | M68 provides a corridor-aware planner delta and route-risk metric. M76 adds deterministic synthetic Urban fixtures for regression/extension work. The current M69 `--mission all` benchmark does not include Urban scenario suites; dynamic obstacles, richer judging, route deconfliction, and avoidance remain future work. |
 | M48 live PX4 verification | Complete for local PX4 SIH | Captured in `results/m48_px4_sitl_2026-05-30/`; Gazebo/HIL/hardware remain out of scope. |
 | Real multi-agent PX4/SIH | Experimental local workflow with M60 hardening | Upload-only, execute, and controlled failure/reallocation SIH evidence exists. `sitl_supervisor --connection --execute --reupload-on-failure --output-dir ... --run-id ...` can produce stable artifacts and exit codes for local runs; automated PX4 CI, Gazebo/HIL, hardware, broader failure modes, and production safety remain future work. |
 | Artifact validation | Ready for local SITL packs | Use `artifact_validator --output-dir <pack> --mode supervisor-run --strict` for new supervisor output dirs. Historical M58/M59 packs can be checked with `--allow-historical`; live harness scripts remain manual-only. |
@@ -187,8 +193,9 @@ status table.
    modes, repeated failure recovery, or automated PX4/SIH orchestration.
 4. Inspect M69 SAR, wildfire, emergency-mesh, and CBBA benchmark interpretation
    gaps before making publication-level algorithm claims.
-5. Use M68 corridor-delta only as small Urban algorithm evidence; add Urban to
-   a future full benchmark entrypoint only if broader Urban claims are needed.
+5. Use M68 corridor-delta only as small Urban algorithm evidence. Use M76
+   generated suites for reproducible Urban regression inputs; add Urban to a
+   future full benchmark entrypoint only if broader Urban claims are needed.
 6. Use M70 `sitl_agent --dry-run --dry-run-artifact` before any optional manual
    Urban PX4/SIH upload experiment; do not treat the artifact as hardware or
    obstacle-avoidance evidence.
@@ -227,6 +234,9 @@ PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
   /home/formi/.local/bin/runlim cargo test -p swarm-scenarios urban
 
 PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
+  /home/formi/.local/bin/runlim cargo test -p swarm-scenarios generated
+
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
   /home/formi/.local/bin/runlim cargo test -p swarm-sim --test scenario_catalog
 
 PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 \
@@ -258,9 +268,11 @@ and test-only extension contract checks. M62 adds a 500-seed release simulation
 benchmark baseline for commit `81260ca7afa114a5d9add7b832f6c5d7875b88cd`; M63
 marks it historical because no current-HEAD rerun was performed. M64 adds Urban
 foundation code and docs, M65 adds Urban Patrol v0 simulation semantics, M66
-adds Urban Search v1 simulation semantics with a mocked bus detector, and M67
-adds Urban replay/analysis diagnostics; none of these milestones refreshes the
-benchmark evidence. Do not extend
+adds Urban Search v1 simulation semantics with a mocked bus detector, M67 adds
+Urban replay/analysis diagnostics, M68 adds a small corridor-aware planner
+delta, M74/M75 add Urban decision/mission realism semantics, and M76 adds
+deterministic generated Urban testbed inputs; none of these milestones refreshes
+the full benchmark evidence. Do not extend
 any existing result to Gazebo, HIL, real hardware, automated PX4 CI,
 semver-stable external API, or publication-level algorithm claims without new
 code/evidence.

@@ -19,6 +19,7 @@ an explicit schema policy update and compatibility tests.
 {
   "name": "My Suite",
   "schema_version": "0.1",
+  "generator_manifest": null,
   "scenarios": [
     {
       "mission": "coverage",
@@ -50,6 +51,27 @@ an explicit schema policy update and compatibility tests.
   ]
 }
 ```
+
+`generator_manifest` is optional. M76 uses it for suites produced by a
+deterministic scenario generator:
+
+```json
+{
+  "schema_version": "scenario_generator_manifest.v1",
+  "generator_name": "synthetic-urban",
+  "generator_version": "0.1.0",
+  "seed": 42,
+  "category": "tiny",
+  "parameters": [
+    { "key": "rows", "value": "3" },
+    { "key": "cols", "value": "3" }
+  ]
+}
+```
+
+Manifest validation requires the manifest schema version above, non-empty
+generator name/version/category, non-empty parameter keys, and unique parameter
+keys. Legacy suites without `generator_manifest` still load and validate.
 
 ## Scenario Geo Origin
 
@@ -329,9 +351,43 @@ The repository includes pre-built scenario files in `scenarios/`, including:
 - `urban.search.json` — M66 Urban Search static-bus simulation fixture
 - `urban.multi-agent.json` — M67 two-agent Urban replay-analysis fixture
 - `urban.corridor-delta.json` — M68 Dijkstra vs corridor-aware planner delta
+- `urban.generated.tiny.json` — M76 deterministic synthetic Urban generator
+  fixture with `generator_manifest`
 - standard generated Urban profiles also include M75 `search-moving-bus` and
   `perimeter-square`; these are builder-level fixtures and do not imply
   hardware or physics evidence.
+
+## Synthetic Scenario Generation
+
+M76 adds a library-backed synthetic Urban generator for reproducible testbed
+fixtures. The generator lives in `swarm-scenarios` and currently supports Urban
+grid suites with:
+
+- deterministic road graph dimensions and corridor widths from a seed;
+- interior static AABB obstacles;
+- temporary blocked route edges for M74-style policy checks;
+- optional mocked static or scheduled-route bus targets for M66/M75-style
+  search checks;
+- optional failure events and comms partitions for supervisor/runtime-oriented
+  simulation inputs.
+
+Regenerate the checked-in tiny fixture:
+
+```bash
+cargo run -p swarm-examples --bin generate_scenario_suite -- \
+  --family urban \
+  --category tiny \
+  --seed 42 \
+  --rows 3 \
+  --cols 3 \
+  --output scenarios/urban.generated.tiny.json \
+  --force
+```
+
+The generated fixture is not benchmark evidence, PX4/SITL evidence, hardware
+evidence, physical simulation, real perception, or certified obstacle
+avoidance. It is a deterministic Scenario DSL input for tests and future Urban
+extension work.
 
 ## Export / Import
 

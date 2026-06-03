@@ -152,6 +152,13 @@ does not refresh the benchmark evidence. Treat M75 validation as targeted
 simulation/unit coverage unless a later milestone captures a dedicated Urban
 scenario-suite pack.
 
+M76 adds deterministic synthetic Urban scenario-suite generation and the tiny
+checked-in fixture `scenarios/urban.generated.tiny.json`. This is reproducible
+testbed infrastructure, not a benchmark refresh. The fixture carries
+`generator_manifest` metadata so seed/category/parameter provenance is visible,
+but no M69/M62 benchmark conclusions should be extended to generated Urban
+suites without a dedicated run.
+
 ## M68 Urban Corridor Delta
 
 M68 compares two `urban-patrol` profiles over the same deterministic road

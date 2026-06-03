@@ -206,4 +206,31 @@ mod tests {
             baseline_metrics.urban_route_risk_score
         );
     }
+
+    #[test]
+    fn generated_urban_tiny_scenario_loads_and_carries_manifest() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../scenarios/urban.generated.tiny.json"
+        );
+        let suite = swarm_sim::load_scenario_suite(path).expect("generated urban scenario loads");
+        let manifest = suite
+            .generator_manifest
+            .as_ref()
+            .expect("generated suite has manifest");
+        assert_eq!(manifest.generator_name, "synthetic-urban");
+        assert_eq!(manifest.category, "tiny");
+        assert!(manifest
+            .parameters
+            .iter()
+            .any(|parameter| parameter.key == "blocked_edge_count"));
+
+        let entry = &suite.scenarios[0];
+        assert_eq!(entry.mission, "urban-patrol");
+        let errors = swarm_sim::validate_entry(entry);
+        assert!(
+            errors.is_empty(),
+            "generated urban scenario must validate: {errors:?}"
+        );
+    }
 }

@@ -16,8 +16,9 @@ pub use benchmark::{
 pub use clock::{Clock, Tick};
 pub use dsl::{
     export_entry, export_suite, load_scenario_suite, run_preflight_report, validate_entry,
-    validate_mission_specific, validate_scenario_suite, ScenarioSuite, ScenarioSuiteEntry,
-    ValidationError,
+    validate_mission_specific, validate_scenario_suite, ScenarioGeneratorManifest,
+    ScenarioGeneratorParameter, ScenarioSuite, ScenarioSuiteEntry, ValidationError,
+    SCENARIO_GENERATOR_MANIFEST_SCHEMA_VERSION,
 };
 pub use preflight::run_preflight;
 pub use regression::{

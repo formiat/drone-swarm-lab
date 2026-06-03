@@ -805,6 +805,7 @@ mod tests {
             schema_version: "0.1".to_owned(),
             name: "SITL Waypoints".to_owned(),
             description: "test suite".to_owned(),
+            generator_manifest: None,
             scenarios: vec![ScenarioSuiteEntry {
                 mission: "sitl".to_owned(),
                 profile: "waypoints".to_owned(),
@@ -832,6 +833,7 @@ mod tests {
             schema_version: "0.1".to_owned(),
             name: "Urban Patrol Small Block".to_owned(),
             description: "test suite".to_owned(),
+            generator_manifest: None,
             scenarios: vec![ScenarioSuiteEntry {
                 mission: "urban-patrol".to_owned(),
                 profile: "patrol-small-block".to_owned(),
@@ -1154,6 +1156,7 @@ mod tests {
             schema_version: "0.1".to_owned(),
             name: String::new(),
             description: "test suite".to_owned(),
+            generator_manifest: None,
             scenarios: vec![],
         };
         let error = build_sitl_plan(&suite, "scenario.json", "agent-0").unwrap_err();

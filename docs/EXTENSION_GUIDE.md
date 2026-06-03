@@ -91,9 +91,10 @@ Internal or experimental:
 
 M64 adds an Urban foundation, M65 adds the first Urban Patrol simulation, M66
 adds Urban Search v1 with a deterministic mocked bus detector, M67 adds
-diagnostic replay/analysis tooling, and M75 adds scheduled moving bus targets
-plus perimeter patrol semantics. Future Urban work should reuse this road-graph
-path instead of starting with arbitrary polygons:
+diagnostic replay/analysis tooling, M75 adds scheduled moving bus targets plus
+perimeter patrol semantics, and M76 adds deterministic generated Urban testbed
+fixtures. Future Urban work should reuse this road-graph path instead of
+starting with arbitrary polygons:
 
 - shared types live in `crates/swarm-types/src/urban.rs`;
 - deterministic Dijkstra planning, experimental M68 corridor-aware planning,
@@ -123,6 +124,14 @@ path instead of starting with arbitrary polygons:
 - standard Urban builders also expose M75 `search-moving-bus` and
   `perimeter-square` profiles for deterministic moving-target/perimeter
   simulation tests;
+- generated Urban suites should use `SyntheticUrbanGenerator` from
+  `crates/swarm-scenarios/src/generated.rs` when the fixture needs systematic
+  variation by seed, grid size, blocked edges, bus mode, failures, or comms
+  overlays. Generated suites must carry `generator_manifest` so provenance is
+  visible in Scenario DSL artifacts;
+- `scenarios/urban.generated.tiny.json` is the portable M76 checked-in
+  generated fixture. Regenerate it through `generate_scenario_suite` rather
+  than hand-editing generated values;
 - metrics report route planning and patrol execution fields:
   `urban_route_length_m`, `urban_route_planned`,
   `urban_violation_count`, `urban_route_completed`,
@@ -168,9 +177,10 @@ This is intentionally a mission-level substrate. The M66 detector is mocked and
 distance/probability based. The M67 two-agent fixture is diagnostic only. The
 M68 corridor-aware planner is a route scoring extension, not physical
 avoidance. Do not add real lidar/raycast, dynamic obstacles, multi-agent route
-deconfliction, PX4/SITL export, hardware claims, visual UI, or arbitrary polygon dependencies
-as part of this path. Those belong to later milestones
-with their own tests and docs.
+deconfliction, PX4/SITL export, hardware claims, visual UI, or arbitrary polygon
+dependencies as part of this path. M76 generated suites are deterministic input
+generation only; they are not benchmark, PX4, hardware, or physics evidence.
+Those belong to later milestones with their own tests and docs.
 
 ## Add A Strategy
 

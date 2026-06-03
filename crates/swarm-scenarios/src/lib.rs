@@ -1,6 +1,7 @@
 pub mod auction;
 pub mod coverage;
 pub mod emergency_mesh;
+pub mod generated;
 pub mod inspection;
 pub mod partition;
 pub mod profiles;
@@ -13,6 +14,13 @@ pub use coverage::{build_coverage_scenario, CoverageConfig};
 pub use emergency_mesh::{
     build_emergency_mesh_scenario, EmergencyMeshConfig, EmergencyMeshProfile,
     EmergencyMeshStandardProfiles,
+};
+pub use generated::{
+    GeneratedScenarioSuite, ScenarioGenerationError, ScenarioGenerator, SyntheticBusMode,
+    SyntheticCommsConfig, SyntheticFailureConfig, SyntheticFailureType, SyntheticPartitionConfig,
+    SyntheticReplacementPolicy, SyntheticScenarioCategory, SyntheticScenarioLibrary,
+    SyntheticUrbanConfig, SyntheticUrbanGenerator, SYNTHETIC_URBAN_GENERATOR_NAME,
+    SYNTHETIC_URBAN_GENERATOR_VERSION,
 };
 pub use inspection::{
     build_inspection_scenario, InspectionConfig, InspectionProfile, InspectionStandardProfiles,

@@ -378,6 +378,7 @@ mod tests {
             schema_version: "0.1".to_owned(),
             name: "SITL Waypoints".to_owned(),
             description: "multi sitl test suite".to_owned(),
+            generator_manifest: None,
             scenarios: vec![ScenarioSuiteEntry {
                 mission: "sitl".to_owned(),
                 profile: "waypoints".to_owned(),
