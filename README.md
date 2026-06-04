@@ -797,13 +797,30 @@ report records Urban violation type, tick, segment, pose, reason, and optional
 `avg_urban_route_conflict_count` fields when Urban replay evidence is present.
 
 `scenarios/urban.multi-agent.json` is an M67 two-agent analysis fixture. It is
-meant for replay/analysis and separation-conflict checks only; it does not add
-multi-agent Urban control, route deconfliction, or avoidance. Use
+meant for replay/analysis and separation-conflict checks only; it does not
+enable M85 route control by itself. Use
 `replay --timeline --category urban` to inspect Urban events and
 `replay --timeline --agent agent-0` to inspect one agent's event stream.
 Running this fixture through `--scenario-suite ... --output-dir ... --replay-log ...`
 produces replay logs plus `urban_analysis/` artifacts with two-agent route
 traces, minimum separation, and route-conflict counts.
+
+M85 adds opt-in Urban Multi-Agent Deconfliction for `urban-patrol`.
+`run_config.urban_state.deconfliction.enabled = true` turns the patrol runner
+from replay-only multi-agent analysis into mission-level segment ownership:
+agents reserve a road-graph segment before entering it and release it after
+completion. The supported right-of-way policies are `first_come`, `priority`,
+and `round_robin`; `mission_critical_override` is parsed as a future hook but
+rejected as unsupported until its semantics are defined. A locked segment can
+make the losing agent `wait`, `replan`, or `abort` according to
+`locked_segment_policy`. Replay logs include
+`UrbanSegmentLockAcquired`, `UrbanSegmentLockReleased`,
+`UrbanSegmentConflict`, `UrbanDeconflictWait`, `UrbanDeconflictReplan`, and
+`UrbanDeconflictAbort`; reports include
+`urban_deconflict_conflict_count`, `urban_deconflict_wait_ticks`,
+`urban_deconflict_replan_count`, `urban_deconflict_abort_count`,
+`urban_segment_utilization`, and `urban_avg_delay_per_agent_ticks` metrics.
+This is mission-level graph deconfliction only: it is not lidar/raycast, not physical collision avoidance, not RF coordination, not PX4/SITL execution evidence, not hardware readiness, and not real perception.
 
 M68 adds `scenarios/urban.corridor-delta.json`, a small before/after algorithm
 fixture over one road graph. The `corridor-delta-dijkstra` profile takes the
@@ -836,8 +853,9 @@ partitions. It is testbed infrastructure for reproducible regression and
 extension work, not a new benchmark pack or PX4/SITL artifact.
 
 This remains simulation-only: it does not implement lidar/raycast, dynamic
-obstacles, multi-agent route deconfliction, real perception, PX4/SITL export,
-hardware readiness, or a visual UI.
+obstacles, physical collision avoidance, real perception, PX4/SITL export,
+hardware readiness, or a visual UI. M85 deconfliction is limited to explicit
+Urban road-graph segment ownership in simulation.
 
 Load a realism scenario directly:
 

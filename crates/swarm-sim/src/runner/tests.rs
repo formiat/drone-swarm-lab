@@ -4,8 +4,8 @@ use swarm_types::{
     Aabb, Agent, Capability, CellState, EdgeId, Health, HiddenTarget, InspectionEdge, Pose, Role,
     SearchGrid, SensorModel, Task, TaskKind, TaskStatus, UrbanBlockedPolicy, UrbanBus, UrbanBusId,
     UrbanDetectorConfig, UrbanEdge, UrbanEdgeId, UrbanNode, UrbanNodeId, UrbanObstacleId,
-    UrbanPerimeterPatrol, UrbanRouteLoop, UrbanSearchState, UrbanStaticObstacle,
-    UrbanTemporaryObstacle,
+    UrbanPerimeterPatrol, UrbanRightOfWayPolicy, UrbanRouteLoop, UrbanSearchState,
+    UrbanStaticObstacle, UrbanTemporaryObstacle,
 };
 
 fn scenario(seed: u64, agent_count: usize, task_count: usize) -> Scenario {
@@ -809,6 +809,7 @@ fn urban_test_run_config(
             planner: "dijkstra".to_owned(),
             temporary_obstacles: vec![],
             blocked_route_policy: swarm_types::UrbanBlockedPolicy::default(),
+            deconfliction: Default::default(),
             perimeter_patrol: None,
         }),
         ..config(vec![])
@@ -1010,6 +1011,128 @@ fn urban_patrol_replay_records_ordered_route_events() {
         event,
         swarm_replay::Event::UrbanPatrolCompleted { tick: 40, .. }
     )));
+}
+
+#[test]
+fn urban_deconfliction_prevents_duplicate_segment_ownership() {
+    let (scenario, run_config) = urban_deconfliction_test_run_config(
+        UrbanRightOfWayPolicy::FirstCome,
+        UrbanBlockedPolicy::Wait,
+    );
+
+    let (metrics, event_log) = ScenarioRunner::run_with_log(
+        &scenario,
+        run_config,
+        swarm_alloc::GreedyAllocator::default(),
+    );
+    let event_log = event_log.expect("urban deconfliction run should produce replay log");
+
+    assert!(metrics.success);
+    assert!(metrics.urban_deconflict_conflict_count > 0);
+    assert!(metrics.urban_deconflict_wait_ticks > 0);
+    assert_no_duplicate_segment_ownership(&event_log);
+    assert!(event_log
+        .events
+        .iter()
+        .any(|event| matches!(event, swarm_replay::Event::UrbanSegmentConflict { .. })));
+    assert!(event_log
+        .events
+        .iter()
+        .any(|event| matches!(event, swarm_replay::Event::UrbanDeconflictWait { .. })));
+}
+
+#[test]
+fn urban_deconfliction_priority_uses_agent_priorities() {
+    let (scenario, run_config) = urban_deconfliction_test_run_config(
+        UrbanRightOfWayPolicy::Priority,
+        UrbanBlockedPolicy::Wait,
+    );
+
+    let (_metrics, event_log) = ScenarioRunner::run_with_log(
+        &scenario,
+        run_config,
+        swarm_alloc::GreedyAllocator::default(),
+    );
+    let event_log = event_log.expect("urban deconfliction run should produce replay log");
+
+    let first_lock = event_log.events.iter().find_map(|event| match event {
+        swarm_replay::Event::UrbanSegmentLockAcquired {
+            agent_id,
+            edge_id,
+            tick: 0,
+            ..
+        } if edge_id.to_string() == "road-n0-n1" => Some(agent_id.to_string()),
+        _ => None,
+    });
+    assert_eq!(first_lock.as_deref(), Some("agent-1"));
+}
+
+fn assert_no_duplicate_segment_ownership(log: &swarm_replay::EventLog) {
+    let mut active = std::collections::HashMap::<UrbanEdgeId, AgentId>::new();
+    for event in &log.events {
+        match event {
+            swarm_replay::Event::UrbanSegmentLockAcquired {
+                agent_id, edge_id, ..
+            } => {
+                if let Some(holder) = active.get(edge_id) {
+                    assert_eq!(holder, agent_id, "duplicate holder for edge {edge_id}");
+                } else {
+                    active.insert(edge_id.clone(), agent_id.clone());
+                }
+            }
+            swarm_replay::Event::UrbanSegmentLockReleased {
+                agent_id, edge_id, ..
+            } => {
+                assert_eq!(
+                    active.remove(edge_id).as_ref(),
+                    Some(agent_id),
+                    "release must match active holder for edge {edge_id}"
+                );
+            }
+            _ => {}
+        }
+    }
+    assert!(active.is_empty(), "all segment locks must be released");
+}
+
+fn urban_deconfliction_test_run_config(
+    right_of_way_policy: UrbanRightOfWayPolicy,
+    locked_segment_policy: UrbanBlockedPolicy,
+) -> (Scenario, RunConfig) {
+    let (mut scenario, mut run_config) = urban_test_run_config(80, vec![]);
+    scenario.name = "urban_deconfliction_unit".to_owned();
+    scenario.agents.push(Agent {
+        id: AgentId::from("agent-1".to_owned()),
+        role: Role::Scout,
+        health: Health::Alive,
+        pose: Pose {
+            x: 0.0,
+            y: 0.0,
+            ..Default::default()
+        },
+        capabilities: Vec::new(),
+        current_task: None,
+        battery: 100.0,
+        comms_range: f64::INFINITY,
+        generation: 1,
+        speed: 2.0,
+        max_range: 1000.0,
+        battery_drain_rate: 0.0,
+        battery_model: None,
+    });
+    let urban_state = run_config.urban_state.as_mut().unwrap();
+    urban_state.deconfliction.enabled = true;
+    urban_state.deconfliction.right_of_way_policy = right_of_way_policy;
+    urban_state.deconfliction.locked_segment_policy = locked_segment_policy;
+    urban_state
+        .deconfliction
+        .agent_priorities
+        .insert(AgentId::from("agent-0".to_owned()), 1);
+    urban_state
+        .deconfliction
+        .agent_priorities
+        .insert(AgentId::from("agent-1".to_owned()), 9);
+    (scenario, run_config)
 }
 
 #[test]

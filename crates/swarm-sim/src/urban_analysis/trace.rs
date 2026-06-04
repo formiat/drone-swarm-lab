@@ -3,7 +3,8 @@ use swarm_types::{AgentId, UrbanEdgeId};
 
 use super::{
     count_urban_events, UrbanAgentRouteTrace, UrbanPoseTracePoint, UrbanRouteTrace,
-    UrbanSegmentStatus, UrbanTraceSegment,
+    UrbanSegmentOwnershipRecord, UrbanSegmentOwnershipReport, UrbanSegmentStatus,
+    UrbanTraceSegment,
 };
 
 /// Reconstruct a route trace from Urban events in a replay log.
@@ -116,7 +117,13 @@ pub fn build_urban_route_trace(log: &EventLog) -> UrbanRouteTrace {
             | Event::UrbanRouteReplanned { .. }
             | Event::UrbanWaitStarted { .. }
             | Event::UrbanWaitCompleted { .. }
-            | Event::UrbanNoRouteAvailable { .. } => {}
+            | Event::UrbanNoRouteAvailable { .. }
+            | Event::UrbanSegmentLockAcquired { .. }
+            | Event::UrbanSegmentLockReleased { .. }
+            | Event::UrbanSegmentConflict { .. }
+            | Event::UrbanDeconflictWait { .. }
+            | Event::UrbanDeconflictReplan { .. }
+            | Event::UrbanDeconflictAbort { .. } => {}
         }
     }
 
@@ -145,6 +152,75 @@ pub fn build_urban_route_trace(log: &EventLog) -> UrbanRouteTrace {
         event_counts: count_urban_events(log),
     }
 }
+
+/// Reconstruct M85 segment ownership intervals from replay lock events.
+pub fn build_urban_segment_ownership_report(log: &EventLog) -> UrbanSegmentOwnershipReport {
+    let mut active = Vec::<UrbanSegmentOwnershipRecord>::new();
+    let mut records = Vec::new();
+
+    for event in &log.events {
+        match event {
+            Event::UrbanSegmentLockAcquired {
+                agent_id,
+                tick,
+                edge_id,
+                ..
+            } => {
+                if active
+                    .iter()
+                    .any(|record| &record.edge_id == edge_id && &record.agent_id == agent_id)
+                {
+                    continue;
+                }
+                active.push(UrbanSegmentOwnershipRecord {
+                    edge_id: edge_id.clone(),
+                    agent_id: agent_id.clone(),
+                    acquired_tick: *tick,
+                    released_tick: None,
+                    held_ticks: None,
+                });
+            }
+            Event::UrbanSegmentLockReleased {
+                agent_id,
+                tick,
+                edge_id,
+                held_ticks,
+            } => {
+                if let Some(index) = active
+                    .iter()
+                    .position(|record| &record.edge_id == edge_id && &record.agent_id == agent_id)
+                {
+                    let mut record = active.remove(index);
+                    record.released_tick = Some(*tick);
+                    record.held_ticks = Some(*held_ticks);
+                    records.push(record);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    records.extend(active);
+    records.sort_by(|left, right| {
+        (
+            left.acquired_tick,
+            left.edge_id.to_string(),
+            left.agent_id.to_string(),
+        )
+            .cmp(&(
+                right.acquired_tick,
+                right.edge_id.to_string(),
+                right.agent_id.to_string(),
+            ))
+    });
+
+    UrbanSegmentOwnershipReport {
+        run_id: log.run_id.clone(),
+        scenario_name: log.scenario_name.clone(),
+        records,
+    }
+}
+
 fn agent_trace_mut<'a>(
     agents: &'a mut Vec<UrbanAgentRouteTrace>,
     agent_id: &AgentId,

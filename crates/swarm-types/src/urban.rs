@@ -312,6 +312,17 @@ pub enum UrbanBlockedPolicy {
     Abort,
 }
 
+/// Right-of-way policy for mission-level Urban route-segment ownership.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum UrbanRightOfWayPolicy {
+    #[default]
+    FirstCome,
+    Priority,
+    RoundRobin,
+    MissionCriticalOverride,
+}
+
 /// Typed validation error for Urban map and route-loop inputs.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UrbanMapValidationError {

@@ -25,6 +25,6 @@ pub use urban::{
     ObstacleSeverity, UrbanBlockedPolicy, UrbanBus, UrbanBusId, UrbanBusRoute, UrbanBusStop,
     UrbanDetectorConfig, UrbanEdge, UrbanEdgeId, UrbanGeoPoint, UrbanMap, UrbanMapValidationError,
     UrbanNode, UrbanNodeId, UrbanObstacleId, UrbanPerimeterPatrol, UrbanPlannedRoute,
-    UrbanRouteLoop, UrbanRouteSegment, UrbanSearchState, UrbanStaticObstacle,
-    UrbanTemporaryObstacle, UrbanViolation,
+    UrbanRightOfWayPolicy, UrbanRouteLoop, UrbanRouteSegment, UrbanSearchState,
+    UrbanStaticObstacle, UrbanTemporaryObstacle, UrbanViolation,
 };

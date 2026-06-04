@@ -161,6 +161,48 @@ mod tests {
     }
 
     #[test]
+    fn urban_deconfliction_scenario_loads_and_emits_locks() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../scenarios/urban.multi-agent-deconflict.json"
+        );
+        let suite =
+            swarm_sim::load_scenario_suite(path).expect("urban deconfliction scenario loads");
+        assert_eq!(suite.name, "Urban Multi-Agent Deconfliction");
+        let entry = &suite.scenarios[0];
+        assert_eq!(entry.mission, "urban-patrol");
+        assert_eq!(entry.profile, "deconflict-first-come");
+        assert_eq!(entry.scenario.agents.len(), 2);
+        let errors = swarm_sim::validate_entry(entry);
+        assert!(
+            errors.is_empty(),
+            "urban deconfliction scenario must validate: {errors:?}"
+        );
+
+        let (metrics, log) = swarm_sim::ScenarioRunner::run_with_log(
+            &entry.scenario,
+            entry.run_config.clone(),
+            swarm_alloc::GreedyAllocator::default(),
+        );
+        let log = log.expect("urban deconfliction run should produce replay log");
+        assert!(metrics.success);
+        assert!(metrics.urban_deconflict_conflict_count > 0);
+        assert!(metrics.urban_deconflict_wait_ticks > 0);
+        assert!(log
+            .events
+            .iter()
+            .any(|event| matches!(event, swarm_replay::Event::UrbanSegmentLockAcquired { .. })));
+        assert!(log
+            .events
+            .iter()
+            .any(|event| matches!(event, swarm_replay::Event::UrbanSegmentLockReleased { .. })));
+        assert!(log
+            .events
+            .iter()
+            .any(|event| matches!(event, swarm_replay::Event::UrbanSegmentConflict { .. })));
+    }
+
+    #[test]
     fn urban_corridor_delta_scenario_loads_and_improves_risk() {
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),

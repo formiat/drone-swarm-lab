@@ -132,6 +132,7 @@ Exit codes:
 | `artifact.urban_geo_route_metadata_missing` | An Urban dry-run artifact uses `coordinate_mode: wgs84_node_geo` but is missing full waypoint route metadata, or its MAVLink `mission_items[].lat_e7` / `lon_e7` / `relative_alt_m` do not match the exported waypoint `geo` metadata. |
 | `artifact.urban_wgs84_geo_missing` | An Urban dry-run artifact uses `coordinate_mode: wgs84_node_geo` but start/end waypoints or one of the exported route waypoints do not carry `geo`. |
 | `artifact.urban_mock_perception_missing` | An `urban-search` dry-run artifact is missing `urban_mock_perception` metadata. |
+| `artifact.urban_deconfliction_duplicate_segment_owner` | Future M85 benchmark-pack ownership artifacts report more than one holder for the same `(edge_id, tick)`. Current M85 runtime tests enforce this invariant from replay events; standalone artifact-validator support is optional until ownership JSON/CSV artifacts are emitted. |
 | `artifact.parse_failed` | A required artifact could not be read or parsed. |
 
 ## Local Harness

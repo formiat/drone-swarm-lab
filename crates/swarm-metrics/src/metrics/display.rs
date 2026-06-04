@@ -240,6 +240,36 @@ impl fmt::Display for AggregateMetrics {
         )?;
         writeln!(
             f,
+            "avg_urban_deconflict_conflict_count: {:.3}",
+            self.avg_urban_deconflict_conflict_count
+        )?;
+        writeln!(
+            f,
+            "avg_urban_deconflict_wait_ticks: {:.3}",
+            self.avg_urban_deconflict_wait_ticks
+        )?;
+        writeln!(
+            f,
+            "avg_urban_deconflict_replan_count: {:.3}",
+            self.avg_urban_deconflict_replan_count
+        )?;
+        writeln!(
+            f,
+            "avg_urban_deconflict_abort_count: {:.3}",
+            self.avg_urban_deconflict_abort_count
+        )?;
+        writeln!(
+            f,
+            "avg_urban_segment_utilization: {:.3}",
+            self.avg_urban_segment_utilization
+        )?;
+        writeln!(
+            f,
+            "avg_urban_delay_per_agent_ticks: {:.3}",
+            self.avg_urban_delay_per_agent_ticks
+        )?;
+        writeln!(
+            f,
             "avg_perimeter_completion_rate: {:.3}",
             self.avg_perimeter_completion_rate
         )?;

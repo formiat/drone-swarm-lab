@@ -44,6 +44,12 @@ Each simulation run can optionally produce an `EventLog` — a JSON file contain
 | `UrbanWaitCompleted` | Wait policy resumed after a blocked edge cleared | `agent_id`, `edge_id`, `wait_ticks`, `tick` |
 | `UrbanRouteReplanned` | Replan policy found and installed an alternate route | `agent_id`, `avoided_edge_id`, `edge_ids`, `tick` |
 | `UrbanNoRouteAvailable` | Replan/Abort path could not continue safely | `agent_id`, `edge_id`, `reason`, `tick` |
+| `UrbanSegmentLockAcquired` | M85 agent reserved an Urban route segment before entering it | `agent_id`, `tick`, `edge_id`, `policy`, `reason` |
+| `UrbanSegmentLockReleased` | M85 agent released an Urban route segment after completing it | `agent_id`, `tick`, `edge_id`, `held_ticks` |
+| `UrbanSegmentConflict` | M85 right-of-way conflict was resolved against a requester | `tick`, `edge_id`, `holder_agent_id`, `requester_agent_id`, `policy`, `reason` |
+| `UrbanDeconflictWait` | M85 losing agent waited before a locked segment | `agent_id`, `tick`, `edge_id`, `reason` |
+| `UrbanDeconflictReplan` | M85 losing agent accepted an alternate route around a locked segment | `agent_id`, `tick`, `edge_id`, `edge_ids`, `route_length_m`, `reason` |
+| `UrbanDeconflictAbort` | M85 losing agent aborted because locked-segment policy required it or no route existed | `agent_id`, `tick`, `edge_id`, `reason` |
 | `BusObserved` | Urban Search mocked detector observed an in-range bus | `agent_id`, `tick`, `bus_id`, `pose`, `distance_m`, `detector_seed` |
 | `BusDetected` | Urban Search mocked detector confirmed a real bus detection | `agent_id`, `tick`, `bus_id`, `pose`, `distance_m`, `detector_seed` |
 | `BusFalsePositive` | Urban Search mocked detector produced a false positive | `agent_id`, `tick`, `pose`, `detector_seed` |
@@ -57,9 +63,10 @@ ticks. M75 moving-bus routes reuse `BusObserved` and `BusDetected`; their
 `pose` field is the sampled bus pose at the event tick, not merely the static
 fallback pose from the scenario. M75 perimeter patrol reuses the existing Urban
 route-progress events and adds metrics rather than new replay event variants.
-The events are simulation-only and do not imply lidar, real obstacle avoidance,
-PX4/SITL execution, hardware readiness, a physics engine, real perception, or
-multi-agent deconfliction.
+The M85 deconfliction events are mission-level Urban graph events: they prove
+segment ownership in the simulation runner, not lidar, real obstacle
+avoidance, PX4/SITL execution, hardware readiness, a physics engine, real
+perception, and not RF coordination.
 
 M67 adds diagnostic replay tooling for Urban work. `UrbanViolation.obstacle_id`
 is an additive optional field and old logs without it still deserialize.
@@ -463,3 +470,32 @@ tick 1  UrbanObstacleDetected  edge=e-AB  lookahead_segments=3
 tick 1  UrbanNoRouteAvailable  from=nA  to=nC  reason=no alternate route around blocked edge 'e-AB'
 tick 1  UrbanPolicyDecision    edge=e-AB  policy=abort
 ```
+
+## M85 Urban Multi-Agent Deconfliction Events
+
+M85 adds opt-in segment ownership for Urban Patrol runs with
+`run_config.urban_state.deconfliction.enabled = true`. The runner reserves a
+road-graph segment before emitting `UrbanSegmentEntered` and releases it after
+`UrbanSegmentCompleted`. If two agents request the same segment, the configured
+right-of-way policy (`first_come`, `priority`, or `round_robin`) selects one
+holder. `mission_critical_override` is a parsed future hook and is currently
+reported as unsupported rather than silently applied.
+
+Typical wait trace:
+
+```
+tick 0  UrbanSegmentLockAcquired  agent=agent-0  edge=road-n0-n1  policy=first_come
+tick 0  UrbanSegmentConflict      holder=agent-0 requester=agent-1 edge=road-n0-n1
+tick 0  UrbanDeconflictWait       agent=agent-1  edge=road-n0-n1
+...
+tick 10 UrbanSegmentCompleted     agent=agent-0  edge=road-n0-n1
+tick 10 UrbanSegmentLockReleased  agent=agent-0  edge=road-n0-n1
+tick 11 UrbanSegmentLockAcquired  agent=agent-1  edge=road-n0-n1
+tick 11 UrbanSegmentEntered       agent=agent-1  edge=road-n0-n1
+```
+
+For `locked_segment_policy = replan`, the losing agent emits
+`UrbanDeconflictReplan` with replacement `edge_ids`. For
+`locked_segment_policy = abort`, it emits `UrbanDeconflictAbort`. These events
+are not physical collision avoidance and do not model 3D separation, lidar,
+dynamic obstacles, PX4/SITL execution, hardware readiness, or real perception.

@@ -1,3 +1,4 @@
+mod deconfliction;
 mod detection;
 mod geojson_import;
 mod geometry;
@@ -7,6 +8,7 @@ mod planner;
 mod risk;
 mod route_export;
 
+pub use deconfliction::*;
 pub use detection::*;
 pub use geojson_import::*;
 pub use geometry::*;

@@ -31,6 +31,10 @@ struct UrbanAnalysisManifestEntry {
     route_trace_csv: String,
     judge_report_json: String,
     judge_report_csv: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    segment_ownership_json: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    segment_ownership_csv: Option<String>,
     event_counts: swarm_sim::UrbanEventCounts,
     separation_summary: swarm_sim::UrbanSeparationSummary,
 }
@@ -51,6 +55,7 @@ pub(super) fn write_urban_analysis_artifacts(
         let safe_run_id = format!("{index:03}_{}", sanitize_artifact_id(&log.run_id));
         let route_trace = swarm_sim::build_urban_route_trace(log);
         let judge_report = swarm_sim::build_urban_judge_report(log);
+        let segment_ownership = swarm_sim::build_urban_segment_ownership_report(log);
         let separation_summary = swarm_sim::measure_urban_separation(
             &route_trace,
             swarm_sim::URBAN_ANALYSIS_DEFAULT_SEPARATION_THRESHOLD_M,
@@ -60,6 +65,10 @@ pub(super) fn write_urban_analysis_artifacts(
         let route_trace_csv = format!("urban_analysis/{safe_run_id}.route-trace.csv");
         let judge_report_json = format!("urban_analysis/{safe_run_id}.judge-report.json");
         let judge_report_csv = format!("urban_analysis/{safe_run_id}.judge-report.csv");
+        let segment_ownership_json = (!segment_ownership.records.is_empty())
+            .then(|| format!("urban_analysis/{safe_run_id}.segment-ownership.json"));
+        let segment_ownership_csv = (!segment_ownership.records.is_empty())
+            .then(|| format!("urban_analysis/{safe_run_id}.segment-ownership.csv"));
 
         swarm_sim::write_urban_route_trace_json(
             &route_trace,
@@ -77,6 +86,18 @@ pub(super) fn write_urban_analysis_artifacts(
             &judge_report,
             format!("{output_dir}/{judge_report_csv}"),
         )?;
+        if let Some(path) = &segment_ownership_json {
+            swarm_sim::write_urban_segment_ownership_json(
+                &segment_ownership,
+                format!("{output_dir}/{path}"),
+            )?;
+        }
+        if let Some(path) = &segment_ownership_csv {
+            swarm_sim::write_urban_segment_ownership_csv(
+                &segment_ownership,
+                format!("{output_dir}/{path}"),
+            )?;
+        }
 
         artifacts.push(UrbanAnalysisManifestEntry {
             replay_log_index: index,
@@ -86,6 +107,8 @@ pub(super) fn write_urban_analysis_artifacts(
             route_trace_csv,
             judge_report_json,
             judge_report_csv,
+            segment_ownership_json,
+            segment_ownership_csv,
             event_counts,
             separation_summary,
         });
@@ -122,6 +145,18 @@ fn has_non_pose_urban_events(counts: &swarm_sim::UrbanEventCounts) -> bool {
         + counts.bus_detected
         + counts.bus_false_positive
         + counts.search_completed
+        + counts.edge_blocked
+        + counts.edge_unblocked
+        + counts.route_replanned
+        + counts.wait_started
+        + counts.wait_completed
+        + counts.no_route_available
+        + counts.segment_lock_acquired
+        + counts.segment_lock_released
+        + counts.segment_conflict
+        + counts.deconflict_wait
+        + counts.deconflict_replan
+        + counts.deconflict_abort
         > 0
 }
 

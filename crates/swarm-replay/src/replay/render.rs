@@ -261,7 +261,13 @@ fn event_category(event: &Event) -> ReplayEventCategory {
         | Event::UrbanRouteReplanned { .. }
         | Event::UrbanWaitStarted { .. }
         | Event::UrbanWaitCompleted { .. }
-        | Event::UrbanNoRouteAvailable { .. } => ReplayEventCategory::Urban,
+        | Event::UrbanNoRouteAvailable { .. }
+        | Event::UrbanSegmentLockAcquired { .. }
+        | Event::UrbanSegmentLockReleased { .. }
+        | Event::UrbanSegmentConflict { .. }
+        | Event::UrbanDeconflictWait { .. }
+        | Event::UrbanDeconflictReplan { .. }
+        | Event::UrbanDeconflictAbort { .. } => ReplayEventCategory::Urban,
         Event::TickStart { .. }
         | Event::AgentFailed { .. }
         | Event::TaskAssigned { .. }
@@ -316,7 +322,15 @@ fn event_agent_id(event: &Event) -> Option<AgentId> {
         | Event::UrbanRouteReplanned { agent_id, .. }
         | Event::UrbanWaitStarted { agent_id, .. }
         | Event::UrbanWaitCompleted { agent_id, .. }
-        | Event::UrbanNoRouteAvailable { agent_id, .. } => Some(agent_id.clone()),
+        | Event::UrbanNoRouteAvailable { agent_id, .. }
+        | Event::UrbanSegmentLockAcquired { agent_id, .. }
+        | Event::UrbanSegmentLockReleased { agent_id, .. }
+        | Event::UrbanDeconflictWait { agent_id, .. }
+        | Event::UrbanDeconflictReplan { agent_id, .. }
+        | Event::UrbanDeconflictAbort { agent_id, .. } => Some(agent_id.clone()),
+        Event::UrbanSegmentConflict {
+            requester_agent_id, ..
+        } => Some(requester_agent_id.clone()),
         Event::MessageSent { from, .. }
         | Event::MessageDropped { from, .. }
         | Event::PartitionAdded { agent_a: from, .. }
@@ -373,7 +387,13 @@ fn event_tick(event: &Event) -> u64 {
         | Event::UrbanRouteReplanned { tick, .. }
         | Event::UrbanWaitStarted { tick, .. }
         | Event::UrbanWaitCompleted { tick, .. }
-        | Event::UrbanNoRouteAvailable { tick, .. } => *tick,
+        | Event::UrbanNoRouteAvailable { tick, .. }
+        | Event::UrbanSegmentLockAcquired { tick, .. }
+        | Event::UrbanSegmentLockReleased { tick, .. }
+        | Event::UrbanSegmentConflict { tick, .. }
+        | Event::UrbanDeconflictWait { tick, .. }
+        | Event::UrbanDeconflictReplan { tick, .. }
+        | Event::UrbanDeconflictAbort { tick, .. } => *tick,
     }
 }
 
@@ -420,6 +440,12 @@ fn event_name(event: &Event) -> &'static str {
         Event::UrbanWaitStarted { .. } => "UrbanWaitStarted",
         Event::UrbanWaitCompleted { .. } => "UrbanWaitCompleted",
         Event::UrbanNoRouteAvailable { .. } => "UrbanNoRouteAvailable",
+        Event::UrbanSegmentLockAcquired { .. } => "UrbanSegmentLockAcquired",
+        Event::UrbanSegmentLockReleased { .. } => "UrbanSegmentLockReleased",
+        Event::UrbanSegmentConflict { .. } => "UrbanSegmentConflict",
+        Event::UrbanDeconflictWait { .. } => "UrbanDeconflictWait",
+        Event::UrbanDeconflictReplan { .. } => "UrbanDeconflictReplan",
+        Event::UrbanDeconflictAbort { .. } => "UrbanDeconflictAbort",
     }
 }
 
@@ -604,6 +630,43 @@ fn event_details(event: &Event) -> String {
             reason,
             ..
         } => format!("from={from} to={to} reason={reason}"),
+        Event::UrbanSegmentLockAcquired {
+            edge_id,
+            policy,
+            reason,
+            ..
+        } => format!("edge={edge_id} policy={policy:?} reason={reason}"),
+        Event::UrbanSegmentLockReleased {
+            edge_id,
+            held_ticks,
+            ..
+        } => format!("edge={edge_id} held_ticks={held_ticks}"),
+        Event::UrbanSegmentConflict {
+            edge_id,
+            holder_agent_id,
+            requester_agent_id,
+            policy,
+            reason,
+            ..
+        } => format!(
+            "edge={edge_id} holder={holder_agent_id} requester={requester_agent_id} policy={policy:?} reason={reason}"
+        ),
+        Event::UrbanDeconflictWait {
+            edge_id, reason, ..
+        } => format!("edge={edge_id} reason={reason}"),
+        Event::UrbanDeconflictReplan {
+            edge_id,
+            edge_ids,
+            route_length_m,
+            reason,
+            ..
+        } => format!(
+            "edge={edge_id} replacement_edges={} route_length_m={route_length_m:.3} reason={reason}",
+            edge_ids.len()
+        ),
+        Event::UrbanDeconflictAbort {
+            edge_id, reason, ..
+        } => format!("edge={edge_id} reason={reason}"),
     }
 }
 

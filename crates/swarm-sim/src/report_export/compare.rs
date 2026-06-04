@@ -77,6 +77,12 @@ pub(super) fn compare_aggregate_metrics(
     compare_field!(avg_urban_min_agent_separation_m);
     compare_field!(avg_urban_separation_violation_count);
     compare_field!(avg_urban_route_conflict_count);
+    compare_field!(avg_urban_deconflict_conflict_count);
+    compare_field!(avg_urban_deconflict_wait_ticks);
+    compare_field!(avg_urban_deconflict_replan_count);
+    compare_field!(avg_urban_deconflict_abort_count);
+    compare_field!(avg_urban_segment_utilization);
+    compare_field!(avg_urban_delay_per_agent_ticks);
     compare_field!(avg_perimeter_completion_rate);
     compare_field!(avg_perimeter_length_m);
     compare_field!(avg_time_to_complete_perimeter);

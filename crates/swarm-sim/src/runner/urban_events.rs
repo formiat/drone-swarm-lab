@@ -2,6 +2,7 @@ use super::{
     current_urban_pose, offset_urban_analysis_pose, AgentId, UrbanBusId, UrbanMap,
     UrbanPlannedRoute, UrbanRouteSegment, UrbanViolation,
 };
+use crate::urban::{UrbanSegmentConflictRecord, UrbanSegmentLock};
 
 pub(super) fn advance_search_segment(
     route: &UrbanPlannedRoute,
@@ -49,6 +50,48 @@ pub(super) fn push_segment_entered(
         edge_id: segment.edge_id.clone(),
         from: segment.from.clone(),
         to: segment.to.clone(),
+    });
+}
+
+pub(super) fn push_segment_lock_acquired(
+    builder: &mut swarm_replay::EventLogBuilder,
+    lock: &UrbanSegmentLock,
+    policy: swarm_types::UrbanRightOfWayPolicy,
+    reason: impl Into<String>,
+) {
+    builder.push(swarm_replay::Event::UrbanSegmentLockAcquired {
+        agent_id: lock.holder_agent_id.clone(),
+        tick: lock.acquired_at_tick,
+        edge_id: lock.edge_id.clone(),
+        policy,
+        reason: reason.into(),
+    });
+}
+
+pub(super) fn push_segment_lock_released(
+    builder: &mut swarm_replay::EventLogBuilder,
+    lock: &UrbanSegmentLock,
+    tick: u64,
+) {
+    builder.push(swarm_replay::Event::UrbanSegmentLockReleased {
+        agent_id: lock.holder_agent_id.clone(),
+        tick,
+        edge_id: lock.edge_id.clone(),
+        held_ticks: tick.saturating_sub(lock.acquired_at_tick),
+    });
+}
+
+pub(super) fn push_segment_conflict(
+    builder: &mut swarm_replay::EventLogBuilder,
+    conflict: &UrbanSegmentConflictRecord,
+) {
+    builder.push(swarm_replay::Event::UrbanSegmentConflict {
+        tick: conflict.tick,
+        edge_id: conflict.edge_id.clone(),
+        holder_agent_id: conflict.holder_agent_id.clone(),
+        requester_agent_id: conflict.requester_agent_id.clone(),
+        policy: conflict.policy.clone(),
+        reason: conflict.reason.clone(),
     });
 }
 

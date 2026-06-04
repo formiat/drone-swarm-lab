@@ -32,8 +32,8 @@ pub use report_export::{
 };
 pub use runner::{
     DynamicTaskEvent, FailureEvent, InspectionState, PartitionEvent, PrimitiveMission,
-    PrimitiveMissionItemDesc, RunConfig, ScenarioRunner, UrbanMissionTemplate, UrbanState,
-    WildfireState, WildfireZone,
+    PrimitiveMissionItemDesc, RunConfig, ScenarioRunner, UrbanDeconflictionConfig,
+    UrbanMissionTemplate, UrbanState, WildfireState, WildfireZone,
 };
 pub use scenario::{GeoOrigin, Scenario};
 pub use support_matrix::{classify_support, SupportMatrixEntry, SupportReason, SupportStatus};
@@ -48,10 +48,12 @@ pub use urban::{
     UrbanRouteWaypoint, URBAN_BLOCKED_LOOKAHEAD_SEGMENTS,
 };
 pub use urban_analysis::{
-    build_urban_judge_report, build_urban_route_trace, count_urban_events,
-    measure_urban_separation, write_urban_judge_report_csv, write_urban_judge_report_json,
-    write_urban_route_trace_csv, write_urban_route_trace_json, UrbanAgentRouteTrace,
+    build_urban_judge_report, build_urban_route_trace, build_urban_segment_ownership_report,
+    count_urban_events, measure_urban_separation, write_urban_judge_report_csv,
+    write_urban_judge_report_json, write_urban_route_trace_csv, write_urban_route_trace_json,
+    write_urban_segment_ownership_csv, write_urban_segment_ownership_json, UrbanAgentRouteTrace,
     UrbanEventCounts, UrbanJudgeReport, UrbanJudgeViolationRecord, UrbanPoseTracePoint,
-    UrbanRouteConflict, UrbanRouteTrace, UrbanSegmentStatus, UrbanSeparationSummary,
-    UrbanTraceSegment, URBAN_ANALYSIS_DEFAULT_SEPARATION_THRESHOLD_M,
+    UrbanRouteConflict, UrbanRouteTrace, UrbanSegmentOwnershipRecord, UrbanSegmentOwnershipReport,
+    UrbanSegmentStatus, UrbanSeparationSummary, UrbanTraceSegment,
+    URBAN_ANALYSIS_DEFAULT_SEPARATION_THRESHOLD_M,
 };

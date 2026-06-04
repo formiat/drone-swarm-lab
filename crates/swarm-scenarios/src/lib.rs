@@ -29,8 +29,9 @@ pub use partition::{build_partition_scenario, PartitionConfig};
 pub use profiles::{FailureProfile, NetworkProfile, StandardProfiles};
 pub use sar_scenario::{build_sar_scenario, SarProfile, SarScenarioConfig, SarStandardProfiles};
 pub use urban::{
-    build_urban_multi_agent_scenario, build_urban_patrol_scenario, build_urban_perimeter_scenario,
-    build_urban_search_scenario, UrbanConfig, UrbanProfile, UrbanStandardProfiles,
+    build_urban_deconfliction_scenario, build_urban_multi_agent_scenario,
+    build_urban_patrol_scenario, build_urban_perimeter_scenario, build_urban_search_scenario,
+    UrbanConfig, UrbanProfile, UrbanStandardProfiles,
 };
 pub use wildfire::{
     build_wildfire_scenario, HazardZone, WildfireConfig, WildfireProfile, WildfireStandardProfiles,

@@ -1,12 +1,15 @@
 use std::collections::HashSet;
 
-use swarm_types::{UrbanBlockedPolicy, UrbanEdgeId, UrbanNodeId, UrbanPlannedRoute};
+use swarm_types::{
+    AgentId, UrbanBlockedPolicy, UrbanEdgeId, UrbanNodeId, UrbanPlannedRoute, UrbanRightOfWayPolicy,
+};
 
 use super::{
     advance_urban_analysis_agent, current_urban_pose, finish_urban_run_metrics,
-    push_segment_entered, push_urban_analysis_agent_started, push_urban_violation_event,
-    route_efficiency, speed_m_per_tick, urban_analysis_agent_states, urban_patrol_metrics, Health,
-    RunConfig, RunMetrics, Scenario, ScenarioRunner,
+    push_segment_conflict, push_segment_entered, push_segment_lock_acquired,
+    push_segment_lock_released, push_urban_analysis_agent_started, push_urban_violation_event,
+    route_efficiency, speed_m_per_tick, urban_analysis_agent_states, urban_patrol_metrics, Agent,
+    Health, RunConfig, RunMetrics, Scenario, ScenarioRunner,
 };
 
 /// Transient state for blocked-route decision logic during a patrol run.
@@ -49,6 +52,56 @@ impl BlockedRouteState {
     }
 }
 
+/// Per-agent Urban patrol state used only by M85 deconfliction runs.
+struct DeconflictedAgentState {
+    agent_id: AgentId,
+    route: UrbanPlannedRoute,
+    segment_index: usize,
+    distance_on_segment: f64,
+    speed_m_per_tick: f64,
+    completed: bool,
+    aborted: bool,
+    waiting_for: Option<UrbanEdgeId>,
+    wait_start_tick: u64,
+    wait_ticks: u64,
+    total_distance_travelled_m: f64,
+    replan_count: u64,
+    unresolved_blockages: u64,
+    completion_tick: Option<u64>,
+}
+
+impl DeconflictedAgentState {
+    fn new(agent: &Agent, route: &UrbanPlannedRoute, tick_duration_ms: u64) -> Self {
+        Self {
+            agent_id: agent.id.clone(),
+            route: route.clone(),
+            segment_index: 0,
+            distance_on_segment: 0.0,
+            speed_m_per_tick: speed_m_per_tick(agent, tick_duration_ms),
+            completed: route.segments.is_empty(),
+            aborted: false,
+            waiting_for: None,
+            wait_start_tick: 0,
+            wait_ticks: 0,
+            total_distance_travelled_m: 0.0,
+            replan_count: 0,
+            unresolved_blockages: 0,
+            completion_tick: route.segments.is_empty().then_some(0),
+        }
+    }
+
+    fn active(&self) -> bool {
+        !self.completed && !self.aborted
+    }
+
+    fn current_edge_id(&self) -> Option<&UrbanEdgeId> {
+        self.route
+            .segments
+            .get(self.segment_index)
+            .map(|segment| &segment.edge_id)
+    }
+}
+
 impl ScenarioRunner {
     pub(super) fn run_urban_patrol(
         scenario: &Scenario,
@@ -58,6 +111,9 @@ impl ScenarioRunner {
         let Some(urban_state) = config.urban_state.clone() else {
             unreachable!("run_urban_patrol is called only for urban_state runs");
         };
+        if urban_state.deconfliction.enabled {
+            return Self::run_urban_deconflicted_patrol(scenario, config, urban_state, log_builder);
+        }
         let initial_route = match crate::urban::expand_route_loop_with_planner_name(
             &urban_state.map,
             &urban_state.route_loop,
@@ -631,6 +687,553 @@ impl ScenarioRunner {
             metrics.time_to_complete_perimeter = completion_tick;
             metrics.perimeter_violations = violation_count;
         }
+        finish_urban_run_metrics(metrics, log_builder)
+    }
+
+    fn run_urban_deconflicted_patrol(
+        scenario: &Scenario,
+        config: RunConfig,
+        urban_state: super::UrbanState,
+        mut log_builder: Option<swarm_replay::EventLogBuilder>,
+    ) -> (RunMetrics, Option<swarm_replay::EventLog>) {
+        if matches!(
+            urban_state.deconfliction.right_of_way_policy,
+            UrbanRightOfWayPolicy::MissionCriticalOverride
+        ) {
+            let metrics = urban_patrol_metrics(
+                scenario,
+                0,
+                false,
+                false,
+                0.0,
+                0.0,
+                0,
+                false,
+                None,
+                0.0,
+                0.0,
+                Some("urban_deconfliction_mission_critical_override_unsupported".to_owned()),
+                0,
+                0,
+                0,
+                0.0,
+                0,
+            );
+            return finish_urban_run_metrics(metrics, log_builder);
+        }
+
+        let initial_route = match crate::urban::expand_route_loop_with_planner_name(
+            &urban_state.map,
+            &urban_state.route_loop,
+            &urban_state.planner,
+        ) {
+            Ok(route) => route,
+            Err(error) => {
+                let metrics = urban_patrol_metrics(
+                    scenario,
+                    0,
+                    false,
+                    false,
+                    0.0,
+                    0.0,
+                    1,
+                    false,
+                    None,
+                    0.0,
+                    0.0,
+                    Some(error.to_string()),
+                    0,
+                    0,
+                    0,
+                    0.0,
+                    0,
+                );
+                return finish_urban_run_metrics(metrics, log_builder);
+            }
+        };
+
+        let start_node = match crate::urban::route_start_node(
+            &urban_state.map,
+            &urban_state.route_loop,
+            &initial_route,
+            urban_state.start_node.as_ref(),
+        ) {
+            Ok(start_node) => start_node,
+            Err(error) => {
+                let metrics = urban_patrol_metrics(
+                    scenario,
+                    0,
+                    false,
+                    true,
+                    initial_route.total_length_m,
+                    crate::urban::route_risk_score(&urban_state.map, &initial_route),
+                    0,
+                    false,
+                    None,
+                    0.0,
+                    0.0,
+                    Some(format!("urban_patrol_invalid_start: {error}")),
+                    0,
+                    0,
+                    0,
+                    0.0,
+                    0,
+                );
+                return finish_urban_run_metrics(metrics, log_builder);
+            }
+        };
+
+        let alive_agents: Vec<_> = scenario
+            .agents
+            .iter()
+            .filter(|agent| agent.health == Health::Alive)
+            .collect();
+        if alive_agents.is_empty() {
+            let metrics = urban_patrol_metrics(
+                scenario,
+                0,
+                false,
+                true,
+                initial_route.total_length_m,
+                crate::urban::route_risk_score(&urban_state.map, &initial_route),
+                0,
+                false,
+                None,
+                0.0,
+                0.0,
+                Some("urban_patrol_no_alive_agent".to_owned()),
+                0,
+                0,
+                0,
+                0.0,
+                0,
+            );
+            return finish_urban_run_metrics(metrics, log_builder);
+        }
+
+        for agent in &alive_agents {
+            let start_pose_distance = agent.pose.distance_to(&start_node.pose);
+            if start_pose_distance > crate::urban::URBAN_START_POSE_TOLERANCE_M {
+                let metrics = urban_patrol_metrics(
+                    scenario,
+                    0,
+                    false,
+                    true,
+                    initial_route.total_length_m,
+                    crate::urban::route_risk_score(&urban_state.map, &initial_route),
+                    0,
+                    false,
+                    None,
+                    0.0,
+                    0.0,
+                    Some(format!(
+                        "urban_patrol_invalid_start: agent '{}' starts {:.3}m from start_node '{}'",
+                        agent.id, start_pose_distance, start_node.id
+                    )),
+                    0,
+                    0,
+                    0,
+                    0.0,
+                    0,
+                );
+                return finish_urban_run_metrics(metrics, log_builder);
+            }
+        }
+
+        let static_violations = crate::urban::judge_route(&urban_state.map, &initial_route);
+        if !static_violations.is_empty() {
+            if let Some(ref mut builder) = log_builder {
+                for agent in &alive_agents {
+                    for violation in &static_violations {
+                        push_urban_violation_event(
+                            builder,
+                            &agent.id,
+                            0,
+                            &initial_route,
+                            violation,
+                        );
+                    }
+                }
+            }
+            let metrics = urban_patrol_metrics(
+                scenario,
+                0,
+                false,
+                true,
+                initial_route.total_length_m,
+                crate::urban::route_risk_score(&urban_state.map, &initial_route),
+                static_violations.len() as u64,
+                false,
+                None,
+                0.0,
+                0.0,
+                None,
+                0,
+                0,
+                0,
+                0.0,
+                0,
+            );
+            return finish_urban_run_metrics(metrics, log_builder);
+        }
+
+        let planner_mode = crate::urban::UrbanPlannerMode::parse(&urban_state.planner)
+            .unwrap_or(crate::urban::UrbanPlannerMode::Dijkstra);
+        let initial_route_length_m = initial_route.total_length_m;
+        let initial_route_risk = crate::urban::route_risk_score(&urban_state.map, &initial_route);
+        let mut states: Vec<_> = alive_agents
+            .iter()
+            .map(|agent| {
+                DeconflictedAgentState::new(agent, &initial_route, config.tick_duration_ms)
+            })
+            .collect();
+        states.sort_by(|left, right| left.agent_id.to_string().cmp(&right.agent_id.to_string()));
+
+        if let Some(ref mut builder) = log_builder {
+            for state in &states {
+                builder.push(swarm_replay::Event::UrbanRoutePlanned {
+                    agent_id: state.agent_id.clone(),
+                    tick: 0,
+                    edge_ids: state
+                        .route
+                        .segments
+                        .iter()
+                        .map(|segment| segment.edge_id.clone())
+                        .collect(),
+                    route_length_m: state.route.total_length_m,
+                });
+                builder.push(swarm_replay::Event::PoseUpdated {
+                    agent_id: state.agent_id.clone(),
+                    pose: start_node.pose,
+                    tick: 0,
+                });
+            }
+        }
+
+        let mut registry = crate::urban::UrbanSegmentLockRegistry::new();
+        let mut total_ticks = 0;
+        let mut violation_count = 0u64;
+        let mut deconflict_wait_events = 0u64;
+
+        for tick in 0..=config.max_ticks {
+            total_ticks = tick;
+            if tick > 0 {
+                if let Some(ref mut builder) = log_builder {
+                    builder.push(swarm_replay::Event::TickStart { tick });
+                }
+            }
+
+            let effective_blocked = crate::urban::effective_blocked_edges(
+                &urban_state.map,
+                &urban_state.temporary_obstacles,
+                tick,
+            );
+
+            let mut requests = Vec::new();
+            for (request_order, state) in states.iter_mut().enumerate() {
+                if !state.active() || state.distance_on_segment != 0.0 {
+                    continue;
+                }
+                let Some(edge_id) = state.current_edge_id().cloned() else {
+                    continue;
+                };
+                if let Some(waiting_for) = state.waiting_for.clone() {
+                    if registry.is_locked_by_other(&waiting_for, &state.agent_id) {
+                        deconflict_wait_events += 1;
+                        if let Some(ref mut builder) = log_builder {
+                            builder.push(swarm_replay::Event::UrbanDeconflictWait {
+                                agent_id: state.agent_id.clone(),
+                                tick,
+                                edge_id: waiting_for,
+                                reason: "segment still locked".to_owned(),
+                            });
+                        }
+                        continue;
+                    }
+                    state.wait_ticks += tick.saturating_sub(state.wait_start_tick);
+                    state.waiting_for = None;
+                }
+                requests.push(crate::urban::SegmentLockRequest {
+                    agent_id: state.agent_id.clone(),
+                    edge_id,
+                    segment_index: state.segment_index,
+                    request_order,
+                });
+            }
+
+            let decisions = registry.request_batch(
+                requests,
+                tick,
+                &urban_state.deconfliction.right_of_way_policy,
+                &urban_state.deconfliction.agent_priorities,
+            );
+            for (agent_id, decision) in decisions {
+                let Some(state) = states.iter_mut().find(|state| state.agent_id == agent_id) else {
+                    continue;
+                };
+                match decision {
+                    crate::urban::SegmentLockDecision::Acquired(lock)
+                    | crate::urban::SegmentLockDecision::AlreadyHeld(lock) => {
+                        if let Some(ref mut builder) = log_builder {
+                            push_segment_lock_acquired(
+                                builder,
+                                &lock,
+                                urban_state.deconfliction.right_of_way_policy.clone(),
+                                "segment reserved before entry",
+                            );
+                            if let Some(segment) = state.route.segments.get(state.segment_index) {
+                                push_segment_entered(
+                                    builder,
+                                    &state.agent_id,
+                                    tick,
+                                    state.segment_index,
+                                    segment,
+                                );
+                            }
+                        }
+                    }
+                    crate::urban::SegmentLockDecision::Conflict(conflict) => {
+                        if let Some(ref mut builder) = log_builder {
+                            push_segment_conflict(builder, &conflict);
+                        }
+                        let edge_id = conflict.edge_id.clone();
+                        match urban_state.deconfliction.locked_segment_policy {
+                            UrbanBlockedPolicy::Wait => {
+                                if state.waiting_for.is_none() {
+                                    state.wait_start_tick = tick;
+                                }
+                                state.waiting_for = Some(edge_id.clone());
+                                deconflict_wait_events += 1;
+                                if let Some(ref mut builder) = log_builder {
+                                    builder.push(swarm_replay::Event::UrbanDeconflictWait {
+                                        agent_id: state.agent_id.clone(),
+                                        tick,
+                                        edge_id,
+                                        reason: conflict.reason,
+                                    });
+                                }
+                            }
+                            UrbanBlockedPolicy::Replan => {
+                                let current_from =
+                                    state.route.segments[state.segment_index].from.clone();
+                                let mut excluded_edges = effective_blocked.clone();
+                                for locked_edge in registry.locked_edges_except(&state.agent_id) {
+                                    excluded_edges.insert(locked_edge);
+                                }
+                                match try_replan(
+                                    &urban_state.map,
+                                    &current_from,
+                                    &excluded_edges,
+                                    planner_mode,
+                                    state.segment_index,
+                                    &state.route,
+                                ) {
+                                    Some(new_route) => {
+                                        state.replan_count += 1;
+                                        state.route = new_route;
+                                        state.segment_index = 0;
+                                        state.distance_on_segment = 0.0;
+                                        state.waiting_for = None;
+                                        if let Some(ref mut builder) = log_builder {
+                                            builder.push(
+                                                swarm_replay::Event::UrbanDeconflictReplan {
+                                                    agent_id: state.agent_id.clone(),
+                                                    tick,
+                                                    edge_id,
+                                                    edge_ids: state
+                                                        .route
+                                                        .segments
+                                                        .iter()
+                                                        .map(|segment| segment.edge_id.clone())
+                                                        .collect(),
+                                                    route_length_m: state.route.total_length_m,
+                                                    reason: "alternate route around locked segment"
+                                                        .to_owned(),
+                                                },
+                                            );
+                                        }
+                                    }
+                                    None => {
+                                        state.aborted = true;
+                                        state.unresolved_blockages += 1;
+                                        if let Some(ref mut builder) = log_builder {
+                                            builder.push(
+                                                swarm_replay::Event::UrbanDeconflictAbort {
+                                                    agent_id: state.agent_id.clone(),
+                                                    tick,
+                                                    edge_id,
+                                                    reason:
+                                                        "no alternate route around locked segment"
+                                                            .to_owned(),
+                                                },
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                            UrbanBlockedPolicy::Abort => {
+                                state.aborted = true;
+                                state.unresolved_blockages += 1;
+                                if let Some(ref mut builder) = log_builder {
+                                    builder.push(swarm_replay::Event::UrbanDeconflictAbort {
+                                        agent_id: state.agent_id.clone(),
+                                        tick,
+                                        edge_id,
+                                        reason: conflict.reason,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            for state in &mut states {
+                if !state.active() || state.waiting_for.is_some() {
+                    continue;
+                }
+                let Some(edge_id) = state.current_edge_id().cloned() else {
+                    continue;
+                };
+                if registry.is_locked_by_other(&edge_id, &state.agent_id) {
+                    continue;
+                }
+                if effective_blocked.contains(&edge_id) && state.distance_on_segment == 0.0 {
+                    violation_count += 1;
+                    if let Some(ref mut builder) = log_builder {
+                        push_urban_violation_event(
+                            builder,
+                            &state.agent_id,
+                            tick,
+                            &state.route,
+                            &swarm_types::UrbanViolation::BlockedEdge {
+                                edge_id: edge_id.clone(),
+                            },
+                        );
+                    }
+                }
+
+                let remaining = state.speed_m_per_tick;
+                let Some(segment) = state.route.segments.get(state.segment_index) else {
+                    continue;
+                };
+                let segment_remaining = (segment.length_m - state.distance_on_segment).max(0.0);
+                if remaining + f64::EPSILON >= segment_remaining {
+                    state.total_distance_travelled_m += segment_remaining;
+                    state.distance_on_segment = segment.length_m;
+                    if let Some(ref mut builder) = log_builder {
+                        builder.push(swarm_replay::Event::UrbanSegmentCompleted {
+                            agent_id: state.agent_id.clone(),
+                            tick,
+                            segment_index: state.segment_index,
+                            edge_id: segment.edge_id.clone(),
+                        });
+                    }
+                    if let Some(lock) = registry.release(&segment.edge_id, &state.agent_id, tick) {
+                        if let Some(ref mut builder) = log_builder {
+                            push_segment_lock_released(builder, &lock, tick);
+                        }
+                    }
+                    state.segment_index += 1;
+                    if state.segment_index == state.route.segments.len() {
+                        state.completed = true;
+                        state.completion_tick = Some(tick);
+                        if let Some(ref mut builder) = log_builder {
+                            builder.push(swarm_replay::Event::UrbanPatrolCompleted {
+                                agent_id: state.agent_id.clone(),
+                                tick,
+                                route_length_m: state.route.total_length_m,
+                                distance_travelled_m: state.total_distance_travelled_m,
+                            });
+                        }
+                    } else {
+                        state.distance_on_segment = 0.0;
+                    }
+                } else {
+                    state.distance_on_segment += remaining;
+                    state.total_distance_travelled_m += remaining;
+                }
+
+                if let Some(ref mut builder) = log_builder {
+                    if let Some(pose) = current_urban_pose(
+                        &urban_state.map,
+                        &state.route,
+                        state.segment_index,
+                        state.distance_on_segment,
+                        state.completed,
+                    ) {
+                        builder.push(swarm_replay::Event::PoseUpdated {
+                            agent_id: state.agent_id.clone(),
+                            pose,
+                            tick,
+                        });
+                    }
+                }
+            }
+
+            if states.iter().all(|state| !state.active()) {
+                break;
+            }
+        }
+
+        let completed_count = states.iter().filter(|state| state.completed).count();
+        let aborted_count = states.iter().filter(|state| state.aborted).count();
+        let success = completed_count == states.len() && aborted_count == 0 && violation_count == 0;
+        let total_distance_travelled: f64 = states
+            .iter()
+            .map(|state| state.total_distance_travelled_m)
+            .sum();
+        let total_route_length_m = initial_route_length_m * states.len() as f64;
+        let route_eff = route_efficiency(total_route_length_m, total_distance_travelled);
+        let completion_tick = states
+            .iter()
+            .filter_map(|state| state.completion_tick)
+            .max();
+        let replan_count: u64 = states.iter().map(|state| state.replan_count).sum();
+        let wait_ticks: u64 = states.iter().map(|state| state.wait_ticks).sum();
+        let unresolved_blockages: u64 = states.iter().map(|state| state.unresolved_blockages).sum();
+        let conflict_count = registry.conflict_history().len() as u64;
+        let mut metrics = urban_patrol_metrics(
+            scenario,
+            total_ticks,
+            success,
+            true,
+            initial_route_length_m,
+            initial_route_risk,
+            violation_count,
+            completed_count == states.len(),
+            completion_tick,
+            total_distance_travelled,
+            route_eff,
+            None,
+            replan_count,
+            wait_ticks,
+            0,
+            0.0,
+            unresolved_blockages,
+        );
+        metrics.task_completion_rate = if states.is_empty() {
+            0.0
+        } else {
+            completed_count as f64 / states.len() as f64
+        };
+        metrics.all_tasks_assigned = completed_count == states.len();
+        metrics.urban_deconflict_conflict_count = conflict_count;
+        metrics.urban_deconflict_wait_ticks = wait_ticks + deconflict_wait_events;
+        metrics.urban_deconflict_replan_count = replan_count;
+        metrics.urban_deconflict_abort_count = aborted_count as u64;
+        metrics.urban_avg_delay_per_agent_ticks = if states.is_empty() {
+            0.0
+        } else {
+            metrics.urban_deconflict_wait_ticks as f64 / states.len() as f64
+        };
+        metrics.urban_segment_utilization = if total_ticks > 0 && !initial_route.segments.is_empty()
+        {
+            let route_capacity = total_ticks as f64 * initial_route.segments.len() as f64;
+            (total_distance_travelled / initial_route_length_m).min(route_capacity) / route_capacity
+        } else {
+            0.0
+        };
         finish_urban_run_metrics(metrics, log_builder)
     }
 }

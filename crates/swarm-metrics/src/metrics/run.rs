@@ -177,6 +177,19 @@ pub struct RunMetrics {
     pub urban_replan_success_rate: f64,
     #[serde(default)]
     pub urban_unresolved_blockage_count: u64,
+    // v0.85 Urban Multi-Agent Deconfliction
+    #[serde(default)]
+    pub urban_deconflict_conflict_count: u64,
+    #[serde(default)]
+    pub urban_deconflict_wait_ticks: u64,
+    #[serde(default)]
+    pub urban_deconflict_replan_count: u64,
+    #[serde(default)]
+    pub urban_deconflict_abort_count: u64,
+    #[serde(default)]
+    pub urban_segment_utilization: f64,
+    #[serde(default)]
+    pub urban_avg_delay_per_agent_ticks: f64,
     // v0.75 Urban Mission Realism Follow-up
     #[serde(default)]
     pub perimeter_completion_rate: f64,

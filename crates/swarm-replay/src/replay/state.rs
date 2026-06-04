@@ -88,7 +88,13 @@ pub fn replay(log: &EventLog) -> ReplayState {
             | Event::UrbanRouteReplanned { .. }
             | Event::UrbanWaitStarted { .. }
             | Event::UrbanWaitCompleted { .. }
-            | Event::UrbanNoRouteAvailable { .. } => {}
+            | Event::UrbanNoRouteAvailable { .. }
+            | Event::UrbanSegmentLockAcquired { .. }
+            | Event::UrbanSegmentLockReleased { .. }
+            | Event::UrbanSegmentConflict { .. }
+            | Event::UrbanDeconflictWait { .. }
+            | Event::UrbanDeconflictReplan { .. }
+            | Event::UrbanDeconflictAbort { .. } => {}
         }
     }
 

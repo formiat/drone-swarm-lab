@@ -197,6 +197,12 @@ executable one-agent patrol simulation. The DSL uses
   `t >= appears_at_tick` and (`disappears_at_tick` is absent or `t < disappears_at_tick`).
 - `blocked_route_policy` — (M74) optional policy applied when a blocked edge is
   detected ahead. Supported values: `"wait"` (default), `"replan"`, `"abort"`.
+- `deconfliction` — (M85) optional mission-level multi-agent segment
+  ownership config. Missing values default to disabled legacy behavior.
+  Supported `right_of_way_policy` values are `"first_come"`, `"priority"`,
+  and `"round_robin"`. `"mission_critical_override"` is reserved and currently
+  unsupported. `locked_segment_policy` reuses `"wait"`, `"replan"`, and
+  `"abort"`. `agent_priorities` is used only by `"priority"`.
 
 Example with a temporary obstacle and wait policy:
 
@@ -214,7 +220,16 @@ Example with a temporary obstacle and wait policy:
       "reason": "construction"
     }
   ],
-  "blocked_route_policy": "wait"
+  "blocked_route_policy": "wait",
+  "deconfliction": {
+    "enabled": true,
+    "right_of_way_policy": "priority",
+    "locked_segment_policy": "wait",
+    "agent_priorities": {
+      "agent-0": 1,
+      "agent-1": 9
+    }
+  }
 }
 ```
 
@@ -228,8 +243,9 @@ no alternate route exists. The selected alive agent must start within `0.01m` of
 the validated start node pose.
 
 Urban Patrol itself does not implement lidar/raycast, bus detection, dynamic
-obstacles, multi-agent route deconfliction, arbitrary polygons, PX4 execution,
-hardware readiness, or a visual UI.
+obstacles, physical collision avoidance, arbitrary polygons, PX4 execution,
+hardware readiness, or a visual UI. M85 deconfliction is limited to opt-in
+mission-level road-graph segment ownership in simulation.
 
 M70 adds a deterministic Urban Route Export dry-run path for `urban-patrol`.
 The authoritative source is `run_config.urban_state`: the planned route is
@@ -341,6 +357,38 @@ deconfliction, collision avoidance, dynamic obstacles, physical simulation,
 PX4/SITL export, hardware readiness, or visualization. Its purpose is to keep
 the Urban replay/analysis schema portable and testable.
 
+## Urban Multi-Agent Deconfliction
+
+M85 adds opt-in route-segment ownership for `urban-patrol` through
+`run_config.urban_state.deconfliction`. When enabled, every alive agent follows
+the Urban route loop, requests a lock before entering the next road-graph
+segment, and releases the lock after `UrbanSegmentCompleted`. This prevents
+simultaneous mission-level ownership of the same segment.
+
+Supported policies:
+
+- `right_of_way_policy: "first_come"` — deterministic request order wins.
+- `right_of_way_policy: "priority"` — higher `agent_priorities[agent_id]`
+  wins; missing priority is `0`.
+- `right_of_way_policy: "round_robin"` — deterministic per-edge rotation among
+  contenders.
+- `locked_segment_policy: "wait"` — loser waits and emits
+  `UrbanDeconflictWait`.
+- `locked_segment_policy: "replan"` — loser tries an alternate route excluding
+  currently locked segments and emits `UrbanDeconflictReplan` on success.
+- `locked_segment_policy: "abort"` — loser emits `UrbanDeconflictAbort`.
+
+M85 replay logs include `UrbanSegmentLockAcquired`,
+`UrbanSegmentLockReleased`, `UrbanSegmentConflict`, `UrbanDeconflictWait`,
+`UrbanDeconflictReplan`, and `UrbanDeconflictAbort`. Reports include
+`urban_deconflict_conflict_count`, `urban_deconflict_wait_ticks`,
+`urban_deconflict_replan_count`, `urban_deconflict_abort_count`,
+`urban_segment_utilization`, and `urban_avg_delay_per_agent_ticks`.
+
+This is not physical collision avoidance, not lidar/raycast, not RF
+coordination, not PX4/SITL execution evidence, not hardware readiness, and not
+real perception.
+
 ## Urban Corridor Delta
 
 M68 adds `scenarios/urban.corridor-delta.json` as a small algorithmic
@@ -419,6 +467,7 @@ The repository includes pre-built scenario files in `scenarios/`, including:
 - `urban.patrol.json` — M65 Urban Patrol road-graph simulation fixture
 - `urban.search.json` — M66 Urban Search static-bus simulation fixture
 - `urban.multi-agent.json` — M67 two-agent Urban replay-analysis fixture
+- `scenarios/urban.multi-agent-deconflict.json` — M85 opt-in segment ownership fixture
 - `urban.corridor-delta.json` — M68 Dijkstra vs corridor-aware planner delta
 - `urban.generated.tiny.json` — M76 deterministic synthetic Urban generator
   fixture with `generator_manifest`

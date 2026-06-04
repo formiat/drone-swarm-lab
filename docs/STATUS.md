@@ -155,6 +155,17 @@ status table.
   analysis artifacts for the fixture. The separation/conflict metrics are
   diagnostic measurements from replay traces, not a route-deconfliction or
   collision avoidance system.
+- **Urban Multi-Agent Deconfliction**: M85 adds opt-in mission-level segment
+  ownership for `urban-patrol` via
+  `run_config.urban_state.deconfliction.enabled`. Agents reserve an Urban
+  road-graph segment before entering it and release it after completion.
+  Supported right-of-way policies are `first_come`, `priority`, and
+  `round_robin`; `mission_critical_override` is deliberately unsupported until
+  a concrete rule exists. Locked segments can trigger `wait`, `replan`, or
+  `abort`, with dedicated replay events and `urban_deconflict_*` metrics. This
+  is not lidar/raycast, not physical collision avoidance, not RF coordination,
+  not PX4/SITL execution evidence, not hardware readiness, and not real
+  perception.
 - **Urban Corridor-Aware Planner**: M68 adds `planner: "corridor-aware"` as an
   experimental mission-level route planner. It penalizes narrow corridors and
   low static-obstacle clearance to reduce `urban_route_risk_score` on the
@@ -193,7 +204,7 @@ status table.
 |---|---|---|
 | Portable SITL verification | Ready | Run `sitl_agent`/`sitl_docs` targeted tests. |
 | In-repository extension work | Ready with M61 boundaries | Use `docs/EXTENSION_GUIDE.md`; external semver-stable plugin/API work remains out of scope. |
-| Urban algorithm work | Has M68 local delta and M76 generated inputs; not in full benchmark yet | M68 provides a corridor-aware planner delta and route-risk metric. M76 adds deterministic synthetic Urban fixtures for regression/extension work. The current M69 `--mission all` benchmark does not include Urban scenario suites; dynamic obstacles, richer judging, route deconfliction, and avoidance remain future work. |
+| Urban algorithm work | Has M68/M76 inputs and M85 opt-in deconfliction; not in full benchmark yet | M68 provides a corridor-aware planner delta and route-risk metric. M76 adds deterministic synthetic Urban fixtures for regression/extension work. M85 adds simulation-only mission-level segment ownership, not physical avoidance. The current M69 `--mission all` benchmark does not include Urban scenario suites; dynamic obstacles, richer judging, physical collision avoidance, and hardware evidence remain future work. |
 | Algorithm differentiation work | Ready for targeted follow-up | M77 exposes opt-in knobs and targeted profile filtering. Use controlled tests and small targeted runs first; do not extrapolate the 1-seed M77 smoke artifact to publication claims. |
 | M48 live PX4 verification | Complete for local PX4 SIH | Captured in `results/m48_px4_sitl_2026-05-30/`; Gazebo/HIL/hardware remain out of scope. |
 | Real multi-agent PX4/SIH | Experimental local workflow with M60 hardening | Upload-only, execute, and controlled failure/reallocation SIH evidence exists. `sitl_supervisor --connection --execute --reupload-on-failure --output-dir ... --run-id ...` can produce stable artifacts and exit codes for local runs; automated PX4 CI, Gazebo/HIL, hardware, broader failure modes, and production safety remain future work. |

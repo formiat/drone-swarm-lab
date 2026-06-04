@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
-use swarm_types::{AgentId, Pose, TaskId, UrbanBusId, UrbanEdgeId, UrbanNodeId, UrbanObstacleId};
+use swarm_types::{
+    AgentId, Pose, TaskId, UrbanBusId, UrbanEdgeId, UrbanNodeId, UrbanObstacleId,
+    UrbanRightOfWayPolicy,
+};
 
 /// Schema version for the event log format.
 pub const EVENT_LOG_SCHEMA_VERSION: &str = "0.2";
@@ -261,6 +264,48 @@ pub enum Event {
         tick: u64,
         from: UrbanNodeId,
         to: UrbanNodeId,
+        reason: String,
+    },
+    // M85: Urban Multi-Agent Deconfliction
+    UrbanSegmentLockAcquired {
+        agent_id: AgentId,
+        tick: u64,
+        edge_id: UrbanEdgeId,
+        policy: UrbanRightOfWayPolicy,
+        reason: String,
+    },
+    UrbanSegmentLockReleased {
+        agent_id: AgentId,
+        tick: u64,
+        edge_id: UrbanEdgeId,
+        held_ticks: u64,
+    },
+    UrbanSegmentConflict {
+        tick: u64,
+        edge_id: UrbanEdgeId,
+        holder_agent_id: AgentId,
+        requester_agent_id: AgentId,
+        policy: UrbanRightOfWayPolicy,
+        reason: String,
+    },
+    UrbanDeconflictWait {
+        agent_id: AgentId,
+        tick: u64,
+        edge_id: UrbanEdgeId,
+        reason: String,
+    },
+    UrbanDeconflictReplan {
+        agent_id: AgentId,
+        tick: u64,
+        edge_id: UrbanEdgeId,
+        edge_ids: Vec<UrbanEdgeId>,
+        route_length_m: f64,
+        reason: String,
+    },
+    UrbanDeconflictAbort {
+        agent_id: AgentId,
+        tick: u64,
+        edge_id: UrbanEdgeId,
         reason: String,
     },
 }
@@ -725,6 +770,71 @@ mod tests {
             from: node_id("n0"),
             to: node_id("n2"),
             reason: "all paths blocked".to_owned(),
+        });
+    }
+
+    #[test]
+    fn urban_segment_lock_acquired_serde_roundtrip() {
+        roundtrip(Event::UrbanSegmentLockAcquired {
+            agent_id: agent_id(),
+            tick: 9,
+            edge_id: edge_id(),
+            policy: UrbanRightOfWayPolicy::Priority,
+            reason: "right-of-way winner".to_owned(),
+        });
+    }
+
+    #[test]
+    fn urban_segment_lock_released_serde_roundtrip() {
+        roundtrip(Event::UrbanSegmentLockReleased {
+            agent_id: agent_id(),
+            tick: 19,
+            edge_id: edge_id(),
+            held_ticks: 10,
+        });
+    }
+
+    #[test]
+    fn urban_segment_conflict_serde_roundtrip() {
+        roundtrip(Event::UrbanSegmentConflict {
+            tick: 9,
+            edge_id: edge_id(),
+            holder_agent_id: agent_id(),
+            requester_agent_id: AgentId::from("agent-1".to_owned()),
+            policy: UrbanRightOfWayPolicy::FirstCome,
+            reason: "segment already locked".to_owned(),
+        });
+    }
+
+    #[test]
+    fn urban_deconflict_wait_serde_roundtrip() {
+        roundtrip(Event::UrbanDeconflictWait {
+            agent_id: agent_id(),
+            tick: 10,
+            edge_id: edge_id(),
+            reason: "segment locked".to_owned(),
+        });
+    }
+
+    #[test]
+    fn urban_deconflict_replan_serde_roundtrip() {
+        roundtrip(Event::UrbanDeconflictReplan {
+            agent_id: agent_id(),
+            tick: 10,
+            edge_id: edge_id(),
+            edge_ids: vec![UrbanEdgeId::from("e1".to_owned())],
+            route_length_m: 12.0,
+            reason: "alternate route".to_owned(),
+        });
+    }
+
+    #[test]
+    fn urban_deconflict_abort_serde_roundtrip() {
+        roundtrip(Event::UrbanDeconflictAbort {
+            agent_id: agent_id(),
+            tick: 10,
+            edge_id: edge_id(),
+            reason: "no alternate route".to_owned(),
         });
     }
 }

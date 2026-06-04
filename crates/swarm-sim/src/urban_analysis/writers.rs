@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use super::{UrbanJudgeReport, UrbanRouteTrace, UrbanSegmentStatus};
+use super::{UrbanJudgeReport, UrbanRouteTrace, UrbanSegmentOwnershipReport, UrbanSegmentStatus};
 
 pub fn write_urban_route_trace_json<P: AsRef<Path>>(
     trace: &UrbanRouteTrace,
@@ -14,6 +14,13 @@ pub fn write_urban_route_trace_json<P: AsRef<Path>>(
 
 pub fn write_urban_judge_report_json<P: AsRef<Path>>(
     report: &UrbanJudgeReport,
+    path: P,
+) -> io::Result<()> {
+    write_json(report, path)
+}
+
+pub fn write_urban_segment_ownership_json<P: AsRef<Path>>(
+    report: &UrbanSegmentOwnershipReport,
     path: P,
 ) -> io::Result<()> {
     write_json(report, path)
@@ -129,6 +136,47 @@ pub fn write_urban_judge_report_csv<P: AsRef<Path>>(
     }
     write_csv_bytes(writer, path)
 }
+
+pub fn write_urban_segment_ownership_csv<P: AsRef<Path>>(
+    report: &UrbanSegmentOwnershipReport,
+    path: P,
+) -> io::Result<()> {
+    let mut writer = csv::Writer::from_writer(Vec::new());
+    writer
+        .write_record([
+            "run_id",
+            "scenario_name",
+            "edge_id",
+            "agent_id",
+            "acquired_tick",
+            "released_tick",
+            "held_ticks",
+        ])
+        .map_err(csv_to_io)?;
+    for record in &report.records {
+        writer
+            .write_record([
+                report.run_id.as_str(),
+                report.scenario_name.as_str(),
+                record.edge_id.as_ref(),
+                record.agent_id.as_ref(),
+                record.acquired_tick.to_string().as_str(),
+                record
+                    .released_tick
+                    .map(|tick| tick.to_string())
+                    .unwrap_or_default()
+                    .as_str(),
+                record
+                    .held_ticks
+                    .map(|ticks| ticks.to_string())
+                    .unwrap_or_default()
+                    .as_str(),
+            ])
+            .map_err(csv_to_io)?;
+    }
+    write_csv_bytes(writer, path)
+}
+
 fn segment_status_name(status: UrbanSegmentStatus) -> &'static str {
     match status {
         UrbanSegmentStatus::Planned => "planned",

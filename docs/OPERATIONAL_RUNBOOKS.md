@@ -102,6 +102,9 @@ Expected artifacts:
 - route trace artifact when replay/export is enabled by the suite;
 - judge report for Urban route violations when available;
 - benchmark/report outputs that identify `urban-patrol` or `urban-search`.
+- for M85 deconfliction claims, replay events
+  `UrbanSegmentLockAcquired`, `UrbanSegmentLockReleased`, and
+  `UrbanSegmentConflict`, plus `urban_deconflict_*` report metrics.
 
 Stop/abort conditions:
 
@@ -109,6 +112,29 @@ Stop/abort conditions:
 - route is not planned;
 - route risk or violation count is inconsistent with the intended test;
 - mocked bus/perimeter semantics are being interpreted as real perception.
+- M85 segment ownership is being interpreted as physical collision avoidance,
+  RF coordination, PX4/SITL execution, hardware readiness, or real perception.
+
+### M85 Urban Deconfliction Smoke
+
+Use this local simulation fixture when the claim is about Urban multi-agent
+road-graph segment ownership:
+
+```bash
+cargo run -p swarm-examples --bin strategy_comparison -- \
+  --scenario-suite scenarios/urban.multi-agent-deconflict.json \
+  --output-dir target/m85-urban-deconflict \
+  --replay-log
+```
+
+Expected evidence:
+
+- `UrbanSegmentLockAcquired` appears before `UrbanSegmentEntered` for locked
+  segments;
+- `UrbanSegmentLockReleased` appears after `UrbanSegmentCompleted`;
+- no replay interval has two holders for the same `edge_id`;
+- `urban_deconflict_conflict_count > 0` for the fixture;
+- docs and reports describe this as mission-level segment ownership only.
 
 ## Runbook 3: SITL Dry-Run / Export
 

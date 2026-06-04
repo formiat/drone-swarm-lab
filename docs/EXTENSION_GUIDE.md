@@ -144,6 +144,9 @@ starting with arbitrary polygons:
 - `scenarios/urban.multi-agent.json` is the portable two-agent analysis
   fixture for replay route traces, judge reports, and separation metrics; it is
   intended to run through scenario-suite mode with replay enabled;
+- `scenarios/urban.multi-agent-deconflict.json` is the portable M85 fixture
+  for opt-in mission-level segment ownership. It should be used when an Urban
+  change claims deconfliction behavior rather than only replay analysis;
 - `scenarios/urban.corridor-delta.json` is the portable M68 before/after
   fixture for comparing Dijkstra against the experimental corridor-aware
   planner;
@@ -181,6 +184,12 @@ starting with arbitrary polygons:
   `urban_separation_violation_count`, and `urban_route_conflict_count`, plus
   aggregate report fields. These are measured from replay traces and are not
   route-deconfliction or avoidance guarantees;
+- M85 deconfliction metrics add `urban_deconflict_conflict_count`,
+  `urban_deconflict_wait_ticks`, `urban_deconflict_replan_count`,
+  `urban_deconflict_abort_count`, `urban_segment_utilization`, and
+  `urban_avg_delay_per_agent_ticks`, plus aggregate/report export fields. They
+  measure mission-level road-graph segment ownership in simulation, not
+  physical collision avoidance;
 - M68 route-risk metrics add `urban_route_risk_score` and
   `avg_urban_route_risk_score`. They are route-planning risk proxies based on
   corridor width and AABB obstacle clearance, not physical collision
@@ -199,7 +208,10 @@ starting with arbitrary polygons:
   `BusObserved`, `BusDetected`, `BusFalsePositive`, and
   `UrbanSearchCompleted`. M75 moving buses reuse the bus event pose field for
   the sampled pose at the event tick; perimeter patrol reuses route-progress
-  events rather than adding a new replay event family.
+  events rather than adding a new replay event family. M85 adds
+  `UrbanSegmentLockAcquired`, `UrbanSegmentLockReleased`,
+  `UrbanSegmentConflict`, `UrbanDeconflictWait`, `UrbanDeconflictReplan`, and
+  `UrbanDeconflictAbort`;
 - M67 benchmark packs with Urban replay logs can emit
   `urban_analysis/*.route-trace.json`, `*.route-trace.csv`,
   `*.judge-report.json`, `*.judge-report.csv`, and
@@ -210,9 +222,10 @@ starting with arbitrary polygons:
 This is intentionally a mission-level substrate. The M66 detector is mocked and
 distance/probability based. The M67 two-agent fixture is diagnostic only. The
 M68 corridor-aware planner is a route scoring extension, not physical
-avoidance. Do not add real lidar/raycast, dynamic obstacles, multi-agent route
-deconfliction, PX4/SITL export, hardware claims, visual UI, or arbitrary polygon dependencies
-as part of this path. M76 generated suites are deterministic input
+avoidance. M85 is mission-level segment ownership, not physical collision
+avoidance. Do not add real lidar/raycast, dynamic obstacles, PX4/SITL export,
+hardware claims, visual UI, or arbitrary polygon dependencies as part of this
+path. M76 generated suites are deterministic input
 generation only; they are not benchmark, PX4, hardware, or physics evidence.
 Those belong to later milestones with their own tests and docs.
 

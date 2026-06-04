@@ -1,6 +1,6 @@
 use super::*;
 use swarm_replay::{Event, EventLog, EventLogBuilder};
-use swarm_types::UrbanObstacleId;
+use swarm_types::{UrbanObstacleId, UrbanRightOfWayPolicy};
 
 #[test]
 fn route_trace_captures_planned_executed_segments_and_poses() {
@@ -64,6 +64,46 @@ fn judge_report_csv_has_stable_header() {
         "run_id,agent_id,tick,violation_type,segment_index,edge_id,obstacle_id,x,y,z,reason"
     ));
     assert!(csv.contains("obstacle_intersection"));
+}
+
+#[test]
+fn segment_ownership_report_reconstructs_lock_intervals() {
+    let log = urban_log_with_segment_locks();
+    let report = build_urban_segment_ownership_report(&log);
+
+    assert_eq!(report.run_id, "urban-locks");
+    assert_eq!(report.scenario_name, "urban_multi_agent_deconflict");
+    assert_eq!(report.records.len(), 2);
+
+    let released = &report.records[0];
+    assert_eq!(released.agent_id, AgentId::from("agent-0".to_owned()));
+    assert_eq!(released.edge_id, UrbanEdgeId::from("road-n0-n1".to_owned()));
+    assert_eq!(released.acquired_tick, 1);
+    assert_eq!(released.released_tick, Some(4));
+    assert_eq!(released.held_ticks, Some(3));
+
+    let active = &report.records[1];
+    assert_eq!(active.agent_id, AgentId::from("agent-1".to_owned()));
+    assert_eq!(active.edge_id, UrbanEdgeId::from("road-n1-n2".to_owned()));
+    assert_eq!(active.acquired_tick, 2);
+    assert_eq!(active.released_tick, None);
+    assert_eq!(active.held_ticks, None);
+}
+
+#[test]
+fn segment_ownership_csv_has_stable_header() {
+    let report = build_urban_segment_ownership_report(&urban_log_with_segment_locks());
+    let tmp_dir = tempfile::TempDir::new().unwrap();
+    let path = tmp_dir.path().join("ownership.csv");
+
+    write_urban_segment_ownership_csv(&report, &path).unwrap();
+
+    let csv = std::fs::read_to_string(path).unwrap();
+    assert!(csv.starts_with(
+        "run_id,scenario_name,edge_id,agent_id,acquired_tick,released_tick,held_ticks"
+    ));
+    assert!(csv.contains("road-n0-n1"));
+    assert!(csv.contains("agent-0"));
 }
 
 #[test]
@@ -154,6 +194,31 @@ fn urban_log_with_violation() -> EventLog {
             ..Default::default()
         },
         reason: "ObstacleIntersection".to_owned(),
+    });
+    builder.build()
+}
+
+fn urban_log_with_segment_locks() -> EventLog {
+    let mut builder = EventLogBuilder::new("urban-locks", 0, "urban_multi_agent_deconflict");
+    builder.push(Event::UrbanSegmentLockAcquired {
+        agent_id: AgentId::from("agent-0".to_owned()),
+        tick: 1,
+        edge_id: UrbanEdgeId::from("road-n0-n1".to_owned()),
+        policy: UrbanRightOfWayPolicy::FirstCome,
+        reason: "first reservation".to_owned(),
+    });
+    builder.push(Event::UrbanSegmentLockAcquired {
+        agent_id: AgentId::from("agent-1".to_owned()),
+        tick: 2,
+        edge_id: UrbanEdgeId::from("road-n1-n2".to_owned()),
+        policy: UrbanRightOfWayPolicy::FirstCome,
+        reason: "second reservation".to_owned(),
+    });
+    builder.push(Event::UrbanSegmentLockReleased {
+        agent_id: AgentId::from("agent-0".to_owned()),
+        tick: 4,
+        edge_id: UrbanEdgeId::from("road-n0-n1".to_owned()),
+        held_ticks: 3,
     });
     builder.build()
 }

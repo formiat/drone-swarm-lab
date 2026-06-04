@@ -97,6 +97,13 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
         "avg_urban_min_agent_separation_m",
         "avg_urban_separation_violation_count",
         "avg_urban_route_conflict_count",
+        // v0.85 Urban Multi-Agent Deconfliction
+        "avg_urban_deconflict_conflict_count",
+        "avg_urban_deconflict_wait_ticks",
+        "avg_urban_deconflict_replan_count",
+        "avg_urban_deconflict_abort_count",
+        "avg_urban_segment_utilization",
+        "avg_urban_delay_per_agent_ticks",
         // v0.75 Urban Mission Realism Follow-up
         "avg_perimeter_completion_rate",
         "avg_perimeter_length_m",
@@ -211,6 +218,13 @@ pub fn export_csv(report: &ComparisonReport) -> Result<String, csv::Error> {
                     format!("{:.3}", m.avg_urban_min_agent_separation_m).as_str(),
                     format!("{:.3}", m.avg_urban_separation_violation_count).as_str(),
                     format!("{:.3}", m.avg_urban_route_conflict_count).as_str(),
+                    // v0.85 Urban Multi-Agent Deconfliction
+                    format!("{:.3}", m.avg_urban_deconflict_conflict_count).as_str(),
+                    format!("{:.3}", m.avg_urban_deconflict_wait_ticks).as_str(),
+                    format!("{:.3}", m.avg_urban_deconflict_replan_count).as_str(),
+                    format!("{:.3}", m.avg_urban_deconflict_abort_count).as_str(),
+                    format!("{:.3}", m.avg_urban_segment_utilization).as_str(),
+                    format!("{:.3}", m.avg_urban_delay_per_agent_ticks).as_str(),
                     // v0.75 Urban Mission Realism Follow-up
                     format!("{:.3}", m.avg_perimeter_completion_rate).as_str(),
                     format!("{:.3}", m.avg_perimeter_length_m).as_str(),

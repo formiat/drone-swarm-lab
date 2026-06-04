@@ -28,6 +28,14 @@ smoke/regression/analysis checks, not benchmark baselines or publication runs.
 M67 route-trace, judge-report, and timeline tooling should be treated as
 diagnostic evidence, not as a new algorithmic benchmark result.
 
+M85 adds `scenarios/urban.multi-agent-deconflict.json` and opt-in Urban
+segment ownership metrics (`urban_deconflict_*`, `urban_segment_utilization`,
+and `urban_avg_delay_per_agent_ticks`). This is current-head simulation
+functionality for mission-level road-graph deconfliction. It is not part of
+the historical M69/M62 benchmark packs and must not be described as physical
+collision avoidance, PX4/SITL evidence, hardware readiness, lidar/raycast, RF
+coordination, or real perception.
+
 M68 adds one small algorithmic delta for Urban route planning:
 `planner: "corridor-aware"` uses corridor width and static-obstacle clearance
 to lower `urban_route_risk_score` on `scenarios/urban.corridor-delta.json`.
@@ -241,7 +249,7 @@ Interpretation:
   route risk.
 
 This delta is intentionally small and scenario-local. It does not prove
-general Urban superiority, multi-agent deconfliction, lidar/CV behavior,
+general Urban superiority, M85 segment ownership behavior, lidar/CV behavior,
 physical collision avoidance, PX4/SITL behavior, or hardware readiness.
 Unsupported pairs such as SAR+CBBA and SAR+centralized remain unsupported with
 their existing reasons; M68 does not implement failure-triggered gossip burst.

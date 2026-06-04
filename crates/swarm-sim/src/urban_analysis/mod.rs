@@ -89,6 +89,25 @@ pub struct UrbanJudgeViolationRecord {
     pub reason: String,
 }
 
+/// Segment-ownership artifact reconstructed from M85 replay lock events.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct UrbanSegmentOwnershipReport {
+    pub run_id: String,
+    pub scenario_name: String,
+    pub records: Vec<UrbanSegmentOwnershipRecord>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct UrbanSegmentOwnershipRecord {
+    pub edge_id: UrbanEdgeId,
+    pub agent_id: AgentId,
+    pub acquired_tick: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub released_tick: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub held_ticks: Option<u64>,
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct UrbanEventCounts {
     pub route_planned: u64,
@@ -114,6 +133,19 @@ pub struct UrbanEventCounts {
     pub wait_completed: u64,
     #[serde(default)]
     pub no_route_available: u64,
+    // M85 deconfliction events
+    #[serde(default)]
+    pub segment_lock_acquired: u64,
+    #[serde(default)]
+    pub segment_lock_released: u64,
+    #[serde(default)]
+    pub segment_conflict: u64,
+    #[serde(default)]
+    pub deconflict_wait: u64,
+    #[serde(default)]
+    pub deconflict_replan: u64,
+    #[serde(default)]
+    pub deconflict_abort: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

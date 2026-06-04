@@ -120,6 +120,13 @@ pub fn export_json(report: &ComparisonReport) -> Result<String, serde_json::Erro
                     avg_urban_separation_violation_count: metrics
                         .avg_urban_separation_violation_count,
                     avg_urban_route_conflict_count: metrics.avg_urban_route_conflict_count,
+                    avg_urban_deconflict_conflict_count: metrics
+                        .avg_urban_deconflict_conflict_count,
+                    avg_urban_deconflict_wait_ticks: metrics.avg_urban_deconflict_wait_ticks,
+                    avg_urban_deconflict_replan_count: metrics.avg_urban_deconflict_replan_count,
+                    avg_urban_deconflict_abort_count: metrics.avg_urban_deconflict_abort_count,
+                    avg_urban_segment_utilization: metrics.avg_urban_segment_utilization,
+                    avg_urban_delay_per_agent_ticks: metrics.avg_urban_delay_per_agent_ticks,
                     // v0.75 Urban Mission Realism Follow-up
                     avg_perimeter_completion_rate: metrics.avg_perimeter_completion_rate,
                     avg_perimeter_length_m: metrics.avg_perimeter_length_m,
@@ -240,6 +247,13 @@ struct ReportRow {
     avg_urban_min_agent_separation_m: f64,
     avg_urban_separation_violation_count: f64,
     avg_urban_route_conflict_count: f64,
+    // v0.85 Urban Multi-Agent Deconfliction
+    avg_urban_deconflict_conflict_count: f64,
+    avg_urban_deconflict_wait_ticks: f64,
+    avg_urban_deconflict_replan_count: f64,
+    avg_urban_deconflict_abort_count: f64,
+    avg_urban_segment_utilization: f64,
+    avg_urban_delay_per_agent_ticks: f64,
     // v0.75 Urban Mission Realism Follow-up
     avg_perimeter_completion_rate: f64,
     avg_perimeter_length_m: f64,

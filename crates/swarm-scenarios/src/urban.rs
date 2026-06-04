@@ -1,10 +1,12 @@
-use swarm_sim::{GeoOrigin, RunConfig, Scenario, UrbanState};
+use std::collections::HashMap;
+
+use swarm_sim::{GeoOrigin, RunConfig, Scenario, UrbanDeconflictionConfig, UrbanState};
 use swarm_types::{
     Aabb, Agent, AgentId, Health, Pose, Role, Task, TaskId, TaskKind, TaskStatus,
     UrbanBlockedPolicy, UrbanBus, UrbanBusId, UrbanBusRoute, UrbanBusStop, UrbanDetectorConfig,
     UrbanEdge, UrbanEdgeId, UrbanMap, UrbanNode, UrbanNodeId, UrbanObstacleId,
-    UrbanPerimeterPatrol, UrbanRouteLoop, UrbanSearchState, UrbanStaticObstacle,
-    UrbanTemporaryObstacle,
+    UrbanPerimeterPatrol, UrbanRightOfWayPolicy, UrbanRouteLoop, UrbanSearchState,
+    UrbanStaticObstacle, UrbanTemporaryObstacle,
 };
 
 pub struct UrbanConfig {
@@ -24,6 +26,11 @@ pub enum UrbanProfile {
     BlockedRouteWaitAndContinue,
     BlockedRouteReplan,
     BlockedRouteNoAlternative,
+    DeconflictFirstCome,
+    DeconflictPriority,
+    DeconflictRoundRobin,
+    DeconflictReplan,
+    DeconflictAbort,
 }
 
 impl UrbanProfile {
@@ -40,6 +47,11 @@ impl UrbanProfile {
             "blocked-route-wait" | "blockedroutewait" => Some(Self::BlockedRouteWaitAndContinue),
             "blocked-route-replan" | "blockedroutereplan" => Some(Self::BlockedRouteReplan),
             "blocked-route-no-alt" | "blockedroutenoalt" => Some(Self::BlockedRouteNoAlternative),
+            "deconflict-first-come" | "deconflictfirstcome" => Some(Self::DeconflictFirstCome),
+            "deconflict-priority" | "deconflictpriority" => Some(Self::DeconflictPriority),
+            "deconflict-round-robin" | "deconflictroundrobin" => Some(Self::DeconflictRoundRobin),
+            "deconflict-replan" | "deconflictreplan" => Some(Self::DeconflictReplan),
+            "deconflict-abort" | "deconflictabort" => Some(Self::DeconflictAbort),
             _ => None,
         }
     }
@@ -73,6 +85,14 @@ impl UrbanProfile {
                 seed,
                 max_ticks: 30,
             },
+            Self::DeconflictFirstCome
+            | Self::DeconflictPriority
+            | Self::DeconflictRoundRobin
+            | Self::DeconflictReplan
+            | Self::DeconflictAbort => UrbanConfig {
+                seed,
+                max_ticks: 80,
+            },
         }
     }
 }
@@ -89,7 +109,14 @@ impl UrbanStandardProfiles {
     }
 
     pub fn multi_agent_profile_names() -> Vec<&'static str> {
-        vec!["multi-agent-small-block"]
+        vec![
+            "multi-agent-small-block",
+            "deconflict-first-come",
+            "deconflict-priority",
+            "deconflict-round-robin",
+            "deconflict-replan",
+            "deconflict-abort",
+        ]
     }
 
     pub fn search_profile_names() -> Vec<&'static str> {
@@ -216,6 +243,7 @@ pub fn build_urban_patrol_scenario(config: &UrbanConfig) -> (Scenario, RunConfig
             planner: "dijkstra".to_owned(),
             temporary_obstacles: vec![],
             blocked_route_policy: UrbanBlockedPolicy::default(),
+            deconfliction: Default::default(),
             perimeter_patrol: None,
         }),
         ..Default::default()
@@ -246,6 +274,56 @@ pub fn build_urban_multi_agent_scenario(config: &UrbanConfig) -> (Scenario, RunC
         battery_drain_rate: 0.0,
         battery_model: None,
     });
+    (scenario, run_config)
+}
+
+pub fn build_urban_deconfliction_scenario(
+    config: &UrbanConfig,
+    profile: UrbanProfile,
+) -> (Scenario, RunConfig) {
+    let (mut scenario, mut run_config) = build_urban_patrol_scenario(config);
+    let agent_1_id = AgentId::from("agent-1".to_owned());
+    scenario.name = match profile {
+        UrbanProfile::DeconflictPriority => "urban_deconflict_priority",
+        UrbanProfile::DeconflictRoundRobin => "urban_deconflict_round_robin",
+        UrbanProfile::DeconflictReplan => "urban_deconflict_replan",
+        UrbanProfile::DeconflictAbort => "urban_deconflict_abort",
+        UrbanProfile::DeconflictFirstCome => "urban_deconflict_first_come",
+        _ => "urban_deconflict_first_come",
+    }
+    .to_owned();
+    scenario.agents.push(patrol_agent("agent-1", 0.0, 0.0, 2.0));
+
+    if let Some(urban_state) = run_config.urban_state.as_mut() {
+        let (right_of_way_policy, locked_segment_policy) = match profile {
+            UrbanProfile::DeconflictPriority => {
+                (UrbanRightOfWayPolicy::Priority, UrbanBlockedPolicy::Wait)
+            }
+            UrbanProfile::DeconflictRoundRobin => {
+                (UrbanRightOfWayPolicy::RoundRobin, UrbanBlockedPolicy::Wait)
+            }
+            UrbanProfile::DeconflictReplan => {
+                (UrbanRightOfWayPolicy::FirstCome, UrbanBlockedPolicy::Replan)
+            }
+            UrbanProfile::DeconflictAbort => {
+                (UrbanRightOfWayPolicy::FirstCome, UrbanBlockedPolicy::Abort)
+            }
+            UrbanProfile::DeconflictFirstCome => {
+                (UrbanRightOfWayPolicy::FirstCome, UrbanBlockedPolicy::Wait)
+            }
+            _ => (UrbanRightOfWayPolicy::FirstCome, UrbanBlockedPolicy::Wait),
+        };
+        let mut agent_priorities = HashMap::new();
+        agent_priorities.insert(AgentId::from("agent-0".to_owned()), 1);
+        agent_priorities.insert(agent_1_id, 9);
+        urban_state.deconfliction = UrbanDeconflictionConfig {
+            enabled: true,
+            right_of_way_policy,
+            locked_segment_policy,
+            agent_priorities,
+        };
+    }
+
     (scenario, run_config)
 }
 
@@ -347,7 +425,12 @@ pub fn build_urban_search_scenario(
             ),
             UrbanProfile::BlockedRouteWaitAndContinue
             | UrbanProfile::BlockedRouteReplan
-            | UrbanProfile::BlockedRouteNoAlternative => {
+            | UrbanProfile::BlockedRouteNoAlternative
+            | UrbanProfile::DeconflictFirstCome
+            | UrbanProfile::DeconflictPriority
+            | UrbanProfile::DeconflictRoundRobin
+            | UrbanProfile::DeconflictReplan
+            | UrbanProfile::DeconflictAbort => {
                 ("urban_search_static_bus", Pose::default(), 1.0, 1.0, 0.0)
             }
         };
@@ -466,6 +549,7 @@ pub fn build_blocked_route_wait_scenario(config: &UrbanConfig) -> (Scenario, Run
                 severity: None,
             }],
             blocked_route_policy: UrbanBlockedPolicy::Wait,
+            deconfliction: Default::default(),
             perimeter_patrol: None,
         }),
         ..Default::default()
@@ -534,6 +618,7 @@ pub fn build_blocked_route_replan_scenario(config: &UrbanConfig) -> (Scenario, R
                 severity: None,
             }],
             blocked_route_policy: UrbanBlockedPolicy::Replan,
+            deconfliction: Default::default(),
             perimeter_patrol: None,
         }),
         ..Default::default()
@@ -604,6 +689,7 @@ pub fn build_blocked_route_no_alternative_scenario(config: &UrbanConfig) -> (Sce
                 },
             ],
             blocked_route_policy: UrbanBlockedPolicy::Replan,
+            deconfliction: Default::default(),
             perimeter_patrol: None,
         }),
         ..Default::default()

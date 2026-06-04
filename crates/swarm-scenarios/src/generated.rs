@@ -261,6 +261,7 @@ impl ScenarioGenerator for SyntheticUrbanGenerator {
             planner: "dijkstra".to_owned(),
             temporary_obstacles,
             blocked_route_policy: UrbanBlockedPolicy::Replan,
+            deconfliction: Default::default(),
             perimeter_patrol: config
                 .perimeter
                 .then(|| perimeter_patrol(config.rows, config.cols)),

@@ -6,7 +6,8 @@ use swarm_runtime::GridState;
 use swarm_safety::SafetyConfig;
 use swarm_types::{
     AgentId, EdgeId, InspectionGraph, Task, TaskId, UrbanBlockedPolicy, UrbanMap, UrbanNodeId,
-    UrbanPerimeterPatrol, UrbanRouteLoop, UrbanSearchState, UrbanTemporaryObstacle,
+    UrbanPerimeterPatrol, UrbanRightOfWayPolicy, UrbanRouteLoop, UrbanSearchState,
+    UrbanTemporaryObstacle,
 };
 
 /// Tracks coverage of inspection edges during a run.
@@ -147,6 +148,19 @@ pub enum UrbanMissionTemplate {
     InspectionCorridorCandidate,
 }
 
+/// Runtime configuration for mission-level Urban segment ownership.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct UrbanDeconflictionConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub right_of_way_policy: UrbanRightOfWayPolicy,
+    #[serde(default)]
+    pub locked_segment_policy: UrbanBlockedPolicy,
+    #[serde(default)]
+    pub agent_priorities: HashMap<AgentId, u8>,
+}
+
 /// Runtime configuration for Urban road-graph foundation scenarios.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UrbanState {
@@ -162,6 +176,8 @@ pub struct UrbanState {
     pub temporary_obstacles: Vec<UrbanTemporaryObstacle>,
     #[serde(default)]
     pub blocked_route_policy: UrbanBlockedPolicy,
+    #[serde(default)]
+    pub deconfliction: UrbanDeconflictionConfig,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub perimeter_patrol: Option<UrbanPerimeterPatrol>,
 }

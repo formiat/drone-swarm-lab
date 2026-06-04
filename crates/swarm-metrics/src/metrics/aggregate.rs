@@ -181,6 +181,19 @@ pub struct AggregateMetrics {
     pub avg_urban_separation_violation_count: f64,
     #[serde(default)]
     pub avg_urban_route_conflict_count: f64,
+    // v0.85 Urban Multi-Agent Deconfliction
+    #[serde(default)]
+    pub avg_urban_deconflict_conflict_count: f64,
+    #[serde(default)]
+    pub avg_urban_deconflict_wait_ticks: f64,
+    #[serde(default)]
+    pub avg_urban_deconflict_replan_count: f64,
+    #[serde(default)]
+    pub avg_urban_deconflict_abort_count: f64,
+    #[serde(default)]
+    pub avg_urban_segment_utilization: f64,
+    #[serde(default)]
+    pub avg_urban_delay_per_agent_ticks: f64,
     // v0.75 Urban Mission Realism Follow-up
     #[serde(default)]
     pub avg_perimeter_completion_rate: f64,
@@ -280,6 +293,12 @@ impl AggregateMetrics {
                 avg_urban_min_agent_separation_m: 0.0,
                 avg_urban_separation_violation_count: 0.0,
                 avg_urban_route_conflict_count: 0.0,
+                avg_urban_deconflict_conflict_count: 0.0,
+                avg_urban_deconflict_wait_ticks: 0.0,
+                avg_urban_deconflict_replan_count: 0.0,
+                avg_urban_deconflict_abort_count: 0.0,
+                avg_urban_segment_utilization: 0.0,
+                avg_urban_delay_per_agent_ticks: 0.0,
                 avg_perimeter_completion_rate: 0.0,
                 avg_perimeter_length_m: 0.0,
                 avg_time_to_complete_perimeter: 0.0,
@@ -406,6 +425,27 @@ impl AggregateMetrics {
             .sum();
         let total_urban_route_conflict_count: u64 =
             runs.iter().map(|run| run.urban_route_conflict_count).sum();
+        // v0.85 Urban Multi-Agent Deconfliction
+        let total_urban_deconflict_conflict_count: u64 = runs
+            .iter()
+            .map(|run| run.urban_deconflict_conflict_count)
+            .sum();
+        let total_urban_deconflict_wait_ticks: u64 =
+            runs.iter().map(|run| run.urban_deconflict_wait_ticks).sum();
+        let total_urban_deconflict_replan_count: u64 = runs
+            .iter()
+            .map(|run| run.urban_deconflict_replan_count)
+            .sum();
+        let total_urban_deconflict_abort_count: u64 = runs
+            .iter()
+            .map(|run| run.urban_deconflict_abort_count)
+            .sum();
+        let total_urban_segment_utilization: f64 =
+            runs.iter().map(|run| run.urban_segment_utilization).sum();
+        let total_urban_avg_delay_per_agent_ticks: f64 = runs
+            .iter()
+            .map(|run| run.urban_avg_delay_per_agent_ticks)
+            .sum();
         // v0.75 Urban Mission Realism Follow-up
         let total_perimeter_completion_rate: f64 =
             runs.iter().map(|run| run.perimeter_completion_rate).sum();
@@ -534,6 +574,12 @@ impl AggregateMetrics {
             },
             avg_urban_separation_violation_count: total_urban_separation_violation_count as f64 / n,
             avg_urban_route_conflict_count: total_urban_route_conflict_count as f64 / n,
+            avg_urban_deconflict_conflict_count: total_urban_deconflict_conflict_count as f64 / n,
+            avg_urban_deconflict_wait_ticks: total_urban_deconflict_wait_ticks as f64 / n,
+            avg_urban_deconflict_replan_count: total_urban_deconflict_replan_count as f64 / n,
+            avg_urban_deconflict_abort_count: total_urban_deconflict_abort_count as f64 / n,
+            avg_urban_segment_utilization: total_urban_segment_utilization / n,
+            avg_urban_delay_per_agent_ticks: total_urban_avg_delay_per_agent_ticks / n,
             avg_perimeter_completion_rate: total_perimeter_completion_rate / n,
             avg_perimeter_length_m: total_perimeter_length_m / n,
             avg_time_to_complete_perimeter: if time_to_complete_perimeter_count > 0.0 {

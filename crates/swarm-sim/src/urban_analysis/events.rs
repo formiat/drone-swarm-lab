@@ -23,6 +23,12 @@ pub fn count_urban_events(log: &EventLog) -> UrbanEventCounts {
             Event::UrbanWaitStarted { .. } => counts.wait_started += 1,
             Event::UrbanWaitCompleted { .. } => counts.wait_completed += 1,
             Event::UrbanNoRouteAvailable { .. } => counts.no_route_available += 1,
+            Event::UrbanSegmentLockAcquired { .. } => counts.segment_lock_acquired += 1,
+            Event::UrbanSegmentLockReleased { .. } => counts.segment_lock_released += 1,
+            Event::UrbanSegmentConflict { .. } => counts.segment_conflict += 1,
+            Event::UrbanDeconflictWait { .. } => counts.deconflict_wait += 1,
+            Event::UrbanDeconflictReplan { .. } => counts.deconflict_replan += 1,
+            Event::UrbanDeconflictAbort { .. } => counts.deconflict_abort += 1,
             _ => {}
         }
     }

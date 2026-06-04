@@ -884,6 +884,95 @@ fn m64_docs_describe_urban_foundation_boundaries() {
 }
 
 #[test]
+fn m85_docs_describe_deconfliction_boundary() {
+    for required in [
+        "M85",
+        "Urban Multi-Agent Deconfliction",
+        "mission-level segment ownership",
+        "UrbanSegmentLockAcquired",
+        "UrbanSegmentLockReleased",
+        "UrbanSegmentConflict",
+        "UrbanDeconflictWait",
+        "UrbanDeconflictReplan",
+        "UrbanDeconflictAbort",
+        "urban_deconflict_conflict_count",
+        "urban_segment_utilization",
+        "not lidar/raycast",
+        "not physical collision avoidance",
+        "not PX4/SITL execution evidence",
+        "not hardware readiness",
+        "not real perception",
+    ] {
+        assert!(README.contains(required), "README missing {required}");
+    }
+
+    for required in [
+        "run_config.urban_state.deconfliction",
+        "right_of_way_policy",
+        "locked_segment_policy",
+        "first_come",
+        "priority",
+        "round_robin",
+        "mission_critical_override",
+        "scenarios/urban.multi-agent-deconflict.json",
+    ] {
+        assert!(
+            SCENARIO_DSL.contains(required),
+            "Scenario DSL doc missing {required}"
+        );
+    }
+
+    for required in [
+        "M85 Urban Multi-Agent Deconfliction Events",
+        "UrbanSegmentLockAcquired",
+        "UrbanSegmentLockReleased",
+        "UrbanSegmentConflict",
+        "UrbanDeconflictWait",
+        "UrbanDeconflictReplan",
+        "UrbanDeconflictAbort",
+        "mission-level Urban graph events",
+        "not RF coordination",
+    ] {
+        assert!(REPLAY.contains(required), "Replay doc missing {required}");
+    }
+
+    for required in [
+        "Urban Multi-Agent Deconfliction",
+        "urban_deconflict_*",
+        "not physical collision avoidance",
+    ] {
+        assert!(STATUS.contains(required), "STATUS missing {required}");
+    }
+
+    for required in [
+        "scenarios/urban.multi-agent-deconflict.json",
+        "urban_deconflict_wait_ticks",
+        "mission-level road-graph segment ownership",
+    ] {
+        assert!(
+            EXTENSION_GUIDE.contains(required),
+            "Extension guide missing {required}"
+        );
+    }
+
+    for required in [
+        "M85 Urban Deconfliction Smoke",
+        "UrbanSegmentLockAcquired",
+        "no replay interval has two holders",
+    ] {
+        assert!(
+            OPERATIONAL_RUNBOOKS.contains(required),
+            "Operational runbooks missing {required}"
+        );
+    }
+
+    assert!(
+        ARTIFACT_VALIDATION.contains("artifact.urban_deconfliction_duplicate_segment_owner"),
+        "Artifact validation doc missing M85 duplicate-owner rule"
+    );
+}
+
+#[test]
 fn mission_command_ir_doc_explains_intent_boundary() {
     for required in [
         "mission intent, not hardware execution",
