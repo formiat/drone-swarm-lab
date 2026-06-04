@@ -1,0 +1,66 @@
+{
+  "name": "Urban Geo Inspection Corridor Candidate",
+  "description": "M84 WGS84-node inspection-corridor candidate fixture. This is a route-export template, not a full inspection product.",
+  "scenarios": [
+    {
+      "mission": "urban-patrol",
+      "profile": "geo-inspection-corridor-candidate",
+      "scenario": {
+        "name": "urban_geo_inspection_corridor_candidate",
+        "seed": 8403,
+        "agents": [
+          {
+            "id": "agent-0",
+            "role": "scout",
+            "health": "alive",
+            "pose": { "x": 0.0, "y": 0.0 },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 1000.0,
+            "generation": 1,
+            "speed": 2.0,
+            "max_range": 1000.0,
+            "battery_drain_rate": 0.0
+          }
+        ],
+        "tasks": [
+          { "id": "urban-waypoint-c0", "status": "unassigned", "assigned_to": null, "priority": 1, "required_capabilities": [], "required_role": null, "preferred_role": "scout", "expires_at": null, "pose": { "x": 0.0, "y": 0.0 }, "grid_cell": null, "kind": "waypoint" },
+          { "id": "urban-waypoint-c1", "status": "unassigned", "assigned_to": null, "priority": 1, "required_capabilities": [], "required_role": null, "preferred_role": "scout", "expires_at": null, "pose": { "x": 35.0, "y": 0.0 }, "grid_cell": null, "kind": "waypoint" },
+          { "id": "urban-waypoint-c2", "status": "unassigned", "assigned_to": null, "priority": 1, "required_capabilities": [], "required_role": null, "preferred_role": "scout", "expires_at": null, "pose": { "x": 70.0, "y": 0.0 }, "grid_cell": null, "kind": "waypoint" }
+        ],
+        "ground_nodes": [],
+        "base_station": { "x": 0.0, "y": 0.0 },
+        "geo_origin": { "lat_deg": 47.397742, "lon_deg": 8.545594, "alt_m": 0.0 }
+      },
+      "run_config": {
+        "max_ticks": 120,
+        "timeout_ticks": 3,
+        "max_unassigned_ticks": 120,
+        "enable_movement": true,
+        "tick_duration_ms": 1000,
+        "urban_state": {
+          "map": {
+            "nodes": [
+              { "id": "c0", "pose": { "x": 0.0, "y": 0.0 }, "geo": { "lat_deg": 47.397742, "lon_deg": 8.545594, "alt_m": 5.0 } },
+              { "id": "c1", "pose": { "x": 35.0, "y": 0.0 }, "geo": { "lat_deg": 47.397742, "lon_deg": 8.546058, "alt_m": 5.0 } },
+              { "id": "c2", "pose": { "x": 70.0, "y": 0.0 }, "geo": { "lat_deg": 47.397742, "lon_deg": 8.546522, "alt_m": 5.0 } }
+            ],
+            "edges": [
+              { "id": "corridor-c0-c1", "from": "c0", "to": "c1", "cost": 35.0, "length_m": 35.0, "corridor_width_m": 5.0, "blocked": false },
+              { "id": "corridor-c1-c2", "from": "c1", "to": "c2", "cost": 35.0, "length_m": 35.0, "corridor_width_m": 5.0, "blocked": false },
+              { "id": "corridor-c2-c1", "from": "c2", "to": "c1", "cost": 35.0, "length_m": 35.0, "corridor_width_m": 5.0, "blocked": false },
+              { "id": "corridor-c1-c0", "from": "c1", "to": "c0", "cost": 35.0, "length_m": 35.0, "corridor_width_m": 5.0, "blocked": false }
+            ],
+            "static_obstacles": []
+          },
+          "route_loop": { "nodes": ["c0", "c1", "c2", "c1", "c0"] },
+          "mission_template": "inspection_corridor_candidate",
+          "start_node": "c0",
+          "planner": "dijkstra",
+          "blocked_route_policy": "wait"
+        }
+      }
+    }
+  ]
+}

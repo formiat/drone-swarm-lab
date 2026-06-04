@@ -396,6 +396,80 @@ fn m79_docs_define_operational_runbooks_and_hardware_entry_gate() {
 }
 
 #[test]
+fn m84_docs_describe_urban_geo_pack_boundaries() {
+    for required in [
+        "M84 Urban Geo Route Export + Mission Templates",
+        "coordinate_mode",
+        "wgs84_node_geo",
+        "WGS84",
+        "GeoJSON",
+        "scenarios/urban.geo-block-loop.json",
+        "scenarios/urban.geo-search-bus.json",
+        "scenarios/urban.geo-inspection-corridor.json",
+        "scenarios/fixtures/urban_small_block.geojson",
+        "mocked detector",
+        "not certified collision avoidance",
+        "no full OSM parser",
+    ] {
+        assert!(README.contains(required), "README missing {required}");
+        assert!(STATUS.contains(required), "STATUS missing {required}");
+    }
+
+    for required in [
+        "direct WGS84",
+        "coordinate_mode: wgs84_node_geo",
+        "local_with_origin",
+        "lat_e7",
+        "lon_e7",
+        "relative_alt_m",
+    ] {
+        assert!(
+            MAVLINK_COMMON_COMPILER.contains(required),
+            "MAVLINK_COMMON_COMPILER missing {required}"
+        );
+    }
+
+    for required in [
+        "UrbanPolicyDecision",
+        "UrbanWaitStarted",
+        "UrbanWaitCompleted",
+        "UrbanRouteReplanned",
+        "UrbanNoRouteAvailable",
+        "BusDetected",
+        "mocked detector",
+    ] {
+        assert!(REPLAY.contains(required), "REPLAY missing {required}");
+    }
+
+    for required in [
+        "urban.geo-block-loop.json",
+        "urban.geo-search-bus.json",
+        "urban.geo-inspection-corridor.json",
+        "urban_small_block.geojson",
+        "not a full OSM parser",
+        "not certified collision avoidance",
+    ] {
+        assert!(
+            OPERATIONAL_RUNBOOKS.contains(required),
+            "OPERATIONAL_RUNBOOKS missing {required}"
+        );
+    }
+
+    for required in [
+        "artifact.urban_geo_route_metadata_missing",
+        "lat_e7",
+        "lon_e7",
+        "relative_alt_m",
+        "wgs84_node_geo",
+    ] {
+        assert!(
+            ARTIFACT_VALIDATION.contains(required),
+            "ARTIFACT_VALIDATION missing {required}"
+        );
+    }
+}
+
+#[test]
 fn m71_docs_describe_preflight_safety_contract() {
     for required in [
         "M71 Preflight Safety And Invariant Contract",

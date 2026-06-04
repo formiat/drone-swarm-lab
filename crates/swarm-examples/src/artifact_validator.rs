@@ -58,6 +58,7 @@ pub const RULE_MAVLINK_PROFILE_HARDWARE_BLOCKING: &str =
     "artifact.mavlink_profile_hardware_blocking";
 pub const RULE_MAVLINK_PROFILE_RESULT_MISMATCH: &str = "artifact.mavlink_profile_result_mismatch";
 pub const RULE_URBAN_COORDINATE_MODE_MISSING: &str = "artifact.urban_coordinate_mode_missing";
+pub const RULE_URBAN_GEO_ROUTE_METADATA_MISSING: &str = "artifact.urban_geo_route_metadata_missing";
 pub const RULE_URBAN_WGS84_GEO_MISSING: &str = "artifact.urban_wgs84_geo_missing";
 pub const RULE_URBAN_MOCK_PERCEPTION_MISSING: &str = "artifact.urban_mock_perception_missing";
 pub const RULE_PARSE_FAILED: &str = "artifact.parse_failed";
@@ -163,6 +164,10 @@ fn optional_first_path(output_dir: &Path, file_names: &[&str]) -> Option<PathBuf
         .iter()
         .map(|file_name| output_dir.join(file_name))
         .find(|path| path.exists())
+}
+
+fn scaled_e7(value: f64) -> i32 {
+    (value * 10_000_000.0).round() as i32
 }
 
 struct Validator<'a> {
@@ -367,7 +372,6 @@ impl<'a> Validator<'a> {
                 "current dry-run artifact must include command_ir_summary policy fields",
             );
         }
-        self.validate_urban_dry_run_metadata(&artifact, &path);
         let Some(plan) = artifact.mavlink_common_plan.as_ref() else {
             self.push_error(
                 RULE_MAVLINK_PLAN_MISSING,
@@ -376,10 +380,16 @@ impl<'a> Validator<'a> {
             );
             return;
         };
+        self.validate_urban_dry_run_metadata(&artifact, plan, &path);
         self.validate_mavlink_common_plan(plan, &self.paths.dry_run_artifact);
     }
 
-    fn validate_urban_dry_run_metadata(&mut self, artifact: &SitlDryRunArtifact, path: &Path) {
+    fn validate_urban_dry_run_metadata(
+        &mut self,
+        artifact: &SitlDryRunArtifact,
+        plan: &MavlinkCommonPlan,
+        path: &Path,
+    ) {
         let is_urban =
             artifact.export_kind == "urban_route" || artifact.mission.starts_with("urban-");
         if !is_urban {
@@ -393,6 +403,13 @@ impl<'a> Validator<'a> {
             );
         }
         if artifact.coordinate_mode == "wgs84_node_geo" {
+            if artifact.waypoints.is_empty() {
+                self.push_error(
+                    RULE_URBAN_GEO_ROUTE_METADATA_MISSING,
+                    Some(path.to_path_buf()),
+                    "wgs84_node_geo urban artifacts must include full waypoint metadata",
+                );
+            }
             let has_geo_start = artifact
                 .start_waypoint
                 .as_ref()
@@ -410,6 +427,7 @@ impl<'a> Validator<'a> {
                     "wgs84_node_geo urban artifacts must include geo on start and end waypoints",
                 );
             }
+            self.validate_urban_wgs84_mission_items(artifact, plan, path);
         }
         if artifact.mission == "urban-search" && artifact.urban_mock_perception.is_none() {
             self.push_error(
@@ -417,6 +435,59 @@ impl<'a> Validator<'a> {
                 Some(path.to_path_buf()),
                 "urban-search dry-run artifacts must include urban_mock_perception metadata",
             );
+        }
+    }
+
+    fn validate_urban_wgs84_mission_items(
+        &mut self,
+        artifact: &SitlDryRunArtifact,
+        plan: &MavlinkCommonPlan,
+        path: &Path,
+    ) {
+        let geo_waypoints: Vec<_> = artifact
+            .waypoints
+            .iter()
+            .filter_map(|waypoint| waypoint.geo)
+            .collect();
+        if geo_waypoints.len() != artifact.waypoints.len() {
+            self.push_error(
+                RULE_URBAN_WGS84_GEO_MISSING,
+                Some(path.to_path_buf()),
+                "all wgs84_node_geo urban waypoints must include geo metadata",
+            );
+            return;
+        }
+        if plan.mission_items.len() != geo_waypoints.len() {
+            self.push_error(
+                RULE_URBAN_GEO_ROUTE_METADATA_MISSING,
+                Some(path.to_path_buf()),
+                format!(
+                    "mavlink mission item count {} does not match urban geo waypoint count {}",
+                    plan.mission_items.len(),
+                    geo_waypoints.len()
+                ),
+            );
+            return;
+        }
+        for (index, (item, geo)) in plan.mission_items.iter().zip(geo_waypoints).enumerate() {
+            let expected_lat_e7 = scaled_e7(geo.lat_deg);
+            let expected_lon_e7 = scaled_e7(geo.lon_deg);
+            let expected_alt_m = geo.alt_m as f32;
+            if item.lat_e7 != expected_lat_e7
+                || item.lon_e7 != expected_lon_e7
+                || (item.relative_alt_m - expected_alt_m).abs() > 0.001
+            {
+                self.push_error(
+                    RULE_URBAN_GEO_ROUTE_METADATA_MISSING,
+                    Some(path.to_path_buf()),
+                    format!(
+                        "mavlink mission_items[{index}] does not match urban waypoint geo: expected lat_e7={expected_lat_e7} lon_e7={expected_lon_e7} relative_alt_m={expected_alt_m:.3}, got lat_e7={} lon_e7={} relative_alt_m={:.3}",
+                        item.lat_e7,
+                        item.lon_e7,
+                        item.relative_alt_m
+                    ),
+                );
+            }
         }
     }
 

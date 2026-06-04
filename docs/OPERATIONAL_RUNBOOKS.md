@@ -137,6 +137,52 @@ Stop/abort conditions:
 - waypoint count, altitude, coordinate frame, or route identity is unexpected;
 - artifact path cannot be written.
 
+## Runbook 3a: M84 Urban Geo Dry-Run Pack
+
+Use these fixtures when the claim is about Urban WGS84 route export or mission
+template metadata:
+
+```bash
+cargo run -p swarm-examples --bin sitl_agent -- \
+  --dry-run \
+  --scenario scenarios/urban.geo-block-loop.json \
+  --agent-id agent-0 \
+  --dry-run-artifact target/m84-geo-block/sitl_dry_run_artifact.v1.json
+
+cargo run -p swarm-examples --bin artifact_validator -- \
+  --output-dir target/m84-geo-block \
+  --mode dry-run \
+  --strict
+```
+
+Repeat the dry-run/validator pair for:
+
+- `urban.geo-block-loop.json`;
+- `urban.geo-search-bus.json`;
+- `urban.geo-inspection-corridor.json`.
+
+`scenarios/fixtures/urban_small_block.geojson` is the small GeoJSON importer
+fixture. It is not a full OSM parser. The `urban.geo-search-bus.json` fixture
+uses a deterministic mocked detector; it is not real perception. M84 is not certified collision avoidance, not PX4 execution evidence, not Gazebo/HIL, and
+not hardware readiness.
+
+Expected evidence:
+
+- `coordinate_mode: wgs84_node_geo`;
+- `waypoints[].geo` on every exported waypoint;
+- MAVLink `mission_items[].lat_e7`, `lon_e7`, and `relative_alt_m` matching
+  the exported waypoint geo metadata;
+- `urban_mission_template`;
+- `urban_blocked_route_policy`;
+- `urban_mock_perception` for `urban-search`.
+
+Stop/abort conditions:
+
+- dry-run exits non-zero;
+- `artifact_validator --mode dry-run --strict` fails;
+- any Urban geo artifact is described as a full map parser, certified obstacle
+  avoidance, hardware run, or real perception system.
+
 ## Runbook 4: Artifact Validation
 
 Validate any local supervisor output pack before citing it.

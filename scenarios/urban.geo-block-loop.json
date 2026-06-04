@@ -1,0 +1,68 @@
+{
+  "name": "Urban Geo Block Loop",
+  "description": "M84 WGS84-node block-loop fixture: ordered road-graph loop around a small city block.",
+  "scenarios": [
+    {
+      "mission": "urban-patrol",
+      "profile": "geo-block-loop",
+      "scenario": {
+        "name": "urban_geo_block_loop",
+        "seed": 8401,
+        "agents": [
+          {
+            "id": "agent-0",
+            "role": "scout",
+            "health": "alive",
+            "pose": { "x": 0.0, "y": 0.0 },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 1000.0,
+            "generation": 1,
+            "speed": 2.0,
+            "max_range": 1000.0,
+            "battery_drain_rate": 0.0
+          }
+        ],
+        "tasks": [
+          { "id": "urban-waypoint-n0", "status": "unassigned", "assigned_to": null, "priority": 1, "required_capabilities": [], "required_role": null, "preferred_role": "scout", "expires_at": null, "pose": { "x": 0.0, "y": 0.0 }, "grid_cell": null, "kind": "waypoint" },
+          { "id": "urban-waypoint-n1", "status": "unassigned", "assigned_to": null, "priority": 1, "required_capabilities": [], "required_role": null, "preferred_role": "scout", "expires_at": null, "pose": { "x": 30.0, "y": 0.0 }, "grid_cell": null, "kind": "waypoint" },
+          { "id": "urban-waypoint-n2", "status": "unassigned", "assigned_to": null, "priority": 1, "required_capabilities": [], "required_role": null, "preferred_role": "scout", "expires_at": null, "pose": { "x": 30.0, "y": 30.0 }, "grid_cell": null, "kind": "waypoint" },
+          { "id": "urban-waypoint-n3", "status": "unassigned", "assigned_to": null, "priority": 1, "required_capabilities": [], "required_role": null, "preferred_role": "scout", "expires_at": null, "pose": { "x": 0.0, "y": 30.0 }, "grid_cell": null, "kind": "waypoint" }
+        ],
+        "ground_nodes": [],
+        "base_station": { "x": 0.0, "y": 0.0 },
+        "geo_origin": { "lat_deg": 47.397742, "lon_deg": 8.545594, "alt_m": 0.0 }
+      },
+      "run_config": {
+        "max_ticks": 150,
+        "timeout_ticks": 3,
+        "max_unassigned_ticks": 150,
+        "enable_movement": true,
+        "tick_duration_ms": 1000,
+        "urban_state": {
+          "map": {
+            "nodes": [
+              { "id": "n0", "pose": { "x": 0.0, "y": 0.0 }, "geo": { "lat_deg": 47.397742, "lon_deg": 8.545594, "alt_m": 5.0 } },
+              { "id": "n1", "pose": { "x": 30.0, "y": 0.0 }, "geo": { "lat_deg": 47.397742, "lon_deg": 8.545992, "alt_m": 5.0 } },
+              { "id": "n2", "pose": { "x": 30.0, "y": 30.0 }, "geo": { "lat_deg": 47.398011, "lon_deg": 8.545992, "alt_m": 5.0 } },
+              { "id": "n3", "pose": { "x": 0.0, "y": 30.0 }, "geo": { "lat_deg": 47.398011, "lon_deg": 8.545594, "alt_m": 5.0 } }
+            ],
+            "edges": [
+              { "id": "road-n0-n1", "from": "n0", "to": "n1", "cost": 30.0, "length_m": 30.0, "corridor_width_m": 7.0, "blocked": false },
+              { "id": "road-n1-n2", "from": "n1", "to": "n2", "cost": 30.0, "length_m": 30.0, "corridor_width_m": 7.0, "blocked": false },
+              { "id": "road-n2-n3", "from": "n2", "to": "n3", "cost": 30.0, "length_m": 30.0, "corridor_width_m": 7.0, "blocked": false },
+              { "id": "road-n3-n0", "from": "n3", "to": "n0", "cost": 30.0, "length_m": 30.0, "corridor_width_m": 7.0, "blocked": false }
+            ],
+            "static_obstacles": []
+          },
+          "route_loop": { "nodes": ["n0", "n1", "n2", "n3", "n0"] },
+          "mission_template": "block_loop",
+          "start_node": "n0",
+          "planner": "dijkstra",
+          "blocked_route_policy": "wait"
+        }
+      }
+    }
+  ]
+}

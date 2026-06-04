@@ -243,6 +243,8 @@ pub struct SitlDryRunArtifact {
     pub route_length_m: Option<f64>,
     pub segment_count: Option<usize>,
     pub waypoint_count: usize,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub waypoints: Vec<SitlWaypointItem>,
     pub start_waypoint: Option<SitlWaypointItem>,
     pub end_waypoint: Option<SitlWaypointItem>,
     pub start_global: Option<SitlGlobalWaypointSummary>,
@@ -928,6 +930,7 @@ pub fn dry_run_artifact_with_mavlink_profile(
         route_length_m: plan.route_length_m,
         segment_count: plan.segment_count,
         waypoint_count: plan.waypoint_count,
+        waypoints: plan.waypoints.clone(),
         start_waypoint: plan.waypoints.first().cloned(),
         end_waypoint: plan.waypoints.last().cloned(),
         start_global: plan

@@ -147,9 +147,12 @@ starting with arbitrary polygons:
 - `scenarios/urban.corridor-delta.json` is the portable M68 before/after
   fixture for comparing Dijkstra against the experimental corridor-aware
   planner;
-- `scenarios/urban.geo-perimeter.json` is the portable M84 WGS84-node Urban
-  dry-run fixture, and `scenarios/urban.geo-block.geojson` is the small
-  GeoJSON importer fixture;
+- M84 WGS84-node dry-run fixtures are `scenarios/urban.geo-perimeter.json`,
+  `scenarios/urban.geo-block-loop.json`, `scenarios/urban.geo-search-bus.json`,
+  and `scenarios/urban.geo-inspection-corridor.json`; the small GeoJSON
+  importer fixture is `scenarios/fixtures/urban_small_block.geojson`. This is
+  a route-export/testbed boundary, not a full OSM parser, not certified
+  collision avoidance, and not hardware readiness;
 - standard Urban builders also expose M75 `search-moving-bus` and
   `perimeter-square` profiles for deterministic moving-target/perimeter
   simulation tests;

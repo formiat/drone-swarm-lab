@@ -36,6 +36,14 @@ Each simulation run can optionally produce an `EventLog` — a JSON file contain
 | `UrbanSegmentCompleted` | Urban route segment completed | `agent_id`, `tick`, `segment_index`, `edge_id` |
 | `UrbanViolation` | Urban judge violation | `agent_id`, `tick`, `segment_index`, `edge_id`, `pose`, `reason`, optional `obstacle_id` |
 | `UrbanPatrolCompleted` | Urban Patrol loop completed | `agent_id`, `tick`, `route_length_m`, `distance_travelled_m` |
+| `UrbanEdgeBlocked` | Temporary Urban edge blockage became active | `edge_id`, `obstacle_id`, `tick` |
+| `UrbanEdgeUnblocked` | Temporary Urban edge blockage cleared | `edge_id`, `obstacle_id`, `tick` |
+| `UrbanObstacleDetected` | Mission-level Urban blocked-route detector saw a blocked edge on the active route | `agent_id`, `edge_id`, `obstacle_id`, `tick` |
+| `UrbanPolicyDecision` | Urban blocked-route policy selected Wait, Replan, or Abort | `agent_id`, `policy`, `edge_id`, `tick` |
+| `UrbanWaitStarted` | Wait policy started for a blocked edge | `agent_id`, `edge_id`, `tick` |
+| `UrbanWaitCompleted` | Wait policy resumed after a blocked edge cleared | `agent_id`, `edge_id`, `wait_ticks`, `tick` |
+| `UrbanRouteReplanned` | Replan policy found and installed an alternate route | `agent_id`, `avoided_edge_id`, `edge_ids`, `tick` |
+| `UrbanNoRouteAvailable` | Replan/Abort path could not continue safely | `agent_id`, `edge_id`, `reason`, `tick` |
 | `BusObserved` | Urban Search mocked detector observed an in-range bus | `agent_id`, `tick`, `bus_id`, `pose`, `distance_m`, `detector_seed` |
 | `BusDetected` | Urban Search mocked detector confirmed a real bus detection | `agent_id`, `tick`, `bus_id`, `pose`, `distance_m`, `detector_seed` |
 | `BusFalsePositive` | Urban Search mocked detector produced a false positive | `agent_id`, `tick`, `pose`, `detector_seed` |
@@ -66,6 +74,12 @@ M70 Urban Route Export writes a separate `sitl_dry_run_artifact.v1` JSON file
 through `sitl_agent --dry-run --dry-run-artifact`. That artifact records the
 SITL waypoint export boundary for a planned Urban route; it is not part of the
 simulation replay event schema and does not add new replay events.
+
+M84 WGS84 Urban dry-run artifacts can include mocked detector metadata for
+`urban-search`, but that remains a simulation/testbed boundary. `BusObserved`,
+`BusDetected`, and `BusFalsePositive` describe the deterministic mocked
+detector; they do not imply real perception, lidar, runtime collision
+avoidance, or PX4/Gazebo/HIL behavior.
 
 ### Backward Compatibility
 

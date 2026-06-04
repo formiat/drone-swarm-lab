@@ -16,7 +16,8 @@ use swarm_examples::artifact_validator::{
     RULE_MAVLINK_PROFILE_HARDWARE_BLOCKING, RULE_MAVLINK_PROFILE_MISSING,
     RULE_MAVLINK_PROFILE_RESULT_MISMATCH, RULE_MAVLINK_PROFILE_UNSUPPORTED,
     RULE_REPLACEMENT_SEQ_MISMATCH, RULE_REPLAY_SUMMARY_COUNT_MISMATCH, RULE_SAFETY_REPORT_MISSING,
-    RULE_URBAN_MOCK_PERCEPTION_MISSING, RULE_URBAN_WGS84_GEO_MISSING,
+    RULE_URBAN_GEO_ROUTE_METADATA_MISSING, RULE_URBAN_MOCK_PERCEPTION_MISSING,
+    RULE_URBAN_WGS84_GEO_MISSING,
 };
 use swarm_examples::sitl_multi_agent::{
     MultiAgentLifecycle, MultiAgentSitlManifest, MultiAgentSitlManifestAgent, SitlArtifactMetadata,
@@ -33,12 +34,13 @@ use swarm_examples::sitl_supervisor::{
     DegradedRunRecord, SitlDegradedRunReport, SupervisorDecision, SupervisorFailureMode,
 };
 use swarm_mission_ir::{
-    AltitudeReference, CommandId, CompletionTolerance, CoordinateFrame, LocalPosition,
+    AltitudeReference, CommandId, CompletionTolerance, CoordinateFrame, GeoPosition, LocalPosition,
     MissionCommand, MissionCommandEntry, MissionCommandPlan, MissionCommandSummary, MissionId,
     Position, TerminalState, TimeoutAction, TimeoutPolicy,
 };
 use swarm_safety::preflight::SafetyValidationReport;
 use swarm_sim::GeoOrigin;
+use swarm_types::UrbanGeoPoint;
 
 #[test]
 fn valid_tiny_supervisor_pack_passes() {
@@ -633,6 +635,26 @@ fn urban_search_without_mock_perception_metadata_fails() {
     assert_rule(&report, RULE_URBAN_MOCK_PERCEPTION_MISSING);
 }
 
+#[test]
+fn urban_wgs84_mavlink_mission_item_mismatch_fails() {
+    let fixture = tempfile::tempdir().unwrap();
+    let output_dir = fixture.path().join("dry-run");
+    fs::create_dir_all(&output_dir).unwrap();
+    let mut artifact = urban_wgs84_dry_run_artifact_fixture();
+    artifact.mavlink_common_plan.as_mut().unwrap().mission_items[0].lat_e7 += 1;
+    write_json(&output_dir.join("sitl_dry_run_artifact.v1.json"), &artifact);
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&output_dir),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::DryRun,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_URBAN_GEO_ROUTE_METADATA_MISSING);
+}
+
 fn assert_rule(
     report: &swarm_examples::artifact_validator::ArtifactValidationReport,
     rule_id: &str,
@@ -724,6 +746,7 @@ fn dry_run_artifact_fixture(include_m81_plan: bool) -> SitlDryRunArtifact {
         route_length_m: None,
         segment_count: None,
         waypoint_count: 1,
+        waypoints: vec![waypoint.clone()],
         start_waypoint: Some(waypoint.clone()),
         end_waypoint: Some(waypoint),
         start_global: Some(SitlGlobalWaypointSummary {
@@ -749,6 +772,119 @@ fn dry_run_artifact_fixture(include_m81_plan: bool) -> SitlDryRunArtifact {
         git_commit: Some("0123456789abcdef".to_owned()),
         command_ir_summary: Some(MissionCommandSummary::from_plan(&ir_plan)),
         mavlink_common_plan,
+    }
+}
+
+fn urban_wgs84_dry_run_artifact_fixture() -> SitlDryRunArtifact {
+    let origin = GeoOrigin {
+        lat_deg: 47.397_742,
+        lon_deg: 8.545_594,
+        alt_m: 0.0,
+    };
+    let geo = UrbanGeoPoint {
+        lat_deg: 47.397_742,
+        lon_deg: 8.545_859,
+        alt_m: 5.0,
+    };
+    let waypoint = SitlWaypointItem {
+        seq: 0,
+        task_id: "urban-route-0-road-n0-n1-1".to_owned(),
+        x: 20.0,
+        y: 0.0,
+        z: 5.0,
+        geo: Some(geo),
+        source: "urban_route".to_owned(),
+        edge_id: Some("road-n0-n1".to_owned()),
+        from_node_id: Some("n0".to_owned()),
+        to_node_id: Some("n1".to_owned()),
+        segment_index: Some(0),
+        point_index_on_segment: Some(1),
+    };
+    let ir_plan = MissionCommandPlan {
+        schema_version: MissionCommandPlan::SCHEMA_VERSION.to_owned(),
+        mission_id: MissionId::from("urban-wgs84-test".to_owned()),
+        coordinate_frame: CoordinateFrame::Wgs84,
+        altitude_reference: AltitudeReference::RelativeHome,
+        timeout_policy: TimeoutPolicy {
+            command_timeout_secs: 5.0,
+            completion_timeout_secs: 120.0,
+            on_timeout: TimeoutAction::Abort,
+        },
+        expected_terminal_state: TerminalState::Landed,
+        completion_tolerance: CompletionTolerance {
+            position_m: 1.0,
+            altitude_m: 0.5,
+        },
+        commands: vec![MissionCommandEntry {
+            command_id: CommandId::from("follow-route-0".to_owned()),
+            command: MissionCommand::FollowRoute {
+                route_id: swarm_mission_ir::RouteId::from("urban-route-export:dijkstra".to_owned()),
+                waypoints: vec![swarm_mission_ir::MissionWaypoint {
+                    position: Position::Geo(GeoPosition {
+                        lat_deg: geo.lat_deg,
+                        lon_deg: geo.lon_deg,
+                        alt_m: geo.alt_m,
+                    }),
+                    acceptance_radius_m: None,
+                }],
+            },
+            source_task_id: None,
+            source_route_id: Some("urban-route-export:dijkstra".to_owned()),
+            source_agent_id: Some("agent-0".to_owned()),
+        }],
+    };
+    let mavlink_common_plan = compile_mavlink_common_plan(
+        &ir_plan,
+        &MavlinkCommonPlanOptions {
+            home_origin: Some(MavlinkCoordinateOrigin {
+                lat_deg: origin.lat_deg,
+                lon_deg: origin.lon_deg,
+                alt_m: origin.alt_m,
+            }),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    SitlDryRunArtifact {
+        schema_version: "sitl_dry_run_artifact.v1".to_owned(),
+        source_scenario_path: PathBuf::from("scenarios/urban.geo-perimeter.json"),
+        suite_name: "Urban Geo".to_owned(),
+        scenario_name: "urban_geo_perimeter".to_owned(),
+        mission: "urban-patrol".to_owned(),
+        profile: "geo-perimeter".to_owned(),
+        agent_id: "agent-0".to_owned(),
+        export_kind: "urban_route".to_owned(),
+        planner_or_adapter: "urban_route_export:dijkstra".to_owned(),
+        route_length_m: Some(20.0),
+        segment_count: Some(1),
+        waypoint_count: 1,
+        waypoints: vec![waypoint.clone()],
+        start_waypoint: Some(waypoint.clone()),
+        end_waypoint: Some(waypoint),
+        start_global: Some(SitlGlobalWaypointSummary {
+            lat_deg: geo.lat_deg,
+            lon_deg: geo.lon_deg,
+            relative_alt_m: geo.alt_m,
+        }),
+        end_global: Some(SitlGlobalWaypointSummary {
+            lat_deg: geo.lat_deg,
+            lon_deg: geo.lon_deg,
+            relative_alt_m: geo.alt_m,
+        }),
+        altitude_source: "urban_route_export.default_altitude_m".to_owned(),
+        geo_origin: Some(origin),
+        effective_geo_origin: origin,
+        coordinate_frame: "local_simulation".to_owned(),
+        coordinate_mode: "wgs84_node_geo".to_owned(),
+        urban_mission_template: Some("perimeter_patrol".to_owned()),
+        urban_blocked_route_policy: Some("wait".to_owned()),
+        urban_mock_perception: None,
+        safety_report: SafetyValidationReport::ok(),
+        command: vec!["sitl_agent".to_owned(), "--dry-run".to_owned()],
+        git_commit: Some("0123456789abcdef".to_owned()),
+        command_ir_summary: Some(MissionCommandSummary::from_plan(&ir_plan)),
+        mavlink_common_plan: Some(mavlink_common_plan),
     }
 }
 

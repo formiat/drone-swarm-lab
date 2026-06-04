@@ -2,9 +2,10 @@ use super::*;
 use swarm_alloc::{AllocationAgent, AllocationTask, Allocator};
 use swarm_types::{
     Aabb, Agent, Capability, CellState, EdgeId, Health, HiddenTarget, InspectionEdge, Pose, Role,
-    SearchGrid, SensorModel, Task, TaskKind, TaskStatus, UrbanBus, UrbanBusId, UrbanDetectorConfig,
-    UrbanEdge, UrbanEdgeId, UrbanNode, UrbanNodeId, UrbanObstacleId, UrbanPerimeterPatrol,
-    UrbanRouteLoop, UrbanSearchState, UrbanStaticObstacle,
+    SearchGrid, SensorModel, Task, TaskKind, TaskStatus, UrbanBlockedPolicy, UrbanBus, UrbanBusId,
+    UrbanDetectorConfig, UrbanEdge, UrbanEdgeId, UrbanNode, UrbanNodeId, UrbanObstacleId,
+    UrbanPerimeterPatrol, UrbanRouteLoop, UrbanSearchState, UrbanStaticObstacle,
+    UrbanTemporaryObstacle,
 };
 
 fn scenario(seed: u64, agent_count: usize, task_count: usize) -> Scenario {
@@ -1009,6 +1010,146 @@ fn urban_patrol_replay_records_ordered_route_events() {
         event,
         swarm_replay::Event::UrbanPatrolCompleted { tick: 40, .. }
     )));
+}
+
+#[test]
+fn urban_blocked_policy_wait_emits_wait_decision() {
+    let (scenario, mut run_config) = urban_test_run_config(60, vec![]);
+    let urban_state = run_config.urban_state.as_mut().unwrap();
+    urban_state.blocked_route_policy = UrbanBlockedPolicy::Wait;
+    urban_state.temporary_obstacles = vec![UrbanTemporaryObstacle {
+        edge_id: UrbanEdgeId::from("road-n0-n1".to_owned()),
+        appears_at_tick: 0,
+        disappears_at_tick: Some(3),
+        reason: Some("temporary road closure".to_owned()),
+        severity: None,
+    }];
+
+    let (metrics, event_log) = ScenarioRunner::run_with_log(
+        &scenario,
+        run_config,
+        swarm_alloc::GreedyAllocator::default(),
+    );
+    let event_log = event_log.expect("urban run should produce replay log");
+
+    assert!(metrics.success);
+    assert!(metrics.urban_wait_time_ticks > 0);
+    assert_eq!(metrics.urban_unresolved_blockage_count, 0);
+    assert!(event_log.events.iter().any(|event| matches!(
+        event,
+        swarm_replay::Event::UrbanObstacleDetected { edge_id, .. }
+            if edge_id.as_ref() == "road-n0-n1"
+    )));
+    assert!(event_log.events.iter().any(|event| matches!(
+        event,
+        swarm_replay::Event::UrbanPolicyDecision { policy, .. } if policy == "wait"
+    )));
+    assert!(event_log
+        .events
+        .iter()
+        .any(|event| matches!(event, swarm_replay::Event::UrbanWaitStarted { .. })));
+    assert!(event_log.events.iter().any(|event| matches!(
+        event,
+        swarm_replay::Event::UrbanWaitCompleted { waited_ticks, .. } if *waited_ticks > 0
+    )));
+}
+
+#[test]
+fn urban_blocked_policy_replan_uses_alternate_route() {
+    let (scenario, mut run_config) = urban_test_run_config(80, vec![]);
+    let urban_state = run_config.urban_state.as_mut().unwrap();
+    urban_state.blocked_route_policy = UrbanBlockedPolicy::Replan;
+    urban_state.temporary_obstacles = vec![UrbanTemporaryObstacle {
+        edge_id: UrbanEdgeId::from("road-n0-n1".to_owned()),
+        appears_at_tick: 0,
+        disappears_at_tick: None,
+        reason: Some("primary road blocked".to_owned()),
+        severity: None,
+    }];
+    urban_state.map.edges.extend([
+        UrbanEdge {
+            id: UrbanEdgeId::from("detour-n0-n3".to_owned()),
+            from: UrbanNodeId::from("n0".to_owned()),
+            to: UrbanNodeId::from("n3".to_owned()),
+            cost: 20.0,
+            length_m: 20.0,
+            corridor_width_m: Some(4.0),
+            blocked: false,
+        },
+        UrbanEdge {
+            id: UrbanEdgeId::from("detour-n3-n2".to_owned()),
+            from: UrbanNodeId::from("n3".to_owned()),
+            to: UrbanNodeId::from("n2".to_owned()),
+            cost: 20.0,
+            length_m: 20.0,
+            corridor_width_m: Some(4.0),
+            blocked: false,
+        },
+        UrbanEdge {
+            id: UrbanEdgeId::from("detour-n2-n1".to_owned()),
+            from: UrbanNodeId::from("n2".to_owned()),
+            to: UrbanNodeId::from("n1".to_owned()),
+            cost: 20.0,
+            length_m: 20.0,
+            corridor_width_m: Some(4.0),
+            blocked: false,
+        },
+    ]);
+
+    let (metrics, event_log) = ScenarioRunner::run_with_log(
+        &scenario,
+        run_config,
+        swarm_alloc::GreedyAllocator::default(),
+    );
+    let event_log = event_log.expect("urban run should produce replay log");
+
+    assert!(metrics.success);
+    assert!(metrics.urban_replan_count > 0);
+    assert_eq!(metrics.urban_unresolved_blockage_count, 0);
+    assert!(event_log.events.iter().any(|event| matches!(
+        event,
+        swarm_replay::Event::UrbanPolicyDecision { policy, .. } if policy == "replan"
+    )));
+    assert!(event_log.events.iter().any(|event| matches!(
+        event,
+        swarm_replay::Event::UrbanRouteReplanned { edge_ids, .. }
+            if edge_ids.iter().any(|edge_id| edge_id.as_ref() == "detour-n0-n3")
+                && !edge_ids.iter().any(|edge_id| edge_id.as_ref() == "road-n0-n1")
+    )));
+}
+
+#[test]
+fn urban_blocked_policy_abort_stops_run() {
+    let (scenario, mut run_config) = urban_test_run_config(50, vec![]);
+    let urban_state = run_config.urban_state.as_mut().unwrap();
+    urban_state.blocked_route_policy = UrbanBlockedPolicy::Abort;
+    urban_state.temporary_obstacles = vec![UrbanTemporaryObstacle {
+        edge_id: UrbanEdgeId::from("road-n0-n1".to_owned()),
+        appears_at_tick: 0,
+        disappears_at_tick: None,
+        reason: Some("hard closure".to_owned()),
+        severity: None,
+    }];
+
+    let (metrics, event_log) = ScenarioRunner::run_with_log(
+        &scenario,
+        run_config,
+        swarm_alloc::GreedyAllocator::default(),
+    );
+    let event_log = event_log.expect("urban run should produce replay log");
+
+    assert!(!metrics.success);
+    assert!(!metrics.urban_patrol_completed);
+    assert_eq!(metrics.urban_replan_count, 0);
+    assert!(metrics.urban_unresolved_blockage_count > 0);
+    assert!(event_log.events.iter().any(|event| matches!(
+        event,
+        swarm_replay::Event::UrbanPolicyDecision { policy, .. } if policy == "abort"
+    )));
+    assert!(event_log
+        .events
+        .iter()
+        .any(|event| matches!(event, swarm_replay::Event::UrbanNoRouteAvailable { .. })));
 }
 
 #[test]

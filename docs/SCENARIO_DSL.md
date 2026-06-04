@@ -252,9 +252,21 @@ M84 adds optional WGS84 node metadata for Urban maps:
   `perimeter_patrol`, `block_loop`, `search_until_target`, or
   `inspection_corridor_candidate`.
 
-`scenarios/urban.geo-perimeter.json` is the canonical WGS84-node dry-run
-fixture. `scenarios/urban.geo-block.geojson` is a small GeoJSON importer
-fixture for generating Urban road graphs from Point/LineString features.
+The canonical M84 WGS84-node dry-run/testbed pack is:
+
+- `scenarios/urban.geo-perimeter.json` - compact perimeter patrol export
+  fixture kept for backward-compatible dry-run checks;
+- `scenarios/urban.geo-block-loop.json` - block-loop mission template fixture;
+- `scenarios/urban.geo-search-bus.json` - search-until-target fixture with
+  deterministic mocked detector metadata;
+- `scenarios/urban.geo-inspection-corridor.json` - inspection-corridor
+  candidate route-export fixture;
+- `scenarios/fixtures/urban_small_block.geojson` - small GeoJSON importer
+  fixture for generating Urban road graphs from Point/LineString features.
+
+The GeoJSON importer is intentionally small and is not a full OSM parser.
+M84 is dry-run/testbed evidence only: it is not certified collision avoidance,
+not real perception, not PX4 execution evidence, and not hardware readiness.
 
 ## Urban Search
 

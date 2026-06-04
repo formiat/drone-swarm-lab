@@ -46,6 +46,23 @@ Dry-run artifacts from `sitl_agent --dry-run --dry-run-artifact <path>` include
 this plan as optional `mavlink_common_plan` next to the existing
 `command_ir_summary`.
 
+## Coordinate Modes
+
+Urban route exports have two coordinate modes:
+
+- `local_with_origin` keeps the existing local simulation route, converts local
+  ENU waypoints through the scenario/effective `geo_origin`, and then compiles
+  those derived positions into MAVLink mission items.
+- `coordinate_mode: wgs84_node_geo` requires every Urban map node to carry
+  WGS84 `geo` metadata. In that mode the route bridge emits direct WGS84
+  waypoints into the mission command IR and the compiler writes matching
+  MAVLink `lat_e7`, `lon_e7`, and `relative_alt_m` fields. The artifact
+  validator checks those mission item coordinates against the exported Urban
+  waypoint metadata within integer E7 scaling tolerance.
+
+Both modes remain dry-run/compiler artifacts. They do not upload to PX4 or
+ArduPilot and do not prove vehicle behavior.
+
 ## Execution Order
 
 `MavlinkCommonPlan` is an ordered phase artifact. A future executor must apply

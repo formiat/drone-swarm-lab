@@ -333,6 +333,124 @@ fn dry_run_artifact_contains_export_metadata() {
     );
 }
 
+fn assert_dry_run_artifact_valid(output_dir: &std::path::Path) {
+    let report = swarm_examples::artifact_validator::validate_artifact_pack(
+        &swarm_examples::artifact_validator::ArtifactPackPaths::from_output_dir(output_dir),
+        swarm_examples::artifact_validator::ArtifactValidationOptions {
+            mode: swarm_examples::artifact_validator::ArtifactValidationMode::DryRun,
+            strict: true,
+            ..Default::default()
+        },
+    );
+    assert!(report.passed, "{:?}", report.violations);
+}
+
+fn run_public_dry_run_artifact(path: &str) -> (tempfile::TempDir, serde_json::Value) {
+    let scenario = public_scenario(path);
+    let output_dir = tempfile::tempdir().unwrap();
+    let artifact = output_dir.path().join("sitl_dry_run_artifact.v1.json");
+    let output = run_sitl_agent(&[
+        "--dry-run",
+        "--scenario",
+        &scenario,
+        "--agent-id",
+        "agent-0",
+        "--dry-run-artifact",
+        artifact.to_str().unwrap(),
+    ]);
+    assert!(
+        output.status.success(),
+        "dry-run failed for {path}: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&artifact).unwrap()).unwrap();
+    assert_dry_run_artifact_valid(output_dir.path());
+    (output_dir, json)
+}
+
+#[test]
+fn urban_geo_perimeter_dry_run_uses_wgs84_node_coordinates() {
+    let (_output_dir, json) = run_public_dry_run_artifact("scenarios/urban.geo-perimeter.json");
+
+    assert_eq!(json["mission"], "urban-patrol");
+    assert_eq!(json["profile"], "geo-perimeter");
+    assert_eq!(json["coordinate_mode"], "wgs84_node_geo");
+    assert_eq!(json["command_ir_summary"]["coordinate_frame"], "wgs84");
+    assert!(json["start_waypoint"]["geo"].is_object());
+    assert_eq!(json["start_waypoint"]["geo"]["lat_deg"], 47.397742);
+    assert_eq!(json["start_waypoint"]["geo"]["lon_deg"], 8.545859);
+    assert_eq!(
+        json["mavlink_common_plan"]["mission_items"][0]["lat_e7"],
+        473977420
+    );
+    assert_eq!(
+        json["mavlink_common_plan"]["mission_items"][0]["lon_e7"],
+        85458590
+    );
+    assert_eq!(
+        json["mavlink_common_plan"]["mission_items"][0]["relative_alt_m"],
+        5.0
+    );
+}
+
+#[test]
+fn urban_local_with_origin_dry_run_remains_unchanged() {
+    let (_output_dir, json) = run_public_dry_run_artifact("scenarios/urban.patrol.json");
+
+    assert_eq!(json["mission"], "urban-patrol");
+    assert_eq!(json["coordinate_mode"], "local_with_origin");
+    assert_eq!(json["command_ir_summary"]["coordinate_frame"], "local_enu");
+    assert!(json["start_waypoint"]["geo"].is_null());
+    assert_eq!(json["start_waypoint"]["x"], 20.0);
+    assert_eq!(
+        json["mavlink_common_plan"]["mission_items"][0]["lat_e7"],
+        473977420
+    );
+    assert_eq!(
+        json["mavlink_common_plan"]["mission_items"][0]["lon_e7"],
+        85458594
+    );
+}
+
+#[test]
+fn urban_geo_search_artifact_records_mock_perception_metadata() {
+    let (_output_dir, json) = run_public_dry_run_artifact("scenarios/urban.geo-search-bus.json");
+
+    assert_eq!(json["mission"], "urban-search");
+    assert_eq!(json["profile"], "geo-search-bus");
+    assert_eq!(json["coordinate_mode"], "wgs84_node_geo");
+    assert_eq!(json["urban_mission_template"], "search_until_target");
+    assert_eq!(json["urban_mock_perception"]["detector_seed"], 8402);
+    assert_eq!(json["urban_mock_perception"]["detection_range_m"], 4.0);
+    assert_eq!(json["urban_mock_perception"]["detection_probability"], 1.0);
+    assert_eq!(json["urban_mock_perception"]["false_positive_rate"], 0.0);
+    assert_eq!(json["urban_mock_perception"]["target_count"], 1);
+}
+
+#[test]
+fn urban_geo_block_loop_mavlink_plan_contains_route_metadata() {
+    let (_output_dir, json) = run_public_dry_run_artifact("scenarios/urban.geo-block-loop.json");
+
+    assert_eq!(json["mission"], "urban-patrol");
+    assert_eq!(json["profile"], "geo-block-loop");
+    assert_eq!(json["coordinate_mode"], "wgs84_node_geo");
+    assert_eq!(json["urban_mission_template"], "block_loop");
+    assert_eq!(json["urban_blocked_route_policy"], "wait");
+    assert_eq!(json["segment_count"], 4);
+    assert_eq!(json["waypoint_count"], 4);
+    assert_eq!(json["waypoints"].as_array().unwrap().len(), 4);
+    assert_eq!(
+        json["mavlink_common_plan"]["mission_items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        json["waypoints"].as_array().unwrap().len()
+    );
+    assert_eq!(json["waypoints"][0]["edge_id"], "road-n0-n1");
+    assert_eq!(json["waypoints"][3]["edge_id"], "road-n3-n0");
+}
+
 #[test]
 fn primitive_canonical_dry_run_artifacts_compile_to_mavlink_plans() {
     for (scenario, mission, expected_body_kind, expected_waypoints) in [

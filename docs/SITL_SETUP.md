@@ -191,6 +191,14 @@ cargo run --bin sitl_agent -- \
   --dry-run-artifact results/urban_geo_route_export/sitl_dry_run_artifact.v1.json
 ```
 
+The canonical M84 scenario pack also includes
+`scenarios/urban.geo-block-loop.json`, `scenarios/urban.geo-search-bus.json`,
+`scenarios/urban.geo-inspection-corridor.json`, and the GeoJSON importer
+fixture `scenarios/fixtures/urban_small_block.geojson`. The importer fixture is
+not a full OSM parser. The search fixture records mocked detector metadata; it
+is not real perception. The Urban geo export path is not certified collision
+avoidance, not PX4 execution evidence, and not hardware readiness.
+
 The JSON artifact uses `sitl_dry_run_artifact.v1` and records the source
 scenario path, route length, segment count, waypoint count, start/end waypoint
 summary, altitude source, scenario `geo_origin`, effective origin,
