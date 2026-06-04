@@ -43,6 +43,12 @@ selected MAVLink capability profile. That section records per-command
 classification, `required_execution_mode`, `required_mode_transitions`,
 preconditions, and caveats.
 
+M83 primitive dry-run artifacts for `takeoff-hold-land`, `orbit`, and
+`waypoint-square` also need `command_ir_summary` policy fields,
+`telemetry_milestones`, and an embedded `safety_report.passed=true`. These
+checks prove static preflight and artifact consistency only; they are not
+certified flight safety and do not imply a connected vehicle or hardware upload.
+
 ## Validator CLI
 
 Validate a current supervisor pack:
@@ -111,7 +117,10 @@ Exit codes:
 | `artifact.mavlink_plan_schema_unsupported` | Dry-run or `MavlinkCommonPlan` schema is unsupported. |
 | `artifact.mavlink_plan_command_missing` | The M81 plan has no commands/items, or mission item sequences are not contiguous. |
 | `artifact.mavlink_plan_ack_missing` | Expected ACK coverage is incomplete for commands, mission upload, or mission start. |
+| `artifact.mavlink_plan_telemetry_missing` | Mission items are present but `telemetry_milestones` are absent. |
 | `artifact.mavlink_plan_order_unsafe` | A post-route lifecycle command such as land/RTL appears in `command_prelude` while uploaded mission items are present. |
+| `artifact.dry_run_policy_missing` | Current strict dry-run artifact has no `command_ir_summary` policy evidence or has invalid timeout policy values. |
+| `artifact.dry_run_safety_report_failed` | Current dry-run artifact has `safety_report.passed=false`. |
 | `artifact.mavlink_plan_unsupported_required` | Required unsupported features are present while `validation_result.passed` is still true. |
 | `artifact.mavlink_plan_ir_hash_missing` | `command_ir_hash` is absent or empty. |
 | `artifact.mavlink_profile_missing` | Current dry-run `mavlink_common_plan` has no M82 compatibility report. Historical artifacts may downgrade this to a warning with `--allow-historical`. |

@@ -45,6 +45,9 @@ pub const RULE_MAVLINK_PLAN_SCHEMA_UNSUPPORTED: &str = "artifact.mavlink_plan_sc
 pub const RULE_MAVLINK_PLAN_COMMAND_MISSING: &str = "artifact.mavlink_plan_command_missing";
 pub const RULE_MAVLINK_PLAN_ACK_MISSING: &str = "artifact.mavlink_plan_ack_missing";
 pub const RULE_MAVLINK_PLAN_ORDER_UNSAFE: &str = "artifact.mavlink_plan_order_unsafe";
+pub const RULE_MAVLINK_PLAN_TELEMETRY_MISSING: &str = "artifact.mavlink_plan_telemetry_missing";
+pub const RULE_DRY_RUN_POLICY_MISSING: &str = "artifact.dry_run_policy_missing";
+pub const RULE_DRY_RUN_SAFETY_REPORT_FAILED: &str = "artifact.dry_run_safety_report_failed";
 pub const RULE_MAVLINK_PLAN_UNSUPPORTED_REQUIRED: &str =
     "artifact.mavlink_plan_unsupported_required";
 pub const RULE_MAVLINK_PLAN_IR_HASH_MISSING: &str = "artifact.mavlink_plan_ir_hash_missing";
@@ -334,6 +337,33 @@ impl<'a> Validator<'a> {
                 ),
             );
         }
+        if !artifact.safety_report.passed {
+            self.push_error(
+                RULE_DRY_RUN_SAFETY_REPORT_FAILED,
+                Some(path.clone()),
+                "dry-run artifact safety_report.passed must be true for current strict validation",
+            );
+        }
+        if let Some(summary) = artifact.command_ir_summary.as_ref() {
+            if summary.timeout_policy.command_timeout_secs <= 0.0
+                || summary.timeout_policy.completion_timeout_secs <= 0.0
+            {
+                self.push_error(
+                    RULE_DRY_RUN_POLICY_MISSING,
+                    Some(path.clone()),
+                    "command_ir_summary timeout_policy must contain positive timeouts",
+                );
+            }
+        } else if self.options.strict
+            && !matches!(self.options.mode, ArtifactValidationMode::Historical)
+            && !self.options.allow_historical
+        {
+            self.push_error(
+                RULE_DRY_RUN_POLICY_MISSING,
+                Some(path.clone()),
+                "current dry-run artifact must include command_ir_summary policy fields",
+            );
+        }
         let Some(plan) = artifact.mavlink_common_plan.as_ref() else {
             self.push_error(
                 RULE_MAVLINK_PLAN_MISSING,
@@ -368,6 +398,13 @@ impl<'a> Validator<'a> {
                 RULE_MAVLINK_PLAN_COMMAND_MISSING,
                 path.clone(),
                 "mavlink_common_plan must contain command_prelude or mission_items",
+            );
+        }
+        if !plan.mission_items.is_empty() && plan.telemetry_milestones.is_empty() {
+            self.push_error(
+                RULE_MAVLINK_PLAN_TELEMETRY_MISSING,
+                path.clone(),
+                "mavlink_common_plan.telemetry_milestones is required when mission_items are present",
             );
         }
         self.validate_mavlink_mission_item_sequences(plan, path);

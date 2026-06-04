@@ -10,8 +10,9 @@ use swarm_examples::artifact_validator::{
     validate_artifact_pack, ArtifactPackPaths, ArtifactValidationMode, ArtifactValidationOptions,
     RULE_BUILD_PROFILE_MISSING, RULE_COMPLETED_TASK_MISSING_EVENT, RULE_DEGRADED_EVENT_MISSING,
     RULE_DEGRADED_FINAL_STATUS_MISMATCH, RULE_DEGRADED_RECORD_MISSING,
-    RULE_DEGRADED_RECOVERY_TASK_MISMATCH, RULE_FINAL_STATUS_MISMATCH, RULE_MANIFEST_MISSING,
-    RULE_MAVLINK_PLAN_MISSING, RULE_MAVLINK_PLAN_ORDER_UNSAFE,
+    RULE_DEGRADED_RECOVERY_TASK_MISMATCH, RULE_DRY_RUN_POLICY_MISSING,
+    RULE_DRY_RUN_SAFETY_REPORT_FAILED, RULE_FINAL_STATUS_MISMATCH, RULE_MANIFEST_MISSING,
+    RULE_MAVLINK_PLAN_MISSING, RULE_MAVLINK_PLAN_ORDER_UNSAFE, RULE_MAVLINK_PLAN_TELEMETRY_MISSING,
     RULE_MAVLINK_PROFILE_HARDWARE_BLOCKING, RULE_MAVLINK_PROFILE_MISSING,
     RULE_MAVLINK_PROFILE_RESULT_MISMATCH, RULE_MAVLINK_PROFILE_UNSUPPORTED,
     RULE_REPLACEMENT_SEQ_MISMATCH, RULE_REPLAY_SUMMARY_COUNT_MISMATCH, RULE_SAFETY_REPORT_MISSING,
@@ -32,8 +33,8 @@ use swarm_examples::sitl_supervisor::{
 };
 use swarm_mission_ir::{
     AltitudeReference, CommandId, CompletionTolerance, CoordinateFrame, LocalPosition,
-    MissionCommand, MissionCommandEntry, MissionCommandPlan, MissionId, Position, TerminalState,
-    TimeoutAction, TimeoutPolicy,
+    MissionCommand, MissionCommandEntry, MissionCommandPlan, MissionCommandSummary, MissionId,
+    Position, TerminalState, TimeoutAction, TimeoutPolicy,
 };
 use swarm_safety::preflight::SafetyValidationReport;
 use swarm_sim::GeoOrigin;
@@ -285,6 +286,74 @@ fn valid_dry_run_artifact_with_m81_plan_passes() {
     );
 
     assert!(report.passed, "{:?}", report.violations);
+}
+
+#[test]
+fn dry_run_artifact_missing_policy_summary_fails_strict_current_validation() {
+    let fixture = tempfile::tempdir().unwrap();
+    let output_dir = fixture.path().join("dry-run");
+    fs::create_dir_all(&output_dir).unwrap();
+    let mut artifact = dry_run_artifact_fixture(true);
+    artifact.command_ir_summary = None;
+    write_json(&output_dir.join("sitl_dry_run_artifact.v1.json"), &artifact);
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&output_dir),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::DryRun,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_DRY_RUN_POLICY_MISSING);
+}
+
+#[test]
+fn dry_run_artifact_failed_safety_report_fails() {
+    let fixture = tempfile::tempdir().unwrap();
+    let output_dir = fixture.path().join("dry-run");
+    fs::create_dir_all(&output_dir).unwrap();
+    let mut artifact = dry_run_artifact_fixture(true);
+    artifact.safety_report.passed = false;
+    write_json(&output_dir.join("sitl_dry_run_artifact.v1.json"), &artifact);
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&output_dir),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::DryRun,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_DRY_RUN_SAFETY_REPORT_FAILED);
+}
+
+#[test]
+fn dry_run_artifact_missing_telemetry_milestones_fails_for_mission_items() {
+    let fixture = tempfile::tempdir().unwrap();
+    let output_dir = fixture.path().join("dry-run");
+    fs::create_dir_all(&output_dir).unwrap();
+    let mut artifact = dry_run_artifact_fixture(true);
+    artifact
+        .mavlink_common_plan
+        .as_mut()
+        .unwrap()
+        .telemetry_milestones
+        .clear();
+    write_json(&output_dir.join("sitl_dry_run_artifact.v1.json"), &artifact);
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&output_dir),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::DryRun,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_MAVLINK_PLAN_TELEMETRY_MISSING);
 }
 
 #[test]
@@ -625,7 +694,7 @@ fn dry_run_artifact_fixture(include_m81_plan: bool) -> SitlDryRunArtifact {
         safety_report: SafetyValidationReport::ok(),
         command: vec!["sitl_agent".to_owned(), "--dry-run".to_owned()],
         git_commit: Some("0123456789abcdef".to_owned()),
-        command_ir_summary: None,
+        command_ir_summary: Some(MissionCommandSummary::from_plan(&ir_plan)),
         mavlink_common_plan,
     }
 }

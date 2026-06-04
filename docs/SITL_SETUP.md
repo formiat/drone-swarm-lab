@@ -220,6 +220,42 @@ does not add lidar/raycast, perception, dynamic traffic handling, Gazebo/HIL,
 certified safety, or low-level flight control. It only makes the mission-level
 Urban route export visible before optional manual SITL/PX4 upload experiments.
 
+## M83 Primitive Real Mission Pack Dry-Run
+
+M83 adds three canonical primitive command missions that use the same dry-run
+artifact boundary:
+
+```bash
+cargo run --bin sitl_agent -- \
+  --dry-run \
+  --scenario scenarios/primitive.takeoff-hold-land.json \
+  --agent-id agent-0 \
+  --dry-run-artifact target/m83-takeoff-hold-land/sitl_dry_run_artifact.v1.json \
+  --mavlink-profile px4
+
+cargo run --bin sitl_agent -- \
+  --dry-run \
+  --scenario scenarios/primitive.orbit.json \
+  --agent-id agent-0 \
+  --dry-run-artifact target/m83-orbit/sitl_dry_run_artifact.v1.json \
+  --mavlink-profile ardupilot
+
+cargo run --bin sitl_agent -- \
+  --dry-run \
+  --scenario scenarios/primitive.square.json \
+  --agent-id agent-0 \
+  --dry-run-artifact target/m83-square/sitl_dry_run_artifact.v1.json \
+  --mavlink-profile px4
+```
+
+Expected artifact fields include `command_ir_summary`, `mavlink_common_plan`,
+`expected_acks`, `telemetry_milestones`, timeout/abort policy,
+`expected_terminal_state`, `completion_tolerance`, and
+`safety_report.passed=true`. The pack validates command lifecycle discipline
+only. It does not perform real flight, does not connect to PX4 or ArduPilot,
+does not prove orbit behaves identically across stacks, and is not certified
+flight safety.
+
 M75 keeps this boundary unchanged for Urban perimeter work. The
 `perimeter-square` profile is a deterministic simulation fixture that records
 perimeter metrics and reuses the same Urban route/waypoint export shape. Moving

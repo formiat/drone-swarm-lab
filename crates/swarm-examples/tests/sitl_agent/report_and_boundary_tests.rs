@@ -72,6 +72,57 @@ fn write_preflight_geofence_violation_scenario() -> tempfile::NamedTempFile {
     file
 }
 
+fn write_invalid_primitive_scenario() -> tempfile::NamedTempFile {
+    let file = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(
+        file.path(),
+        r#"{
+  "schema_version": "0.1",
+  "name": "Invalid Primitive",
+  "description": "invalid primitive fixture",
+  "scenarios": [
+    {
+      "mission": "waypoint-square",
+      "profile": "invalid-primitive",
+      "scenario": {
+        "name": "invalid_primitive",
+        "seed": 0,
+        "agents": [
+          {
+            "id": "agent-0",
+            "role": "scout",
+            "health": "alive",
+            "pose": { "x": 0.0, "y": 0.0, "z": 0.0 },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 1000.0,
+            "generation": 1,
+            "speed": 0.0,
+            "max_range": 1000.0,
+            "battery_drain_rate": 0.0
+          }
+        ],
+        "tasks": [],
+        "ground_nodes": [],
+        "base_station": null
+      },
+      "run_config": {
+        "max_ticks": 50,
+        "primitive_mission": {
+          "kind": "waypoint_square",
+          "altitude_m": 0.0,
+          "side_m": -1.0
+        }
+      }
+    }
+  ]
+}"#,
+    )
+    .unwrap();
+    file
+}
+
 #[test]
 fn preflight_failure_exits_nonzero_with_rule_ids() {
     let scenario = write_preflight_geofence_violation_scenario();
@@ -87,6 +138,24 @@ fn preflight_failure_exits_nonzero_with_rule_ids() {
     assert_eq!(output.status.code(), Some(2));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("geofence.waypoint_outside"));
+}
+
+#[test]
+fn invalid_primitive_params_exit_with_validation_code() {
+    let scenario = write_invalid_primitive_scenario();
+    let output = run_sitl_agent(&[
+        "--dry-run",
+        "--scenario",
+        scenario.path().to_str().unwrap(),
+        "--agent-id",
+        "agent-0",
+    ]);
+
+    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("run_config.primitive_mission.altitude_m"));
+    assert!(stderr.contains("run_config.primitive_mission.side_m"));
 }
 
 #[test]
@@ -262,6 +331,89 @@ fn dry_run_artifact_contains_export_metadata() {
         json["mavlink_common_plan"]["validation_result"]["passed"],
         true
     );
+}
+
+#[test]
+fn primitive_canonical_dry_run_artifacts_compile_to_mavlink_plans() {
+    for (scenario, mission, expected_body_kind, expected_waypoints) in [
+        (
+            "scenarios/primitive.takeoff-hold-land.json",
+            "takeoff-hold-land",
+            "hold",
+            1,
+        ),
+        ("scenarios/primitive.orbit.json", "orbit", "orbit", 36),
+        (
+            "scenarios/primitive.square.json",
+            "waypoint-square",
+            "follow_route",
+            5,
+        ),
+    ] {
+        let scenario = public_scenario(scenario);
+        let output_dir = tempfile::tempdir().unwrap();
+        let artifact = output_dir.path().join("sitl_dry_run_artifact.v1.json");
+        let output = run_sitl_agent(&[
+            "--dry-run",
+            "--scenario",
+            &scenario,
+            "--agent-id",
+            "agent-0",
+            "--dry-run-artifact",
+            artifact.to_str().unwrap(),
+            "--mavlink-profile",
+            "px4",
+        ]);
+
+        assert!(
+            output.status.success(),
+            "dry-run failed for {mission}: stderr={}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let json: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&artifact).unwrap()).unwrap();
+        assert_eq!(json["mission"], mission);
+        assert_eq!(json["safety_report"]["passed"], true);
+        assert!(json["command_ir_summary"].is_object());
+        assert_eq!(
+            json["command_ir_summary"]["expected_terminal_state"],
+            "landed"
+        );
+        assert_eq!(
+            json["command_ir_summary"]["timeout_policy"]["on_timeout"],
+            "abort"
+        );
+        assert_eq!(
+            json["command_ir_summary"]["commands_by_kind"][expected_body_kind],
+            1
+        );
+        assert_eq!(json["mavlink_common_plan"]["backend_profile"], "px4");
+        assert!(json["mavlink_common_plan"]["expected_acks"]
+            .as_array()
+            .is_some_and(|acks| !acks.is_empty()));
+        assert!(json["mavlink_common_plan"]["telemetry_milestones"]
+            .as_array()
+            .is_some_and(|milestones| !milestones.is_empty()));
+        assert_eq!(
+            json["mavlink_common_plan"]["mission_items"]
+                .as_array()
+                .unwrap()
+                .len(),
+            expected_waypoints
+        );
+
+        let report = swarm_examples::artifact_validator::validate_artifact_pack(
+            &swarm_examples::artifact_validator::ArtifactPackPaths::from_output_dir(
+                output_dir.path(),
+            ),
+            swarm_examples::artifact_validator::ArtifactValidationOptions {
+                mode: swarm_examples::artifact_validator::ArtifactValidationMode::DryRun,
+                strict: true,
+                ..Default::default()
+            },
+        );
+        assert!(report.passed, "{:?}", report.violations);
+    }
 }
 
 #[test]

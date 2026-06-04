@@ -985,3 +985,64 @@ fn mavlink_capability_profile_docs_are_synchronized() {
         );
     }
 }
+
+#[test]
+fn primitive_real_mission_pack_docs_are_synchronized() {
+    for required in [
+        "M83",
+        "Primitive Real Mission Pack",
+        "takeoff-hold-land",
+        "waypoint-square",
+        "no real flight",
+        "no connected vehicle",
+        "no PX4/ArduPilot equivalence claim",
+        "not certified flight safety",
+    ] {
+        assert!(README.contains(required), "README missing {required}");
+        assert!(STATUS.contains(required), "STATUS missing {required}");
+    }
+
+    for required in [
+        "scenarios/primitive.takeoff-hold-land.json",
+        "scenarios/primitive.orbit.json",
+        "scenarios/primitive.square.json",
+        "expected ACKs",
+        "telemetry milestones",
+        "artifact.mavlink_plan_telemetry_missing",
+        "artifact.dry_run_policy_missing",
+        "artifact.dry_run_safety_report_failed",
+    ] {
+        assert!(
+            MAVLINK_COMMON_COMPILER.contains(required) || ARTIFACT_VALIDATION.contains(required),
+            "M83 compiler/validator docs missing {required}"
+        );
+    }
+
+    for required in [
+        "M83 Primitive Real Mission Pack Dry-Run",
+        "safety_report.passed=true",
+        "static preflight",
+        "not certified flight safety",
+        "Primitive Real Mission Pack",
+    ] {
+        assert!(
+            SITL_SETUP.contains(required)
+                || PREFLIGHT_SAFETY.contains(required)
+                || HARDWARE_READINESS.contains(required)
+                || OPERATIONAL_RUNBOOKS.contains(required),
+            "M83 boundary docs missing {required}"
+        );
+    }
+
+    for required in [
+        "run_config.primitive_mission",
+        "waypoint_square",
+        "takeoff-hold-land",
+        "Scenario must contain at least one task",
+    ] {
+        assert!(
+            SCENARIO_DSL.contains(required),
+            "SCENARIO_DSL doc missing {required}"
+        );
+    }
+}

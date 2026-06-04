@@ -5,6 +5,79 @@ use super::{
     ScenarioGeneratorManifest, ScenarioSuite, ScenarioSuiteEntry, ValidationError,
     SCENARIO_GENERATOR_MANIFEST_SCHEMA_VERSION,
 };
+use crate::PrimitiveMission;
+
+fn is_primitive_mission_name(mission: &str) -> bool {
+    matches!(
+        mission,
+        "hover" | "orbit" | "takeoff-land" | "takeoff-hold-land" | "waypoint-square"
+    )
+}
+
+fn validate_primitive_mission(mission: &PrimitiveMission, errors: &mut Vec<ValidationError>) {
+    fn positive_finite(field: &str, value: f64, errors: &mut Vec<ValidationError>) {
+        if !value.is_finite() || value <= 0.0 {
+            errors.push(ValidationError {
+                field: field.to_owned(),
+                message: format!("{field} must be finite and greater than 0"),
+            });
+        }
+    }
+
+    match mission {
+        PrimitiveMission::Hover {
+            altitude_m,
+            hold_seconds,
+        } => {
+            positive_finite(
+                "run_config.primitive_mission.altitude_m",
+                *altitude_m,
+                errors,
+            );
+            positive_finite(
+                "run_config.primitive_mission.hold_seconds",
+                f64::from(*hold_seconds),
+                errors,
+            );
+        }
+        PrimitiveMission::Orbit {
+            altitude_m,
+            turns,
+            radius_m,
+        } => {
+            positive_finite(
+                "run_config.primitive_mission.altitude_m",
+                *altitude_m,
+                errors,
+            );
+            positive_finite(
+                "run_config.primitive_mission.turns",
+                f64::from(*turns),
+                errors,
+            );
+            positive_finite(
+                "run_config.primitive_mission.radius_m",
+                f64::from(*radius_m),
+                errors,
+            );
+        }
+        PrimitiveMission::TakeoffLand { altitude_m } => {
+            positive_finite(
+                "run_config.primitive_mission.altitude_m",
+                *altitude_m,
+                errors,
+            );
+        }
+        PrimitiveMission::WaypointSquare { altitude_m, side_m } => {
+            positive_finite(
+                "run_config.primitive_mission.altitude_m",
+                *altitude_m,
+                errors,
+            );
+            positive_finite("run_config.primitive_mission.side_m", *side_m, errors);
+        }
+    }
+}
 
 /// Validate a full scenario suite.
 pub fn validate_scenario_suite(suite: &ScenarioSuite) -> Vec<ValidationError> {
@@ -124,8 +197,7 @@ pub fn validate_entry(entry: &ScenarioSuiteEntry) -> Vec<ValidationError> {
         });
     }
 
-    let is_primitive = matches!(entry.mission.as_str(), "hover" | "orbit" | "takeoff-land");
-    if !is_primitive && entry.scenario.tasks.is_empty() {
+    if !is_primitive_mission_name(&entry.mission) && entry.scenario.tasks.is_empty() {
         errors.push(ValidationError {
             field: "scenario.tasks".to_owned(),
             message: "Scenario must contain at least one task".to_owned(),
@@ -250,8 +322,10 @@ pub fn validate_mission_specific(entry: &ScenarioSuiteEntry) -> Vec<ValidationEr
         }
         "urban-patrol" => validate_urban_patrol_entry(entry, &mut errors),
         "urban-search" => validate_urban_search_entry(entry, &mut errors),
-        "hover" | "orbit" | "takeoff-land" => {
-            if entry.run_config.primitive_mission.is_none() {
+        mission if is_primitive_mission_name(mission) => {
+            if let Some(mission) = &entry.run_config.primitive_mission {
+                validate_primitive_mission(mission, &mut errors);
+            } else {
                 errors.push(ValidationError {
                     field: "run_config.primitive_mission".to_owned(),
                     message: format!(

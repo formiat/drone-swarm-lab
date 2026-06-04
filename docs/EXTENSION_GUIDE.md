@@ -90,6 +90,29 @@ Internal or experimental:
    If a strategy/mission pair is intentionally unsupported, record an explicit
    unsupported reason instead of letting the run fail ambiguously.
 
+### Primitive Command Mission Path
+
+M83 primitive missions are the preferred path for small no-hardware command
+experiments. They bypass task allocation and simulation routing:
+
+```text
+Scenario DSL primitive_mission -> MissionCommandPlan -> MavlinkCommonPlan
+```
+
+Use `run_config.primitive_mission` for `takeoff-hold-land`, `orbit`, and
+`waypoint-square` when the goal is command lifecycle evidence rather than a
+new simulated mission. Required evidence:
+
+- `sitl_agent --dry-run --dry-run-artifact`;
+- non-null `command_ir_summary` with timeout/abort policy;
+- non-null `mavlink_common_plan` with expected ACKs and telemetry milestones;
+- selected `--mavlink-profile` compatibility section;
+- `safety_report.passed=true`;
+- `artifact_validator --mode dry-run --strict`.
+
+This path is no real flight, no connected vehicle, no Urban-specific behavior,
+and not certified flight safety.
+
 ### Urban Mission Path
 
 M64 adds an Urban foundation, M65 adds the first Urban Patrol simulation, M66

@@ -112,3 +112,25 @@ Supported values are:
 
 M82 does not wire profile selection into live MAVLink upload. The live PX4/SIH
 path remains a separate experimental workflow.
+
+## M83 Primitive Mission Profiles
+
+M83 primitive dry-run artifacts can be generated with any supported
+`--mavlink-profile` value:
+
+```bash
+cargo run --bin sitl_agent -- \
+  --dry-run \
+  --scenario scenarios/primitive.square.json \
+  --agent-id agent-0 \
+  --dry-run-artifact target/m83-square/sitl_dry_run_artifact.v1.json \
+  --mavlink-profile px4
+```
+
+The profile report classifies the compiled command sequence for
+`takeoff-hold-land`, `orbit`, and `waypoint-square`. Orbit portability remains
+explicitly caveated: M83 may use waypoint approximation, and native orbit
+behavior is profile-specific or unknown without SITL/hardware evidence.
+Landing completion can also be stack-specific. M83 validates artifacts only; it
+does not claim PX4 and ArduPilot behave identically, does not connect to a
+vehicle, and is not exhaustive autopilot certification.

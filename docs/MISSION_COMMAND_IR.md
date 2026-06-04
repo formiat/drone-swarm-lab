@@ -126,7 +126,15 @@ the route has no segments or when no node poses can be resolved.
   `mode_caveats` for `mavlink_common_generic`, `px4`, and `ardupilot`.
   See [`docs/MAVLINK_CAPABILITY_PROFILES.md`](MAVLINK_CAPABILITY_PROFILES.md).
 - **M83 Primitive Real Mission Pack**: three concrete missions that compile to
-  MAVLink plans.
+  MAVLink plans without a connected vehicle:
+  `takeoff-hold-land` (`arm -> takeoff(3m) -> hold(10s) -> land`),
+  `orbit` (`arm -> takeoff(3m) -> orbit(radius=1m, turns=3) -> land`), and
+  `waypoint-square` (`arm -> takeoff(3m) -> follow_route(square) -> land`).
+  Dry-run artifacts expose the command sequence, timeout policy,
+  `expected_terminal_state`, `completion_tolerance`, expected ACKs,
+  telemetry milestones, and `safety_report.passed=true`. This is artifact
+  validation only: no real flight, no connected vehicle, no PX4/ArduPilot
+  equivalence claim, and not certified flight safety.
 
 ## Artifact schema
 
@@ -135,6 +143,8 @@ The crate `swarm-mission-ir` uses schema version `"mission_command_ir.v1"` for
 --dry-run` include an optional `command_ir_summary` field with a compact
 summary of the IR derived from the waypoint list and an optional
 `mavlink_common_plan` field using schema version `"mavlink_common_plan.v1"`.
+Current M83 primitive artifacts include policy fields in `command_ir_summary`:
+`timeout_policy`, `expected_terminal_state`, and `completion_tolerance`.
 That plan preserves phase ordering for `command_prelude`, mission upload/start,
 and `command_postlude`; M82 adds an optional `compatibility` section with the
 selected profile and compatibility classification. It still does not upload

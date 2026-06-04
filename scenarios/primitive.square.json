@@ -1,13 +1,13 @@
 {
   "schema_version": "0.1",
-  "name": "Primitive Orbit",
-  "description": "Single-agent mission: climb to 3 m, fly 3 counter-clockwise circles of 1 m radius, land. No task allocation. Upload with sitl_agent --dry-run or --connection.",
+  "name": "Primitive Waypoint Square",
+  "description": "Canonical M83 single-agent mission: arm, take off to 3 m, fly a closed 1 m square route, land. No task allocation, no connected vehicle required for dry-run artifact validation.",
   "scenarios": [
     {
-      "mission": "orbit",
-      "profile": "orbit-3m-3turns-1m",
+      "mission": "waypoint-square",
+      "profile": "waypoint-square-3m-1m",
       "scenario": {
-        "name": "primitive_orbit_3m_3turns_1m",
+        "name": "primitive_waypoint_square_3m_1m",
         "seed": 0,
         "agents": [
           {
@@ -37,10 +37,9 @@
       "run_config": {
         "max_ticks": 200,
         "primitive_mission": {
-          "kind": "orbit",
+          "kind": "waypoint_square",
           "altitude_m": 3.0,
-          "turns": 3.0,
-          "radius_m": 1.0
+          "side_m": 1.0
         }
       }
     }

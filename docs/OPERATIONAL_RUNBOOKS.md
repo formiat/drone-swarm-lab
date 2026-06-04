@@ -162,6 +162,45 @@ Stop/abort conditions:
 - `artifact.limitations_missing`;
 - any new artifact rule id that is not understood by the operator.
 
+## Runbook 4a: M83 Primitive Command Dry-Run
+
+Use this when the candidate is a primitive command mission rather than Urban or
+task allocation:
+
+```bash
+cargo run -p swarm-examples --bin sitl_agent -- \
+  --dry-run \
+  --scenario scenarios/primitive.takeoff-hold-land.json \
+  --agent-id agent-0 \
+  --dry-run-artifact target/m83-primitive/sitl_dry_run_artifact.v1.json \
+  --mavlink-profile px4
+
+cargo run -p swarm-examples --bin artifact_validator -- \
+  --output-dir target/m83-primitive \
+  --mode dry-run \
+  --strict
+```
+
+Repeat with `scenarios/primitive.orbit.json` and
+`scenarios/primitive.square.json` when the claim covers all M83 primitives.
+Expected evidence:
+
+- command sequence in `command_ir_summary`;
+- timeout/abort policy, `expected_terminal_state`, and
+  `completion_tolerance`;
+- `mavlink_common_plan.expected_acks`;
+- `mavlink_common_plan.telemetry_milestones`;
+- M82 `compatibility` report for the selected profile;
+- `safety_report.passed=true`.
+
+Stop/abort conditions:
+
+- dry-run exits non-zero;
+- `artifact_validator --mode dry-run --strict` fails;
+- orbit profile caveats are being treated as PX4/ArduPilot equivalence;
+- any output is described as real flight, hardware upload, or certified flight
+  safety.
+
 ## Runbook 5: Local PX4/SIH
 
 Local PX4/SIH remains manual and experimental. It is not automated PX4 CI,

@@ -1,13 +1,13 @@
 {
   "schema_version": "0.1",
-  "name": "Primitive Orbit",
-  "description": "Single-agent mission: climb to 3 m, fly 3 counter-clockwise circles of 1 m radius, land. No task allocation. Upload with sitl_agent --dry-run or --connection.",
+  "name": "Primitive Takeoff Hold Land",
+  "description": "Canonical M83 single-agent mission: arm, take off to 3 m, hold for 10 s, land. No task allocation, no connected vehicle required for dry-run artifact validation.",
   "scenarios": [
     {
-      "mission": "orbit",
-      "profile": "orbit-3m-3turns-1m",
+      "mission": "takeoff-hold-land",
+      "profile": "takeoff-hold-land-3m-10s",
       "scenario": {
-        "name": "primitive_orbit_3m_3turns_1m",
+        "name": "primitive_takeoff_hold_land_3m_10s",
         "seed": 0,
         "agents": [
           {
@@ -37,10 +37,9 @@
       "run_config": {
         "max_ticks": 200,
         "primitive_mission": {
-          "kind": "orbit",
+          "kind": "hover",
           "altitude_m": 3.0,
-          "turns": 3.0,
-          "radius_m": 1.0
+          "hold_seconds": 10.0
         }
       }
     }

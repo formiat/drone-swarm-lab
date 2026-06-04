@@ -85,6 +85,19 @@ not invent a fake coordinate.
 
 ## Dry-Run Validation
 
+M83 adds three primitive real command missions that use the same dry-run
+compiler boundary:
+
+- `scenarios/primitive.takeoff-hold-land.json`;
+- `scenarios/primitive.orbit.json`;
+- `scenarios/primitive.square.json`.
+
+They compile to `MavlinkCommonPlan` with command lifecycle ordering, expected
+ACKs, telemetry milestones, timeout/abort policy in `command_ir_summary`, and
+the embedded static `safety_report`. Orbit is represented through the configured
+waypoint approximation unless a later profile-specific executor supplies a
+native mapping. This is no real flight and no hardware upload.
+
 `artifact_validator --mode dry-run` looks for
 `sitl_dry_run_artifact.v1.json` or legacy `dry-run.json` and checks the M81
 section plus the M82 compatibility report for current artifacts:
@@ -93,7 +106,10 @@ section plus the M82 compatibility report for current artifacts:
 - `artifact.mavlink_plan_schema_unsupported`;
 - `artifact.mavlink_plan_command_missing`;
 - `artifact.mavlink_plan_ack_missing`;
+- `artifact.mavlink_plan_telemetry_missing`;
 - `artifact.mavlink_plan_order_unsafe`;
+- `artifact.dry_run_policy_missing`;
+- `artifact.dry_run_safety_report_failed`;
 - `artifact.mavlink_plan_unsupported_required`;
 - `artifact.mavlink_plan_ir_hash_missing`;
 - `artifact.mavlink_profile_missing`;

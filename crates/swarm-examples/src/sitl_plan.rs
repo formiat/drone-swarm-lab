@@ -422,7 +422,13 @@ fn build_sitl_plan_with_task_filter(
         );
     }
 
-    if matches!(entry.mission.as_str(), "hover" | "orbit" | "takeoff-land") {
+    if is_primitive_mission_name(&entry.mission) {
+        if !validation_errors.is_empty() {
+            return Err(invalid_scenario_from_validation_errors(
+                scenario_path,
+                &validation_errors,
+            ));
+        }
         return build_primitive_sitl_plan(
             &suite.name,
             entry,
@@ -533,6 +539,29 @@ fn build_sitl_plan_with_task_filter(
         safety_report,
         primitive_mission: None,
     })
+}
+
+fn is_primitive_mission_name(mission: &str) -> bool {
+    matches!(
+        mission,
+        "hover" | "orbit" | "takeoff-land" | "takeoff-hold-land" | "waypoint-square"
+    )
+}
+
+fn invalid_scenario_from_validation_errors(
+    path: PathBuf,
+    validation_errors: &[swarm_sim::ValidationError],
+) -> SitlError {
+    let message = validation_errors
+        .iter()
+        .map(|error| {
+            let field = &error.field;
+            let message = &error.message;
+            format!("{field}: {message}")
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+    SitlError::InvalidScenario { path, message }
 }
 
 fn build_primitive_sitl_plan(
@@ -992,7 +1021,37 @@ fn primitive_mission_ir_commands(
             source_agent_id: Some(agent_id.to_owned()),
         }],
         PrimitiveMission::TakeoffLand { .. } => Vec::new(),
+        PrimitiveMission::WaypointSquare { altitude_m, side_m } => vec![MissionCommandEntry {
+            command_id: CommandId::from("follow-route-0".to_owned()),
+            command: MissionCommand::FollowRoute {
+                route_id: swarm_mission_ir::RouteId::from("primitive-square".to_owned()),
+                waypoints: square_waypoints(*side_m, *altitude_m),
+            },
+            source_task_id: None,
+            source_route_id: Some("primitive-square".to_owned()),
+            source_agent_id: Some(agent_id.to_owned()),
+        }],
     }
+}
+
+fn square_waypoints(side_m: f64, altitude_m: f64) -> Vec<MissionWaypoint> {
+    [
+        (0.0, 0.0),
+        (side_m, 0.0),
+        (side_m, side_m),
+        (0.0, side_m),
+        (0.0, 0.0),
+    ]
+    .into_iter()
+    .map(|(x_m, y_m)| MissionWaypoint {
+        position: Position::Local(LocalPosition {
+            x_m,
+            y_m,
+            z_m: altitude_m,
+        }),
+        acceptance_radius_m: None,
+    })
+    .collect()
 }
 
 fn sitl_waypoint_position(waypoint: &SitlWaypointItem) -> Position {
@@ -1422,6 +1481,99 @@ mod tests {
             mavlink_plan.compatibility.as_ref().unwrap().profile,
             swarm_comms::MavlinkCapabilityProfileId::MavlinkCommonGeneric
         );
+    }
+
+    #[test]
+    fn primitive_takeoff_hold_land_dispatches_to_hold_ir() {
+        let suite = primitive_suite(
+            "takeoff-hold-land",
+            PrimitiveMission::Hover {
+                altitude_m: 3.0,
+                hold_seconds: 10.0,
+            },
+        );
+        let plan = build_sitl_plan(&suite, "takeoff-hold-land.json", "agent-0").unwrap();
+        let artifact = dry_run_artifact(&plan, Vec::new());
+        let summary = artifact.command_ir_summary.unwrap();
+        let mavlink_plan = artifact.mavlink_common_plan.unwrap();
+
+        assert_eq!(plan.export_kind, "primitive_mission");
+        assert!(plan.primitive_mission.is_some());
+        assert_eq!(*summary.commands_by_kind.get("arm").unwrap(), 1);
+        assert_eq!(*summary.commands_by_kind.get("takeoff").unwrap(), 1);
+        assert_eq!(*summary.commands_by_kind.get("hold").unwrap(), 1);
+        assert_eq!(*summary.commands_by_kind.get("land").unwrap(), 1);
+        assert_eq!(summary.timeout_policy.on_timeout, TimeoutAction::Abort);
+        assert_eq!(summary.expected_terminal_state, TerminalState::Landed);
+        assert_eq!(summary.completion_tolerance.position_m, 1.0);
+        assert!(mavlink_plan.validation_result.passed);
+        assert!(!mavlink_plan.expected_acks.is_empty());
+        assert!(!mavlink_plan.telemetry_milestones.is_empty());
+    }
+
+    #[test]
+    fn primitive_orbit_compiles_with_waypoint_approximation() {
+        let suite = primitive_suite(
+            "orbit",
+            PrimitiveMission::Orbit {
+                altitude_m: 3.0,
+                turns: 3.0,
+                radius_m: 1.0,
+            },
+        );
+        let plan = build_sitl_plan(&suite, "orbit.json", "agent-0").unwrap();
+        let artifact = dry_run_artifact_with_mavlink_profile(
+            &plan,
+            Vec::new(),
+            swarm_comms::MavlinkCapabilityProfileId::Px4,
+        );
+        let summary = artifact.command_ir_summary.unwrap();
+        let mavlink_plan = artifact.mavlink_common_plan.unwrap();
+
+        assert_eq!(*summary.commands_by_kind.get("orbit").unwrap(), 1);
+        assert!(mavlink_plan.validation_result.passed);
+        assert!(!mavlink_plan.mission_items.is_empty());
+        assert!(mavlink_plan.mission_start.is_some());
+        assert!(mavlink_plan
+            .compatibility
+            .as_ref()
+            .unwrap()
+            .caveats
+            .iter()
+            .any(|caveat| caveat.contains("PX4")));
+    }
+
+    #[test]
+    fn primitive_square_compiles_to_ordered_waypoint_route() {
+        let suite = primitive_suite(
+            "waypoint-square",
+            PrimitiveMission::WaypointSquare {
+                altitude_m: 3.0,
+                side_m: 1.0,
+            },
+        );
+        let plan = build_sitl_plan(&suite, "square.json", "agent-0").unwrap();
+        let artifact = dry_run_artifact(&plan, Vec::new());
+        let summary = artifact.command_ir_summary.unwrap();
+        let mavlink_plan = artifact.mavlink_common_plan.unwrap();
+
+        assert_eq!(plan.export_kind, "primitive_mission");
+        assert_eq!(*summary.commands_by_kind.get("follow_route").unwrap(), 1);
+        assert_eq!(summary.total_waypoints, 5);
+        assert_eq!(
+            mavlink_plan.command_prelude[1].command.as_str(),
+            "MAV_CMD_NAV_TAKEOFF"
+        );
+        assert_eq!(mavlink_plan.mission_items.len(), 5);
+        assert_eq!(mavlink_plan.mission_items[0].seq, 0);
+        assert_eq!(mavlink_plan.mission_items[4].seq, 4);
+        assert!(mavlink_plan.mission_start.is_some());
+        assert_eq!(
+            mavlink_plan.command_postlude[0].command.as_str(),
+            "MAV_CMD_NAV_LAND"
+        );
+        assert!(!mavlink_plan.expected_acks.is_empty());
+        assert!(!mavlink_plan.telemetry_milestones.is_empty());
     }
 
     #[test]

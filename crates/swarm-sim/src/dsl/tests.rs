@@ -840,6 +840,113 @@ fn primitive_missing_config_fails_validation() {
     );
 }
 
+fn primitive_suite_json(mission: &str, primitive: &str) -> String {
+    format!(
+        r#"{{
+  "schema_version": "0.1",
+  "name": "Primitive",
+  "description": "primitive test",
+  "scenarios": [
+    {{
+      "mission": "{mission}",
+      "profile": "primitive",
+      "scenario": {{
+        "name": "primitive",
+        "seed": 0,
+        "agents": [
+          {{
+            "id": "agent-0",
+            "role": "scout",
+            "health": "alive",
+            "pose": {{ "x": 0.0, "y": 0.0, "z": 0.0 }},
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 1000.0,
+            "generation": 1,
+            "speed": 0.0,
+            "max_range": 1000.0,
+            "battery_drain_rate": 0.0
+          }}
+        ],
+        "tasks": [],
+        "ground_nodes": [],
+        "base_station": null
+      }},
+      "run_config": {{
+        "max_ticks": 200,
+        "primitive_mission": {primitive}
+      }}
+    }}
+  ]
+}}"#
+    )
+}
+
+#[test]
+fn primitive_canonical_names_use_empty_task_exemption() {
+    let takeoff_hold_land: ScenarioSuite = serde_json::from_str(&primitive_suite_json(
+        "takeoff-hold-land",
+        r#"{ "kind": "hover", "altitude_m": 3.0, "hold_seconds": 10.0 }"#,
+    ))
+    .unwrap();
+    let square: ScenarioSuite = serde_json::from_str(&primitive_suite_json(
+        "waypoint-square",
+        r#"{ "kind": "waypoint_square", "altitude_m": 3.0, "side_m": 1.0 }"#,
+    ))
+    .unwrap();
+
+    assert!(
+        validate_scenario_suite(&takeoff_hold_land).is_empty(),
+        "takeoff-hold-land should validate as primitive"
+    );
+    assert!(
+        validate_scenario_suite(&square).is_empty(),
+        "waypoint-square should validate as primitive"
+    );
+}
+
+#[test]
+fn unknown_empty_task_mission_does_not_use_primitive_exemption() {
+    let suite: ScenarioSuite = serde_json::from_str(&primitive_suite_json(
+        "unknown-primitive",
+        r#"{ "kind": "hover", "altitude_m": 3.0, "hold_seconds": 10.0 }"#,
+    ))
+    .unwrap();
+
+    let errors = validate_scenario_suite(&suite);
+    assert!(
+        errors.iter().any(|error| {
+            error.field == "scenarios[0].scenario.tasks"
+                && error.message == "Scenario must contain at least one task"
+        }),
+        "unknown mission must not bypass non-primitive task validation: {errors:?}"
+    );
+}
+
+#[test]
+fn primitive_non_positive_params_fail_validation() {
+    let suite: ScenarioSuite = serde_json::from_str(&primitive_suite_json(
+        "waypoint-square",
+        r#"{ "kind": "waypoint_square", "altitude_m": 0.0, "side_m": -1.0 }"#,
+    ))
+    .unwrap();
+
+    let errors = validate_scenario_suite(&suite);
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.field == "scenarios[0].run_config.primitive_mission.altitude_m"),
+        "expected altitude error, got {errors:?}"
+    );
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.field == "scenarios[0].run_config.primitive_mission.side_m"),
+        "expected side length error, got {errors:?}"
+    );
+}
+
 #[test]
 fn primitive_mission_describe_items_hover() {
     use crate::PrimitiveMission;
@@ -873,4 +980,28 @@ fn primitive_mission_describe_items_orbit() {
     assert!(items[0].params.contains("3"));
     assert!(items[0].params.contains("2"));
     assert_eq!(items[1].label, "land");
+}
+
+#[test]
+fn primitive_mission_describe_items_waypoint_square() {
+    use crate::PrimitiveMission;
+
+    let mission = PrimitiveMission::WaypointSquare {
+        altitude_m: 3.0,
+        side_m: 1.0,
+    };
+    let items = mission.describe_items();
+    assert_eq!(items.len(), 6);
+    assert_eq!(items[0].label, "square_start");
+    assert_eq!(items[1].label, "square_east");
+    assert_eq!(items[2].label, "square_north");
+    assert_eq!(items[3].label, "square_west");
+    assert_eq!(items[4].label, "square_return");
+    assert_eq!(items[5].label, "land");
+    assert_eq!(items[1].x, 1.0);
+    assert_eq!(items[2].y, 1.0);
+    assert_eq!(items[4].x, 0.0);
+    assert_eq!(items[4].y, 0.0);
+    assert_eq!(items[0].z, 3.0);
+    assert_eq!(items[5].z, 0.0);
 }

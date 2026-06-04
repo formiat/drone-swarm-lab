@@ -122,6 +122,13 @@ including `geofence.waypoint_outside`, `nofly.waypoint_inside`,
 - `scenario.tasks` — non-empty array
 - `run_config.max_ticks` — must be > 0
 
+M83 primitive command missions are the exception to the non-empty
+`scenario.tasks` requirement. `hover`, `takeoff-land`,
+`takeoff-hold-land`, `orbit`, and `waypoint-square` use
+`run_config.primitive_mission` instead of task allocation. Unknown mission
+names with empty `scenario.tasks` are still rejected with
+`Scenario must contain at least one task`.
+
 ## M77 Algorithm Differentiation Fields
 
 These fields are optional and default to the old behavior when omitted:
@@ -162,6 +169,10 @@ full benchmark profiles.
 | `urban-patrol` | `run_config.urban_state` | Must include `UrbanMap`, route loop, valid Urban planner, valid node/edge refs, and waypoint placeholder tasks; M65/M68 runner follows the planned route in order |
 | `urban-search` | `run_config.urban_state`, `run_config.urban_search_state` | Reuses the Urban road graph and start contract, then validates bus targets and deterministic mocked detector config; M66 runner stops on real bus detection or times out |
 | `safety` | `run_config.safety_config` | Must have `safety_config` with geofence or no-fly zones |
+| `hover` / `takeoff-hold-land` | `run_config.primitive_mission.kind = "hover"` | Empty `scenario.tasks`; positive finite `altitude_m` and `hold_seconds`; M83 compiles to `arm -> takeoff -> hold -> land` |
+| `orbit` | `run_config.primitive_mission.kind = "orbit"` | Empty `scenario.tasks`; positive finite `altitude_m`, `turns`, and `radius_m`; M83 records orbit portability caveats and waypoint approximation where applicable |
+| `takeoff-land` | `run_config.primitive_mission.kind = "takeoff_land"` | Empty `scenario.tasks`; positive finite `altitude_m`; legacy minimal primitive fixture |
+| `waypoint-square` | `run_config.primitive_mission.kind = "waypoint_square"` | Empty `scenario.tasks`; positive finite `altitude_m` and `side_m`; M83 compiles to a closed square `follow_route` |
 
 ## Urban Patrol
 

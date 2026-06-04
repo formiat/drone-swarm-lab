@@ -256,6 +256,8 @@ pub enum PrimitiveMission {
     },
     /// Climb to `altitude_m` and immediately descend and land.
     TakeoffLand { altitude_m: f64 },
+    /// Climb to `altitude_m`, fly a closed square route of `side_m`, land.
+    WaypointSquare { altitude_m: f64, side_m: f64 },
 }
 
 impl PrimitiveMission {
@@ -318,6 +320,54 @@ impl PrimitiveMission {
                     params: String::new(),
                 },
             ],
+            Self::WaypointSquare { altitude_m, side_m } => {
+                let side = *side_m;
+                let altitude = *altitude_m;
+                vec![
+                    PrimitiveMissionItemDesc {
+                        label: "square_start".to_owned(),
+                        x: 0.0,
+                        y: 0.0,
+                        z: altitude,
+                        params: format!("side_m={side:.1}"),
+                    },
+                    PrimitiveMissionItemDesc {
+                        label: "square_east".to_owned(),
+                        x: side,
+                        y: 0.0,
+                        z: altitude,
+                        params: format!("side_m={side:.1}"),
+                    },
+                    PrimitiveMissionItemDesc {
+                        label: "square_north".to_owned(),
+                        x: side,
+                        y: side,
+                        z: altitude,
+                        params: format!("side_m={side:.1}"),
+                    },
+                    PrimitiveMissionItemDesc {
+                        label: "square_west".to_owned(),
+                        x: 0.0,
+                        y: side,
+                        z: altitude,
+                        params: format!("side_m={side:.1}"),
+                    },
+                    PrimitiveMissionItemDesc {
+                        label: "square_return".to_owned(),
+                        x: 0.0,
+                        y: 0.0,
+                        z: altitude,
+                        params: format!("side_m={side:.1}"),
+                    },
+                    PrimitiveMissionItemDesc {
+                        label: "land".to_owned(),
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.0,
+                        params: String::new(),
+                    },
+                ]
+            }
         }
     }
 }

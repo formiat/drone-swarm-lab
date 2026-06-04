@@ -34,6 +34,9 @@ Preflight returns `SafetyValidationReport`:
   `reason`.
 - `sitl_agent --dry-run --dry-run-artifact` includes the report in
   `sitl_dry_run_artifact.v1`.
+- M83 primitive real command artifacts (`takeoff-hold-land`, `orbit`, and
+  `waypoint-square`) are expected to carry `safety_report.passed=true` before
+  their `MissionCommandPlan` / `MavlinkCommonPlan` evidence is accepted.
 - `sitl_supervisor --output-dir` writes `safety_validation_report.v1.json`.
 - M72 `artifact_validator --mode supervisor-run` requires
   `safety_validation_report.v1.json` in supervisor packs and reports
@@ -60,6 +63,12 @@ M73 uses this same static gate for replacement missions. If a survivor
 replacement route is rejected by preflight, the supervisor records
 `unsafe_replacement_route` with decision `refuse_unsafe_replacement`; this is
 evidence of refused recovery, not certified flight safety.
+
+M83 uses this same static preflight gate for primitive command missions. Passing
+M83 preflight means only that the scenario inputs and generated dry-run artifact
+passed the repository's static validation. It does not certify flight safety,
+does not validate dynamic obstacle avoidance, and does not replace PX4 or
+ArduPilot failsafes.
 - Full support matrix as machine-readable policy.
 - Regulatory compliance.
 

@@ -2,7 +2,11 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{command::MissionCommand, plan::MissionCommandPlan};
+use crate::{
+    command::MissionCommand,
+    plan::MissionCommandPlan,
+    policy::{CompletionTolerance, TerminalState, TimeoutPolicy},
+};
 
 /// Compact summary of a `MissionCommandPlan` for inclusion in dry-run artifacts.
 ///
@@ -17,6 +21,31 @@ pub struct MissionCommandSummary {
     pub altitude_reference: String,
     /// Total number of waypoints across all `follow_route` and `go_to` commands.
     pub total_waypoints: usize,
+    #[serde(default = "default_timeout_policy")]
+    pub timeout_policy: TimeoutPolicy,
+    #[serde(default = "default_terminal_state")]
+    pub expected_terminal_state: TerminalState,
+    #[serde(default = "default_completion_tolerance")]
+    pub completion_tolerance: CompletionTolerance,
+}
+
+fn default_timeout_policy() -> TimeoutPolicy {
+    TimeoutPolicy {
+        command_timeout_secs: 5.0,
+        completion_timeout_secs: 120.0,
+        on_timeout: crate::policy::TimeoutAction::Abort,
+    }
+}
+
+fn default_terminal_state() -> TerminalState {
+    TerminalState::Landed
+}
+
+fn default_completion_tolerance() -> CompletionTolerance {
+    CompletionTolerance {
+        position_m: 1.0,
+        altitude_m: 0.5,
+    }
 }
 
 impl MissionCommandSummary {
@@ -57,6 +86,9 @@ impl MissionCommandSummary {
             coordinate_frame,
             altitude_reference,
             total_waypoints,
+            timeout_policy: plan.timeout_policy.clone(),
+            expected_terminal_state: plan.expected_terminal_state,
+            completion_tolerance: plan.completion_tolerance,
         }
     }
 }
@@ -200,6 +232,23 @@ mod tests {
         assert_ne!(
             summary.altitude_reference, "relativehome",
             "altitude_reference must not be Debug-lowercased"
+        );
+    }
+
+    #[test]
+    fn summary_includes_policy_fields() {
+        let summary = MissionCommandSummary::from_plan(&simple_plan(vec![]));
+
+        assert_eq!(summary.timeout_policy.on_timeout, TimeoutAction::Abort);
+        assert_eq!(summary.timeout_policy.command_timeout_secs, 5.0);
+        assert_eq!(summary.timeout_policy.completion_timeout_secs, 30.0);
+        assert_eq!(summary.expected_terminal_state, TerminalState::Landed);
+        assert_eq!(
+            summary.completion_tolerance,
+            CompletionTolerance {
+                position_m: 1.0,
+                altitude_m: 0.5,
+            }
         );
     }
 }

@@ -576,5 +576,28 @@ fn primitive_mission_to_items(mission: &PrimitiveMission) -> Vec<MissionItem> {
             },
             MissionItem::Land { position: origin },
         ],
+        PrimitiveMission::WaypointSquare { altitude_m, side_m } => {
+            let side = *side_m;
+            let altitude = *altitude_m;
+            let mut items = [
+                (0.0, 0.0),
+                (side, 0.0),
+                (side, side),
+                (0.0, side),
+                (0.0, 0.0),
+            ]
+            .into_iter()
+            .map(|(x, y)| MissionItem::Goto {
+                position: Waypoint {
+                    x,
+                    y,
+                    z: altitude,
+                    seq: 0,
+                },
+            })
+            .collect::<Vec<_>>();
+            items.push(MissionItem::Land { position: origin });
+            items
+        }
     }
 }
