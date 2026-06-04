@@ -27,9 +27,12 @@ capability profiles.
 - `source_mission_id`;
 - deterministic `command_ir_hash` using SHA-256 over canonical
   `MissionCommandPlan` JSON with a versioned digest domain;
-- `command_prelude` for `COMMAND_LONG`-style commands;
+- `command_prelude` for `COMMAND_LONG`-style commands that run before mission
+  upload/start;
 - ordered `mission_items` for upload-style navigation commands;
 - optional `mission_start`;
+- `command_postlude` for `COMMAND_LONG`-style commands that run after uploaded
+  mission execution completes;
 - `expected_acks` / expected ACKs;
 - `telemetry_milestones`;
 - `unsupported_features`;
@@ -39,14 +42,31 @@ Dry-run artifacts from `sitl_agent --dry-run --dry-run-artifact <path>` include
 this plan as optional `mavlink_common_plan` next to the existing
 `command_ir_summary`.
 
+## Execution Order
+
+`MavlinkCommonPlan` is an ordered phase artifact. A future executor must apply
+the phases in this order:
+
+1. send `command_prelude`;
+2. upload `mission_items` when present;
+3. send `mission_start` when present;
+4. monitor uploaded mission progress until mission item execution completes;
+5. send `command_postlude`.
+
+For direct command-only plans with no `mission_items`, lifecycle commands such
+as `land` or `return_to_launch` can remain in `command_prelude` because no
+upload/start phase exists. For mixed plans such as `takeoff -> go_to/hold ->
+land`, post-route lifecycle commands are emitted in `command_postlude`, not in
+`command_prelude`.
+
 ## Supported Common Commands
 
 | IR command | M81 output |
 |---|---|
 | `arm` / `disarm` | `MAV_CMD_COMPONENT_ARM_DISARM` command prelude |
 | `takeoff` | `MAV_CMD_NAV_TAKEOFF` command prelude |
-| `land` | `MAV_CMD_NAV_LAND` command prelude |
-| `return_to_launch` / `abort` | `MAV_CMD_NAV_RETURN_TO_LAUNCH` command prelude |
+| `land` | `MAV_CMD_NAV_LAND` command prelude for command-only plans, or command postlude after uploaded mission items |
+| `return_to_launch` / `abort` | `MAV_CMD_NAV_RETURN_TO_LAUNCH` command prelude for command-only plans, or command postlude after uploaded mission items |
 | `go_to` | `MAV_CMD_NAV_WAYPOINT` mission item |
 | `follow_route` | ordered `MAV_CMD_NAV_WAYPOINT` mission items |
 | `hold` | `MAV_CMD_NAV_LOITER_TIME` mission item when an anchor position exists |
@@ -69,6 +89,7 @@ section:
 - `artifact.mavlink_plan_schema_unsupported`;
 - `artifact.mavlink_plan_command_missing`;
 - `artifact.mavlink_plan_ack_missing`;
+- `artifact.mavlink_plan_order_unsafe`;
 - `artifact.mavlink_plan_unsupported_required`;
 - `artifact.mavlink_plan_ir_hash_missing`.
 

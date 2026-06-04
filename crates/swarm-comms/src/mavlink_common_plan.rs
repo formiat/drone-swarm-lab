@@ -106,6 +106,9 @@ pub struct MavlinkCommonPlan {
     /// Optional mission start command when upload items exist.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mission_start: Option<MavlinkCommonCommand>,
+    /// Commands that must be sent after uploaded mission execution completes.
+    #[serde(default)]
+    pub command_postlude: Vec<MavlinkCommonCommand>,
     /// Deterministic acknowledgement expectations.
     pub expected_acks: Vec<MavlinkExpectedAck>,
     /// Deterministic telemetry milestones expected from execution.
@@ -211,6 +214,8 @@ pub enum MavlinkPlanPhase {
     MissionUpload,
     /// Mission start phase.
     MissionStart,
+    /// Post-mission command phase.
+    CommandPostlude,
     /// Telemetry/monitoring phase.
     Telemetry,
 }
@@ -350,6 +355,7 @@ struct Compiler<'a> {
     plan: &'a MissionCommandPlan,
     options: &'a MavlinkCommonPlanOptions,
     command_prelude: Vec<MavlinkCommonCommand>,
+    command_postlude: Vec<MavlinkCommonCommand>,
     mission_items: Vec<MavlinkCommonMissionItem>,
     unsupported_features: Vec<MavlinkUnsupportedFeature>,
     last_anchor: Option<MavlinkIntCoordinate>,
@@ -361,6 +367,7 @@ impl<'a> Compiler<'a> {
             plan,
             options,
             command_prelude: Vec::new(),
+            command_postlude: Vec::new(),
             mission_items: Vec::new(),
             unsupported_features: Vec::new(),
             last_anchor: None,
@@ -417,7 +424,7 @@ impl<'a> Compiler<'a> {
             MissionCommand::Hold { duration_secs } => {
                 self.compile_hold_or_unsupported(entry, *duration_secs, "hold_requires_position")
             }
-            MissionCommand::Land => self.push_command(
+            MissionCommand::Land => self.push_lifecycle_command(
                 entry,
                 MavlinkCommonCommandName::NavLand,
                 [
@@ -429,9 +436,8 @@ impl<'a> Compiler<'a> {
                     Some(0.0),
                     Some(0.0),
                 ],
-                MavlinkPlanPhase::CommandPrelude,
             ),
-            MissionCommand::ReturnToLaunch | MissionCommand::Abort => self.push_command(
+            MissionCommand::ReturnToLaunch | MissionCommand::Abort => self.push_lifecycle_command(
                 entry,
                 MavlinkCommonCommandName::NavReturnToLaunch,
                 [
@@ -443,7 +449,6 @@ impl<'a> Compiler<'a> {
                     Some(0.0),
                     Some(0.0),
                 ],
-                MavlinkPlanPhase::CommandPrelude,
             ),
             MissionCommand::GoTo { position } => {
                 let coordinate = self.convert_position(position)?;
@@ -591,6 +596,20 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
+    fn push_lifecycle_command(
+        &mut self,
+        entry: &MissionCommandEntry,
+        command: MavlinkCommonCommandName,
+        params: [Option<f64>; 7],
+    ) -> Result<(), MavlinkCommonCompilerError> {
+        let phase = if self.mission_items.is_empty() {
+            MavlinkPlanPhase::CommandPrelude
+        } else {
+            MavlinkPlanPhase::CommandPostlude
+        };
+        self.push_command(entry, command, params, phase)
+    }
+
     fn push_command(
         &mut self,
         entry: &MissionCommandEntry,
@@ -598,12 +617,21 @@ impl<'a> Compiler<'a> {
         params: [Option<f64>; 7],
         phase: MavlinkPlanPhase,
     ) -> Result<(), MavlinkCommonCompilerError> {
-        self.command_prelude.push(MavlinkCommonCommand {
+        let mavlink_command = MavlinkCommonCommand {
             command_id: command_id(entry),
             command,
             phase,
             params,
-        });
+        };
+        match phase {
+            MavlinkPlanPhase::CommandPrelude => self.command_prelude.push(mavlink_command),
+            MavlinkPlanPhase::CommandPostlude => self.command_postlude.push(mavlink_command),
+            MavlinkPlanPhase::MissionUpload
+            | MavlinkPlanPhase::MissionStart
+            | MavlinkPlanPhase::Telemetry => {
+                unreachable!("push_command only supports command phases")
+            }
+        }
         Ok(())
     }
 
@@ -696,6 +724,7 @@ impl<'a> Compiler<'a> {
             &self.command_prelude,
             &self.mission_items,
             mission_start.as_ref(),
+            &self.command_postlude,
         );
         let telemetry_milestones =
             build_telemetry_milestones(self.plan.expected_terminal_state, &self.mission_items);
@@ -722,6 +751,7 @@ impl<'a> Compiler<'a> {
             geofence_prelude: None,
             mission_items: self.mission_items,
             mission_start,
+            command_postlude: self.command_postlude,
             expected_acks,
             telemetry_milestones,
             unsupported_features: self.unsupported_features,
@@ -759,6 +789,7 @@ fn build_expected_acks(
     command_prelude: &[MavlinkCommonCommand],
     mission_items: &[MavlinkCommonMissionItem],
     mission_start: Option<&MavlinkCommonCommand>,
+    command_postlude: &[MavlinkCommonCommand],
 ) -> Vec<MavlinkExpectedAck> {
     let mut acks = Vec::new();
     for command in command_prelude {
@@ -782,6 +813,15 @@ fn build_expected_acks(
     if let Some(command) = mission_start {
         acks.push(MavlinkExpectedAck {
             phase: MavlinkPlanPhase::MissionStart,
+            kind: MavlinkExpectedAckKind::CommandAck,
+            command_id: Some(command.command_id.clone()),
+            command: Some(command.command),
+            seq: None,
+        });
+    }
+    for command in command_postlude {
+        acks.push(MavlinkExpectedAck {
+            phase: command.phase,
             kind: MavlinkExpectedAckKind::CommandAck,
             command_id: Some(command.command_id.clone()),
             command: Some(command.command),
@@ -902,6 +942,72 @@ mod tests {
         );
         assert!(compiled.mission_items.is_empty());
         assert!(compiled.validation_result.passed);
+    }
+
+    #[test]
+    fn post_route_lifecycle_commands_compile_to_postlude() {
+        let plan = plan(vec![
+            entry("takeoff", MissionCommand::Takeoff { altitude_m: 3.0 }),
+            entry(
+                "goto",
+                MissionCommand::GoTo {
+                    position: local(10.0, 0.0, 3.0),
+                },
+            ),
+            entry(
+                "hold",
+                MissionCommand::Hold {
+                    duration_secs: 10.0,
+                },
+            ),
+            entry("land", MissionCommand::Land),
+        ]);
+
+        let compiled = compile_mavlink_common_plan(&plan, &options()).unwrap();
+
+        assert!(!compiled
+            .command_prelude
+            .iter()
+            .any(|command| command.command == MavlinkCommonCommandName::NavLand));
+        assert_eq!(
+            compiled
+                .command_postlude
+                .iter()
+                .map(|command| (command.command, command.phase))
+                .collect::<Vec<_>>(),
+            vec![(
+                MavlinkCommonCommandName::NavLand,
+                MavlinkPlanPhase::CommandPostlude
+            )]
+        );
+        assert_eq!(
+            compiled
+                .mission_items
+                .iter()
+                .map(|item| item.command)
+                .collect::<Vec<_>>(),
+            vec![
+                MavlinkCommonCommandName::NavWaypoint,
+                MavlinkCommonCommandName::NavLoiterTime,
+            ]
+        );
+        assert!(compiled.mission_start.is_some());
+
+        let mission_start_ack_index = compiled
+            .expected_acks
+            .iter()
+            .position(|ack| ack.command == Some(MavlinkCommonCommandName::MissionStart))
+            .unwrap();
+        let land_ack_index = compiled
+            .expected_acks
+            .iter()
+            .position(|ack| ack.command_id.as_deref() == Some("land"))
+            .unwrap();
+        assert!(land_ack_index > mission_start_ack_index);
+        assert_eq!(
+            compiled.expected_acks[land_ack_index].phase,
+            MavlinkPlanPhase::CommandPostlude
+        );
     }
 
     #[test]

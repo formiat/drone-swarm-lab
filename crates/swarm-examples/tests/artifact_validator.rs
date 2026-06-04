@@ -1,14 +1,18 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use swarm_comms::{compile_mavlink_common_plan, MavlinkCommonPlanOptions, MavlinkCoordinateOrigin};
+use swarm_comms::{
+    compile_mavlink_common_plan, MavlinkCommonCommand, MavlinkCommonCommandName,
+    MavlinkCommonPlanOptions, MavlinkCoordinateOrigin, MavlinkExpectedAck, MavlinkExpectedAckKind,
+    MavlinkPlanPhase,
+};
 use swarm_examples::artifact_validator::{
     validate_artifact_pack, ArtifactPackPaths, ArtifactValidationMode, ArtifactValidationOptions,
     RULE_BUILD_PROFILE_MISSING, RULE_COMPLETED_TASK_MISSING_EVENT, RULE_DEGRADED_EVENT_MISSING,
     RULE_DEGRADED_FINAL_STATUS_MISMATCH, RULE_DEGRADED_RECORD_MISSING,
     RULE_DEGRADED_RECOVERY_TASK_MISMATCH, RULE_FINAL_STATUS_MISMATCH, RULE_MANIFEST_MISSING,
-    RULE_MAVLINK_PLAN_MISSING, RULE_REPLACEMENT_SEQ_MISMATCH, RULE_REPLAY_SUMMARY_COUNT_MISMATCH,
-    RULE_SAFETY_REPORT_MISSING,
+    RULE_MAVLINK_PLAN_MISSING, RULE_MAVLINK_PLAN_ORDER_UNSAFE, RULE_REPLACEMENT_SEQ_MISMATCH,
+    RULE_REPLAY_SUMMARY_COUNT_MISMATCH, RULE_SAFETY_REPORT_MISSING,
 };
 use swarm_examples::sitl_multi_agent::{
     MultiAgentLifecycle, MultiAgentSitlManifest, MultiAgentSitlManifestAgent, SitlArtifactMetadata,
@@ -279,6 +283,41 @@ fn valid_dry_run_artifact_with_m81_plan_passes() {
     );
 
     assert!(report.passed, "{:?}", report.violations);
+}
+
+#[test]
+fn dry_run_artifact_rejects_post_route_lifecycle_command_in_prelude() {
+    let fixture = tempfile::tempdir().unwrap();
+    let output_dir = fixture.path().join("dry-run");
+    fs::create_dir_all(&output_dir).unwrap();
+    let mut artifact = dry_run_artifact_fixture(true);
+    let plan = artifact.mavlink_common_plan.as_mut().unwrap();
+    assert!(!plan.mission_items.is_empty());
+    plan.command_prelude.push(MavlinkCommonCommand {
+        command_id: "bad-land".to_owned(),
+        command: MavlinkCommonCommandName::NavLand,
+        phase: MavlinkPlanPhase::CommandPrelude,
+        params: [Some(0.0); 7],
+    });
+    plan.expected_acks.push(MavlinkExpectedAck {
+        phase: MavlinkPlanPhase::CommandPrelude,
+        kind: MavlinkExpectedAckKind::CommandAck,
+        command_id: Some("bad-land".to_owned()),
+        command: Some(MavlinkCommonCommandName::NavLand),
+        seq: None,
+    });
+    write_json(&output_dir.join("sitl_dry_run_artifact.v1.json"), &artifact);
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&output_dir),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::DryRun,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_MAVLINK_PLAN_ORDER_UNSAFE);
 }
 
 #[test]

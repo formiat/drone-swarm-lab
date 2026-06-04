@@ -107,6 +107,7 @@ Exit codes:
 | `artifact.mavlink_plan_schema_unsupported` | Dry-run or `MavlinkCommonPlan` schema is unsupported. |
 | `artifact.mavlink_plan_command_missing` | The M81 plan has no commands/items, or mission item sequences are not contiguous. |
 | `artifact.mavlink_plan_ack_missing` | Expected ACK coverage is incomplete for commands, mission upload, or mission start. |
+| `artifact.mavlink_plan_order_unsafe` | A post-route lifecycle command such as land/RTL appears in `command_prelude` while uploaded mission items are present. |
 | `artifact.mavlink_plan_unsupported_required` | Required unsupported features are present while `validation_result.passed` is still true. |
 | `artifact.mavlink_plan_ir_hash_missing` | `command_ir_hash` is absent or empty. |
 | `artifact.parse_failed` | A required artifact could not be read or parsed. |

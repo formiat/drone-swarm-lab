@@ -113,7 +113,10 @@ the route has no segments or when no node poses can be resolved.
   `MAV_CMD_NAV_TAKEOFF`, `MAV_CMD_NAV_WAYPOINT`,
   `MAV_CMD_NAV_LOITER_TIME`, `MAV_CMD_NAV_LAND`, expected ACKs, telemetry
   milestones, deterministic SHA-256 `command_ir_hash`, and structured
-  unsupported features. It is no hardware upload; PX4/ArduPilot semantics are not identical. See
+  unsupported features. The artifact separates execution phases into
+  `command_prelude`, uploaded `mission_items`, optional `mission_start`, and
+  `command_postlude` for post-mission lifecycle commands. It is no hardware upload;
+  PX4/ArduPilot semantics are not identical. See
   [`docs/MAVLINK_COMMON_COMPILER.md`](MAVLINK_COMMON_COMPILER.md).
   Validate dry-run compiler artifacts with `artifact_validator --mode dry-run`.
 - **M82 PX4 / ArduPilot Capability Profiles**: annotates or rejects commands
@@ -128,3 +131,5 @@ The crate `swarm-mission-ir` uses schema version `"mission_command_ir.v1"` for
 --dry-run` include an optional `command_ir_summary` field with a compact
 summary of the IR derived from the waypoint list and an optional
 `mavlink_common_plan` field using schema version `"mavlink_common_plan.v1"`.
+That plan preserves phase ordering for `command_prelude`, mission upload/start,
+and `command_postlude`; it still does not upload anything to hardware.

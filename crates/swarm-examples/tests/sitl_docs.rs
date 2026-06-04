@@ -847,9 +847,11 @@ fn mavlink_common_compiler_docs_are_synchronized() {
         "MAV_CMD_NAV_WAYPOINT",
         "MAV_CMD_NAV_LOITER_TIME",
         "MAV_CMD_NAV_LAND",
+        "command_postlude",
         "expected ACKs",
         "command_ir_hash",
         "artifact.mavlink_plan_missing",
+        "artifact.mavlink_plan_order_unsafe",
         "artifact_validator --mode dry-run",
         "no hardware upload",
         "PX4/ArduPilot semantics are not identical",
@@ -866,6 +868,7 @@ fn mavlink_common_compiler_docs_are_synchronized() {
         "MavlinkCommonPlan",
         "MAV_CMD_NAV_TAKEOFF",
         "MAV_CMD_NAV_WAYPOINT",
+        "command_postlude",
         "no hardware upload",
         "PX4/ArduPilot semantics are not identical",
     ] {
@@ -877,6 +880,7 @@ fn mavlink_common_compiler_docs_are_synchronized() {
         "MavlinkCommonPlan",
         "MAV_CMD_NAV_TAKEOFF",
         "MAV_CMD_NAV_WAYPOINT",
+        "command_postlude",
         "artifact_validator --mode dry-run",
         "no hardware upload",
         "PX4/ArduPilot semantics are not identical",
@@ -894,6 +898,7 @@ fn mavlink_common_compiler_docs_are_synchronized() {
     for required in [
         "artifact.mavlink_plan_missing",
         "artifact.mavlink_plan_ack_missing",
+        "artifact.mavlink_plan_order_unsafe",
         "artifact.mavlink_plan_ir_hash_missing",
         "--mode dry-run",
     ] {

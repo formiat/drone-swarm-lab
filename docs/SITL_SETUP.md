@@ -182,10 +182,11 @@ summary, altitude source, scenario `geo_origin`, effective origin, command
 args, local-to-global coordinate summaries, `command_ir_summary`, and the M81
 `mavlink_common_plan` compiler output. The M81 section uses
 `MavlinkCommonPlan` / `mavlink_common_plan.v1`, includes typed Common commands
-such as `MAV_CMD_NAV_TAKEOFF` and `MAV_CMD_NAV_WAYPOINT`, expected ACKs,
-telemetry milestones, structured unsupported features, and a deterministic
-SHA-256 `command_ir_hash`. This artifact is portable and requires no PX4
-process.
+such as `MAV_CMD_NAV_TAKEOFF` and `MAV_CMD_NAV_WAYPOINT`, explicit
+`command_prelude` / mission upload-start / `command_postlude` ordering,
+expected ACKs, telemetry milestones, structured unsupported features, and a
+deterministic SHA-256 `command_ir_hash`. This artifact is portable and requires
+no PX4 process.
 
 The M81 dry-run compiler has no hardware upload side effect. It does not start
 PX4, does not open a MAVLink transport, and PX4/ArduPilot semantics are not identical. This is the `artifact_validator --mode dry-run` path.

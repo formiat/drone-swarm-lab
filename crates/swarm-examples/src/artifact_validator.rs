@@ -3,7 +3,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use swarm_comms::{MavlinkCommonPlan, MavlinkExpectedAckKind, MAVLINK_COMMON_PLAN_SCHEMA_VERSION};
+use swarm_comms::{
+    MavlinkCommonCommand, MavlinkCommonCommandName, MavlinkCommonPlan, MavlinkExpectedAckKind,
+    MAVLINK_COMMON_PLAN_SCHEMA_VERSION,
+};
 use swarm_safety::preflight::SafetyValidationReport;
 
 use crate::sitl_multi_agent::{MultiAgentSitlManifest, MULTI_AGENT_SITL_MANIFEST_SCHEMA_VERSION};
@@ -40,6 +43,7 @@ pub const RULE_MAVLINK_PLAN_MISSING: &str = "artifact.mavlink_plan_missing";
 pub const RULE_MAVLINK_PLAN_SCHEMA_UNSUPPORTED: &str = "artifact.mavlink_plan_schema_unsupported";
 pub const RULE_MAVLINK_PLAN_COMMAND_MISSING: &str = "artifact.mavlink_plan_command_missing";
 pub const RULE_MAVLINK_PLAN_ACK_MISSING: &str = "artifact.mavlink_plan_ack_missing";
+pub const RULE_MAVLINK_PLAN_ORDER_UNSAFE: &str = "artifact.mavlink_plan_order_unsafe";
 pub const RULE_MAVLINK_PLAN_UNSUPPORTED_REQUIRED: &str =
     "artifact.mavlink_plan_unsupported_required";
 pub const RULE_MAVLINK_PLAN_IR_HASH_MISSING: &str = "artifact.mavlink_plan_ir_hash_missing";
@@ -351,6 +355,7 @@ impl<'a> Validator<'a> {
             );
         }
         self.validate_mavlink_mission_item_sequences(plan, path);
+        self.validate_mavlink_ordering(plan, path);
         self.validate_mavlink_expected_acks(plan, path);
         let has_required_unsupported = plan
             .unsupported_features
@@ -362,6 +367,27 @@ impl<'a> Validator<'a> {
                 path.clone(),
                 "validation_result.passed must be false when unsupported required features are present",
             );
+        }
+    }
+
+    fn validate_mavlink_ordering(&mut self, plan: &MavlinkCommonPlan, path: &Option<PathBuf>) {
+        if plan.mission_items.is_empty() {
+            return;
+        }
+        for command in &plan.command_prelude {
+            if matches!(
+                command.command,
+                MavlinkCommonCommandName::NavLand | MavlinkCommonCommandName::NavReturnToLaunch
+            ) {
+                self.push_error(
+                    RULE_MAVLINK_PLAN_ORDER_UNSAFE,
+                    path.clone(),
+                    format!(
+                        "post-route lifecycle command '{}' cannot be in command_prelude when mission_items are present",
+                        command.command.as_str()
+                    ),
+                );
+            }
         }
     }
 
@@ -385,23 +411,8 @@ impl<'a> Validator<'a> {
     }
 
     fn validate_mavlink_expected_acks(&mut self, plan: &MavlinkCommonPlan, path: &Option<PathBuf>) {
-        for command in &plan.command_prelude {
-            let covered = plan.expected_acks.iter().any(|ack| {
-                ack.kind == MavlinkExpectedAckKind::CommandAck
-                    && ack.command_id.as_deref() == Some(command.command_id.as_str())
-                    && ack.command == Some(command.command)
-            });
-            if !covered {
-                self.push_error(
-                    RULE_MAVLINK_PLAN_ACK_MISSING,
-                    path.clone(),
-                    format!(
-                        "missing COMMAND_ACK expectation for command_id '{}'",
-                        command.command_id
-                    ),
-                );
-            }
-        }
+        self.validate_mavlink_command_acks(&plan.command_prelude, plan, path);
+        self.validate_mavlink_command_acks(&plan.command_postlude, plan, path);
         if !plan.mission_items.is_empty()
             && !plan
                 .expected_acks
@@ -425,6 +436,31 @@ impl<'a> Validator<'a> {
                     RULE_MAVLINK_PLAN_ACK_MISSING,
                     path.clone(),
                     "missing COMMAND_ACK expectation for mission_start",
+                );
+            }
+        }
+    }
+
+    fn validate_mavlink_command_acks(
+        &mut self,
+        commands: &[MavlinkCommonCommand],
+        plan: &MavlinkCommonPlan,
+        path: &Option<PathBuf>,
+    ) {
+        for command in commands {
+            let covered = plan.expected_acks.iter().any(|ack| {
+                ack.kind == MavlinkExpectedAckKind::CommandAck
+                    && ack.command_id.as_deref() == Some(command.command_id.as_str())
+                    && ack.command == Some(command.command)
+            });
+            if !covered {
+                self.push_error(
+                    RULE_MAVLINK_PLAN_ACK_MISSING,
+                    path.clone(),
+                    format!(
+                        "missing COMMAND_ACK expectation for command_id '{}'",
+                        command.command_id
+                    ),
                 );
             }
         }

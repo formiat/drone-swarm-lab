@@ -1371,6 +1371,19 @@ mod tests {
             "MAV_CMD_NAV_LOITER_TIME"
         );
         assert_eq!(mavlink_plan.mission_items[0].params[0], Some(10.0));
+        assert!(!mavlink_plan
+            .command_prelude
+            .iter()
+            .any(|command| command.command.as_str() == "MAV_CMD_NAV_LAND"));
+        assert_eq!(mavlink_plan.command_postlude.len(), 1);
+        assert_eq!(
+            mavlink_plan.command_postlude[0].command.as_str(),
+            "MAV_CMD_NAV_LAND"
+        );
+        assert_eq!(
+            mavlink_plan.command_postlude[0].phase,
+            swarm_comms::MavlinkPlanPhase::CommandPostlude
+        );
     }
 
     #[test]
