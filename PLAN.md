@@ -250,11 +250,20 @@ setting, а Urban-маршруты должны выходить не тольк
 
    - `SitlCoordinateFrame` or new artifact field must distinguish local
      simulation frame from `wgs84_node_geo`;
+   - расширить `SitlWaypointItem`
+     ([sitl_plan.rs](/home/formi/Documents/RustProjects/drone/crates/swarm-examples/src/sitl_plan.rs:80))
+     явным per-waypoint geo payload:
+     `#[serde(default, skip_serializing_if = "Option::is_none")] pub geo: Option<UrbanGeoPoint>`;
+   - при сборке Urban plan в `build_urban_route_sitl_plan`
+     ([sitl_plan.rs](/home/formi/Documents/RustProjects/drone/crates/swarm-examples/src/sitl_plan.rs:630))
+     копировать `UrbanRouteWaypoint.geo` из `UrbanRouteExport` в
+     `SitlWaypointItem.geo`; local maps оставляют `geo=None`;
    - добавить `coordinate_mode` в `SitlPlan` and `SitlDryRunArtifact`
      ([sitl_plan.rs](/home/formi/Documents/RustProjects/drone/crates/swarm-examples/src/sitl_plan.rs:224));
    - `format_dry_run_plan`
      ([sitl_plan.rs](/home/formi/Documents/RustProjects/drone/crates/swarm-examples/src/sitl_plan.rs:731))
-     должен печатать `coordinate_mode`;
+     должен печатать `coordinate_mode` и для geo waypoints показывать
+     `lat_deg/lon_deg/relative_alt_m`, не только local `x/y/z`;
    - `dry_run_artifact_with_mavlink_profile`
      ([sitl_plan.rs](/home/formi/Documents/RustProjects/drone/crates/swarm-examples/src/sitl_plan.rs:816))
      должен сохранять `coordinate_mode`, route/template metadata, perception
@@ -262,10 +271,44 @@ setting, а Urban-маршруты должны выходить не тольк
    - `build_command_ir_plan`
      ([sitl_plan.rs](/home/formi/Documents/RustProjects/drone/crates/swarm-examples/src/sitl_plan.rs:882))
      должен строить Urban `FollowRoute` с `Position::Geo` для geo maps и
-     `Position::Local` для local maps.
+     `Position::Local` для local maps, используя `SitlWaypointItem.geo`, а не
+     повторный доступ к исходной `UrbanMap` и не пересчёт через `geo_origin`;
+   - `sitl_waypoint_position`
+     ([sitl_plan.rs](/home/formi/Documents/RustProjects/drone/crates/swarm-examples/src/sitl_plan.rs:1057))
+     должен возвращать `Position::Geo` для geo waypoint and `Position::Local`
+     для local waypoint, чтобы `default_hold_position` and command IR не теряли
+     coordinate mode;
+   - `global_waypoint_summary`
+     ([sitl_plan.rs](/home/formi/Documents/RustProjects/drone/crates/swarm-examples/src/sitl_plan.rs:1075))
+     должен сначала использовать `waypoint.geo` directly, а local fallback
+     оставлять текущим пересчётом через `geo_origin`;
+   - JSON artifact должен содержать `coordinate_mode`, `start_global`,
+     `end_global`, `start_waypoint.geo`/`end_waypoint.geo` and per-waypoint geo
+     data for geo maps.
 
    Важная граница: `start_global/end_global` для geo maps должны быть взяты из
    node geo directly, а не пересчитаны через `geo_origin`.
+
+   Псевдокод data path:
+
+   ```rust
+   fn sitl_waypoint_position(wp: &SitlWaypointItem) -> Position {
+       if let Some(geo) = wp.geo {
+           return Position::Geo(GeoPosition {
+               lat_deg: geo.lat_deg,
+               lon_deg: geo.lon_deg,
+               alt_m: geo.alt_m,
+           });
+       }
+       Position::Local(LocalPosition { x_m: wp.x, y_m: wp.y, z_m: wp.z })
+   }
+
+   // Urban FollowRoute:
+   let waypoints = plan.waypoints.iter().map(|wp| MissionWaypoint {
+       position: sitl_waypoint_position(wp),
+       acceptance_radius_m: None,
+   });
+   ```
 
 8. Расширить artifact validator в
    [crates/swarm-examples/src/artifact_validator.rs](/home/formi/Documents/RustProjects/drone/crates/swarm-examples/src/artifact_validator.rs:318).
@@ -293,6 +336,18 @@ setting, а Urban-маршруты должны выходить не тольк
      в event/artifact path;
    - `urban_patrol.rs` должен писать выбранный template и blocked policy
      decision path;
+   - добавить unit/integration tests для фактического поведения blocked-route
+     policy в `crates/swarm-sim/src/runner/urban_patrol.rs`
+     ([urban_patrol.rs](/home/formi/Documents/RustProjects/drone/crates/swarm-sim/src/runner/urban_patrol.rs:385)):
+     `urban_blocked_policy_wait_emits_wait_decision`,
+     `urban_blocked_policy_replan_uses_alternate_route`,
+     `urban_blocked_policy_abort_stops_run`;
+   - tests должны проверять не только metadata, а реальные event/outcome:
+     `UrbanObstacleDetected`, `UrbanPolicyDecision { policy: "wait"|"replan"|"abort" }`,
+     `UrbanWaitStarted`/`UrbanWaitCompleted` для Wait,
+     `UrbanRouteReplanned` and increased `urban_replan_count` для Replan,
+     `UrbanNoRouteAvailable`, failed success and `unresolved_blockages > 0`
+     для Abort;
    - `docs/REPLAY.md` должен перечислять эти события как simulation evidence,
      not real safety/perception.
 
@@ -342,10 +397,11 @@ setting, а Urban-маршруты должны выходить не тольк
 
     Материализуемый результат:
 
-    - `cargo fmt --all`;
-    - `timeout 300s env PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 /home/formi/.local/bin/runlim cargo test -p swarm-types urban`;
-    - `timeout 300s env PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 /home/formi/.local/bin/runlim cargo test -p swarm-sim urban`;
-    - `timeout 300s env PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 /home/formi/.local/bin/runlim cargo test -p swarm-sim geojson`;
+   - `timeout 300s cargo fmt --all`;
+   - `timeout 300s cargo fmt --all --check`;
+   - `timeout 300s env PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 /home/formi/.local/bin/runlim cargo test -p swarm-types urban`;
+   - `timeout 300s env PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 /home/formi/.local/bin/runlim cargo test -p swarm-sim urban`;
+   - `timeout 300s env PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 /home/formi/.local/bin/runlim cargo test -p swarm-sim geojson`;
     - `timeout 300s env PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 /home/formi/.local/bin/runlim cargo test -p swarm-examples urban_geo`;
     - `timeout 300s env PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 /home/formi/.local/bin/runlim cargo test -p swarm-examples --test sitl_agent urban`;
     - `timeout 300s env PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 /home/formi/.local/bin/runlim cargo test -p swarm-examples --test artifact_validator urban`;
@@ -378,11 +434,25 @@ setting, а Urban-маршруты должны выходить не тольк
   - unknown/unsupported GeoJSON geometry fails typed utility error.
 - `swarm-examples::sitl_plan` tests:
   - geo Urban dry-run artifact has `coordinate_mode=wgs84_node_geo`;
+  - geo Urban dry-run artifact preserves per-waypoint `geo` and
+    `start_global/end_global` from node geo directly;
   - local Urban dry-run artifact keeps current local-with-origin semantics;
+  - geo Urban `command_ir_summary` / embedded IR path builds `FollowRoute`
+    waypoints as `Position::Geo`, not `Position::Local`;
   - geo Urban `mavlink_common_plan.mission_items[*].lat_e7/lon_e7` match node
     WGS84 coordinates;
   - `urban-search` artifact records mocked detector metadata;
-  - blocked-route policy metadata is present and stable.
+- `swarm-sim::runner` blocked policy behavior tests:
+  - `UrbanBlockedPolicy::Wait` with a temporary hard blocked edge emits
+    `UrbanObstacleDetected`, `UrbanPolicyDecision(policy=wait)`,
+    `UrbanWaitStarted`, then `UrbanWaitCompleted` after unblock and increments
+    wait metrics;
+  - `UrbanBlockedPolicy::Replan` on a graph with an alternate edge emits
+    `UrbanRouteReplanned`, `UrbanPolicyDecision(policy=replan)`, increments
+    `urban_replan_count`, and avoids the blocked edge;
+  - `UrbanBlockedPolicy::Abort` emits `UrbanNoRouteAvailable`,
+    `UrbanPolicyDecision(policy=abort)`, fails mission success, and increments
+    unresolved blockage metrics.
 - Docs smoke:
   - README/STATUS/SITL/DSL/compiler/artifact validation docs contain M84
     boundaries and non-goals.
