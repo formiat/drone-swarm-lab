@@ -58,7 +58,7 @@ fn validate_command(cmd: &MissionCommand, frame: CoordinateFrame) -> Result<(), 
             }
         }
         MissionCommand::GoTo { position } => {
-            validate_position(position, "go_to.position", frame)?;
+            validate_position(position, "go_to.position".to_owned(), frame)?;
         }
         MissionCommand::FollowRoute {
             route_id,
@@ -70,8 +70,7 @@ fn validate_command(cmd: &MissionCommand, frame: CoordinateFrame) -> Result<(), 
                 });
             }
             for (i, wp) in waypoints.iter().enumerate() {
-                let context: &'static str =
-                    Box::leak(format!("follow_route.waypoints[{i}]").into_boxed_str());
+                let context = format!("follow_route.waypoints[{i}]");
                 validate_position(&wp.position, context, frame)?;
             }
         }
@@ -81,7 +80,7 @@ fn validate_command(cmd: &MissionCommand, frame: CoordinateFrame) -> Result<(), 
             turns,
             ..
         } => {
-            validate_position(center, "orbit.center", frame)?;
+            validate_position(center, "orbit.center".to_owned(), frame)?;
             if !radius_m.is_finite() || *radius_m <= 0.0 {
                 return Err(MissionIrError::InvalidOrbitRadius {
                     radius_m: *radius_m,
@@ -104,7 +103,7 @@ fn validate_command(cmd: &MissionCommand, frame: CoordinateFrame) -> Result<(), 
 
 fn validate_position(
     position: &Position,
-    context: &'static str,
+    context: String,
     frame: CoordinateFrame,
 ) -> Result<(), MissionIrError> {
     match position {

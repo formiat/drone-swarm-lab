@@ -21,7 +21,7 @@ pub enum MissionIrError {
 
     #[error("non-finite coordinate in {context}: ({x}, {y}, {z})")]
     NonFiniteCoordinate {
-        context: &'static str,
+        context: String,
         x: f64,
         y: f64,
         z: f64,

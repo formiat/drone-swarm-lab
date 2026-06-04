@@ -41,8 +41,14 @@ impl MissionCommandSummary {
             }
         }
 
-        let coordinate_frame = format!("{:?}", plan.coordinate_frame).to_lowercase();
-        let altitude_reference = format!("{:?}", plan.altitude_reference).to_lowercase();
+        let coordinate_frame = serde_json::to_value(plan.coordinate_frame)
+            .ok()
+            .and_then(|v| v.as_str().map(String::from))
+            .unwrap_or_default();
+        let altitude_reference = serde_json::to_value(plan.altitude_reference)
+            .ok()
+            .and_then(|v| v.as_str().map(String::from))
+            .unwrap_or_default();
 
         Self {
             mission_id: plan.mission_id.as_ref().clone(),
@@ -161,5 +167,39 @@ mod tests {
         let plan = simple_plan(vec![]);
         let summary = MissionCommandSummary::from_plan(&plan);
         assert_eq!(summary.mission_id, "m-test");
+    }
+
+    #[test]
+    fn summary_coordinate_frame_uses_serde_snake_case() {
+        let plan = simple_plan(vec![]);
+        let summary = MissionCommandSummary::from_plan(&plan);
+        // simple_plan uses LocalNed — must serialise as "local_ned", not "localned"
+        assert_eq!(summary.coordinate_frame, "local_ned");
+        // simple_plan uses RelativeHome — must serialise as "relative_home", not "relativehome"
+        assert_eq!(summary.altitude_reference, "relative_home");
+    }
+
+    #[test]
+    fn summary_wgs84_frame_name() {
+        use crate::frame::CoordinateFrame;
+        let mut plan = simple_plan(vec![]);
+        plan.coordinate_frame = CoordinateFrame::Wgs84;
+        let summary = MissionCommandSummary::from_plan(&plan);
+        assert_eq!(summary.coordinate_frame, "wgs84");
+    }
+
+    // Ensure the old broken behavior is absent (regression guard).
+    #[test]
+    fn summary_coordinate_frame_is_not_debug_lowercased() {
+        let plan = simple_plan(vec![]);
+        let summary = MissionCommandSummary::from_plan(&plan);
+        assert_ne!(
+            summary.coordinate_frame, "localned",
+            "coordinate_frame must not be Debug-lowercased"
+        );
+        assert_ne!(
+            summary.altitude_reference, "relativehome",
+            "altitude_reference must not be Debug-lowercased"
+        );
     }
 }
