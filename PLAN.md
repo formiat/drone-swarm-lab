@@ -66,11 +66,18 @@ Notion/GitLab remote context не читался: в inbox `notion_policy=option
 - `crates/swarm-sim/src/runner/types.rs:248`:
   `PrimitiveMission`, `PrimitiveMission::describe_items`,
   `PrimitiveMissionItemDesc`.
+- `crates/swarm-sim/src/dsl/validate.rs:127`:
+  early `is_primitive` gate that exempts primitive scenarios from non-empty
+  `scenario.tasks` validation.
 - `crates/swarm-sim/src/dsl/validate.rs:253`:
-  validation branch for primitive mission names and empty task lists.
+  primitive-specific validation branch for `run_config.primitive_mission` and
+  empty task lists.
 - `crates/swarm-sim/src/dsl/tests.rs:745`:
   primitive DSL validation/unit tests.
 - `crates/swarm-examples/src/sitl_plan.rs:538`:
+  `build_primitive_sitl_plan`.
+- `crates/swarm-examples/src/sitl_plan.rs:425`:
+  runtime dispatch from `ScenarioSuiteEntry.mission` into
   `build_primitive_sitl_plan`.
 - `crates/swarm-examples/src/sitl_plan.rs:853`:
   `build_command_ir_plan`.
@@ -123,6 +130,7 @@ Notion/GitLab remote context не читался: в inbox `notion_policy=option
    Файлы:
 
    - `crates/swarm-sim/src/runner/types.rs:248`;
+   - `crates/swarm-sim/src/dsl/validate.rs:127`;
    - `crates/swarm-sim/src/dsl/validate.rs:253`;
    - `crates/swarm-sim/src/dsl/tests.rs:745`.
 
@@ -143,15 +151,34 @@ Notion/GitLab remote context не читался: в inbox `notion_policy=option
    - оставить `Hover` как backward-compatible representation для
      `takeoff-hold-land`, но в docs/scenario names назвать canonical mission
      именно `takeoff-hold-land`;
+   - вынести primitive mission names в единый локальный helper/const, чтобы
+     ранний `is_primitive` gate и primitive-specific branch не расходились:
+
+     ```rust
+     fn is_primitive_mission_name(mission: &str) -> bool {
+         matches!(
+             mission,
+             "hover" | "orbit" | "takeoff-land" | "takeoff-hold-land" | "waypoint-square"
+         )
+     }
+     ```
+
+   - использовать этот helper в `dsl/validate.rs:127`, чтобы
+     `takeoff-hold-land` и `waypoint-square` были exempt from
+     `"Scenario must contain at least one task"` так же, как старые primitive
+     names;
    - добавить validation для `takeoff-hold-land` и `waypoint-square` mission
      strings рядом с `"hover" | "orbit" | "takeoff-land"` в
-     `dsl/validate.rs:253`;
+     `dsl/validate.rs:253`, лучше через тот же helper, но без ослабления
+     unknown mission behavior;
    - добавить проверку положительных и finite параметров primitive missions:
      `altitude_m > 0`, `hold_seconds > 0`, `turns > 0`, `radius_m > 0`,
      `side_m > 0`;
    - добавить unit tests: valid canonical `takeoff-hold-land`, valid
-     `waypoint-square`, invalid non-positive params, primitive mission с
-     non-empty `tasks` всё ещё rejected.
+     `waypoint-square`, оба проходят empty-task exemption; invalid non-positive
+     params fail; primitive mission с non-empty `tasks` всё ещё rejected;
+     unknown mission с empty `tasks` не получает primitive exemption и всё ещё
+     fails with `"Scenario must contain at least one task"`.
 
 2. Обновить primitive scenario fixtures.
 
@@ -183,6 +210,7 @@ Notion/GitLab remote context не читался: в inbox `notion_policy=option
    Файлы:
 
    - `crates/swarm-sim/src/runner/types.rs:261`;
+   - `crates/swarm-examples/src/sitl_plan.rs:425`;
    - `crates/swarm-examples/src/sitl_plan.rs:538`;
    - `crates/swarm-examples/src/sitl_plan.rs:853`;
    - `crates/swarm-examples/src/sitl_plan.rs:957`.
@@ -214,6 +242,20 @@ Notion/GitLab remote context не читался: в inbox `notion_policy=option
 
    - `build_command_ir_plan` должен сохранять общий lifecycle:
      `Arm -> Takeoff -> body -> Land`;
+   - `build_sitl_plan_internal` должен dispatch all primitive mission names в
+     `build_primitive_sitl_plan`, а не только legacy names:
+
+     ```rust
+     if matches!(
+         entry.mission.as_str(),
+         "hover" | "orbit" | "takeoff-land" | "takeoff-hold-land" | "waypoint-square"
+     ) {
+         return build_primitive_sitl_plan(...);
+     }
+     ```
+
+     Предпочтительно вынести shared helper рядом с `build_sitl_plan_internal`,
+     чтобы future primitive aliases не расходились между dispatch и tests.
    - для всех трёх canonical missions `MissionCommandPlan` должен иметь:
      `timeout_policy { command_timeout_secs: 5.0, completion_timeout_secs: 120.0,
      on_timeout: Abort }`, `expected_terminal_state = Landed`,
@@ -463,6 +505,10 @@ Notion/GitLab remote context не читался: в inbox `notion_policy=option
   - valid canonical `takeoff-hold-land` suite validates;
   - valid canonical `orbit` suite validates with `radius_m = 1.0`;
   - valid `waypoint-square` suite validates;
+  - `takeoff-hold-land` and `waypoint-square` are covered by the early
+    empty-task primitive exemption;
+  - unknown mission names with empty `scenario.tasks` still fail and do not
+    bypass non-primitive task validation;
   - primitive suite with non-empty `tasks` fails;
   - primitive suite with zero/negative/non-finite params fails.
 - `crates/swarm-sim/src/runner/types.rs` tests:
@@ -470,6 +516,8 @@ Notion/GitLab remote context не читался: в inbox `notion_policy=option
     and geometry;
   - old `Hover`/`TakeoffLand` fixtures remain compatible.
 - `crates/swarm-examples/src/sitl_plan.rs` tests:
+  - `build_sitl_plan_internal` dispatches `takeoff-hold-land` and
+    `waypoint-square` to `build_primitive_sitl_plan`;
   - takeoff-hold-land command order:
     `arm`, `takeoff`, `hold`, `land`;
   - orbit command order:
@@ -481,6 +529,11 @@ Notion/GitLab remote context не читался: в inbox `notion_policy=option
   - PX4/ArduPilot profile classification exists for each mission.
 - `crates/swarm-examples/tests/sitl_agent/report_and_boundary_tests.rs`:
   - dry-run artifact roundtrip for each canonical primitive scenario;
+  - explicit runtime-dispatch integration cases:
+    `sitl_agent --dry-run --scenario scenarios/primitive.takeoff-hold-land.json
+    --agent-id agent-0 --dry-run-artifact <tempdir>/artifact.json` succeeds and
+    writes non-null `command_ir_summary` and `mavlink_common_plan`;
+  - same runtime-dispatch integration case for `scenarios/primitive.square.json`;
   - each canonical primitive dry-run artifact has
     `safety_report.passed == true` and no error-severity safety violations;
   - invalid primitive params fail before artifact success with exit code `2`;
