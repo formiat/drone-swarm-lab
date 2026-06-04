@@ -34,6 +34,7 @@ stable-ish extension points:
 | `swarm-types` | Shared `TaskKind`, `Task`, `RunState`, `MissionAdapter`, `AdapterRegistry`, ids, poses, roles, and agent/task data. |
 | `swarm-alloc` | `Allocator`, optional allocation extension methods, `Strategy`, and `StrategyRegistry`. |
 | `swarm-metrics` | `RunMetrics` and `AggregateMetrics` fields used by reports, regression thresholds, and benchmark summaries. |
+| `swarm-mission-ir` | Hardware-agnostic mission command IR (`MissionCommandPlan`, `MissionCommand`, `validate`). Foundation for M81+ backend compilers. Use `urban_route_to_follow_route` in `swarm-sim` to convert Urban routes to IR. See `docs/MISSION_COMMAND_IR.md`. |
 | Scenario DSL | JSON scenario suites with explicit `schema_version` documented in `docs/SCENARIO_DSL.md`. |
 | Replay/report schemas | Simulation replay `0.2`, SITL event log `sitl_event_log.v1`, SITL reports `sitl_run_report.v1` / `sitl_multi_agent_run_report.v1`. |
 

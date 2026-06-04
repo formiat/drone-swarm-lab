@@ -800,3 +800,122 @@ fn plan_route_excluding_returns_no_route_if_all_blocked() {
     let result = plan_route_excluding(&map, &from, &to, &extra_blocked, UrbanPlannerMode::Dijkstra);
     assert!(matches!(result, Err(UrbanRouteError::NoRoute { .. })));
 }
+
+// Urban bridge tests for M80 Mission Command IR.
+
+fn simple_map() -> UrbanMap {
+    UrbanMap {
+        nodes: vec![
+            node("n0", 0.0, 0.0),
+            node("n1", 10.0, 0.0),
+            node("n2", 10.0, 10.0),
+        ],
+        edges: vec![edge("e01", "n0", "n1", 1.0), edge("e12", "n1", "n2", 1.0)],
+        static_obstacles: vec![],
+    }
+}
+
+fn simple_route() -> UrbanPlannedRoute {
+    UrbanPlannedRoute {
+        segments: vec![
+            UrbanRouteSegment {
+                edge_id: UrbanEdgeId::from("e01".to_owned()),
+                from: UrbanNodeId::from("n0".to_owned()),
+                to: UrbanNodeId::from("n1".to_owned()),
+                length_m: 10.0,
+                cost: 1.0,
+            },
+            UrbanRouteSegment {
+                edge_id: UrbanEdgeId::from("e12".to_owned()),
+                from: UrbanNodeId::from("n1".to_owned()),
+                to: UrbanNodeId::from("n2".to_owned()),
+                length_m: 10.0,
+                cost: 1.0,
+            },
+        ],
+        total_length_m: 20.0,
+        total_cost: 2.0,
+    }
+}
+
+#[test]
+fn urban_route_to_follow_route_non_empty() {
+    use swarm_mission_ir::{MissionCommand, RouteId};
+
+    let map = simple_map();
+    let route = simple_route();
+    let route_id = RouteId::from("test-route".to_owned());
+
+    let cmd = urban_route_to_follow_route(&map, &route, route_id, 5.0);
+    assert!(cmd.is_some(), "expected Some from non-empty route");
+
+    if let Some(MissionCommand::FollowRoute { waypoints, .. }) = cmd {
+        assert_eq!(waypoints.len(), 2, "expected one waypoint per segment");
+    } else {
+        panic!("expected MissionCommand::FollowRoute");
+    }
+}
+
+#[test]
+fn urban_route_to_follow_route_empty_route_returns_none() {
+    use swarm_mission_ir::RouteId;
+
+    let map = simple_map();
+    let empty = UrbanPlannedRoute {
+        segments: vec![],
+        total_length_m: 0.0,
+        total_cost: 0.0,
+    };
+    let cmd = urban_route_to_follow_route(&map, &empty, RouteId::from("r".to_owned()), 5.0);
+    assert!(cmd.is_none());
+}
+
+#[test]
+fn urban_route_to_follow_route_altitude_in_waypoints() {
+    use swarm_mission_ir::{MissionCommand, Position, RouteId};
+
+    let map = simple_map();
+    let route = simple_route();
+    let altitude = 8.5_f64;
+    let cmd = urban_route_to_follow_route(&map, &route, RouteId::from("r".to_owned()), altitude);
+
+    if let Some(MissionCommand::FollowRoute { waypoints, .. }) = cmd {
+        for wp in &waypoints {
+            if let Position::Local(loc) = wp.position {
+                assert!(
+                    (loc.z_m - altitude).abs() < 1e-10,
+                    "waypoint altitude {z} != {altitude}",
+                    z = loc.z_m
+                );
+            } else {
+                panic!("expected local position");
+            }
+        }
+    } else {
+        panic!("expected FollowRoute");
+    }
+}
+
+#[test]
+fn urban_route_to_follow_route_node_positions_correct() {
+    use swarm_mission_ir::{MissionCommand, Position, RouteId};
+
+    let map = simple_map();
+    let route = simple_route();
+    let cmd = urban_route_to_follow_route(&map, &route, RouteId::from("r".to_owned()), 5.0);
+
+    if let Some(MissionCommand::FollowRoute { waypoints, .. }) = cmd {
+        // first segment "to" node is n1 at (10.0, 0.0)
+        if let Position::Local(loc) = waypoints[0].position {
+            assert!((loc.x_m - 10.0).abs() < 1e-10);
+            assert!((loc.y_m - 0.0).abs() < 1e-10);
+        }
+        // second segment "to" node is n2 at (10.0, 10.0)
+        if let Position::Local(loc) = waypoints[1].position {
+            assert!((loc.x_m - 10.0).abs() < 1e-10);
+            assert!((loc.y_m - 10.0).abs() < 1e-10);
+        }
+    } else {
+        panic!("expected FollowRoute");
+    }
+}

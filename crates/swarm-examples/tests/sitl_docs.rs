@@ -1,3 +1,4 @@
+const MISSION_COMMAND_IR: &str = include_str!("../../../docs/MISSION_COMMAND_IR.md");
 const README: &str = include_str!("../../../README.md");
 const SITL_SETUP: &str = include_str!("../../../docs/SITL_SETUP.md");
 const HARDWARE_READINESS: &str = include_str!("../../../docs/HARDWARE_READINESS.md");
@@ -801,6 +802,35 @@ fn m64_docs_describe_urban_foundation_boundaries() {
         assert!(
             !STATUS.contains(forbidden),
             "STATUS contains stale claim {forbidden}"
+        );
+    }
+}
+
+#[test]
+fn mission_command_ir_doc_explains_intent_boundary() {
+    for required in [
+        "mission intent, not hardware execution",
+        "follow_route",
+        "MissionCommandPlan",
+        "mission_command_ir.v1",
+        "MAVLink",
+        "arm",
+        "takeoff",
+    ] {
+        assert!(
+            MISSION_COMMAND_IR.contains(required),
+            "MISSION_COMMAND_IR doc missing '{required}'"
+        );
+    }
+
+    for forbidden in [
+        "hardware execution is supported",
+        "is hardware-ready",
+        "production flight-ready",
+    ] {
+        assert!(
+            !MISSION_COMMAND_IR.contains(forbidden),
+            "MISSION_COMMAND_IR doc contains stale claim '{forbidden}'"
         );
     }
 }

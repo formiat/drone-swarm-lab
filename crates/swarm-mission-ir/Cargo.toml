@@ -1,0 +1,11 @@
+[package]
+name    = "swarm-mission-ir"
+version = "0.1.0"
+edition = "2021"
+license.workspace = true
+
+[dependencies]
+derive_more = { workspace = true }
+serde       = { workspace = true }
+serde_json  = { workspace = true }
+thiserror   = { workspace = true }

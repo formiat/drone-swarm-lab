@@ -40,10 +40,10 @@ pub use urban::{
     detect_blocked_ahead, detect_buses, effective_blocked_edges, expand_route_loop,
     expand_route_loop_with_planner, expand_route_loop_with_planner_name,
     export_route_loop_to_waypoints, judge_route, plan_route, plan_route_excluding,
-    plan_route_with_mode, pose_along_segment, route_risk_score, UrbanBusObservation,
-    UrbanDetectionOutcome, UrbanPlannerMode, UrbanRouteError, UrbanRouteExport,
-    UrbanRouteExportError, UrbanRouteExportMetadata, UrbanRouteExportOptions, UrbanRouteWaypoint,
-    URBAN_BLOCKED_LOOKAHEAD_SEGMENTS,
+    plan_route_with_mode, pose_along_segment, route_risk_score, urban_route_to_follow_route,
+    UrbanBusObservation, UrbanDetectionOutcome, UrbanPlannerMode, UrbanRouteError,
+    UrbanRouteExport, UrbanRouteExportError, UrbanRouteExportMetadata, UrbanRouteExportOptions,
+    UrbanRouteWaypoint, URBAN_BLOCKED_LOOKAHEAD_SEGMENTS,
 };
 pub use urban_analysis::{
     build_urban_judge_report, build_urban_route_trace, count_urban_events,

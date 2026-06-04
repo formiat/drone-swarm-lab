@@ -937,6 +937,7 @@ dependencies = [
  "swarm-alloc",
  "swarm-comms",
  "swarm-metrics",
+ "swarm-mission-ir",
  "swarm-replay",
  "swarm-runtime",
  "swarm-safety",
@@ -955,6 +956,16 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "swarm-mission-ir"
+version = "0.1.0"
+dependencies = [
+ "derive_more",
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -1018,6 +1029,7 @@ dependencies = [
  "swarm-alloc",
  "swarm-comms",
  "swarm-metrics",
+ "swarm-mission-ir",
  "swarm-replay",
  "swarm-runtime",
  "swarm-safety",

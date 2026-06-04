@@ -5,6 +5,11 @@ use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use swarm_mission_ir::{
+    AltitudeReference, CommandId, CompletionTolerance, CoordinateFrame, LocalPosition,
+    MissionCommand, MissionCommandEntry, MissionCommandPlan, MissionCommandSummary, MissionId,
+    MissionWaypoint, Position, TerminalState, TimeoutAction, TimeoutPolicy,
+};
 use swarm_safety::preflight::{SafetyValidationReport, ViolationSeverity};
 use swarm_sim::{
     export_route_loop_to_waypoints, validate_scenario_suite, GeoOrigin, PrimitiveMission,
@@ -230,6 +235,12 @@ pub struct SitlDryRunArtifact {
     pub safety_report: SafetyValidationReport,
     pub command: Vec<String>,
     pub git_commit: Option<String>,
+    /// Compact summary of the mission command IR derived from this plan.
+    ///
+    /// Present only when IR could be constructed from the waypoint list.
+    /// Absent for plans that produce no commands (e.g. zero-waypoint dry-runs).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command_ir_summary: Option<MissionCommandSummary>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, PartialEq)]
@@ -751,6 +762,7 @@ pub fn format_geo_origin(origin: GeoOrigin) -> String {
 
 pub fn dry_run_artifact(plan: &SitlPlan, command: Vec<String>) -> SitlDryRunArtifact {
     let effective_geo_origin = plan.geo_origin.unwrap_or(DEFAULT_SITL_GEO_ORIGIN);
+    let command_ir_summary = build_command_ir_summary(plan);
     SitlDryRunArtifact {
         schema_version: "sitl_dry_run_artifact.v1".to_owned(),
         source_scenario_path: plan.scenario_path.clone(),
@@ -781,7 +793,116 @@ pub fn dry_run_artifact(plan: &SitlPlan, command: Vec<String>) -> SitlDryRunArti
         safety_report: plan.safety_report.clone(),
         command,
         git_commit: option_env!("GIT_COMMIT").map(str::to_owned),
+        command_ir_summary,
     }
+}
+
+/// Builds a `MissionCommandPlan` from the waypoints in a dry-run plan and
+/// returns a compact summary for inclusion in the artifact.
+///
+/// For urban-route exports a single `FollowRoute` command represents the whole
+/// route. For all other exports the plan becomes
+/// `Arm → Takeoff → GoTo* → Land`.
+fn build_command_ir_summary(plan: &SitlPlan) -> Option<MissionCommandSummary> {
+    if plan.waypoints.is_empty() {
+        return None;
+    }
+
+    let mission_id = MissionId::from(format!(
+        "{}-{}-{}",
+        plan.scenario_name, plan.agent_id, plan.export_kind
+    ));
+
+    let altitude_m = plan.waypoints.first().map(|wp| wp.z).unwrap_or(5.0);
+
+    let body_commands: Vec<MissionCommandEntry> = if plan.export_kind == "urban_route" {
+        let waypoints: Vec<MissionWaypoint> = plan
+            .waypoints
+            .iter()
+            .map(|wp| MissionWaypoint {
+                position: Position::Local(LocalPosition {
+                    x_m: wp.x,
+                    y_m: wp.y,
+                    z_m: wp.z,
+                }),
+                acceptance_radius_m: None,
+            })
+            .collect();
+        let route_id = swarm_mission_ir::RouteId::from(plan.planner_or_adapter.clone());
+        vec![MissionCommandEntry {
+            command_id: CommandId::from("follow-route-0".to_owned()),
+            command: MissionCommand::FollowRoute {
+                route_id,
+                waypoints,
+            },
+            source_task_id: None,
+            source_route_id: Some(plan.planner_or_adapter.clone()),
+            source_agent_id: Some(plan.agent_id.clone()),
+        }]
+    } else {
+        plan.waypoints
+            .iter()
+            .enumerate()
+            .map(|(i, wp)| MissionCommandEntry {
+                command_id: CommandId::from(format!("goto-{i}")),
+                command: MissionCommand::GoTo {
+                    position: Position::Local(LocalPosition {
+                        x_m: wp.x,
+                        y_m: wp.y,
+                        z_m: wp.z,
+                    }),
+                },
+                source_task_id: Some(wp.task_id.clone()),
+                source_route_id: None,
+                source_agent_id: Some(plan.agent_id.clone()),
+            })
+            .collect()
+    };
+
+    let mut commands = vec![
+        MissionCommandEntry {
+            command_id: CommandId::from("arm-0".to_owned()),
+            command: MissionCommand::Arm,
+            source_task_id: None,
+            source_route_id: None,
+            source_agent_id: Some(plan.agent_id.clone()),
+        },
+        MissionCommandEntry {
+            command_id: CommandId::from("takeoff-0".to_owned()),
+            command: MissionCommand::Takeoff { altitude_m },
+            source_task_id: None,
+            source_route_id: None,
+            source_agent_id: Some(plan.agent_id.clone()),
+        },
+    ];
+    commands.extend(body_commands);
+    commands.push(MissionCommandEntry {
+        command_id: CommandId::from("land-0".to_owned()),
+        command: MissionCommand::Land,
+        source_task_id: None,
+        source_route_id: None,
+        source_agent_id: Some(plan.agent_id.clone()),
+    });
+
+    let ir_plan = MissionCommandPlan {
+        schema_version: MissionCommandPlan::SCHEMA_VERSION.to_owned(),
+        mission_id,
+        coordinate_frame: CoordinateFrame::LocalNed,
+        altitude_reference: AltitudeReference::RelativeHome,
+        timeout_policy: TimeoutPolicy {
+            command_timeout_secs: 5.0,
+            completion_timeout_secs: 120.0,
+            on_timeout: TimeoutAction::Abort,
+        },
+        expected_terminal_state: TerminalState::Landed,
+        completion_tolerance: CompletionTolerance {
+            position_m: 1.0,
+            altitude_m: 0.5,
+        },
+        commands,
+    };
+
+    Some(MissionCommandSummary::from_plan(&ir_plan))
 }
 
 fn preflight_error_rule_ids(report: &SafetyValidationReport) -> String {

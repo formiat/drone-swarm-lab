@@ -319,7 +319,7 @@ cargo run -p swarm-examples --bin replay -- \
 | Reporting & Metrics | ✅ Stable | M32 | Per-row mission/scenario in exports, mission-scoped profiles, merged `all` benchmark id, wildfire/planner metrics, realism metadata in manifest |
 | Real PX4 | 🧪 Experimental | M49/M58/M59 | Feature-gated single-agent PX4 SITL report/replay plumbing, local multi-agent PX4/SIH execute supervisor plumbing, pre-upload safety validation, arm/takeoff/start, telemetry-to-task progress mapping, controlled `--reupload-on-failure` active-survivor mission replacement, structured final reports, compact SITL event summaries, public `scenarios/sitl.px4-golden.json`, `scenarios/sitl.multi-agent.execute.config.json`, and captured single-agent/upload-only/execute/failure SIH evidence; still not hardware-ready |
 
-**Test coverage:** 380+ tests, 10 crates, 22 JSON scenarios.
+**Test coverage:** 420+ tests, 11 crates, 22 JSON scenarios.
 
 > **Project Status:** For an honest audit of what is fully complete vs partially complete, see [`docs/STATUS.md`](docs/STATUS.md).
 
@@ -600,6 +600,7 @@ See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known l
 | --- | --- |
 | `swarm-types` | Shared IDs, agent/task/message types, pose, velocity, mission semantics (`TaskKind`, `MissionAdapter`). |
 | `swarm-comms` | Transport trait, in-memory network, UDP transport, MAVLink transport (optional). |
+| `swarm-mission-ir` | Hardware-agnostic mission command IR: 13 primitives, explicit semantics, typed validation. Foundational for M81+ backend compilers. |
 | `swarm-runtime` | Membership, failure detection, task registry, coordinator, `AgentNode`. |
 | `swarm-alloc` | Greedy, auction, connectivity-aware, centralized, CBBA allocation strategies. |
 | `swarm-sim` | Deterministic clock, scenario model, generic scenario runner, DSL loader, JSON/CSV export, Urban replay analysis artifacts. |
@@ -680,6 +681,7 @@ points, not a published semver-stable SDK.
 | M77 | ✅ | Algorithm Differentiation: communication-aware greedy/auction scoring via neutral-default `comms_penalty_weight`, wildfire priority-triggered reallocation requests via neutral-default threshold, SAR entropy re-ranking behind `dynamic_belief_updates`, CBBA replay `conflict_count` diagnostics, `--profiles` targeted benchmark filter, and a small release smoke artifact in `results/m77_algorithm_delta/coverage/`; no 1000-seed publication run or CBBA gossip-burst fix |
 | M78 | ✅ | Benchmark Evidence Layer: aggregate reports include stderr/stddev/95% CI/min/max/failure-rate fields for key binary metrics, JSON/CSV rows include `support_status` / `support_reason`, `BenchmarkManifest` records `artifact_kind`, SAR can opt into `run_config.sar_success_threshold`, Urban has explicit `--mission urban`, and `--degradation coverage-packet-loss` produces bounded simulation degradation evidence in `results/m78_degradation_coverage_packet_loss_2026-06-03/` without rerunning the 1000-seed benchmark |
 | M79 | ✅ | M79 Operational Runbooks And Hardware Entry Gate: `docs/OPERATIONAL_RUNBOOKS.md` defines simulation, Urban, SITL dry-run/export, artifact validation, local PX4/SIH, and future hardware-candidate runbooks with preflight checklist, go/no-go gates, post-run inspection, command examples, and conservative boundary language; first hardware experiment is still not product readiness |
+| M80 | ✅ | Mission Command IR: hardware-agnostic `swarm-mission-ir` crate with 13 command primitives (`arm`, `disarm`, `takeoff`, `hold`, `land`, `return_to_launch`, `go_to`, `follow_route`, `loiter_time`, `orbit`, `pause`, `resume`, `abort`), typed validation (`MissionIrError`), Urban route bridge (`urban_route_to_follow_route`), dry-run artifact `command_ir_summary`, and `docs/MISSION_COMMAND_IR.md`; no MAVLink serialisation, no PX4/ArduPilot-specific behavior, no hardware execution |
 
 ---
 
@@ -695,6 +697,7 @@ points, not a published semver-stable SDK.
 | [`docs/ARTIFACT_VALIDATION.md`](docs/ARTIFACT_VALIDATION.md) | M72 artifact validator contract, rule ids, and manual local SITL harness |
 | [`docs/DEGRADED_SUPERVISOR.md`](docs/DEGRADED_SUPERVISOR.md) | M73 degraded-supervisor failure matrix, report fields, replay events, and pre-hardware limits |
 | [`docs/OPERATIONAL_RUNBOOKS.md`](docs/OPERATIONAL_RUNBOOKS.md) | M79 operational runbooks, go/no-go gates, post-run inspection, and hardware entry boundary |
+| [`docs/MISSION_COMMAND_IR.md`](docs/MISSION_COMMAND_IR.md) | M80 mission command IR: 13 command primitives, validation rules, Urban route bridge, and boundary explanation |
 
 ---
 

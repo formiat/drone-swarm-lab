@@ -1,6 +1,7 @@
 use std::error::Error;
 use std::fmt;
 
+use swarm_mission_ir::{LocalPosition, MissionCommand, MissionWaypoint, Position, RouteId};
 use swarm_types::{Pose, UrbanEdgeId, UrbanMap, UrbanNodeId, UrbanPlannedRoute, UrbanRouteLoop};
 
 use super::{expand_route_loop_with_planner_name, UrbanRouteError};
@@ -184,4 +185,49 @@ fn interpolate(from: f64, to: f64, fraction: f64) -> f64 {
 fn stable_task_id(segment_index: usize, edge_id: &UrbanEdgeId, point_index: usize) -> String {
     let edge_id = edge_id.as_ref();
     format!("urban-route-{segment_index}-{edge_id}-{point_index}")
+}
+
+/// Converts a planned Urban route into a hardware-agnostic `MissionCommand::FollowRoute`.
+///
+/// Each segment's destination node becomes a `MissionWaypoint` with a local
+/// position derived from the node's simulation pose. Segments whose destination
+/// node is absent from the map are silently skipped.
+///
+/// Returns `None` when the route has no segments, or when no destination nodes
+/// could be resolved (resulting in an empty waypoint list).
+pub fn urban_route_to_follow_route(
+    map: &UrbanMap,
+    route: &UrbanPlannedRoute,
+    route_id: RouteId,
+    altitude_m: f64,
+) -> Option<MissionCommand> {
+    if route.segments.is_empty() {
+        return None;
+    }
+    let waypoints: Vec<MissionWaypoint> = route
+        .segments
+        .iter()
+        .filter_map(|seg| {
+            map.nodes
+                .iter()
+                .find(|n| n.id == seg.to)
+                .map(|node| MissionWaypoint {
+                    position: Position::Local(LocalPosition {
+                        x_m: node.pose.x,
+                        y_m: node.pose.y,
+                        z_m: altitude_m,
+                    }),
+                    acceptance_radius_m: None,
+                })
+        })
+        .collect();
+
+    if waypoints.is_empty() {
+        return None;
+    }
+
+    Some(MissionCommand::FollowRoute {
+        route_id,
+        waypoints,
+    })
 }
