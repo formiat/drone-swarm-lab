@@ -69,7 +69,7 @@ ID, GitLab MR или review target; `notion_policy=optional`, поэтому Not
 
 ## Implementation steps
 
-1. Add `swarm-mission-ir` dependency to `swarm-comms`.
+1. Add `swarm-mission-ir` and stable digest dependencies to `swarm-comms`.
 
    Files:
 
@@ -80,7 +80,13 @@ ID, GitLab MR или review target; `notion_policy=optional`, поэтому Not
 
    - `swarm-comms` can compile `MissionCommandPlan` into MAVLink plan data
      without introducing a reverse dependency from `swarm-mission-ir`.
+   - `swarm-comms` can compute stable artifact digests via `sha2::Sha256`.
    - No circular dependency: `swarm-mission-ir` remains independent.
+
+   Dependency rule:
+
+   - Add `sha2 = "0.10"` to workspace dependencies if it is not already present.
+   - Add `sha2 = { workspace = true }` to `crates/swarm-comms/Cargo.toml`.
 
 2. Add transport-free compiler module in `swarm-comms`.
 
@@ -182,6 +188,11 @@ ID, GitLab MR или review target; `notion_policy=optional`, поэтому Not
      `MAV_CMD_COMPONENT_ARM_DISARM` in `command_prelude`.
    - `MissionCommand::Takeoff` compiles to `MAV_CMD_NAV_TAKEOFF` in
      `command_prelude`.
+   - `MissionCommand::Hold` compiles to `MAV_CMD_NAV_LOITER_TIME` only when the
+     compiler can resolve a hold anchor position. Anchor resolution order:
+     last compiled waypoint/route item, then `MavlinkCommonPlanOptions.default_hold_position`.
+     If no anchor exists, `Hold` must produce a structured unsupported feature
+     such as `hold_requires_position`, not an implicit or fake location.
    - `MissionCommand::Land` compiles to `MAV_CMD_NAV_LAND`.
    - `MissionCommand::ReturnToLaunch` and `Abort` compile to
      `MAV_CMD_NAV_RETURN_TO_LAUNCH` as command/fallback policy entries.
@@ -199,6 +210,7 @@ ID, GitLab MR или review target; `notion_policy=optional`, поэтому Not
        MissionCommand::Arm => push_command("MAV_CMD_COMPONENT_ARM_DISARM", [1.0, 0.0, ...]),
        MissionCommand::Disarm => push_command("MAV_CMD_COMPONENT_ARM_DISARM", [0.0, 0.0, ...]),
        MissionCommand::Takeoff { altitude_m } => push_command("MAV_CMD_NAV_TAKEOFF", altitude_params(*altitude_m)),
+       MissionCommand::Hold { duration_secs } => compile_hold_or_record_unsupported(entry, *duration_secs),
        MissionCommand::GoTo { position } => push_waypoint_item(entry, position),
        MissionCommand::FollowRoute { waypoints, .. } => push_route_waypoint_items(entry, waypoints),
        MissionCommand::LoiterTime { duration_secs } => push_loiter_time_item(entry, *duration_secs),
@@ -240,7 +252,7 @@ ID, GitLab MR или review target; `notion_policy=optional`, поэтому Not
    Materialized result:
 
    - `command_ir_hash` is deterministic from canonical JSON of
-     `MissionCommandPlan`.
+     `MissionCommandPlan` using a fixed documented digest algorithm.
    - `expected_acks` lists command ACKs and mission upload ACKs in deterministic
      order.
    - `telemetry_milestones` includes at least:
@@ -251,10 +263,16 @@ ID, GitLab MR или review target; `notion_policy=optional`, поэтому Not
    - `validation_result` is `passed` only when IR validation passes and no
      unsupported required feature remains.
 
-   Avoid adding a new crypto dependency unless needed. A deterministic stable
-   non-cryptographic hash can use `std::collections::hash_map::DefaultHasher`
-   over canonical JSON for M81. If a cryptographic artifact identity is needed
-   later, defer to schema-versioned follow-up.
+   Hash contract:
+
+   - Use `sha2::Sha256` over a canonical JSON byte representation of
+     `MissionCommandPlan`.
+   - Prefix the digest input with a stable domain/version string, for example
+     `mavlink_common_plan.ir_hash.v1\0`, before appending JSON bytes.
+   - Encode output as lowercase hex.
+   - Add a golden expected hash test for a small fixed `MissionCommandPlan`.
+   - Do not use `std::collections::hash_map::DefaultHasher`: it is not a
+     documented stable artifact/content digest contract.
 
 7. Integrate compiler into SITL dry-run artifacts.
 
@@ -408,12 +426,16 @@ Planned together with main functional changes:
   `MAV_CMD_NAV_RETURN_TO_LAUNCH`.
 - `arm` and `disarm` compile to `MAV_CMD_COMPONENT_ARM_DISARM` with param1
   `1.0` / `0.0`.
+- `hold` with a resolved anchor compiles to `MAV_CMD_NAV_LOITER_TIME`.
+- `hold` without a resolved anchor returns structured unsupported feature
+  `hold_requires_position` (or equivalent stable rule id).
 - `go_to` compiles to one `MAV_CMD_NAV_WAYPOINT` mission item.
 - `follow_route` compiles to ordered waypoint mission items.
 - `loiter_time` compiles to `MAV_CMD_NAV_LOITER_TIME`.
 - unsupported `pause` / `resume` returns structured unsupported feature.
 - expected ACK list is deterministic.
-- command IR hash is stable for identical input.
+- command IR hash is stable for identical input and matches a golden expected
+  SHA-256 hex digest.
 - orbit fallback produces stable waypoint ordering when enabled.
 - orbit fallback disabled returns structured unsupported feature.
 - dry-run artifact serializes/deserializes `mavlink_common_plan`.
@@ -427,8 +449,9 @@ Planned together with main functional changes:
 - Preflight-report-to-command-id link can be added if the current safety report
   can attach command provenance without changing its schema too much. If schema
   change is too broad, document as M82/M86 follow-up.
-- Golden artifact fixture for `takeoff -> hold -> land` if inline JSON becomes
-  too large for unit tests.
+- Golden artifact fixture for `takeoff -> hold -> land` checks explicit `Hold`
+  behavior: either `MAV_CMD_NAV_LOITER_TIME` when `default_hold_position` is
+  configured, or structured unsupported `hold_requires_position` when it is not.
 
 ### 3. Tests that need heavy refactoring
 
@@ -455,6 +478,13 @@ Planned together with main functional changes:
 - **Orbit fallback realism.** Waypoint approximation is deterministic but not
   equivalent to autopilot-native orbit. Artifact must record fallback mode and
   approximation count.
+- **Hold needs a position.** `MissionCommand::Hold` has duration only. Mapping it
+  to `MAV_CMD_NAV_LOITER_TIME` without an anchor would invent location semantics.
+  M81 must either use an explicit/resolved anchor or record a structured
+  unsupported feature.
+- **Stable hash dependency.** Adding `sha2` is a small dependency increase, but
+  it gives a real reproducible artifact digest. `DefaultHasher` must not be used
+  for artifact identity.
 - **Artifact schema churn.** Adding `mavlink_common_plan` changes dry-run artifact
   shape. Keep field optional to preserve old artifacts and make validator
   behavior mode-aware.
@@ -485,6 +515,11 @@ Planned together with main functional changes:
 - **API/contract exposure:** public plan structs become extension surface.
   Проверка: docs and schema version explicitly state M81 is pre-hardware,
   not semver-stable public SDK.
+- **Hash reproducibility:** changing canonical JSON serialization or digest
+  domain string will alter artifact hashes. Проверка: golden SHA-256 expected
+  hash test and docs/schema version update when intentionally changed.
+- **Hold semantics:** a future executor might accidentally map `Hold` to a fake
+  zero coordinate. Проверка: explicit tests for anchored and unanchored hold.
 
 ## Open questions
 
@@ -494,9 +529,6 @@ Planned together with main functional changes:
 - Should `Pause` / `Resume` be unsupported in M81 or mapped to a conservative
   Common command? Plan recommendation: unsupported until M82 profiles define
   stack-specific behavior.
-- Should `command_ir_hash` use `DefaultHasher` over canonical JSON or introduce
-  a cryptographic hash dependency? Plan recommendation: `DefaultHasher` for M81,
-  no new dependency unless reviewers require stronger artifact identity.
 - Should validator accept a direct dry-run artifact path, or only an output dir?
   Plan recommendation: keep current `--output-dir` contract and discover
   `sitl_dry_run_artifact.v1.json` / `dry-run.json`; add direct artifact path only
