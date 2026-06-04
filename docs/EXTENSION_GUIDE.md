@@ -36,6 +36,7 @@ stable-ish extension points:
 | `swarm-metrics` | `RunMetrics` and `AggregateMetrics` fields used by reports, regression thresholds, and benchmark summaries. |
 | `swarm-mission-ir` | Hardware-agnostic mission command IR (`MissionCommandPlan`, `MissionCommand`, `validate`). Use `urban_route_to_follow_route` in `swarm-sim` to convert Urban routes to IR. See `docs/MISSION_COMMAND_IR.md`. |
 | `swarm-comms::mavlink_common_plan` | M81 transport-free backend compiler surface (`compile_mavlink_common_plan`, `MavlinkCommonPlan`, explicit prelude/upload-start/postlude ordering, expected ACKs, telemetry milestones, structured unsupported features). Use this for MAVLink Common dry-run artifacts before adding PX4/ArduPilot profile-specific behavior. This is no hardware upload. See `docs/MAVLINK_COMMON_COMPILER.md`. |
+| `swarm-comms::mavlink_capability_profile` | M82 compatibility/profile surface (`MavlinkCapabilityProfileId`, `MavlinkCompatibilityReport`, `required_mode_transitions`, `compatibility_matrix_rows`). Use this to make Common/PX4/ArduPilot dry-run support claims explicit before any hardware-facing work. This is not exhaustive autopilot certification. See `docs/MAVLINK_CAPABILITY_PROFILES.md`. |
 | Scenario DSL | JSON scenario suites with explicit `schema_version` documented in `docs/SCENARIO_DSL.md`. |
 | Replay/report schemas | Simulation replay `0.2`, SITL event log `sitl_event_log.v1`, SITL reports `sitl_run_report.v1` / `sitl_multi_agent_run_report.v1`. |
 
@@ -53,7 +54,7 @@ Internal or experimental:
 |---|---|
 | `swarm-examples` binaries | CLI behavior is user-facing, but most implementation modules are binary support code. |
 | SITL supervisor internals | Controller state machines and fake controllers are not external extension points. |
-| MAVLink transport internals | Experimental PX4/SIH plumbing, not a general ground-control API. The M81 `MavlinkCommonPlan` is transport-free; upload/message serialization remains separate. |
+| MAVLink transport internals | Experimental PX4/SIH plumbing, not a general ground-control API. The M81 `MavlinkCommonPlan` is transport-free; M82 profiles annotate dry-run compatibility; upload/message serialization remains separate. |
 | Test-only fixtures | They validate extension contracts but are not supported missions or strategies. |
 
 ## Add A Mission

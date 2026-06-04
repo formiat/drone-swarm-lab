@@ -543,7 +543,7 @@ Parametric sweeps over variables such as packet loss, agent count, or grid size 
 ## Known Limitations
 
 1. **Simulation/SITL only:** No real hardware workflow; PX4 integration is limited to experimental local SITL waypoint upload, opt-in single-agent lifecycle/progress tracking, local multi-agent PX4/SIH execute supervisor plumbing, controlled active-survivor mission replacement after failed-agent reallocation, and captured SIH evidence with static pre-upload safety checks.
-2. **Hardware boundary:** Remote UDP, wildcard UDP, TCP, and serial connection strings are hardware candidates and require `--allow-hardware-candidate`; this is only an explicit opt-in guard, not flight certification or proof of hardware readiness. See [`docs/HARDWARE_READINESS.md`](docs/HARDWARE_READINESS.md).
+2. **Hardware boundary:** Remote UDP, wildcard UDP, TCP, and serial connection strings are hardware candidates and require `--allow-hardware-candidate`; this is only an explicit opt-in guard, not flight certification or proof of hardware readiness. M82 MAVLink capability profiles make Common/PX4/ArduPilot compatibility caveats visible in dry-run artifacts, but they are not exhaustive autopilot validation. See [`docs/HARDWARE_READINESS.md`](docs/HARDWARE_READINESS.md) and [`docs/MAVLINK_CAPABILITY_PROFILES.md`](docs/MAVLINK_CAPABILITY_PROFILES.md).
 3. **Multi-agent SITL remains experimental:** M52/M58/M59 support config-driven per-agent task subsets, dry-run/mock manifests, mock supervisor reallocation, standalone command generation, duplicate ownership checks, local PX4 SIH upload-only verification, a local live execute supervisor path, and controlled active-survivor mission replacement after a failed agent. It does not provide robust distributed coordination, automated PX4 CI, Gazebo/HIL/hardware validation, or hardware safety guarantees.
 4. **SITL coordinate frame:** `sitl_agent` dry-run/mock mode treats `Pose { x, y, z }` as local simulation coordinates; `x/y` are not WGS84 latitude/longitude, and `z` is local altitude.
 5. **3D pose:** Scenarios support `z` coordinate and altitude-aware sensors, but most missions operate primarily in XY plane.
@@ -599,7 +599,7 @@ See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known l
 | Crate | Purpose |
 | --- | --- |
 | `swarm-types` | Shared IDs, agent/task/message types, pose, velocity, mission semantics (`TaskKind`, `MissionAdapter`). |
-| `swarm-comms` | Transport trait, in-memory network, UDP transport, optional MAVLink transport, and M81 transport-free MAVLink Common compiler (`MavlinkCommonPlan`). |
+| `swarm-comms` | Transport trait, in-memory network, UDP transport, optional MAVLink transport, M81 transport-free MAVLink Common compiler (`MavlinkCommonPlan`), and M82 MAVLink capability profiles for Common/PX4/ArduPilot dry-run compatibility annotations. |
 | `swarm-mission-ir` | Hardware-agnostic mission command IR: 13 primitives, explicit semantics, typed validation. Foundation for backend compilers such as M81. |
 | `swarm-runtime` | Membership, failure detection, task registry, coordinator, `AgentNode`. |
 | `swarm-alloc` | Greedy, auction, connectivity-aware, centralized, CBBA allocation strategies. |
@@ -683,6 +683,7 @@ points, not a published semver-stable SDK.
 | M79 | ✅ | M79 Operational Runbooks And Hardware Entry Gate: `docs/OPERATIONAL_RUNBOOKS.md` defines simulation, Urban, SITL dry-run/export, artifact validation, local PX4/SIH, and future hardware-candidate runbooks with preflight checklist, go/no-go gates, post-run inspection, command examples, and conservative boundary language; first hardware experiment is still not product readiness |
 | M80 | ✅ | Mission Command IR: hardware-agnostic `swarm-mission-ir` crate with 13 command primitives (`arm`, `disarm`, `takeoff`, `hold`, `land`, `return_to_launch`, `go_to`, `follow_route`, `loiter_time`, `orbit`, `pause`, `resume`, `abort`), typed validation (`MissionIrError`), Urban route bridge (`urban_route_to_follow_route`), dry-run artifact `command_ir_summary`, and `docs/MISSION_COMMAND_IR.md`; no MAVLink serialisation, no PX4/ArduPilot-specific behavior, no hardware execution |
 | M81 | ✅ | MAVLink Common Compiler: `swarm-comms` compiles `MissionCommandPlan` into transport-free `MavlinkCommonPlan` artifacts with typed `MAV_CMD_NAV_TAKEOFF`, `MAV_CMD_NAV_WAYPOINT`, `MAV_CMD_NAV_LOITER_TIME`, `MAV_CMD_NAV_LAND`, explicit `command_prelude` / mission upload-start / `command_postlude` ordering, deterministic SHA-256 `command_ir_hash`, expected ACKs, telemetry milestones, structured unsupported features, dry-run artifact integration, and `artifact_validator --mode dry-run`; no hardware upload; PX4/ArduPilot semantics are not identical |
+| M82 | ✅ | PX4 / ArduPilot Capability Profiles: `swarm-comms` exposes `MavlinkCapabilityProfileId`, conservative Common/PX4/ArduPilot profile data, `MavlinkCompatibilityReport`, per-command `required_execution_mode` / `required_mode_transitions` / caveats, `compatibility_matrix_rows()` for the docs compatibility matrix, and dry-run `--mavlink-profile mavlink_common_generic\|px4\|ardupilot`; `artifact_validator --mode dry-run` now checks the compatibility section and hardware-blocking unknown/unsupported classifications; no exhaustive autopilot certification, no vendor SDK integration, no hardware upload |
 
 ---
 
@@ -700,6 +701,7 @@ points, not a published semver-stable SDK.
 | [`docs/OPERATIONAL_RUNBOOKS.md`](docs/OPERATIONAL_RUNBOOKS.md) | M79 operational runbooks, go/no-go gates, post-run inspection, and hardware entry boundary |
 | [`docs/MISSION_COMMAND_IR.md`](docs/MISSION_COMMAND_IR.md) | M80 mission command IR: 13 command primitives, validation rules, Urban route bridge, and boundary explanation |
 | [`docs/MAVLINK_COMMON_COMPILER.md`](docs/MAVLINK_COMMON_COMPILER.md) | M81 MAVLink Common Compiler: `MavlinkCommonPlan`, supported Common commands, dry-run validation, and no-hardware-upload boundary |
+| [`docs/MAVLINK_CAPABILITY_PROFILES.md`](docs/MAVLINK_CAPABILITY_PROFILES.md) | M82 MAVLink capability profiles: Common/PX4/ArduPilot compatibility classes, required mode transitions, dry-run artifact report fields, and compatibility matrix |
 
 ---
 

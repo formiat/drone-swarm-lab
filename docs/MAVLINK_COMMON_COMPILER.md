@@ -16,9 +16,10 @@ This is a compiler artifact, not a flight run:
 - no `MISSION_ITEM_INT` byte/message serialization.
 
 PX4/ArduPilot semantics are not identical even when both stacks expose MAVLink
-Common commands. M81 deliberately emits a generic `mavlink_common_generic`
-profile and leaves stack-specific acceptance/rejection rules to future
-capability profiles.
+Common commands. M81 still emits generic Common command intent; M82 adds a
+separate capability/profile pass that annotates the plan with
+`MavlinkCompatibilityReport` for `mavlink_common_generic`, `px4`, or
+`ardupilot`. The profile pass does not silently rewrite mission semantics.
 
 ## Output Shape
 
@@ -36,7 +37,10 @@ capability profiles.
 - `expected_acks` / expected ACKs;
 - `telemetry_milestones`;
 - `unsupported_features`;
-- `validation_result`.
+- `validation_result`;
+- optional M82 `compatibility` report with per-command classifications,
+  `required_execution_mode`, `required_mode_transitions`, preconditions and
+  caveats.
 
 Dry-run artifacts from `sitl_agent --dry-run --dry-run-artifact <path>` include
 this plan as optional `mavlink_common_plan` next to the existing
@@ -83,7 +87,7 @@ not invent a fake coordinate.
 
 `artifact_validator --mode dry-run` looks for
 `sitl_dry_run_artifact.v1.json` or legacy `dry-run.json` and checks the M81
-section:
+section plus the M82 compatibility report for current artifacts:
 
 - `artifact.mavlink_plan_missing`;
 - `artifact.mavlink_plan_schema_unsupported`;
@@ -91,10 +95,17 @@ section:
 - `artifact.mavlink_plan_ack_missing`;
 - `artifact.mavlink_plan_order_unsafe`;
 - `artifact.mavlink_plan_unsupported_required`;
-- `artifact.mavlink_plan_ir_hash_missing`.
+- `artifact.mavlink_plan_ir_hash_missing`;
+- `artifact.mavlink_profile_missing`;
+- `artifact.mavlink_profile_unknown`;
+- `artifact.mavlink_profile_unsupported`;
+- `artifact.mavlink_profile_hardware_blocking`.
 
 These checks validate artifact consistency only. They do not prove PX4, Gazebo,
 HIL, hardware, or production readiness.
+
+See [`docs/MAVLINK_CAPABILITY_PROFILES.md`](MAVLINK_CAPABILITY_PROFILES.md) for
+the M82 compatibility classes, compatibility matrix, and profile caveats.
 
 ## Example
 
@@ -103,7 +114,8 @@ cargo run --bin sitl_agent -- \
   --dry-run \
   --scenario scenarios/urban.patrol.json \
   --agent-id agent-0 \
-  --dry-run-artifact target/m81-dry-run/sitl_dry_run_artifact.v1.json
+  --dry-run-artifact target/m81-dry-run/sitl_dry_run_artifact.v1.json \
+  --mavlink-profile px4
 
 cargo run -p swarm-examples --bin artifact_validator -- \
   --output-dir target/m81-dry-run \

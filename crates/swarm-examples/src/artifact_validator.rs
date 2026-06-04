@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use swarm_comms::{
-    MavlinkCommonCommand, MavlinkCommonCommandName, MavlinkCommonPlan, MavlinkExpectedAckKind,
-    MAVLINK_COMMON_PLAN_SCHEMA_VERSION,
+    MavlinkCapabilityProfileId, MavlinkCommonCommand, MavlinkCommonCommandName, MavlinkCommonPlan,
+    MavlinkCompatibilityClass, MavlinkExpectedAckKind, MAVLINK_COMMON_PLAN_SCHEMA_VERSION,
 };
 use swarm_safety::preflight::SafetyValidationReport;
 
@@ -47,6 +47,11 @@ pub const RULE_MAVLINK_PLAN_ORDER_UNSAFE: &str = "artifact.mavlink_plan_order_un
 pub const RULE_MAVLINK_PLAN_UNSUPPORTED_REQUIRED: &str =
     "artifact.mavlink_plan_unsupported_required";
 pub const RULE_MAVLINK_PLAN_IR_HASH_MISSING: &str = "artifact.mavlink_plan_ir_hash_missing";
+pub const RULE_MAVLINK_PROFILE_MISSING: &str = "artifact.mavlink_profile_missing";
+pub const RULE_MAVLINK_PROFILE_UNKNOWN: &str = "artifact.mavlink_profile_unknown";
+pub const RULE_MAVLINK_PROFILE_UNSUPPORTED: &str = "artifact.mavlink_profile_unsupported";
+pub const RULE_MAVLINK_PROFILE_HARDWARE_BLOCKING: &str =
+    "artifact.mavlink_profile_hardware_blocking";
 pub const RULE_PARSE_FAILED: &str = "artifact.parse_failed";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -357,6 +362,7 @@ impl<'a> Validator<'a> {
         self.validate_mavlink_mission_item_sequences(plan, path);
         self.validate_mavlink_ordering(plan, path);
         self.validate_mavlink_expected_acks(plan, path);
+        self.validate_mavlink_compatibility(plan, path);
         let has_required_unsupported = plan
             .unsupported_features
             .iter()
@@ -366,6 +372,91 @@ impl<'a> Validator<'a> {
                 RULE_MAVLINK_PLAN_UNSUPPORTED_REQUIRED,
                 path.clone(),
                 "validation_result.passed must be false when unsupported required features are present",
+            );
+        }
+    }
+
+    fn validate_mavlink_compatibility(&mut self, plan: &MavlinkCommonPlan, path: &Option<PathBuf>) {
+        if plan
+            .backend_profile
+            .parse::<MavlinkCapabilityProfileId>()
+            .is_err()
+        {
+            self.push_error(
+                RULE_MAVLINK_PROFILE_UNKNOWN,
+                path.clone(),
+                format!(
+                    "mavlink_common_plan.backend_profile '{}' is not a known M82 profile",
+                    plan.backend_profile
+                ),
+            );
+        }
+
+        let Some(report) = plan.compatibility.as_ref() else {
+            let severity = if self.options.allow_historical
+                || matches!(self.options.mode, ArtifactValidationMode::Historical)
+            {
+                ArtifactValidationSeverity::Warning
+            } else {
+                ArtifactValidationSeverity::Error
+            };
+            self.push(
+                RULE_MAVLINK_PROFILE_MISSING,
+                severity,
+                path.clone(),
+                "current dry-run mavlink_common_plan must include M82 compatibility report",
+            );
+            return;
+        };
+
+        if plan.backend_profile != report.profile.as_str() {
+            self.push_error(
+                RULE_MAVLINK_PROFILE_UNKNOWN,
+                path.clone(),
+                format!(
+                    "backend_profile '{}' does not match compatibility.profile '{}'",
+                    plan.backend_profile,
+                    report.profile.as_str()
+                ),
+            );
+        }
+
+        let expected_results = plan.command_prelude.len()
+            + plan.command_postlude.len()
+            + usize::from(plan.mission_start.is_some())
+            + plan.mission_items.len();
+        if report.command_results.len() != expected_results {
+            self.push_error(
+                RULE_MAVLINK_PLAN_COMMAND_MISSING,
+                path.clone(),
+                format!(
+                    "compatibility command_results length {} does not match compiled command/item count {expected_results}",
+                    report.command_results.len()
+                ),
+            );
+        }
+
+        if report
+            .command_results
+            .iter()
+            .any(|result| result.classification == MavlinkCompatibilityClass::Unsupported)
+        {
+            self.push_error(
+                RULE_MAVLINK_PROFILE_UNSUPPORTED,
+                path.clone(),
+                "compatibility report contains unsupported command or frame",
+            );
+        }
+
+        let hardware_blocking = report
+            .command_results
+            .iter()
+            .any(|result| result.classification.blocks_hardware_facing_success());
+        if hardware_blocking && report.hardware_facing_allowed {
+            self.push_error(
+                RULE_MAVLINK_PROFILE_HARDWARE_BLOCKING,
+                path.clone(),
+                "hardware_facing_allowed must be false when unsupported/unknown profile behavior remains",
             );
         }
     }

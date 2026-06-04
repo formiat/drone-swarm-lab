@@ -227,6 +227,19 @@ fn dry_run_artifact_contains_export_metadata() {
         json["mavlink_common_plan"]["schema_version"],
         "mavlink_common_plan.v1"
     );
+    assert_eq!(
+        json["mavlink_common_plan"]["backend_profile"],
+        "mavlink_common_generic"
+    );
+    assert_eq!(
+        json["mavlink_common_plan"]["compatibility"]["profile"],
+        "mavlink_common_generic"
+    );
+    assert!(
+        json["mavlink_common_plan"]["compatibility"]["command_results"]
+            .as_array()
+            .is_some_and(|items| !items.is_empty())
+    );
     assert!(json["mavlink_common_plan"]["command_ir_hash"]
         .as_str()
         .is_some_and(|value| value.len() == 64));
@@ -249,6 +262,60 @@ fn dry_run_artifact_contains_export_metadata() {
         json["mavlink_common_plan"]["validation_result"]["passed"],
         true
     );
+}
+
+#[test]
+fn dry_run_artifact_can_select_px4_mavlink_profile() {
+    let scenario = public_scenario("scenarios/urban.patrol.json");
+    let report_dir = tempfile::tempdir().unwrap();
+    let artifact = report_dir.path().join("urban-px4-dry-run.json");
+    let output = run_sitl_agent(&[
+        "--dry-run",
+        "--scenario",
+        &scenario,
+        "--agent-id",
+        "agent-0",
+        "--dry-run-artifact",
+        artifact.to_str().unwrap(),
+        "--mavlink-profile",
+        "px4",
+    ]);
+
+    assert!(output.status.success());
+    let json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&artifact).unwrap()).unwrap();
+    assert_eq!(json["mavlink_common_plan"]["backend_profile"], "px4");
+    assert_eq!(
+        json["mavlink_common_plan"]["compatibility"]["profile"],
+        "px4"
+    );
+    assert_eq!(
+        json["mavlink_common_plan"]["compatibility"]["overall_classification"],
+        "supported_with_caveats"
+    );
+    assert!(json["mavlink_common_plan"]["compatibility"]["caveats"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|value| value.as_str().unwrap().contains("PX4")));
+}
+
+#[test]
+fn dry_run_rejects_invalid_mavlink_profile() {
+    let scenario = write_sitl_scenario();
+    let output = run_sitl_agent(&[
+        "--dry-run",
+        "--scenario",
+        scenario.path().to_str().unwrap(),
+        "--agent-id",
+        "agent-0",
+        "--mavlink-profile",
+        "nope",
+    ]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("invalid MAVLink capability profile 'nope'"));
 }
 
 #[test]

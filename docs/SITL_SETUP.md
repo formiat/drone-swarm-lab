@@ -185,11 +185,16 @@ args, local-to-global coordinate summaries, `command_ir_summary`, and the M81
 such as `MAV_CMD_NAV_TAKEOFF` and `MAV_CMD_NAV_WAYPOINT`, explicit
 `command_prelude` / mission upload-start / `command_postlude` ordering,
 expected ACKs, telemetry milestones, structured unsupported features, and a
-deterministic SHA-256 `command_ir_hash`. This artifact is portable and requires
-no PX4 process.
+deterministic SHA-256 `command_ir_hash`. M82 adds
+`--mavlink-profile mavlink_common_generic|px4|ardupilot`; current dry-run
+artifacts include a `compatibility` report with profile classification,
+`required_execution_mode`, `required_mode_transitions`, preconditions and
+mode caveats. This artifact is portable and requires no PX4 process.
 
 The M81 dry-run compiler has no hardware upload side effect. It does not start
-PX4, does not open a MAVLink transport, and PX4/ArduPilot semantics are not identical. This is the `artifact_validator --mode dry-run` path.
+PX4, does not open a MAVLink transport, and PX4/ArduPilot semantics are not identical.
+M82 profiles make those caveats visible; they are not exhaustive
+autopilot certification. This is the `artifact_validator --mode dry-run` path.
 Validate the artifact with:
 
 ```bash
@@ -197,6 +202,17 @@ cargo run -p swarm-examples --bin artifact_validator -- \
   --output-dir results/urban_route_export \
   --mode dry-run \
   --strict
+```
+
+For a PX4-oriented dry-run artifact:
+
+```bash
+cargo run --bin sitl_agent -- \
+  --dry-run \
+  --scenario scenarios/urban.patrol.json \
+  --agent-id agent-0 \
+  --dry-run-artifact results/urban_route_export/sitl_dry_run_artifact.v1.json \
+  --mavlink-profile px4
 ```
 
 This path is not a hardware run and not a real obstacle-avoidance system. It

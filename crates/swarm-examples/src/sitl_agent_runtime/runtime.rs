@@ -9,8 +9,8 @@ use crate::sitl_multi_agent::{
 };
 use crate::sitl_plan::{
     build_sitl_plan_for_task_ids, classify_connection_string, first_sitl_entry,
-    format_dry_run_plan, load_sitl_suite, write_dry_run_artifact, SitlConnectionClass, SitlError,
-    SitlMode,
+    format_dry_run_plan, load_sitl_suite, write_dry_run_artifact_with_mavlink_profile,
+    SitlConnectionClass, SitlError, SitlMode,
 };
 use crate::sitl_safety::{
     load_sitl_safety_config, validate_pre_upload_safety, validate_pre_upload_safety_for_task_ids,
@@ -96,7 +96,12 @@ pub fn run() -> Result<(), SitlError> {
         SitlMode::DryRun => {
             print!("{}", format_dry_run_plan(&plan));
             if let Some(path) = cli.dry_run_artifact.as_deref() {
-                write_dry_run_artifact(path, &plan, std::env::args().collect())?;
+                write_dry_run_artifact_with_mavlink_profile(
+                    path,
+                    &plan,
+                    std::env::args().collect(),
+                    cli.mavlink_profile,
+                )?;
                 eprintln!("SITL dry-run artifact written: {path}");
             }
             Ok(())

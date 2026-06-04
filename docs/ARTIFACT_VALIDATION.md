@@ -37,7 +37,11 @@ For dry-run validation, the output directory may contain:
 
 Legacy/test packs may use `dry-run.json`. In `--mode dry-run`,
 `artifact_validator` validates the dry-run artifact and its M81
-`mavlink_common_plan` section instead of requiring `manifest.json`.
+`mavlink_common_plan` section instead of requiring `manifest.json`. Current
+dry-run artifacts also need the M82 `compatibility` section produced by the
+selected MAVLink capability profile. That section records per-command
+classification, `required_execution_mode`, `required_mode_transitions`,
+preconditions, and caveats.
 
 ## Validator CLI
 
@@ -62,7 +66,7 @@ cargo run -p swarm-examples --bin artifact_validator -- \
 
 Use `--json` to print `artifact_validation_report.v1`.
 
-Validate a dry-run M81 compiler artifact. This is the
+Validate a dry-run M81/M82 compiler artifact. This is the
 `artifact_validator --mode dry-run` path:
 
 ```bash
@@ -110,6 +114,10 @@ Exit codes:
 | `artifact.mavlink_plan_order_unsafe` | A post-route lifecycle command such as land/RTL appears in `command_prelude` while uploaded mission items are present. |
 | `artifact.mavlink_plan_unsupported_required` | Required unsupported features are present while `validation_result.passed` is still true. |
 | `artifact.mavlink_plan_ir_hash_missing` | `command_ir_hash` is absent or empty. |
+| `artifact.mavlink_profile_missing` | Current dry-run `mavlink_common_plan` has no M82 compatibility report. Historical artifacts may downgrade this to a warning with `--allow-historical`. |
+| `artifact.mavlink_profile_unknown` | `backend_profile` is not one of `mavlink_common_generic`, `px4`, or `ardupilot`, or does not match `compatibility.profile`. |
+| `artifact.mavlink_profile_unsupported` | The compatibility report contains an unsupported command, frame, or profile behavior. |
+| `artifact.mavlink_profile_hardware_blocking` | `hardware_facing_allowed` is true even though `unsupported`, `requires_stack_specific_mapping`, or `unknown_until_sitl_or_hardware` behavior remains. |
 | `artifact.parse_failed` | A required artifact could not be read or parsed. |
 
 ## Local Harness

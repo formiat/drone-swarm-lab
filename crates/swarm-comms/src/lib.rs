@@ -1,5 +1,6 @@
 pub mod connectivity;
 pub mod mavlink;
+pub mod mavlink_capability_profile;
 pub mod mavlink_common_plan;
 pub mod mavlink_coords;
 pub mod network;
@@ -8,6 +9,13 @@ pub mod transport;
 pub use connectivity::{ConnectivityModel, ConnectivitySnapshot};
 pub use mavlink::{
     task_to_waypoint, waypoint_status_to_task_status, MavlinkError, MockMavlinkTransport, Waypoint,
+};
+pub use mavlink_capability_profile::{
+    classify_mavlink_plan_compatibility, compatibility_matrix_rows, MavlinkCapabilityProfile,
+    MavlinkCapabilityProfileId, MavlinkCapabilityProfileParseError, MavlinkCommandCapabilityRule,
+    MavlinkCommandCompatibility, MavlinkCompatibilityClass, MavlinkCompatibilityMatrixRow,
+    MavlinkCompatibilityReport, MavlinkExecutionMode, MavlinkModeRequirement,
+    MavlinkModeTransitionRule, MavlinkRequiredModeTransition,
 };
 pub use mavlink_common_plan::{
     compile_mavlink_common_plan, MavlinkCommonCommand, MavlinkCommonCommandName,

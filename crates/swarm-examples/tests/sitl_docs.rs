@@ -12,6 +12,8 @@ const ARTIFACT_VALIDATION: &str = include_str!("../../../docs/ARTIFACT_VALIDATIO
 const DEGRADED_SUPERVISOR: &str = include_str!("../../../docs/DEGRADED_SUPERVISOR.md");
 const OPERATIONAL_RUNBOOKS: &str = include_str!("../../../docs/OPERATIONAL_RUNBOOKS.md");
 const MAVLINK_COMMON_COMPILER: &str = include_str!("../../../docs/MAVLINK_COMMON_COMPILER.md");
+const MAVLINK_CAPABILITY_PROFILES: &str =
+    include_str!("../../../docs/MAVLINK_CAPABILITY_PROFILES.md");
 const M62_RESULT_README: &str =
     include_str!("../../../results/all_500_jobs14_m62_release/README.md");
 
@@ -900,6 +902,10 @@ fn mavlink_common_compiler_docs_are_synchronized() {
         "artifact.mavlink_plan_ack_missing",
         "artifact.mavlink_plan_order_unsafe",
         "artifact.mavlink_plan_ir_hash_missing",
+        "artifact.mavlink_profile_missing",
+        "artifact.mavlink_profile_unknown",
+        "artifact.mavlink_profile_unsupported",
+        "artifact.mavlink_profile_hardware_blocking",
         "--mode dry-run",
     ] {
         assert!(
@@ -920,6 +926,60 @@ fn mavlink_common_compiler_docs_are_synchronized() {
         assert!(
             HARDWARE_READINESS.contains(required),
             "HARDWARE_READINESS doc missing {required}"
+        );
+    }
+}
+
+#[test]
+fn mavlink_capability_profile_docs_are_synchronized() {
+    for required in [
+        "M82",
+        "PX4 / ArduPilot Capability Profiles",
+        "MavlinkCompatibilityReport",
+        "mavlink_common_generic",
+        "px4",
+        "ardupilot",
+        "supported_with_caveats",
+        "unknown_until_sitl_or_hardware",
+        "required_execution_mode",
+        "required_mode_transitions",
+        "compatibility matrix",
+        "no exhaustive autopilot certification",
+        "--mavlink-profile",
+    ] {
+        assert!(
+            MAVLINK_CAPABILITY_PROFILES.contains(required),
+            "MAVLINK_CAPABILITY_PROFILES doc missing {required}"
+        );
+    }
+
+    for row in swarm_comms::compatibility_matrix_rows() {
+        assert!(
+            MAVLINK_CAPABILITY_PROFILES.contains(row.row_key),
+            "MAVLINK_CAPABILITY_PROFILES doc missing matrix row {}",
+            row.row_key
+        );
+    }
+
+    for required in [
+        "M82",
+        "PX4 / ArduPilot Capability Profiles",
+        "MavlinkCompatibilityReport",
+        "required_mode_transitions",
+        "compatibility matrix",
+    ] {
+        assert!(README.contains(required), "README missing {required}");
+        assert!(STATUS.contains(required), "STATUS missing {required}");
+    }
+
+    for required in [
+        "required_mode_transitions",
+        "artifact.mavlink_profile_missing",
+        "artifact.mavlink_profile_hardware_blocking",
+    ] {
+        assert!(
+            ARTIFACT_VALIDATION.contains(required),
+            "ARTIFACT_VALIDATION doc missing {required}"
         );
     }
 }

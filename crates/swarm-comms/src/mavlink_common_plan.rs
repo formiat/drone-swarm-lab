@@ -7,6 +7,9 @@ use swarm_mission_ir::{
     MissionCommandPlan, OrbitDirection, Position, TerminalState,
 };
 
+use crate::mavlink_capability_profile::{
+    classify_mavlink_plan_compatibility, MavlinkCapabilityProfileId, MavlinkCompatibilityReport,
+};
 use crate::mavlink_coords::{
     local_to_mavlink_int, relative_altitude, scaled_coordinate, MavlinkCoordinateError,
     MavlinkCoordinateOrigin, MavlinkIntCoordinate,
@@ -38,8 +41,10 @@ pub fn compile_mavlink_common_plan(
 /// Options for the transport-free MAVLink Common compiler.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MavlinkCommonPlanOptions {
-    /// Stable backend profile label written to artifacts.
+    /// Legacy backend profile label retained for source compatibility.
     pub backend_profile: String,
+    /// Selected compatibility profile used for M82 annotations and artifact labels.
+    pub capability_profile: MavlinkCapabilityProfileId,
     /// WGS84 origin used when compiling local mission positions.
     pub home_origin: Option<MavlinkCoordinateOrigin>,
     /// Optional anchor used when `Hold` / `LoiterTime` has no previous waypoint.
@@ -52,6 +57,7 @@ impl Default for MavlinkCommonPlanOptions {
     fn default() -> Self {
         Self {
             backend_profile: "mavlink_common_generic".to_owned(),
+            capability_profile: MavlinkCapabilityProfileId::default(),
             home_origin: None,
             default_hold_position: None,
             orbit_strategy: MavlinkOrbitStrategy::Unsupported,
@@ -117,6 +123,9 @@ pub struct MavlinkCommonPlan {
     pub unsupported_features: Vec<MavlinkUnsupportedFeature>,
     /// Validation summary for the compiled plan.
     pub validation_result: MavlinkPlanValidationResult,
+    /// M82 capability profile compatibility report.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compatibility: Option<MavlinkCompatibilityReport>,
 }
 
 /// A MAVLink `COMMAND_LONG`-style command in transport-free form.
@@ -742,11 +751,11 @@ impl<'a> Compiler<'a> {
                 "{unsupported_required_count} required feature(s) are unsupported by M81"
             ));
         }
-        Ok(MavlinkCommonPlan {
+        let mut compiled = MavlinkCommonPlan {
             schema_version: MAVLINK_COMMON_PLAN_SCHEMA_VERSION.to_owned(),
             source_mission_id: self.plan.mission_id.as_ref().clone(),
             command_ir_hash: command_ir_hash(self.plan)?,
-            backend_profile: self.options.backend_profile.clone(),
+            backend_profile: self.options.capability_profile.as_str().to_owned(),
             command_prelude: self.command_prelude,
             geofence_prelude: None,
             mission_items: self.mission_items,
@@ -761,7 +770,23 @@ impl<'a> Compiler<'a> {
                 unsupported_required_count,
                 notes,
             },
-        })
+            compatibility: None,
+        };
+        let compatibility = classify_mavlink_plan_compatibility(
+            &compiled,
+            self.options.capability_profile.profile(),
+        );
+        let profile_unsupported_count = compatibility.unsupported_count();
+        if profile_unsupported_count > 0 {
+            compiled.validation_result.passed = false;
+            compiled.validation_result.unsupported_required_count += profile_unsupported_count;
+            compiled.validation_result.notes.push(format!(
+                "{profile_unsupported_count} profile compatibility issue(s) are unsupported by {}",
+                self.options.capability_profile.as_str()
+            ));
+        }
+        compiled.compatibility = Some(compatibility);
+        Ok(compiled)
     }
 }
 

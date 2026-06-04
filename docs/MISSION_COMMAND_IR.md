@@ -8,7 +8,7 @@ The Mission Command IR is a hardware-agnostic representation of drone mission
 actions. It sits between mission planning and hardware-specific execution:
 
 ```text
-MissionIntent -> MissionCommand IR -> MAVLink Common Compiler (M81) -> backend/profile execution layer
+MissionIntent -> MissionCommand IR -> MAVLink Common Compiler (M81) -> capability profile pass (M82) -> backend/profile execution layer
 ```
 
 A `MissionCommandPlan` encodes **what** a mission should do — the sequence of
@@ -21,9 +21,9 @@ policy. It does **not** encode:
 - Any network transport or serial link.
 
 M81 implements the first backend compiler: `compile_mavlink_common_plan`
-translates the IR into a transport-free `MavlinkCommonPlan`. Later layers can
-apply PX4/ArduPilot capability profiles and transport/upload behavior without
-moving MAVLink fields back into mission logic.
+translates the IR into a transport-free `MavlinkCommonPlan`. M82 applies
+PX4/ArduPilot capability profiles as an annotation/report pass without moving
+MAVLink fields back into mission logic.
 
 ## Command primitives
 
@@ -120,7 +120,11 @@ the route has no segments or when no node poses can be resolved.
   [`docs/MAVLINK_COMMON_COMPILER.md`](MAVLINK_COMMON_COMPILER.md).
   Validate dry-run compiler artifacts with `artifact_validator --mode dry-run`.
 - **M82 PX4 / ArduPilot Capability Profiles**: annotates or rejects commands
-  based on autopilot-stack compatibility.
+  based on autopilot-stack compatibility. The report records
+  `supported_with_caveats`, `unknown_until_sitl_or_hardware`,
+  `required_execution_mode`, `required_mode_transitions`, preconditions and
+  `mode_caveats` for `mavlink_common_generic`, `px4`, and `ardupilot`.
+  See [`docs/MAVLINK_CAPABILITY_PROFILES.md`](MAVLINK_CAPABILITY_PROFILES.md).
 - **M83 Primitive Real Mission Pack**: three concrete missions that compile to
   MAVLink plans.
 
@@ -132,4 +136,6 @@ The crate `swarm-mission-ir` uses schema version `"mission_command_ir.v1"` for
 summary of the IR derived from the waypoint list and an optional
 `mavlink_common_plan` field using schema version `"mavlink_common_plan.v1"`.
 That plan preserves phase ordering for `command_prelude`, mission upload/start,
-and `command_postlude`; it still does not upload anything to hardware.
+and `command_postlude`; M82 adds an optional `compatibility` section with the
+selected profile and compatibility classification. It still does not upload
+anything to hardware.

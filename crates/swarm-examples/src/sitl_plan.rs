@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use swarm_comms::{
-    compile_mavlink_common_plan, MavlinkCommonPlan, MavlinkCommonPlanOptions,
-    MavlinkCoordinateOrigin, MavlinkOrbitStrategy,
+    compile_mavlink_common_plan, MavlinkCapabilityProfileId, MavlinkCommonPlan,
+    MavlinkCommonPlanOptions, MavlinkCoordinateOrigin, MavlinkOrbitStrategy,
 };
 use swarm_mission_ir::{
     AltitudeReference, CommandId, CompletionTolerance, CoordinateFrame, LocalPosition,
@@ -151,6 +151,13 @@ pub enum SitlError {
     ConnectionOptionRequiresConnection { option: &'static str },
     #[error("unsupported coordinate frame '{frame}'")]
     UnsupportedCoordinateFrame { frame: String },
+    #[error(
+        "invalid MAVLink capability profile '{profile}': expected one of {supported_profiles}"
+    )]
+    InvalidMavlinkProfile {
+        profile: String,
+        supported_profiles: &'static str,
+    },
     #[error("Urban route export does not support task subset filtering for agent '{agent_id}'")]
     UrbanRouteTaskSubsetUnsupported { agent_id: String },
     #[error("Urban route export failed: {message}")]
@@ -770,6 +777,18 @@ pub fn format_geo_origin(origin: GeoOrigin) -> String {
 }
 
 pub fn dry_run_artifact(plan: &SitlPlan, command: Vec<String>) -> SitlDryRunArtifact {
+    dry_run_artifact_with_mavlink_profile(
+        plan,
+        command,
+        MavlinkCapabilityProfileId::MavlinkCommonGeneric,
+    )
+}
+
+pub fn dry_run_artifact_with_mavlink_profile(
+    plan: &SitlPlan,
+    command: Vec<String>,
+    mavlink_profile: MavlinkCapabilityProfileId,
+) -> SitlDryRunArtifact {
     let effective_geo_origin = plan.geo_origin.unwrap_or(DEFAULT_SITL_GEO_ORIGIN);
     let command_ir_plan = build_command_ir_plan(plan);
     let command_ir_summary = command_ir_plan
@@ -777,6 +796,7 @@ pub fn dry_run_artifact(plan: &SitlPlan, command: Vec<String>) -> SitlDryRunArti
         .map(MissionCommandSummary::from_plan);
     let mavlink_common_plan = command_ir_plan.as_ref().and_then(|ir_plan| {
         let options = MavlinkCommonPlanOptions {
+            capability_profile: mavlink_profile,
             home_origin: Some(MavlinkCoordinateOrigin {
                 lat_deg: effective_geo_origin.lat_deg,
                 lon_deg: effective_geo_origin.lon_deg,
@@ -1012,6 +1032,20 @@ pub fn write_dry_run_artifact(
     plan: &SitlPlan,
     command: Vec<String>,
 ) -> Result<(), SitlError> {
+    write_dry_run_artifact_with_mavlink_profile(
+        path,
+        plan,
+        command,
+        MavlinkCapabilityProfileId::MavlinkCommonGeneric,
+    )
+}
+
+pub fn write_dry_run_artifact_with_mavlink_profile(
+    path: impl AsRef<Path>,
+    plan: &SitlPlan,
+    command: Vec<String>,
+    mavlink_profile: MavlinkCapabilityProfileId,
+) -> Result<(), SitlError> {
     let path = path.as_ref();
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| SitlError::DryRunArtifactWrite {
@@ -1019,7 +1053,7 @@ pub fn write_dry_run_artifact(
             message: error.to_string(),
         })?;
     }
-    let artifact = dry_run_artifact(plan, command);
+    let artifact = dry_run_artifact_with_mavlink_profile(plan, command, mavlink_profile);
     let content = serde_json::to_string_pretty(&artifact).map_err(|error| {
         SitlError::DryRunArtifactWrite {
             path: path.to_path_buf(),
@@ -1383,6 +1417,34 @@ mod tests {
         assert_eq!(
             mavlink_plan.command_postlude[0].phase,
             swarm_comms::MavlinkPlanPhase::CommandPostlude
+        );
+        assert_eq!(
+            mavlink_plan.compatibility.as_ref().unwrap().profile,
+            swarm_comms::MavlinkCapabilityProfileId::MavlinkCommonGeneric
+        );
+    }
+
+    #[test]
+    fn dry_run_artifact_profile_aware_variant_selects_px4() {
+        let suite = primitive_suite(
+            "hover",
+            PrimitiveMission::Hover {
+                altitude_m: 3.0,
+                hold_seconds: 10.0,
+            },
+        );
+        let plan = build_sitl_plan(&suite, "hover.json", "agent-0").unwrap();
+        let artifact = dry_run_artifact_with_mavlink_profile(
+            &plan,
+            Vec::new(),
+            swarm_comms::MavlinkCapabilityProfileId::Px4,
+        );
+        let mavlink_plan = artifact.mavlink_common_plan.unwrap();
+
+        assert_eq!(mavlink_plan.backend_profile, "px4");
+        assert_eq!(
+            mavlink_plan.compatibility.as_ref().unwrap().profile,
+            swarm_comms::MavlinkCapabilityProfileId::Px4
         );
     }
 

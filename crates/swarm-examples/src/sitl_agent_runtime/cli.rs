@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use swarm_comms::MavlinkCapabilityProfileId;
+
 use crate::sitl_plan::{SitlError, SitlMode};
 
 pub(super) struct CliArgs {
@@ -11,6 +13,7 @@ pub(super) struct CliArgs {
     pub(super) run_report: Option<String>,
     pub(super) replay_log: Option<String>,
     pub(super) dry_run_artifact: Option<String>,
+    pub(super) mavlink_profile: MavlinkCapabilityProfileId,
     pub(super) allow_hardware_candidate: bool,
     pub(super) lifecycle: LifecycleArgs,
     pub(super) lifecycle_from_cli: bool,
@@ -58,6 +61,7 @@ pub(super) fn parse_args() -> Result<CliArgs, SitlError> {
     let mut run_report: Option<String> = None;
     let mut replay_log: Option<String> = None;
     let mut dry_run_artifact: Option<String> = None;
+    let mut mavlink_profile = MavlinkCapabilityProfileId::default();
     let mut allow_hardware_candidate = false;
     let mut lifecycle_mode: Option<LifecycleMode> = None;
     let mut no_arm = false;
@@ -154,6 +158,18 @@ pub(super) fn parse_args() -> Result<CliArgs, SitlError> {
                         })?
                         .clone(),
                 );
+            }
+            "--mavlink-profile" => {
+                i += 1;
+                let value = args.get(i).ok_or(SitlError::MissingArgument {
+                    name: "--mavlink-profile <mavlink_common_generic|px4|ardupilot>",
+                })?;
+                mavlink_profile = value.parse::<MavlinkCapabilityProfileId>().map_err(|_| {
+                    SitlError::InvalidMavlinkProfile {
+                        profile: value.clone(),
+                        supported_profiles: MavlinkCapabilityProfileId::supported_values(),
+                    }
+                })?;
             }
             "--allow-hardware-candidate" => {
                 allow_hardware_candidate = true;
@@ -276,6 +292,7 @@ pub(super) fn parse_args() -> Result<CliArgs, SitlError> {
         run_report,
         replay_log,
         dry_run_artifact,
+        mavlink_profile,
         allow_hardware_candidate,
         lifecycle: LifecycleArgs {
             mode: lifecycle_mode,

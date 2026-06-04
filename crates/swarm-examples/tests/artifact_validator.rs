@@ -3,15 +3,17 @@ use std::path::{Path, PathBuf};
 
 use swarm_comms::{
     compile_mavlink_common_plan, MavlinkCommonCommand, MavlinkCommonCommandName,
-    MavlinkCommonPlanOptions, MavlinkCoordinateOrigin, MavlinkExpectedAck, MavlinkExpectedAckKind,
-    MavlinkPlanPhase,
+    MavlinkCommonPlanOptions, MavlinkCompatibilityClass, MavlinkCoordinateOrigin,
+    MavlinkExpectedAck, MavlinkExpectedAckKind, MavlinkPlanPhase,
 };
 use swarm_examples::artifact_validator::{
     validate_artifact_pack, ArtifactPackPaths, ArtifactValidationMode, ArtifactValidationOptions,
     RULE_BUILD_PROFILE_MISSING, RULE_COMPLETED_TASK_MISSING_EVENT, RULE_DEGRADED_EVENT_MISSING,
     RULE_DEGRADED_FINAL_STATUS_MISMATCH, RULE_DEGRADED_RECORD_MISSING,
     RULE_DEGRADED_RECOVERY_TASK_MISMATCH, RULE_FINAL_STATUS_MISMATCH, RULE_MANIFEST_MISSING,
-    RULE_MAVLINK_PLAN_MISSING, RULE_MAVLINK_PLAN_ORDER_UNSAFE, RULE_REPLACEMENT_SEQ_MISMATCH,
+    RULE_MAVLINK_PLAN_MISSING, RULE_MAVLINK_PLAN_ORDER_UNSAFE,
+    RULE_MAVLINK_PROFILE_HARDWARE_BLOCKING, RULE_MAVLINK_PROFILE_MISSING,
+    RULE_MAVLINK_PROFILE_UNSUPPORTED, RULE_REPLACEMENT_SEQ_MISMATCH,
     RULE_REPLAY_SUMMARY_COUNT_MISMATCH, RULE_SAFETY_REPORT_MISSING,
 };
 use swarm_examples::sitl_multi_agent::{
@@ -283,6 +285,103 @@ fn valid_dry_run_artifact_with_m81_plan_passes() {
     );
 
     assert!(report.passed, "{:?}", report.violations);
+}
+
+#[test]
+fn dry_run_artifact_missing_m82_compatibility_fails_current_validation() {
+    let fixture = tempfile::tempdir().unwrap();
+    let output_dir = fixture.path().join("dry-run");
+    fs::create_dir_all(&output_dir).unwrap();
+    let mut artifact = dry_run_artifact_fixture(true);
+    artifact.mavlink_common_plan.as_mut().unwrap().compatibility = None;
+    write_json(&output_dir.join("sitl_dry_run_artifact.v1.json"), &artifact);
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&output_dir),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::DryRun,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_MAVLINK_PROFILE_MISSING);
+}
+
+#[test]
+fn dry_run_artifact_historical_missing_m82_compatibility_warns_but_passes() {
+    let fixture = tempfile::tempdir().unwrap();
+    let output_dir = fixture.path().join("dry-run");
+    fs::create_dir_all(&output_dir).unwrap();
+    let mut artifact = dry_run_artifact_fixture(true);
+    artifact.mavlink_common_plan.as_mut().unwrap().compatibility = None;
+    write_json(&output_dir.join("sitl_dry_run_artifact.v1.json"), &artifact);
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&output_dir),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::DryRun,
+            allow_historical: true,
+            ..Default::default()
+        },
+    );
+
+    assert!(report.passed, "{:?}", report.violations);
+    assert_rule(&report, RULE_MAVLINK_PROFILE_MISSING);
+}
+
+#[test]
+fn dry_run_artifact_with_unsupported_profile_result_fails() {
+    let fixture = tempfile::tempdir().unwrap();
+    let output_dir = fixture.path().join("dry-run");
+    fs::create_dir_all(&output_dir).unwrap();
+    let mut artifact = dry_run_artifact_fixture(true);
+    let plan = artifact.mavlink_common_plan.as_mut().unwrap();
+    plan.mission_items[0].frame = "MAV_FRAME_UNSUPPORTED_TEST".to_owned();
+    let report = swarm_comms::classify_mavlink_plan_compatibility(
+        plan,
+        swarm_comms::MavlinkCapabilityProfileId::MavlinkCommonGeneric.profile(),
+    );
+    plan.compatibility = Some(report);
+    write_json(&output_dir.join("sitl_dry_run_artifact.v1.json"), &artifact);
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&output_dir),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::DryRun,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_MAVLINK_PROFILE_UNSUPPORTED);
+}
+
+#[test]
+fn dry_run_artifact_hardware_allowed_flag_must_reflect_unknown_profile_results() {
+    let fixture = tempfile::tempdir().unwrap();
+    let output_dir = fixture.path().join("dry-run");
+    fs::create_dir_all(&output_dir).unwrap();
+    let mut artifact = dry_run_artifact_fixture(true);
+    let report = artifact
+        .mavlink_common_plan
+        .as_mut()
+        .unwrap()
+        .compatibility
+        .as_mut()
+        .unwrap();
+    report.command_results[0].classification =
+        MavlinkCompatibilityClass::UnknownUntilSitlOrHardware;
+    report.hardware_facing_allowed = true;
+    write_json(&output_dir.join("sitl_dry_run_artifact.v1.json"), &artifact);
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&output_dir),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::DryRun,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_MAVLINK_PROFILE_HARDWARE_BLOCKING);
 }
 
 #[test]
