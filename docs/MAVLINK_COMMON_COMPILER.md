@@ -1,0 +1,94 @@
+# MAVLink Common Compiler
+
+**M81 - MAVLink Common Compiler**
+
+M81 translates the hardware-agnostic `MissionCommandPlan` from
+`swarm-mission-ir` into a transport-free `MavlinkCommonPlan`. The compiler
+produces typed MAVLink Common command and mission-item intent that can be
+validated and inspected before any upload layer is involved.
+
+This is a compiler artifact, not a flight run:
+
+- no hardware upload;
+- no serial, UDP, TCP, or radio transport;
+- no PX4-only mode sequence;
+- no ArduPilot-only mode sequence;
+- no `MISSION_ITEM_INT` byte/message serialization.
+
+PX4/ArduPilot semantics are not identical even when both stacks expose MAVLink
+Common commands. M81 deliberately emits a generic `mavlink_common_generic`
+profile and leaves stack-specific acceptance/rejection rules to future
+capability profiles.
+
+## Output Shape
+
+`MavlinkCommonPlan` uses schema version `mavlink_common_plan.v1` and contains:
+
+- `source_mission_id`;
+- deterministic `command_ir_hash` using SHA-256 over canonical
+  `MissionCommandPlan` JSON with a versioned digest domain;
+- `command_prelude` for `COMMAND_LONG`-style commands;
+- ordered `mission_items` for upload-style navigation commands;
+- optional `mission_start`;
+- `expected_acks` / expected ACKs;
+- `telemetry_milestones`;
+- `unsupported_features`;
+- `validation_result`.
+
+Dry-run artifacts from `sitl_agent --dry-run --dry-run-artifact <path>` include
+this plan as optional `mavlink_common_plan` next to the existing
+`command_ir_summary`.
+
+## Supported Common Commands
+
+| IR command | M81 output |
+|---|---|
+| `arm` / `disarm` | `MAV_CMD_COMPONENT_ARM_DISARM` command prelude |
+| `takeoff` | `MAV_CMD_NAV_TAKEOFF` command prelude |
+| `land` | `MAV_CMD_NAV_LAND` command prelude |
+| `return_to_launch` / `abort` | `MAV_CMD_NAV_RETURN_TO_LAUNCH` command prelude |
+| `go_to` | `MAV_CMD_NAV_WAYPOINT` mission item |
+| `follow_route` | ordered `MAV_CMD_NAV_WAYPOINT` mission items |
+| `hold` | `MAV_CMD_NAV_LOITER_TIME` mission item when an anchor position exists |
+| `loiter_time` | `MAV_CMD_NAV_LOITER_TIME` mission item when an anchor position exists |
+| `orbit` | structured unsupported feature by default, or deterministic waypoint approximation when enabled |
+| `pause` / `resume` | structured unsupported features in M81 |
+
+`Hold` and `LoiterTime` have duration-only IR semantics. The compiler only maps
+them to `MAV_CMD_NAV_LOITER_TIME` when it can resolve a position from the last
+compiled waypoint or `MavlinkCommonPlanOptions.default_hold_position`. It does
+not invent a fake coordinate.
+
+## Dry-Run Validation
+
+`artifact_validator --mode dry-run` looks for
+`sitl_dry_run_artifact.v1.json` or legacy `dry-run.json` and checks the M81
+section:
+
+- `artifact.mavlink_plan_missing`;
+- `artifact.mavlink_plan_schema_unsupported`;
+- `artifact.mavlink_plan_command_missing`;
+- `artifact.mavlink_plan_ack_missing`;
+- `artifact.mavlink_plan_unsupported_required`;
+- `artifact.mavlink_plan_ir_hash_missing`.
+
+These checks validate artifact consistency only. They do not prove PX4, Gazebo,
+HIL, hardware, or production readiness.
+
+## Example
+
+```bash
+cargo run --bin sitl_agent -- \
+  --dry-run \
+  --scenario scenarios/urban.patrol.json \
+  --agent-id agent-0 \
+  --dry-run-artifact target/m81-dry-run/sitl_dry_run_artifact.v1.json
+
+cargo run -p swarm-examples --bin artifact_validator -- \
+  --output-dir target/m81-dry-run \
+  --mode dry-run \
+  --strict
+```
+
+The first command writes a portable artifact. The second command validates the
+dry-run artifact without starting PX4 or touching hardware.

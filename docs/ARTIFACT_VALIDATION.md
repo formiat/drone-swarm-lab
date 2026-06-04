@@ -28,6 +28,17 @@ snapshot paths, and command capture path. Old committed M58/M59 artifacts may
 lack that metadata; validate them with `--allow-historical` or `--mode
 historical`.
 
+For dry-run validation, the output directory may contain:
+
+```text
+<output-dir>/
+  sitl_dry_run_artifact.v1.json
+```
+
+Legacy/test packs may use `dry-run.json`. In `--mode dry-run`,
+`artifact_validator` validates the dry-run artifact and its M81
+`mavlink_common_plan` section instead of requiring `manifest.json`.
+
 ## Validator CLI
 
 Validate a current supervisor pack:
@@ -50,6 +61,16 @@ cargo run -p swarm-examples --bin artifact_validator -- \
 ```
 
 Use `--json` to print `artifact_validation_report.v1`.
+
+Validate a dry-run M81 compiler artifact. This is the
+`artifact_validator --mode dry-run` path:
+
+```bash
+cargo run -p swarm-examples --bin artifact_validator -- \
+  --output-dir target/m81-dry-run \
+  --mode dry-run \
+  --strict
+```
 
 Exit codes:
 
@@ -82,6 +103,12 @@ Exit codes:
 | `artifact.degraded_final_status_mismatch` | Degraded record final status is inconsistent with the run report. |
 | `artifact.degraded_recovery_task_mismatch` | Recovered tasks in the report are missing from recovery replay events. |
 | `artifact.degraded_unsupported_path_unlabeled` | Current degraded record uses `unknown` without historical mode. |
+| `artifact.mavlink_plan_missing` | Dry-run artifact or its `mavlink_common_plan` section is absent. |
+| `artifact.mavlink_plan_schema_unsupported` | Dry-run or `MavlinkCommonPlan` schema is unsupported. |
+| `artifact.mavlink_plan_command_missing` | The M81 plan has no commands/items, or mission item sequences are not contiguous. |
+| `artifact.mavlink_plan_ack_missing` | Expected ACK coverage is incomplete for commands, mission upload, or mission start. |
+| `artifact.mavlink_plan_unsupported_required` | Required unsupported features are present while `validation_result.passed` is still true. |
+| `artifact.mavlink_plan_ir_hash_missing` | `command_ir_hash` is absent or empty. |
 | `artifact.parse_failed` | A required artifact could not be read or parsed. |
 
 ## Local Harness

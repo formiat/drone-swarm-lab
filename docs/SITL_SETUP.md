@@ -179,8 +179,24 @@ identity fields such as `edge_id`, `from`, `to`, `segment_index`, and
 The JSON artifact uses `sitl_dry_run_artifact.v1` and records the source
 scenario path, route length, segment count, waypoint count, start/end waypoint
 summary, altitude source, scenario `geo_origin`, effective origin, command
-args, and local-to-global coordinate summaries. This artifact is portable and
-requires no PX4 process.
+args, local-to-global coordinate summaries, `command_ir_summary`, and the M81
+`mavlink_common_plan` compiler output. The M81 section uses
+`MavlinkCommonPlan` / `mavlink_common_plan.v1`, includes typed Common commands
+such as `MAV_CMD_NAV_TAKEOFF` and `MAV_CMD_NAV_WAYPOINT`, expected ACKs,
+telemetry milestones, structured unsupported features, and a deterministic
+SHA-256 `command_ir_hash`. This artifact is portable and requires no PX4
+process.
+
+The M81 dry-run compiler has no hardware upload side effect. It does not start
+PX4, does not open a MAVLink transport, and PX4/ArduPilot semantics are not identical. This is the `artifact_validator --mode dry-run` path.
+Validate the artifact with:
+
+```bash
+cargo run -p swarm-examples --bin artifact_validator -- \
+  --output-dir results/urban_route_export \
+  --mode dry-run \
+  --strict
+```
 
 This path is not a hardware run and not a real obstacle-avoidance system. It
 does not add lidar/raycast, perception, dynamic traffic handling, Gazebo/HIL,

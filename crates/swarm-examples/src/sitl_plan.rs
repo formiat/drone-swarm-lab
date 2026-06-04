@@ -5,10 +5,14 @@ use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use swarm_comms::{
+    compile_mavlink_common_plan, MavlinkCommonPlan, MavlinkCommonPlanOptions,
+    MavlinkCoordinateOrigin, MavlinkOrbitStrategy,
+};
 use swarm_mission_ir::{
     AltitudeReference, CommandId, CompletionTolerance, CoordinateFrame, LocalPosition,
     MissionCommand, MissionCommandEntry, MissionCommandPlan, MissionCommandSummary, MissionId,
-    MissionWaypoint, Position, TerminalState, TimeoutAction, TimeoutPolicy,
+    MissionWaypoint, OrbitDirection, Position, TerminalState, TimeoutAction, TimeoutPolicy,
 };
 use swarm_safety::preflight::{SafetyValidationReport, ViolationSeverity};
 use swarm_sim::{
@@ -210,7 +214,7 @@ pub enum SitlError {
     OutputAlreadyExists { path: PathBuf },
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SitlDryRunArtifact {
     pub schema_version: String,
     pub source_scenario_path: PathBuf,
@@ -241,9 +245,14 @@ pub struct SitlDryRunArtifact {
     /// Absent for plans that produce no commands (e.g. zero-waypoint dry-runs).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub command_ir_summary: Option<MissionCommandSummary>,
+    /// Transport-free M81 MAVLink Common compiler output.
+    ///
+    /// This is a dry-run artifact only; it does not upload anything to hardware.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mavlink_common_plan: Option<MavlinkCommonPlan>,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 pub struct SitlGlobalWaypointSummary {
     pub lat_deg: f64,
     pub lon_deg: f64,
@@ -762,7 +771,25 @@ pub fn format_geo_origin(origin: GeoOrigin) -> String {
 
 pub fn dry_run_artifact(plan: &SitlPlan, command: Vec<String>) -> SitlDryRunArtifact {
     let effective_geo_origin = plan.geo_origin.unwrap_or(DEFAULT_SITL_GEO_ORIGIN);
-    let command_ir_summary = build_command_ir_summary(plan);
+    let command_ir_plan = build_command_ir_plan(plan);
+    let command_ir_summary = command_ir_plan
+        .as_ref()
+        .map(MissionCommandSummary::from_plan);
+    let mavlink_common_plan = command_ir_plan.as_ref().and_then(|ir_plan| {
+        let options = MavlinkCommonPlanOptions {
+            home_origin: Some(MavlinkCoordinateOrigin {
+                lat_deg: effective_geo_origin.lat_deg,
+                lon_deg: effective_geo_origin.lon_deg,
+                alt_m: effective_geo_origin.alt_m,
+            }),
+            default_hold_position: plan.waypoints.first().map(sitl_waypoint_position),
+            orbit_strategy: MavlinkOrbitStrategy::WaypointApproximation {
+                segments_per_turn: 12,
+            },
+            ..Default::default()
+        };
+        compile_mavlink_common_plan(ir_plan, &options).ok()
+    });
     SitlDryRunArtifact {
         schema_version: "sitl_dry_run_artifact.v1".to_owned(),
         source_scenario_path: plan.scenario_path.clone(),
@@ -794,16 +821,16 @@ pub fn dry_run_artifact(plan: &SitlPlan, command: Vec<String>) -> SitlDryRunArti
         command,
         git_commit: option_env!("GIT_COMMIT").map(str::to_owned),
         command_ir_summary,
+        mavlink_common_plan,
     }
 }
 
-/// Builds a `MissionCommandPlan` from the waypoints in a dry-run plan and
-/// returns a compact summary for inclusion in the artifact.
+/// Builds a `MissionCommandPlan` from a dry-run plan.
 ///
 /// For urban-route exports a single `FollowRoute` command represents the whole
-/// route. For all other exports the plan becomes
-/// `Arm → Takeoff → GoTo* → Land`.
-fn build_command_ir_summary(plan: &SitlPlan) -> Option<MissionCommandSummary> {
+/// route. Primitive missions map to their matching command primitives, while
+/// pose-task exports become `Arm → Takeoff → GoTo* → Land`.
+fn build_command_ir_plan(plan: &SitlPlan) -> Option<MissionCommandPlan> {
     if plan.waypoints.is_empty() {
         return None;
     }
@@ -815,7 +842,9 @@ fn build_command_ir_summary(plan: &SitlPlan) -> Option<MissionCommandSummary> {
 
     let altitude_m = plan.waypoints.first().map(|wp| wp.z).unwrap_or(5.0);
 
-    let body_commands: Vec<MissionCommandEntry> = if plan.export_kind == "urban_route" {
+    let body_commands: Vec<MissionCommandEntry> = if let Some(primitive) = &plan.primitive_mission {
+        primitive_mission_ir_commands(primitive, &plan.agent_id)
+    } else if plan.export_kind == "urban_route" {
         let waypoints: Vec<MissionWaypoint> = plan
             .waypoints
             .iter()
@@ -887,7 +916,7 @@ fn build_command_ir_summary(plan: &SitlPlan) -> Option<MissionCommandSummary> {
     let ir_plan = MissionCommandPlan {
         schema_version: MissionCommandPlan::SCHEMA_VERSION.to_owned(),
         mission_id,
-        coordinate_frame: CoordinateFrame::LocalNed,
+        coordinate_frame: CoordinateFrame::LocalEnu,
         altitude_reference: AltitudeReference::RelativeHome,
         timeout_policy: TimeoutPolicy {
             command_timeout_secs: 5.0,
@@ -902,7 +931,56 @@ fn build_command_ir_summary(plan: &SitlPlan) -> Option<MissionCommandSummary> {
         commands,
     };
 
-    Some(MissionCommandSummary::from_plan(&ir_plan))
+    Some(ir_plan)
+}
+
+fn primitive_mission_ir_commands(
+    primitive: &PrimitiveMission,
+    agent_id: &str,
+) -> Vec<MissionCommandEntry> {
+    match primitive {
+        PrimitiveMission::Hover {
+            altitude_m: _,
+            hold_seconds,
+        } => vec![MissionCommandEntry {
+            command_id: CommandId::from("hold-0".to_owned()),
+            command: MissionCommand::Hold {
+                duration_secs: f64::from(*hold_seconds),
+            },
+            source_task_id: None,
+            source_route_id: None,
+            source_agent_id: Some(agent_id.to_owned()),
+        }],
+        PrimitiveMission::Orbit {
+            altitude_m,
+            turns,
+            radius_m,
+        } => vec![MissionCommandEntry {
+            command_id: CommandId::from("orbit-0".to_owned()),
+            command: MissionCommand::Orbit {
+                center: Position::Local(LocalPosition {
+                    x_m: 0.0,
+                    y_m: 0.0,
+                    z_m: *altitude_m,
+                }),
+                radius_m: f64::from(*radius_m),
+                turns: f64::from(*turns),
+                direction: OrbitDirection::CounterClockwise,
+            },
+            source_task_id: None,
+            source_route_id: None,
+            source_agent_id: Some(agent_id.to_owned()),
+        }],
+        PrimitiveMission::TakeoffLand { .. } => Vec::new(),
+    }
+}
+
+fn sitl_waypoint_position(waypoint: &SitlWaypointItem) -> Position {
+    Position::Local(LocalPosition {
+        x_m: waypoint.x,
+        y_m: waypoint.y,
+        z_m: waypoint.z,
+    })
 }
 
 fn preflight_error_rule_ids(report: &SafetyValidationReport) -> String {
@@ -958,7 +1036,9 @@ pub fn write_dry_run_artifact(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use swarm_sim::{GeoOrigin, RunConfig, Scenario, ScenarioSuiteEntry, UrbanState};
+    use swarm_sim::{
+        GeoOrigin, PrimitiveMission, RunConfig, Scenario, ScenarioSuiteEntry, UrbanState,
+    };
     use swarm_types::{
         Agent, AgentId, Health, Pose, Role, Task, TaskId, TaskKind, TaskStatus, UrbanBlockedPolicy,
         UrbanEdge, UrbanEdgeId, UrbanMap, UrbanNode, UrbanNodeId, UrbanRouteLoop,
@@ -1121,6 +1201,33 @@ mod tests {
         }
     }
 
+    fn primitive_suite(mission: &str, primitive_mission: PrimitiveMission) -> ScenarioSuite {
+        ScenarioSuite {
+            schema_version: "0.1".to_owned(),
+            name: "Primitive Mission".to_owned(),
+            description: "test suite".to_owned(),
+            generator_manifest: None,
+            scenarios: vec![ScenarioSuiteEntry {
+                mission: mission.to_owned(),
+                profile: "primitive".to_owned(),
+                scenario: Scenario {
+                    name: format!("{mission}_primitive"),
+                    seed: 0,
+                    agents: vec![agent()],
+                    tasks: vec![],
+                    ground_nodes: vec![],
+                    base_station: None,
+                    geo_origin: None,
+                },
+                run_config: RunConfig {
+                    max_ticks: 50,
+                    primitive_mission: Some(primitive_mission),
+                    ..Default::default()
+                },
+            }],
+        }
+    }
+
     #[test]
     fn helper_extracts_pose_tasks_with_sequential_ids() {
         let suite = suite(vec![
@@ -1238,6 +1345,32 @@ mod tests {
             default_artifact.start_global.unwrap().lon_deg,
             custom_artifact.start_global.unwrap().lon_deg
         );
+    }
+
+    #[test]
+    fn primitive_hover_dry_run_artifact_uses_hold_ir_and_loiter_item() {
+        let suite = primitive_suite(
+            "hover",
+            PrimitiveMission::Hover {
+                altitude_m: 3.0,
+                hold_seconds: 10.0,
+            },
+        );
+        let plan = build_sitl_plan(&suite, "hover.json", "agent-0").unwrap();
+        let artifact = dry_run_artifact(&plan, Vec::new());
+        let summary = artifact.command_ir_summary.unwrap();
+        let mavlink_plan = artifact.mavlink_common_plan.unwrap();
+
+        assert_eq!(*summary.commands_by_kind.get("takeoff").unwrap(), 1);
+        assert_eq!(*summary.commands_by_kind.get("hold").unwrap(), 1);
+        assert_eq!(*summary.commands_by_kind.get("land").unwrap(), 1);
+        assert!(mavlink_plan.validation_result.passed);
+        assert_eq!(mavlink_plan.mission_items.len(), 1);
+        assert_eq!(
+            mavlink_plan.mission_items[0].command.as_str(),
+            "MAV_CMD_NAV_LOITER_TIME"
+        );
+        assert_eq!(mavlink_plan.mission_items[0].params[0], Some(10.0));
     }
 
     #[test]

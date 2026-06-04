@@ -1,11 +1,24 @@
 pub mod connectivity;
 pub mod mavlink;
+pub mod mavlink_common_plan;
+pub mod mavlink_coords;
 pub mod network;
 pub mod transport;
 
 pub use connectivity::{ConnectivityModel, ConnectivitySnapshot};
 pub use mavlink::{
     task_to_waypoint, waypoint_status_to_task_status, MavlinkError, MockMavlinkTransport, Waypoint,
+};
+pub use mavlink_common_plan::{
+    compile_mavlink_common_plan, MavlinkCommonCommand, MavlinkCommonCommandName,
+    MavlinkCommonCompilerError, MavlinkCommonMissionItem, MavlinkCommonPlan,
+    MavlinkCommonPlanOptions, MavlinkExpectedAck, MavlinkExpectedAckKind, MavlinkOrbitStrategy,
+    MavlinkPlanPhase, MavlinkPlanValidationResult, MavlinkTelemetryMilestone,
+    MavlinkTelemetryMilestoneKind, MavlinkUnsupportedFeature, MAVLINK_COMMON_PLAN_SCHEMA_VERSION,
+};
+pub use mavlink_coords::{
+    local_to_mavlink_int, relative_altitude, scaled_coordinate, MavlinkCoordinateError,
+    MavlinkCoordinateOrigin, MavlinkIntCoordinate,
 };
 pub use network::{InMemAgentTransport, InMemNetwork, NetworkConfig};
 pub use transport::{RawMessage, Transport};

@@ -599,8 +599,8 @@ See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known l
 | Crate | Purpose |
 | --- | --- |
 | `swarm-types` | Shared IDs, agent/task/message types, pose, velocity, mission semantics (`TaskKind`, `MissionAdapter`). |
-| `swarm-comms` | Transport trait, in-memory network, UDP transport, MAVLink transport (optional). |
-| `swarm-mission-ir` | Hardware-agnostic mission command IR: 13 primitives, explicit semantics, typed validation. Foundational for M81+ backend compilers. |
+| `swarm-comms` | Transport trait, in-memory network, UDP transport, optional MAVLink transport, and M81 transport-free MAVLink Common compiler (`MavlinkCommonPlan`). |
+| `swarm-mission-ir` | Hardware-agnostic mission command IR: 13 primitives, explicit semantics, typed validation. Foundation for backend compilers such as M81. |
 | `swarm-runtime` | Membership, failure detection, task registry, coordinator, `AgentNode`. |
 | `swarm-alloc` | Greedy, auction, connectivity-aware, centralized, CBBA allocation strategies. |
 | `swarm-sim` | Deterministic clock, scenario model, generic scenario runner, DSL loader, JSON/CSV export, Urban replay analysis artifacts. |
@@ -682,6 +682,7 @@ points, not a published semver-stable SDK.
 | M78 | ✅ | Benchmark Evidence Layer: aggregate reports include stderr/stddev/95% CI/min/max/failure-rate fields for key binary metrics, JSON/CSV rows include `support_status` / `support_reason`, `BenchmarkManifest` records `artifact_kind`, SAR can opt into `run_config.sar_success_threshold`, Urban has explicit `--mission urban`, and `--degradation coverage-packet-loss` produces bounded simulation degradation evidence in `results/m78_degradation_coverage_packet_loss_2026-06-03/` without rerunning the 1000-seed benchmark |
 | M79 | ✅ | M79 Operational Runbooks And Hardware Entry Gate: `docs/OPERATIONAL_RUNBOOKS.md` defines simulation, Urban, SITL dry-run/export, artifact validation, local PX4/SIH, and future hardware-candidate runbooks with preflight checklist, go/no-go gates, post-run inspection, command examples, and conservative boundary language; first hardware experiment is still not product readiness |
 | M80 | ✅ | Mission Command IR: hardware-agnostic `swarm-mission-ir` crate with 13 command primitives (`arm`, `disarm`, `takeoff`, `hold`, `land`, `return_to_launch`, `go_to`, `follow_route`, `loiter_time`, `orbit`, `pause`, `resume`, `abort`), typed validation (`MissionIrError`), Urban route bridge (`urban_route_to_follow_route`), dry-run artifact `command_ir_summary`, and `docs/MISSION_COMMAND_IR.md`; no MAVLink serialisation, no PX4/ArduPilot-specific behavior, no hardware execution |
+| M81 | ✅ | MAVLink Common Compiler: `swarm-comms` compiles `MissionCommandPlan` into transport-free `MavlinkCommonPlan` artifacts with typed `MAV_CMD_NAV_TAKEOFF`, `MAV_CMD_NAV_WAYPOINT`, `MAV_CMD_NAV_LOITER_TIME`, `MAV_CMD_NAV_LAND`, deterministic SHA-256 `command_ir_hash`, expected ACKs, telemetry milestones, structured unsupported features, dry-run artifact integration, and `artifact_validator --mode dry-run`; no hardware upload; PX4/ArduPilot semantics are not identical |
 
 ---
 
@@ -698,6 +699,7 @@ points, not a published semver-stable SDK.
 | [`docs/DEGRADED_SUPERVISOR.md`](docs/DEGRADED_SUPERVISOR.md) | M73 degraded-supervisor failure matrix, report fields, replay events, and pre-hardware limits |
 | [`docs/OPERATIONAL_RUNBOOKS.md`](docs/OPERATIONAL_RUNBOOKS.md) | M79 operational runbooks, go/no-go gates, post-run inspection, and hardware entry boundary |
 | [`docs/MISSION_COMMAND_IR.md`](docs/MISSION_COMMAND_IR.md) | M80 mission command IR: 13 command primitives, validation rules, Urban route bridge, and boundary explanation |
+| [`docs/MAVLINK_COMMON_COMPILER.md`](docs/MAVLINK_COMMON_COMPILER.md) | M81 MAVLink Common Compiler: `MavlinkCommonPlan`, supported Common commands, dry-run validation, and no-hardware-upload boundary |
 
 ---
 

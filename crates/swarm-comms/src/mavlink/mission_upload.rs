@@ -96,6 +96,10 @@ where
 /// Unlike `upload_mission_with_connection_observed`, each item may carry a
 /// different `MAV_CMD_NAV_*` command (loiter, turns, land, …).
 #[cfg(all(feature = "mavlink-transport", test))]
+#[expect(
+    dead_code,
+    reason = "test helper kept for future typed-item upload tests"
+)]
 pub(super) fn upload_mission_items_with_connection<C: MavlinkVehicleConnection>(
     conn: &mut C,
     items: &[MissionItem],

@@ -1,12 +1,14 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use swarm_comms::{compile_mavlink_common_plan, MavlinkCommonPlanOptions, MavlinkCoordinateOrigin};
 use swarm_examples::artifact_validator::{
     validate_artifact_pack, ArtifactPackPaths, ArtifactValidationMode, ArtifactValidationOptions,
     RULE_BUILD_PROFILE_MISSING, RULE_COMPLETED_TASK_MISSING_EVENT, RULE_DEGRADED_EVENT_MISSING,
     RULE_DEGRADED_FINAL_STATUS_MISMATCH, RULE_DEGRADED_RECORD_MISSING,
     RULE_DEGRADED_RECOVERY_TASK_MISMATCH, RULE_FINAL_STATUS_MISMATCH, RULE_MANIFEST_MISSING,
-    RULE_REPLACEMENT_SEQ_MISMATCH, RULE_REPLAY_SUMMARY_COUNT_MISMATCH, RULE_SAFETY_REPORT_MISSING,
+    RULE_MAVLINK_PLAN_MISSING, RULE_REPLACEMENT_SEQ_MISMATCH, RULE_REPLAY_SUMMARY_COUNT_MISMATCH,
+    RULE_SAFETY_REPORT_MISSING,
 };
 use swarm_examples::sitl_multi_agent::{
     MultiAgentLifecycle, MultiAgentSitlManifest, MultiAgentSitlManifestAgent, SitlArtifactMetadata,
@@ -15,13 +17,20 @@ use swarm_examples::sitl_multi_agent::{
 use swarm_examples::sitl_observability::{
     format_sitl_summary, summarize_sitl_event_log, SitlEvent, SitlEventLog, SitlEventLogMode,
 };
+use swarm_examples::sitl_plan::{SitlDryRunArtifact, SitlGlobalWaypointSummary, SitlWaypointItem};
 use swarm_examples::sitl_report::{
     SitlMultiAgentAgentReport, SitlMultiAgentReallocationReport, SitlMultiAgentRunReport,
 };
 use swarm_examples::sitl_supervisor::{
     DegradedRunRecord, SitlDegradedRunReport, SupervisorDecision, SupervisorFailureMode,
 };
+use swarm_mission_ir::{
+    AltitudeReference, CommandId, CompletionTolerance, CoordinateFrame, LocalPosition,
+    MissionCommand, MissionCommandEntry, MissionCommandPlan, MissionId, Position, TerminalState,
+    TimeoutAction, TimeoutPolicy,
+};
 use swarm_safety::preflight::SafetyValidationReport;
+use swarm_sim::GeoOrigin;
 
 #[test]
 fn valid_tiny_supervisor_pack_passes() {
@@ -250,6 +259,49 @@ fn historical_failed_pack_without_degraded_record_warns_but_passes() {
     assert_rule(&report, RULE_DEGRADED_RECORD_MISSING);
 }
 
+#[test]
+fn valid_dry_run_artifact_with_m81_plan_passes() {
+    let fixture = tempfile::tempdir().unwrap();
+    let output_dir = fixture.path().join("dry-run");
+    fs::create_dir_all(&output_dir).unwrap();
+    write_json(
+        &output_dir.join("sitl_dry_run_artifact.v1.json"),
+        &dry_run_artifact_fixture(true),
+    );
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&output_dir),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::DryRun,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert!(report.passed, "{:?}", report.violations);
+}
+
+#[test]
+fn dry_run_artifact_missing_m81_plan_fails() {
+    let fixture = tempfile::tempdir().unwrap();
+    let output_dir = fixture.path().join("dry-run");
+    fs::create_dir_all(&output_dir).unwrap();
+    write_json(
+        &output_dir.join("sitl_dry_run_artifact.v1.json"),
+        &dry_run_artifact_fixture(false),
+    );
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&output_dir),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::DryRun,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_MAVLINK_PLAN_MISSING);
+}
+
 fn assert_rule(
     report: &swarm_examples::artifact_validator::ArtifactValidationReport,
     rule_id: &str,
@@ -262,6 +314,106 @@ fn assert_rule(
         "missing {rule_id}; violations={:?}",
         report.violations
     );
+}
+
+fn dry_run_artifact_fixture(include_m81_plan: bool) -> SitlDryRunArtifact {
+    let origin = GeoOrigin {
+        lat_deg: 47.397_742,
+        lon_deg: 8.545_594,
+        alt_m: 0.0,
+    };
+    let waypoint = SitlWaypointItem {
+        seq: 0,
+        task_id: "wp-0".to_owned(),
+        x: 10.0,
+        y: 20.0,
+        z: 5.0,
+        source: "pose_task".to_owned(),
+        edge_id: None,
+        from_node_id: None,
+        to_node_id: None,
+        segment_index: None,
+        point_index_on_segment: None,
+    };
+    let ir_plan = MissionCommandPlan {
+        schema_version: MissionCommandPlan::SCHEMA_VERSION.to_owned(),
+        mission_id: MissionId::from("dry-run-test".to_owned()),
+        coordinate_frame: CoordinateFrame::LocalEnu,
+        altitude_reference: AltitudeReference::RelativeHome,
+        timeout_policy: TimeoutPolicy {
+            command_timeout_secs: 5.0,
+            completion_timeout_secs: 120.0,
+            on_timeout: TimeoutAction::Abort,
+        },
+        expected_terminal_state: TerminalState::Landed,
+        completion_tolerance: CompletionTolerance {
+            position_m: 1.0,
+            altitude_m: 0.5,
+        },
+        commands: vec![MissionCommandEntry {
+            command_id: CommandId::from("goto-0".to_owned()),
+            command: MissionCommand::GoTo {
+                position: Position::Local(LocalPosition {
+                    x_m: waypoint.x,
+                    y_m: waypoint.y,
+                    z_m: waypoint.z,
+                }),
+            },
+            source_task_id: Some(waypoint.task_id.clone()),
+            source_route_id: None,
+            source_agent_id: Some("agent-0".to_owned()),
+        }],
+    };
+    let mavlink_common_plan = include_m81_plan.then(|| {
+        compile_mavlink_common_plan(
+            &ir_plan,
+            &MavlinkCommonPlanOptions {
+                home_origin: Some(MavlinkCoordinateOrigin {
+                    lat_deg: origin.lat_deg,
+                    lon_deg: origin.lon_deg,
+                    alt_m: origin.alt_m,
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+    });
+
+    SitlDryRunArtifact {
+        schema_version: "sitl_dry_run_artifact.v1".to_owned(),
+        source_scenario_path: PathBuf::from("scenario.json"),
+        suite_name: "Dry Run".to_owned(),
+        scenario_name: "dry_run_0".to_owned(),
+        mission: "sitl".to_owned(),
+        profile: "test".to_owned(),
+        agent_id: "agent-0".to_owned(),
+        export_kind: "pose_tasks".to_owned(),
+        planner_or_adapter: "test".to_owned(),
+        route_length_m: None,
+        segment_count: None,
+        waypoint_count: 1,
+        start_waypoint: Some(waypoint.clone()),
+        end_waypoint: Some(waypoint),
+        start_global: Some(SitlGlobalWaypointSummary {
+            lat_deg: origin.lat_deg,
+            lon_deg: origin.lon_deg,
+            relative_alt_m: 5.0,
+        }),
+        end_global: Some(SitlGlobalWaypointSummary {
+            lat_deg: origin.lat_deg,
+            lon_deg: origin.lon_deg,
+            relative_alt_m: 5.0,
+        }),
+        altitude_source: "pose.z".to_owned(),
+        geo_origin: Some(origin),
+        effective_geo_origin: origin,
+        coordinate_frame: "local_simulation".to_owned(),
+        safety_report: SafetyValidationReport::ok(),
+        command: vec!["sitl_agent".to_owned(), "--dry-run".to_owned()],
+        git_commit: Some("0123456789abcdef".to_owned()),
+        command_ir_summary: None,
+        mavlink_common_plan,
+    }
 }
 
 struct ArtifactFixture {

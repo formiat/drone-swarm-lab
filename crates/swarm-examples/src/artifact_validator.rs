@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use swarm_comms::{MavlinkCommonPlan, MavlinkExpectedAckKind, MAVLINK_COMMON_PLAN_SCHEMA_VERSION};
 use swarm_safety::preflight::SafetyValidationReport;
 
 use crate::sitl_multi_agent::{MultiAgentSitlManifest, MULTI_AGENT_SITL_MANIFEST_SCHEMA_VERSION};
@@ -10,6 +11,7 @@ use crate::sitl_observability::{
     format_sitl_summary, read_sitl_event_log, summarize_sitl_event_log, SitlEvent, SitlEventLog,
     SitlEventLogSummary,
 };
+use crate::sitl_plan::SitlDryRunArtifact;
 use crate::sitl_report::SitlMultiAgentRunReport;
 
 pub const ARTIFACT_VALIDATION_REPORT_SCHEMA_VERSION: &str = "artifact_validation_report.v1";
@@ -34,6 +36,13 @@ pub const RULE_DEGRADED_FINAL_STATUS_MISMATCH: &str = "artifact.degraded_final_s
 pub const RULE_DEGRADED_RECOVERY_TASK_MISMATCH: &str = "artifact.degraded_recovery_task_mismatch";
 pub const RULE_DEGRADED_UNSUPPORTED_PATH_UNLABELED: &str =
     "artifact.degraded_unsupported_path_unlabeled";
+pub const RULE_MAVLINK_PLAN_MISSING: &str = "artifact.mavlink_plan_missing";
+pub const RULE_MAVLINK_PLAN_SCHEMA_UNSUPPORTED: &str = "artifact.mavlink_plan_schema_unsupported";
+pub const RULE_MAVLINK_PLAN_COMMAND_MISSING: &str = "artifact.mavlink_plan_command_missing";
+pub const RULE_MAVLINK_PLAN_ACK_MISSING: &str = "artifact.mavlink_plan_ack_missing";
+pub const RULE_MAVLINK_PLAN_UNSUPPORTED_REQUIRED: &str =
+    "artifact.mavlink_plan_unsupported_required";
+pub const RULE_MAVLINK_PLAN_IR_HASH_MISSING: &str = "artifact.mavlink_plan_ir_hash_missing";
 pub const RULE_PARSE_FAILED: &str = "artifact.parse_failed";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -71,6 +80,7 @@ pub struct ArtifactPackPaths {
     pub scenario_snapshot: Option<PathBuf>,
     pub config_snapshot: Option<PathBuf>,
     pub command_capture: Option<PathBuf>,
+    pub dry_run_artifact: Option<PathBuf>,
 }
 
 impl ArtifactPackPaths {
@@ -85,6 +95,10 @@ impl ArtifactPackPaths {
             scenario_snapshot: optional_path(&output_dir, "scenario.snapshot.json"),
             config_snapshot: optional_path(&output_dir, "config.snapshot.json"),
             command_capture: optional_path(&output_dir, "command.txt"),
+            dry_run_artifact: optional_first_path(
+                &output_dir,
+                &["sitl_dry_run_artifact.v1.json", "dry-run.json"],
+            ),
             output_dir,
         }
     }
@@ -127,6 +141,13 @@ fn optional_path(output_dir: &Path, file_name: &str) -> Option<PathBuf> {
     path.exists().then_some(path)
 }
 
+fn optional_first_path(output_dir: &Path, file_names: &[&str]) -> Option<PathBuf> {
+    file_names
+        .iter()
+        .map(|file_name| output_dir.join(file_name))
+        .find(|path| path.exists())
+}
+
 struct Validator<'a> {
     paths: &'a ArtifactPackPaths,
     options: ArtifactValidationOptions,
@@ -143,6 +164,11 @@ impl<'a> Validator<'a> {
     }
 
     fn validate(&mut self) {
+        if matches!(self.options.mode, ArtifactValidationMode::DryRun) {
+            self.validate_dry_run_artifact();
+            return;
+        }
+
         let Some(manifest) = self.load_manifest() else {
             return;
         };
@@ -264,6 +290,144 @@ impl<'a> Validator<'a> {
             return None;
         };
         self.load_json(&path)
+    }
+
+    fn validate_dry_run_artifact(&mut self) {
+        let Some(path) = self.paths.dry_run_artifact.clone() else {
+            self.push_error(
+                RULE_MAVLINK_PLAN_MISSING,
+                None,
+                "dry-run validation requires sitl_dry_run_artifact.v1.json or dry-run.json",
+            );
+            return;
+        };
+        let Some(artifact) = self.load_json::<SitlDryRunArtifact>(&path) else {
+            return;
+        };
+        if artifact.schema_version != "sitl_dry_run_artifact.v1" {
+            self.push_error(
+                RULE_MAVLINK_PLAN_SCHEMA_UNSUPPORTED,
+                Some(path.clone()),
+                format!(
+                    "unsupported dry-run artifact schema_version '{}' (expected sitl_dry_run_artifact.v1)",
+                    artifact.schema_version
+                ),
+            );
+        }
+        let Some(plan) = artifact.mavlink_common_plan.as_ref() else {
+            self.push_error(
+                RULE_MAVLINK_PLAN_MISSING,
+                Some(path),
+                "dry-run artifact is missing mavlink_common_plan",
+            );
+            return;
+        };
+        self.validate_mavlink_common_plan(plan, &self.paths.dry_run_artifact);
+    }
+
+    fn validate_mavlink_common_plan(&mut self, plan: &MavlinkCommonPlan, path: &Option<PathBuf>) {
+        if plan.schema_version != MAVLINK_COMMON_PLAN_SCHEMA_VERSION {
+            self.push_error(
+                RULE_MAVLINK_PLAN_SCHEMA_UNSUPPORTED,
+                path.clone(),
+                format!(
+                    "unsupported mavlink_common_plan schema_version '{}' (expected {MAVLINK_COMMON_PLAN_SCHEMA_VERSION})",
+                    plan.schema_version
+                ),
+            );
+        }
+        if plan.command_ir_hash.trim().is_empty() {
+            self.push_error(
+                RULE_MAVLINK_PLAN_IR_HASH_MISSING,
+                path.clone(),
+                "mavlink_common_plan.command_ir_hash is required",
+            );
+        }
+        if plan.command_prelude.is_empty() && plan.mission_items.is_empty() {
+            self.push_error(
+                RULE_MAVLINK_PLAN_COMMAND_MISSING,
+                path.clone(),
+                "mavlink_common_plan must contain command_prelude or mission_items",
+            );
+        }
+        self.validate_mavlink_mission_item_sequences(plan, path);
+        self.validate_mavlink_expected_acks(plan, path);
+        let has_required_unsupported = plan
+            .unsupported_features
+            .iter()
+            .any(|feature| feature.required);
+        if has_required_unsupported && plan.validation_result.passed {
+            self.push_error(
+                RULE_MAVLINK_PLAN_UNSUPPORTED_REQUIRED,
+                path.clone(),
+                "validation_result.passed must be false when unsupported required features are present",
+            );
+        }
+    }
+
+    fn validate_mavlink_mission_item_sequences(
+        &mut self,
+        plan: &MavlinkCommonPlan,
+        path: &Option<PathBuf>,
+    ) {
+        for (expected, item) in plan.mission_items.iter().enumerate() {
+            if item.seq as usize != expected {
+                self.push_error(
+                    RULE_MAVLINK_PLAN_COMMAND_MISSING,
+                    path.clone(),
+                    format!(
+                        "mavlink_common_plan mission item seq {} is not contiguous from expected {expected}",
+                        item.seq
+                    ),
+                );
+            }
+        }
+    }
+
+    fn validate_mavlink_expected_acks(&mut self, plan: &MavlinkCommonPlan, path: &Option<PathBuf>) {
+        for command in &plan.command_prelude {
+            let covered = plan.expected_acks.iter().any(|ack| {
+                ack.kind == MavlinkExpectedAckKind::CommandAck
+                    && ack.command_id.as_deref() == Some(command.command_id.as_str())
+                    && ack.command == Some(command.command)
+            });
+            if !covered {
+                self.push_error(
+                    RULE_MAVLINK_PLAN_ACK_MISSING,
+                    path.clone(),
+                    format!(
+                        "missing COMMAND_ACK expectation for command_id '{}'",
+                        command.command_id
+                    ),
+                );
+            }
+        }
+        if !plan.mission_items.is_empty()
+            && !plan
+                .expected_acks
+                .iter()
+                .any(|ack| ack.kind == MavlinkExpectedAckKind::MissionAck)
+        {
+            self.push_error(
+                RULE_MAVLINK_PLAN_ACK_MISSING,
+                path.clone(),
+                "missing MISSION_ACK expectation for uploaded mission items",
+            );
+        }
+        if let Some(start) = plan.mission_start.as_ref() {
+            let covered = plan.expected_acks.iter().any(|ack| {
+                ack.kind == MavlinkExpectedAckKind::CommandAck
+                    && ack.command_id.as_deref() == Some(start.command_id.as_str())
+                    && ack.command == Some(start.command)
+            });
+            if !covered {
+                self.push_error(
+                    RULE_MAVLINK_PLAN_ACK_MISSING,
+                    path.clone(),
+                    "missing COMMAND_ACK expectation for mission_start",
+                );
+            }
+        }
     }
 
     fn load_json<T>(&mut self, path: &Path) -> Option<T>

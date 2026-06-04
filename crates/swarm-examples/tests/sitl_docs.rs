@@ -11,6 +11,7 @@ const PREFLIGHT_SAFETY: &str = include_str!("../../../docs/PREFLIGHT_SAFETY.md")
 const ARTIFACT_VALIDATION: &str = include_str!("../../../docs/ARTIFACT_VALIDATION.md");
 const DEGRADED_SUPERVISOR: &str = include_str!("../../../docs/DEGRADED_SUPERVISOR.md");
 const OPERATIONAL_RUNBOOKS: &str = include_str!("../../../docs/OPERATIONAL_RUNBOOKS.md");
+const MAVLINK_COMMON_COMPILER: &str = include_str!("../../../docs/MAVLINK_COMMON_COMPILER.md");
 const M62_RESULT_README: &str =
     include_str!("../../../results/all_500_jobs14_m62_release/README.md");
 
@@ -831,6 +832,89 @@ fn mission_command_ir_doc_explains_intent_boundary() {
         assert!(
             !MISSION_COMMAND_IR.contains(forbidden),
             "MISSION_COMMAND_IR doc contains stale claim '{forbidden}'"
+        );
+    }
+}
+
+#[test]
+fn mavlink_common_compiler_docs_are_synchronized() {
+    for required in [
+        "M81",
+        "MAVLink Common Compiler",
+        "MavlinkCommonPlan",
+        "mavlink_common_plan.v1",
+        "MAV_CMD_NAV_TAKEOFF",
+        "MAV_CMD_NAV_WAYPOINT",
+        "MAV_CMD_NAV_LOITER_TIME",
+        "MAV_CMD_NAV_LAND",
+        "expected ACKs",
+        "command_ir_hash",
+        "artifact.mavlink_plan_missing",
+        "artifact_validator --mode dry-run",
+        "no hardware upload",
+        "PX4/ArduPilot semantics are not identical",
+    ] {
+        assert!(
+            MAVLINK_COMMON_COMPILER.contains(required),
+            "MAVLINK_COMMON_COMPILER doc missing {required}"
+        );
+    }
+
+    for required in [
+        "M81",
+        "MAVLink Common Compiler",
+        "MavlinkCommonPlan",
+        "MAV_CMD_NAV_TAKEOFF",
+        "MAV_CMD_NAV_WAYPOINT",
+        "no hardware upload",
+        "PX4/ArduPilot semantics are not identical",
+    ] {
+        assert!(README.contains(required), "README missing {required}");
+        assert!(STATUS.contains(required), "STATUS missing {required}");
+    }
+
+    for required in [
+        "MavlinkCommonPlan",
+        "MAV_CMD_NAV_TAKEOFF",
+        "MAV_CMD_NAV_WAYPOINT",
+        "artifact_validator --mode dry-run",
+        "no hardware upload",
+        "PX4/ArduPilot semantics are not identical",
+    ] {
+        assert!(
+            MISSION_COMMAND_IR.contains(required),
+            "MISSION_COMMAND_IR doc missing {required}"
+        );
+        assert!(
+            SITL_SETUP.contains(required),
+            "SITL_SETUP doc missing {required}"
+        );
+    }
+
+    for required in [
+        "artifact.mavlink_plan_missing",
+        "artifact.mavlink_plan_ack_missing",
+        "artifact.mavlink_plan_ir_hash_missing",
+        "--mode dry-run",
+    ] {
+        assert!(
+            ARTIFACT_VALIDATION.contains(required),
+            "ARTIFACT_VALIDATION doc missing {required}"
+        );
+    }
+
+    for required in [
+        "mavlink_common_plan",
+        "transport-free",
+        "no hardware upload",
+    ] {
+        assert!(
+            EXTENSION_GUIDE.contains(required),
+            "EXTENSION_GUIDE doc missing {required}"
+        );
+        assert!(
+            HARDWARE_READINESS.contains(required),
+            "HARDWARE_READINESS doc missing {required}"
         );
     }
 }

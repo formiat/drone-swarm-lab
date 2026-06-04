@@ -4,6 +4,9 @@ use mavlink::dialects::common;
 use swarm_types::TaskStatus;
 
 #[cfg(feature = "mavlink-transport")]
+use crate::mavlink_coords::{local_to_mavlink_int, MavlinkCoordinateOrigin, MavlinkIntCoordinate};
+
+#[cfg(feature = "mavlink-transport")]
 use super::{CommonMessage, MavlinkMissionError, MissionItem, MissionUploadOptions, Waypoint};
 /// Convert a local waypoint to a MAVLink global mission item.
 #[cfg(feature = "mavlink-transport")]
@@ -11,15 +14,7 @@ pub fn waypoint_to_mission_item_int(
     waypoint: &Waypoint,
     options: &MissionUploadOptions,
 ) -> Result<CommonMessage, MavlinkMissionError> {
-    let lat = local_to_lat_deg(waypoint.y, options.home_origin.lat_deg)?;
-    let lon = local_to_lon_deg(
-        waypoint.x,
-        options.home_origin.lat_deg,
-        options.home_origin.lon_deg,
-    )?;
-    let lat = scaled_coordinate(lat, "latitude")?;
-    let lon = scaled_coordinate(lon, "longitude")?;
-    let z = relative_altitude(waypoint.z)?;
+    let coord = waypoint_to_mavlink_coordinate(waypoint, options)?;
 
     Ok(CommonMessage::MISSION_ITEM_INT(
         common::MISSION_ITEM_INT_DATA {
@@ -27,9 +22,9 @@ pub fn waypoint_to_mission_item_int(
             param2: 0.0,
             param3: 0.0,
             param4: f32::NAN,
-            x: lat,
-            y: lon,
-            z,
+            x: coord.lat_e7,
+            y: coord.lon_e7,
+            z: coord.relative_alt_m,
             seq: waypoint.seq,
             command: common::MavCmd::MAV_CMD_NAV_WAYPOINT,
             target_system: options.target_system,
@@ -42,77 +37,21 @@ pub fn waypoint_to_mission_item_int(
 }
 
 #[cfg(feature = "mavlink-transport")]
-fn local_to_lat_deg(north_m: f64, origin_lat_deg: f64) -> Result<f64, MavlinkMissionError> {
-    ensure_finite("north_m", north_m)?;
-    ensure_finite("origin_lat_deg", origin_lat_deg)?;
-    let lat = origin_lat_deg + north_m / 111_320.0;
-    if (-90.0..=90.0).contains(&lat) {
-        Ok(lat)
-    } else {
-        Err(MavlinkMissionError::Conversion(format!(
-            "latitude out of range after local conversion: {lat}"
-        )))
-    }
-}
-
-#[cfg(feature = "mavlink-transport")]
-fn local_to_lon_deg(
-    east_m: f64,
-    origin_lat_deg: f64,
-    origin_lon_deg: f64,
-) -> Result<f64, MavlinkMissionError> {
-    ensure_finite("east_m", east_m)?;
-    ensure_finite("origin_lat_deg", origin_lat_deg)?;
-    ensure_finite("origin_lon_deg", origin_lon_deg)?;
-    let meters_per_degree = 111_320.0 * origin_lat_deg.to_radians().cos();
-    if meters_per_degree.abs() < 1.0 {
-        return Err(MavlinkMissionError::Conversion(
-            "longitude conversion is unstable near the poles".to_owned(),
-        ));
-    }
-    let lon = origin_lon_deg + east_m / meters_per_degree;
-    if (-180.0..=180.0).contains(&lon) {
-        Ok(lon)
-    } else {
-        Err(MavlinkMissionError::Conversion(format!(
-            "longitude out of range after local conversion: {lon}"
-        )))
-    }
-}
-
-#[cfg(feature = "mavlink-transport")]
-fn relative_altitude(z_m: f64) -> Result<f32, MavlinkMissionError> {
-    ensure_finite("z_m", z_m)?;
-    let altitude = z_m;
-    if altitude < f32::MIN as f64 || altitude > f32::MAX as f64 {
-        return Err(MavlinkMissionError::Conversion(format!(
-            "altitude out of f32 range: {altitude}"
-        )));
-    }
-    Ok(altitude as f32)
-}
-
-#[cfg(feature = "mavlink-transport")]
-fn scaled_coordinate(value: f64, label: &str) -> Result<i32, MavlinkMissionError> {
-    ensure_finite(label, value)?;
-    let scaled = (value * 10_000_000.0).round();
-    if scaled < i32::MIN as f64 || scaled > i32::MAX as f64 {
-        return Err(MavlinkMissionError::Conversion(format!(
-            "{label} out of MAVLink int32 range after scaling: {scaled}"
-        )));
-    }
-    Ok(scaled as i32)
-}
-
-#[cfg(feature = "mavlink-transport")]
-fn ensure_finite(label: &str, value: f64) -> Result<(), MavlinkMissionError> {
-    if value.is_finite() {
-        Ok(())
-    } else {
-        Err(MavlinkMissionError::Conversion(format!(
-            "{label} must be finite"
-        )))
-    }
+fn waypoint_to_mavlink_coordinate(
+    waypoint: &Waypoint,
+    options: &MissionUploadOptions,
+) -> Result<MavlinkIntCoordinate, MavlinkMissionError> {
+    local_to_mavlink_int(
+        waypoint.x,
+        waypoint.y,
+        waypoint.z,
+        MavlinkCoordinateOrigin {
+            lat_deg: options.home_origin.lat_deg,
+            lon_deg: options.home_origin.lon_deg,
+            alt_m: options.home_origin.alt_m,
+        },
+    )
+    .map_err(|error| MavlinkMissionError::Conversion(error.to_string()))
 }
 
 /// Convert a typed `MissionItem` to a MAVLink `MISSION_ITEM_INT` message.
@@ -124,15 +63,7 @@ pub fn mission_item_to_int(
     options: &MissionUploadOptions,
 ) -> Result<CommonMessage, MavlinkMissionError> {
     let pos = item.position();
-    let lat = local_to_lat_deg(pos.y, options.home_origin.lat_deg)?;
-    let lon = local_to_lon_deg(
-        pos.x,
-        options.home_origin.lat_deg,
-        options.home_origin.lon_deg,
-    )?;
-    let lat = scaled_coordinate(lat, "latitude")?;
-    let lon = scaled_coordinate(lon, "longitude")?;
-    let z = relative_altitude(pos.z)?;
+    let coord = waypoint_to_mavlink_coordinate(pos, options)?;
     let seq = pos.seq;
     let is_first = seq == 0;
 
@@ -142,9 +73,9 @@ pub fn mission_item_to_int(
             param2: 0.0,
             param3: 0.0,
             param4: f32::NAN,
-            x: lat,
-            y: lon,
-            z,
+            x: coord.lat_e7,
+            y: coord.lon_e7,
+            z: coord.relative_alt_m,
             seq,
             command: common::MavCmd::MAV_CMD_NAV_WAYPOINT,
             target_system: options.target_system,
@@ -165,9 +96,9 @@ pub fn mission_item_to_int(
             param3: 0.0,
             // param4: xtrack location (0 = center exit)
             param4: 0.0,
-            x: lat,
-            y: lon,
-            z,
+            x: coord.lat_e7,
+            y: coord.lon_e7,
+            z: coord.relative_alt_m,
             seq,
             command: common::MavCmd::MAV_CMD_NAV_LOITER_TIME,
             target_system: options.target_system,
@@ -187,9 +118,9 @@ pub fn mission_item_to_int(
             param3: *radius_m,
             // param4: exit xtrack location
             param4: 0.0,
-            x: lat,
-            y: lon,
-            z,
+            x: coord.lat_e7,
+            y: coord.lon_e7,
+            z: coord.relative_alt_m,
             seq,
             command: common::MavCmd::MAV_CMD_NAV_LOITER_TURNS,
             target_system: options.target_system,

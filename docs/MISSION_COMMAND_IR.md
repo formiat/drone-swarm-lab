@@ -8,7 +8,7 @@ The Mission Command IR is a hardware-agnostic representation of drone mission
 actions. It sits between mission planning and hardware-specific execution:
 
 ```text
-MissionIntent -> MissionCommand IR -> backend compiler (M81+)
+MissionIntent -> MissionCommand IR -> MAVLink Common Compiler (M81) -> backend/profile execution layer
 ```
 
 A `MissionCommandPlan` encodes **what** a mission should do — the sequence of
@@ -20,9 +20,10 @@ policy. It does **not** encode:
 - Hardware-level motor control or stabilisation.
 - Any network transport or serial link.
 
-A backend compiler (M81 MAVLink Common Compiler and later) translates the IR
-into a protocol-specific command plan. This separation ensures that mission
-logic remains portable across flight-controller stacks.
+M81 implements the first backend compiler: `compile_mavlink_common_plan`
+translates the IR into a transport-free `MavlinkCommonPlan`. Later layers can
+apply PX4/ArduPilot capability profiles and transport/upload behavior without
+moving MAVLink fields back into mission logic.
 
 ## Command primitives
 
@@ -105,10 +106,16 @@ the route has no segments or when no node poses can be resolved.
 - **Not a certified safety layer.** Validation rules catch structural errors
   only; they do not substitute for hardware preflight or FC safety systems.
 
-## Next steps
+## Compiler path
 
-- **M81 MAVLink Common Compiler**: translates `MissionCommandPlan` into a
-  `MavlinkCommonPlan` with typed MAVLink command and mission items.
+- **M81 MAVLink Common Compiler**: implemented. It translates
+  `MissionCommandPlan` into `MavlinkCommonPlan` with typed
+  `MAV_CMD_NAV_TAKEOFF`, `MAV_CMD_NAV_WAYPOINT`,
+  `MAV_CMD_NAV_LOITER_TIME`, `MAV_CMD_NAV_LAND`, expected ACKs, telemetry
+  milestones, deterministic SHA-256 `command_ir_hash`, and structured
+  unsupported features. It is no hardware upload; PX4/ArduPilot semantics are not identical. See
+  [`docs/MAVLINK_COMMON_COMPILER.md`](MAVLINK_COMMON_COMPILER.md).
+  Validate dry-run compiler artifacts with `artifact_validator --mode dry-run`.
 - **M82 PX4 / ArduPilot Capability Profiles**: annotates or rejects commands
   based on autopilot-stack compatibility.
 - **M83 Primitive Real Mission Pack**: three concrete missions that compile to
@@ -119,4 +126,5 @@ the route has no segments or when no node poses can be resolved.
 The crate `swarm-mission-ir` uses schema version `"mission_command_ir.v1"` for
 `MissionCommandPlan` artifacts. Dry-run artifacts produced by `sitl_agent
 --dry-run` include an optional `command_ir_summary` field with a compact
-summary of the IR derived from the waypoint list.
+summary of the IR derived from the waypoint list and an optional
+`mavlink_common_plan` field using schema version `"mavlink_common_plan.v1"`.

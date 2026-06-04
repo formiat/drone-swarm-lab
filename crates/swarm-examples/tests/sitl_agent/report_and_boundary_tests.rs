@@ -223,6 +223,32 @@ fn dry_run_artifact_contains_export_metadata() {
     assert_eq!(json["safety_report"]["passed"], true);
     assert_eq!(json["start_waypoint"]["edge_id"], "road-n0-n1");
     assert_eq!(json["end_waypoint"]["edge_id"], "road-n3-n0");
+    assert_eq!(
+        json["mavlink_common_plan"]["schema_version"],
+        "mavlink_common_plan.v1"
+    );
+    assert!(json["mavlink_common_plan"]["command_ir_hash"]
+        .as_str()
+        .is_some_and(|value| value.len() == 64));
+    assert_eq!(
+        json["mavlink_common_plan"]["command_prelude"][0]["command"],
+        "MAV_CMD_COMPONENT_ARM_DISARM"
+    );
+    assert_eq!(
+        json["mavlink_common_plan"]["command_prelude"][1]["command"],
+        "MAV_CMD_NAV_TAKEOFF"
+    );
+    assert_eq!(
+        json["mavlink_common_plan"]["mission_items"][0]["command"],
+        "MAV_CMD_NAV_WAYPOINT"
+    );
+    assert!(json["mavlink_common_plan"]["expected_acks"]
+        .as_array()
+        .is_some_and(|acks| !acks.is_empty()));
+    assert_eq!(
+        json["mavlink_common_plan"]["validation_result"]["passed"],
+        true
+    );
 }
 
 #[test]

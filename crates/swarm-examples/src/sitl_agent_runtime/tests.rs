@@ -118,6 +118,7 @@ fn test_plan() -> SitlPlan {
             test_waypoint(1, "wp-1", 30.0, 40.0, 4.0),
         ],
         safety_report: swarm_safety::preflight::SafetyValidationReport::ok(),
+        primitive_mission: None,
     }
 }
 

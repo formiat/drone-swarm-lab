@@ -9,6 +9,8 @@ swarm-types = { workspace = true }
 rand        = { workspace = true }
 serde       = { workspace = true }
 serde_json  = { workspace = true }
+sha2        = { workspace = true }
+swarm-mission-ir = { workspace = true }
 thiserror   = { workspace = true }
 tracing     = { workspace = true }
 mavlink     = { workspace = true, optional = true }

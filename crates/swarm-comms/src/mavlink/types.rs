@@ -9,7 +9,7 @@ use swarm_types::TaskStatus;
 use super::MavlinkMissionError;
 
 /// A waypoint in local coordinate space (no MAVLink dependency).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Waypoint {
     pub x: f64,
     pub y: f64,
