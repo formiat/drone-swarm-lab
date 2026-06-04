@@ -78,6 +78,14 @@ Notion/GitLab remote context не читался: в inbox `notion_policy=option
   `primitive_mission_ir_commands`.
 - `crates/swarm-examples/src/sitl_plan.rs:787`:
   `dry_run_artifact_with_mavlink_profile`.
+- `crates/swarm-examples/src/sitl_plan.rs:685`:
+  `check_preflight_or_err` and `SafetyValidationReport` propagation before
+  dry-run artifact creation.
+- `crates/swarm-examples/src/sitl_plan.rs:246`:
+  `SitlDryRunArtifact.safety_report`.
+- `crates/swarm-examples/src/sitl_safety.rs`:
+  connection/supervisor safety config checks that must stay consistent with
+  primitive dry-run preflight messaging.
 - `crates/swarm-examples/src/sitl_agent_runtime/connection.rs:526`:
   `primitive_mission_to_items` under `mavlink-transport`.
 - `crates/swarm-comms/src/mavlink_common_plan.rs:390`:
@@ -87,7 +95,8 @@ Notion/GitLab remote context не читался: в inbox `notion_policy=option
 - `crates/swarm-examples/tests/artifact_validator.rs`,
   `crates/swarm-examples/tests/sitl_agent/report_and_boundary_tests.rs`,
   `crates/swarm-examples/tests/sitl_docs.rs`:
-  integration/docs validator coverage.
+  integration/docs validator coverage, including existing preflight exit-code
+  and `safety_report` assertions.
 - Scenario fixtures:
   `scenarios/primitive.hover.json`,
   `scenarios/primitive.orbit.json`,
@@ -100,6 +109,7 @@ Notion/GitLab remote context не читался: в inbox `notion_policy=option
   `docs/MISSION_COMMAND_IR.md`,
   `docs/MAVLINK_COMMON_COMPILER.md`,
   `docs/MAVLINK_CAPABILITY_PROFILES.md`,
+  `docs/PREFLIGHT_SAFETY.md`,
   `docs/ARTIFACT_VALIDATION.md`,
   `docs/EXTENSION_GUIDE.md`,
   `docs/HARDWARE_READINESS.md`,
@@ -301,7 +311,65 @@ Notion/GitLab remote context не читался: в inbox `notion_policy=option
    - добавить negative tests: удалить `telemetry_milestones` из primitive
      artifact; удалить/испортить `command_ir_summary.timeout_policy`.
 
-8. Обновить README и сопутствующие документы.
+8. Зафиксировать safety/preflight контракт M83.
+
+   Файлы:
+
+   - `crates/swarm-examples/src/sitl_plan.rs:407`;
+   - `crates/swarm-examples/src/sitl_plan.rs:685`;
+   - `crates/swarm-examples/src/sitl_plan.rs:840`;
+   - `crates/swarm-examples/src/sitl_safety.rs`;
+   - `crates/swarm-examples/tests/sitl_agent/report_and_boundary_tests.rs:75`;
+   - `crates/swarm-examples/tests/sitl_agent/report_and_boundary_tests.rs:223`;
+   - `crates/swarm-examples/tests/artifact_validator.rs:625`;
+   - `docs/PREFLIGHT_SAFETY.md`;
+   - `docs/HARDWARE_READINESS.md`;
+   - `docs/ARTIFACT_VALIDATION.md`.
+
+   Материализуемый результат:
+
+   - canonical primitive dry-run path должен по-прежнему проходить через
+     `check_preflight_or_err(entry)?` до записи `SitlDryRunArtifact`;
+   - для `takeoff-hold-land`, `orbit` и `waypoint-square` dry-run artifacts
+     должны содержать:
+
+     ```json
+     {
+       "safety_report": {
+         "passed": true
+       }
+     }
+     ```
+
+     и не должны содержать error-severity violations;
+   - если primitive route после M83 материализуется в waypoints до preflight,
+     добавить primitive-aware static check для altitude/geofence/no-fly: плохая
+     высота, waypoint вне geofence или waypoint внутри no-fly зоны должны
+     завершать `sitl_agent --dry-run` с exit code `2` и rule ids в stderr/отчёте;
+   - `--safety-config`/`sitl_safety.rs` checks не должны расходиться с M83
+     wording: если unsafe safety config уже применим к primitive dry-run или
+     connection/supervisor path, он должен давать validation/preflight-class
+     failure с exit code `2`; если dry-run primitive пока не принимает такой
+     config для generated waypoints, это нужно явно отметить в docs как границу
+     текущего static preflight gate;
+   - если конкретная unsafe primitive input ещё не может быть выражена через
+     текущий route representation без расширения модели, отрицательный тест
+     должен покрыть уже поддерживаемую validation/preflight ветку: invalid
+     primitive params (`altitude_m <= 0`, `radius_m <= 0`, `side_m <= 0`) дают
+     validation/preflight-class failure с exit code `2`, а geofence/no-fly
+     остаётся отдельным light-refactoring пунктом до появления materialized
+     primitive waypoints в `SafetyValidationReport`;
+   - `artifact_validator --mode dry-run --strict` должен проверять presence и
+     `passed=true` для embedded `safety_report` в current primitive artifacts или
+     явно возвращать стабильный rule id, например
+     `artifact.dry_run_safety_report_failed`;
+   - `docs/PREFLIGHT_SAFETY.md`, `docs/HARDWARE_READINESS.md` и
+     `docs/ARTIFACT_VALIDATION.md` должны прямо говорить, что M83 проверяет
+     static preflight gate для command missions, но не является certified flight
+     safety, не заменяет PX4/ArduPilot failsafe и не доказывает hardware flight
+     readiness.
+
+9. Обновить README и сопутствующие документы.
 
    Файлы:
 
@@ -311,6 +379,7 @@ Notion/GitLab remote context не читался: в inbox `notion_policy=option
    - `docs/MISSION_COMMAND_IR.md`;
    - `docs/MAVLINK_COMMON_COMPILER.md`;
    - `docs/MAVLINK_CAPABILITY_PROFILES.md`;
+   - `docs/PREFLIGHT_SAFETY.md`;
    - `docs/ARTIFACT_VALIDATION.md`;
    - `docs/EXTENSION_GUIDE.md`;
    - `docs/HARDWARE_READINESS.md`;
@@ -327,11 +396,14 @@ Notion/GitLab remote context не читался: в inbox `notion_policy=option
      native orbit may be profile-specific, M83 may use waypoint approximation
      or mark unsupported/unknown depending on profile;
    - обновить artifact validator docs с новыми rule ids;
+   - добавить раздел/абзац про M83 safety boundary: `safety_report.passed=true`
+     означает только успешную static preflight validation текущих inputs;
    - добавить docs smoke tests, требующие фразы:
      `M83`, `Primitive Real Mission Pack`, `takeoff-hold-land`,
-     `waypoint-square`, `no real flight`, `orbit portability`.
+     `waypoint-square`, `no real flight`, `orbit portability`,
+     `static preflight`, `not certified flight safety`.
 
-9. Добавить automated end-to-end dry-run artifact roundtrip без hardware.
+10. Добавить automated end-to-end dry-run artifact roundtrip без hardware.
 
    Файлы:
 
@@ -345,12 +417,13 @@ Notion/GitLab remote context не читался: в inbox `notion_policy=option
      1. запустить `sitl_agent --dry-run --scenario <scenario> --agent-id agent-0
         --dry-run-artifact <tempdir>/artifact.json --mavlink-profile <profile>`;
      2. прочитать JSON;
-     3. проверить command order/profile/ACK/telemetry/policy fields;
+     3. проверить command order/profile/ACK/telemetry/policy fields и
+        `safety_report.passed == true`;
      4. прогнать `validate_artifact_pack(..., mode=DryRun, strict=true)`;
    - параметризовать profiles хотя бы для `px4` и `ardupilot`; generic path
      покрыт default tests.
 
-10. Запустить проверки после реализации.
+11. Запустить проверки после реализации.
 
     Команды должны иметь hard timeout 300s. Для `cargo test` обязательно
     отключить proptest persistence и использовать абсолютный `runlim`.
@@ -408,19 +481,32 @@ Notion/GitLab remote context не читался: в inbox `notion_policy=option
   - PX4/ArduPilot profile classification exists for each mission.
 - `crates/swarm-examples/tests/sitl_agent/report_and_boundary_tests.rs`:
   - dry-run artifact roundtrip for each canonical primitive scenario;
+  - each canonical primitive dry-run artifact has
+    `safety_report.passed == true` and no error-severity safety violations;
+  - invalid primitive params fail before artifact success with exit code `2`;
+  - unsafe `--safety-config` keeps the existing exit-code-`2` contract where it
+    is already supported by the dry-run/connection/supervisor path;
   - profile selection works for `px4` and `ardupilot`;
   - no hardware connection is opened in dry-run path.
 - `crates/swarm-examples/tests/artifact_validator.rs`:
   - strict dry-run validation passes for the three canonical artifacts;
-  - missing telemetry/policy fields fail when new M83 validator rules are added.
+  - missing telemetry/policy fields fail when new M83 validator rules are added;
+  - missing or failed embedded `safety_report` in primitive dry-run artifact
+    fails in strict mode with a stable rule id.
 - `crates/swarm-examples/tests/sitl_docs.rs`:
-  - README/STATUS/SITL docs mention M83 scope and non-goals.
+  - README/STATUS/SITL docs mention M83 scope and non-goals;
+  - `docs/PREFLIGHT_SAFETY.md`, `docs/HARDWARE_READINESS.md` and
+    `docs/ARTIFACT_VALIDATION.md` mention M83 static preflight boundary and do
+    not claim certified flight safety or hardware readiness.
 
 ## 2. Tests that need light refactoring
 
 - Add shared fixture helpers for primitive dry-run artifact generation to avoid
   duplicating `tempdir + sitl_agent + JSON assertions` across
   `sitl_agent/report_and_boundary_tests.rs` and `artifact_validator.rs`.
+- Add a primitive preflight fixture helper if negative geofence/no-fly tests need
+  generated primitive waypoints rather than task-based fixtures. Keep the helper
+  portable: inline JSON/tempdir only, no PX4/SITL, no `$HOME`, no absolute paths.
 - Add a small helper for asserting command order in `MavlinkCommonPlan`, e.g.
   `assert_mavlink_sequence(plan, expected_prelude, expected_items,
   expected_postlude)`.
@@ -435,6 +521,12 @@ Notion/GitLab remote context не читался: в inbox `notion_policy=option
 - Simulated ACK/telemetry state machine that consumes `MavlinkCommonPlan` and
   emits fake execution lifecycle events. This is useful later, but not required
   for M83.
+- Command lifecycle replay events for dry-run primitive missions. Current
+  `sitl_agent --dry-run` rejects `--replay-log`, and existing replay summaries
+  are built from SITL/mock/supervisor event logs, not from pure
+  `MissionCommandPlan` compilation. Adding replay lifecycle events for command
+  compilation would require a new event schema/emitter rather than a small
+  assertion over current artifacts.
 - Backend executor integration tests that run upload/execute state machines
   without a real vehicle. This belongs after M83 if command lifecycle needs
   deeper evidence.
@@ -469,6 +561,17 @@ Notion/GitLab remote context не читался: в inbox `notion_policy=option
   should remain conservative.
 - Performance/resources: all M83 tests should remain tiny dry-run/unit tests.
   No benchmark or SITL run is needed.
+- Safety boundary: M83 can prove that primitive command inputs pass the current
+  static preflight gate and that artifacts preserve `SafetyValidationReport`.
+  It must not imply certified flight safety, dynamic obstacle avoidance,
+  autopilot failsafe validation, or hardware readiness.
+- Replay lifecycle: the prompt mentions replay summary command lifecycle events
+  as light refactoring, but current architecture has no dry-run replay log path
+  for command compilation; `--replay-log` is intentionally rejected for dry-run.
+  M83 acceptance should use `command_ir_summary`,
+  `MavlinkCommonPlan.expected_acks`, `telemetry_milestones` and validator checks
+  as command lifecycle evidence. A real replay lifecycle stream should be a
+  later executor/simulator milestone.
 
 # Open questions
 
@@ -486,3 +589,7 @@ Notion/GitLab remote context не читался: в inbox `notion_policy=option
   compiler output now? Recommended answer: only add square support and tests for
   intent consistency; full unification of live upload with `MavlinkCommonPlan`
   is a larger follow-up.
+- Should M83 add command lifecycle events to replay summaries? Recommended
+  answer: no for M83. Keep replay lifecycle work out of acceptance until there is
+  a command-execution simulator or backend executor event source. Dry-run
+  artifacts should remain the evidence surface for M83.
