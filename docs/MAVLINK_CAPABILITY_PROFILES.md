@@ -57,6 +57,10 @@ as hardware-facing success.
 Each `command_results[]` row records command/frame classification plus
 `required_execution_mode`, `required_mode_transitions`, `preconditions`, and
 `mode_caveats` when the selected profile has mode assumptions for that command.
+Dry-run artifact validation also checks that every row still matches the
+compiled plan element identity (`command_id`, `seq`, `command`, `phase`,
+`frame`), so stale compatibility reports cannot be accepted only because their
+row count still matches.
 
 ## Compatibility Matrix
 

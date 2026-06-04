@@ -99,7 +99,8 @@ section plus the M82 compatibility report for current artifacts:
 - `artifact.mavlink_profile_missing`;
 - `artifact.mavlink_profile_unknown`;
 - `artifact.mavlink_profile_unsupported`;
-- `artifact.mavlink_profile_hardware_blocking`.
+- `artifact.mavlink_profile_hardware_blocking`;
+- `artifact.mavlink_profile_result_mismatch`.
 
 These checks validate artifact consistency only. They do not prove PX4, Gazebo,
 HIL, hardware, or production readiness.

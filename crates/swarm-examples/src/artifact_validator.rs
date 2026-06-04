@@ -4,8 +4,9 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use swarm_comms::{
-    MavlinkCapabilityProfileId, MavlinkCommonCommand, MavlinkCommonCommandName, MavlinkCommonPlan,
-    MavlinkCompatibilityClass, MavlinkExpectedAckKind, MAVLINK_COMMON_PLAN_SCHEMA_VERSION,
+    MavlinkCapabilityProfileId, MavlinkCommandCompatibility, MavlinkCommonCommand,
+    MavlinkCommonCommandName, MavlinkCommonPlan, MavlinkCompatibilityClass, MavlinkExpectedAckKind,
+    MavlinkPlanPhase, MAVLINK_COMMON_PLAN_SCHEMA_VERSION,
 };
 use swarm_safety::preflight::SafetyValidationReport;
 
@@ -52,6 +53,7 @@ pub const RULE_MAVLINK_PROFILE_UNKNOWN: &str = "artifact.mavlink_profile_unknown
 pub const RULE_MAVLINK_PROFILE_UNSUPPORTED: &str = "artifact.mavlink_profile_unsupported";
 pub const RULE_MAVLINK_PROFILE_HARDWARE_BLOCKING: &str =
     "artifact.mavlink_profile_hardware_blocking";
+pub const RULE_MAVLINK_PROFILE_RESULT_MISMATCH: &str = "artifact.mavlink_profile_result_mismatch";
 pub const RULE_PARSE_FAILED: &str = "artifact.parse_failed";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -161,6 +163,15 @@ struct Validator<'a> {
     paths: &'a ArtifactPackPaths,
     options: ArtifactValidationOptions,
     violations: Vec<ArtifactValidationViolation>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct MavlinkCompatibilityExpected<'a> {
+    command_id: Option<&'a str>,
+    seq: Option<u16>,
+    command: MavlinkCommonCommandName,
+    phase: MavlinkPlanPhase,
+    frame: Option<&'a str>,
 }
 
 impl<'a> Validator<'a> {
@@ -421,19 +432,41 @@ impl<'a> Validator<'a> {
             );
         }
 
-        let expected_results = plan.command_prelude.len()
-            + plan.command_postlude.len()
-            + usize::from(plan.mission_start.is_some())
-            + plan.mission_items.len();
-        if report.command_results.len() != expected_results {
+        let expected_results = expected_mavlink_compatibility_results(plan);
+        if report.command_results.len() != expected_results.len() {
             self.push_error(
                 RULE_MAVLINK_PLAN_COMMAND_MISSING,
                 path.clone(),
                 format!(
                     "compatibility command_results length {} does not match compiled command/item count {expected_results}",
-                    report.command_results.len()
+                    report.command_results.len(),
+                    expected_results = expected_results.len()
                 ),
             );
+        }
+        for (index, expected) in expected_results.iter().enumerate() {
+            let Some(actual) = report.command_results.get(index) else {
+                break;
+            };
+            if !mavlink_compatibility_result_matches(actual, expected) {
+                self.push_error(
+                    RULE_MAVLINK_PROFILE_RESULT_MISMATCH,
+                    path.clone(),
+                    format!(
+                        "compatibility command_results[{index}] does not match compiled plan element: expected command_id={:?} seq={:?} command={} phase={:?} frame={:?}, got command_id={:?} seq={:?} command={} phase={:?} frame={:?}",
+                        expected.command_id,
+                        expected.seq,
+                        expected.command.as_str(),
+                        expected.phase,
+                        expected.frame,
+                        actual.command_id.as_deref(),
+                        actual.seq,
+                        actual.command.as_str(),
+                        actual.phase,
+                        actual.frame.as_deref()
+                    ),
+                );
+            }
         }
 
         if report
@@ -985,4 +1018,52 @@ impl<'a> Validator<'a> {
             reason: reason.into(),
         });
     }
+}
+
+fn expected_mavlink_compatibility_results(
+    plan: &MavlinkCommonPlan,
+) -> Vec<MavlinkCompatibilityExpected<'_>> {
+    let expected_len = plan.command_prelude.len()
+        + plan.mission_items.len()
+        + usize::from(plan.mission_start.is_some())
+        + plan.command_postlude.len();
+    let mut expected_results = Vec::with_capacity(expected_len);
+    expected_results.extend(plan.command_prelude.iter().map(expected_mavlink_command));
+    expected_results.extend(
+        plan.mission_items
+            .iter()
+            .map(|item| MavlinkCompatibilityExpected {
+                command_id: Some(item.command_id.as_str()),
+                seq: Some(item.seq),
+                command: item.command,
+                phase: MavlinkPlanPhase::MissionUpload,
+                frame: Some(item.frame.as_str()),
+            }),
+    );
+    if let Some(command) = &plan.mission_start {
+        expected_results.push(expected_mavlink_command(command));
+    }
+    expected_results.extend(plan.command_postlude.iter().map(expected_mavlink_command));
+    expected_results
+}
+
+fn expected_mavlink_command(command: &MavlinkCommonCommand) -> MavlinkCompatibilityExpected<'_> {
+    MavlinkCompatibilityExpected {
+        command_id: Some(command.command_id.as_str()),
+        seq: None,
+        command: command.command,
+        phase: command.phase,
+        frame: None,
+    }
+}
+
+fn mavlink_compatibility_result_matches(
+    actual: &MavlinkCommandCompatibility,
+    expected: &MavlinkCompatibilityExpected<'_>,
+) -> bool {
+    actual.command_id.as_deref() == expected.command_id
+        && actual.seq == expected.seq
+        && actual.command == expected.command
+        && actual.phase == expected.phase
+        && actual.frame.as_deref() == expected.frame
 }

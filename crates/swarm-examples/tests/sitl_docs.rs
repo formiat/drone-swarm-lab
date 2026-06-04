@@ -906,6 +906,7 @@ fn mavlink_common_compiler_docs_are_synchronized() {
         "artifact.mavlink_profile_unknown",
         "artifact.mavlink_profile_unsupported",
         "artifact.mavlink_profile_hardware_blocking",
+        "artifact.mavlink_profile_result_mismatch",
         "--mode dry-run",
     ] {
         assert!(
@@ -976,6 +977,7 @@ fn mavlink_capability_profile_docs_are_synchronized() {
         "required_mode_transitions",
         "artifact.mavlink_profile_missing",
         "artifact.mavlink_profile_hardware_blocking",
+        "artifact.mavlink_profile_result_mismatch",
     ] {
         assert!(
             ARTIFACT_VALIDATION.contains(required),

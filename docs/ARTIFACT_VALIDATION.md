@@ -118,6 +118,7 @@ Exit codes:
 | `artifact.mavlink_profile_unknown` | `backend_profile` is not one of `mavlink_common_generic`, `px4`, or `ardupilot`, or does not match `compatibility.profile`. |
 | `artifact.mavlink_profile_unsupported` | The compatibility report contains an unsupported command, frame, or profile behavior. |
 | `artifact.mavlink_profile_hardware_blocking` | `hardware_facing_allowed` is true even though `unsupported`, `requires_stack_specific_mapping`, or `unknown_until_sitl_or_hardware` behavior remains. |
+| `artifact.mavlink_profile_result_mismatch` | A compatibility report row does not match the corresponding compiled command or mission item identity: `command_id`, `seq`, `command`, `phase`, or `frame`. |
 | `artifact.parse_failed` | A required artifact could not be read or parsed. |
 
 ## Local Harness

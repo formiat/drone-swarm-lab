@@ -13,8 +13,8 @@ use swarm_examples::artifact_validator::{
     RULE_DEGRADED_RECOVERY_TASK_MISMATCH, RULE_FINAL_STATUS_MISMATCH, RULE_MANIFEST_MISSING,
     RULE_MAVLINK_PLAN_MISSING, RULE_MAVLINK_PLAN_ORDER_UNSAFE,
     RULE_MAVLINK_PROFILE_HARDWARE_BLOCKING, RULE_MAVLINK_PROFILE_MISSING,
-    RULE_MAVLINK_PROFILE_UNSUPPORTED, RULE_REPLACEMENT_SEQ_MISMATCH,
-    RULE_REPLAY_SUMMARY_COUNT_MISMATCH, RULE_SAFETY_REPORT_MISSING,
+    RULE_MAVLINK_PROFILE_RESULT_MISMATCH, RULE_MAVLINK_PROFILE_UNSUPPORTED,
+    RULE_REPLACEMENT_SEQ_MISMATCH, RULE_REPLAY_SUMMARY_COUNT_MISMATCH, RULE_SAFETY_REPORT_MISSING,
 };
 use swarm_examples::sitl_multi_agent::{
     MultiAgentLifecycle, MultiAgentSitlManifest, MultiAgentSitlManifestAgent, SitlArtifactMetadata,
@@ -353,6 +353,82 @@ fn dry_run_artifact_with_unsupported_profile_result_fails() {
     );
 
     assert_rule(&report, RULE_MAVLINK_PROFILE_UNSUPPORTED);
+}
+
+#[test]
+fn dry_run_artifact_stale_m82_compatibility_frame_fails() {
+    let fixture = tempfile::tempdir().unwrap();
+    let output_dir = fixture.path().join("dry-run");
+    fs::create_dir_all(&output_dir).unwrap();
+    let mut artifact = dry_run_artifact_fixture(true);
+    let plan = artifact.mavlink_common_plan.as_mut().unwrap();
+    plan.mission_items[0].frame = "MAV_FRAME_UNSUPPORTED_TEST".to_owned();
+    write_json(&output_dir.join("sitl_dry_run_artifact.v1.json"), &artifact);
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&output_dir),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::DryRun,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_MAVLINK_PROFILE_RESULT_MISMATCH);
+}
+
+#[test]
+fn dry_run_artifact_stale_m82_compatibility_command_id_fails() {
+    let fixture = tempfile::tempdir().unwrap();
+    let output_dir = fixture.path().join("dry-run");
+    fs::create_dir_all(&output_dir).unwrap();
+    let mut artifact = dry_run_artifact_fixture(true);
+    let plan = artifact.mavlink_common_plan.as_mut().unwrap();
+    plan.mission_items[0].command_id = "stale-goto-0".to_owned();
+    write_json(&output_dir.join("sitl_dry_run_artifact.v1.json"), &artifact);
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&output_dir),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::DryRun,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_MAVLINK_PROFILE_RESULT_MISMATCH);
+}
+
+#[test]
+fn dry_run_artifact_duplicate_m82_compatibility_result_same_length_fails() {
+    let fixture = tempfile::tempdir().unwrap();
+    let output_dir = fixture.path().join("dry-run");
+    fs::create_dir_all(&output_dir).unwrap();
+    let mut artifact = dry_run_artifact_fixture(true);
+    let report = artifact
+        .mavlink_common_plan
+        .as_mut()
+        .unwrap()
+        .compatibility
+        .as_mut()
+        .unwrap();
+    assert!(
+        report.command_results.len() > 1,
+        "fixture must expose a same-length duplicate mutation"
+    );
+    report.command_results[1] = report.command_results[0].clone();
+    write_json(&output_dir.join("sitl_dry_run_artifact.v1.json"), &artifact);
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&output_dir),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::DryRun,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_MAVLINK_PROFILE_RESULT_MISMATCH);
 }
 
 #[test]
