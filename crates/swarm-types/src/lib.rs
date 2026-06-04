@@ -23,8 +23,8 @@ pub use pose::{Aabb, Pose, Velocity};
 pub use task::{Task, TaskId, TaskKind, TaskStatus};
 pub use urban::{
     ObstacleSeverity, UrbanBlockedPolicy, UrbanBus, UrbanBusId, UrbanBusRoute, UrbanBusStop,
-    UrbanDetectorConfig, UrbanEdge, UrbanEdgeId, UrbanMap, UrbanMapValidationError, UrbanNode,
-    UrbanNodeId, UrbanObstacleId, UrbanPerimeterPatrol, UrbanPlannedRoute, UrbanRouteLoop,
-    UrbanRouteSegment, UrbanSearchState, UrbanStaticObstacle, UrbanTemporaryObstacle,
-    UrbanViolation,
+    UrbanDetectorConfig, UrbanEdge, UrbanEdgeId, UrbanGeoPoint, UrbanMap, UrbanMapValidationError,
+    UrbanNode, UrbanNodeId, UrbanObstacleId, UrbanPerimeterPatrol, UrbanPlannedRoute,
+    UrbanRouteLoop, UrbanRouteSegment, UrbanSearchState, UrbanStaticObstacle,
+    UrbanTemporaryObstacle, UrbanViolation,
 };

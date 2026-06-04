@@ -128,6 +128,9 @@ Exit codes:
 | `artifact.mavlink_profile_unsupported` | The compatibility report contains an unsupported command, frame, or profile behavior. |
 | `artifact.mavlink_profile_hardware_blocking` | `hardware_facing_allowed` is true even though `unsupported`, `requires_stack_specific_mapping`, or `unknown_until_sitl_or_hardware` behavior remains. |
 | `artifact.mavlink_profile_result_mismatch` | A compatibility report row does not match the corresponding compiled command or mission item identity: `command_id`, `seq`, `command`, `phase`, or `frame`. |
+| `artifact.urban_coordinate_mode_missing` | An Urban dry-run artifact has no `coordinate_mode`. |
+| `artifact.urban_wgs84_geo_missing` | An Urban dry-run artifact uses `coordinate_mode: wgs84_node_geo` but start/end waypoints do not carry `geo`. |
+| `artifact.urban_mock_perception_missing` | An `urban-search` dry-run artifact is missing `urban_mock_perception` metadata. |
 | `artifact.parse_failed` | A required artifact could not be read or parsed. |
 
 ## Local Harness

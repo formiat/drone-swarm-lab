@@ -138,10 +138,22 @@ pub struct WildfireZone {
 }
 
 /// Runtime configuration for Urban road-graph foundation scenarios.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UrbanMissionTemplate {
+    PerimeterPatrol,
+    BlockLoop,
+    SearchUntilTarget,
+    InspectionCorridorCandidate,
+}
+
+/// Runtime configuration for Urban road-graph foundation scenarios.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UrbanState {
     pub map: UrbanMap,
     pub route_loop: UrbanRouteLoop,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mission_template: Option<UrbanMissionTemplate>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub start_node: Option<UrbanNodeId>,
     #[serde(default = "default_urban_planner")]

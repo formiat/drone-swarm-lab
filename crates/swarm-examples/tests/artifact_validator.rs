@@ -16,6 +16,7 @@ use swarm_examples::artifact_validator::{
     RULE_MAVLINK_PROFILE_HARDWARE_BLOCKING, RULE_MAVLINK_PROFILE_MISSING,
     RULE_MAVLINK_PROFILE_RESULT_MISMATCH, RULE_MAVLINK_PROFILE_UNSUPPORTED,
     RULE_REPLACEMENT_SEQ_MISMATCH, RULE_REPLAY_SUMMARY_COUNT_MISMATCH, RULE_SAFETY_REPORT_MISSING,
+    RULE_URBAN_MOCK_PERCEPTION_MISSING, RULE_URBAN_WGS84_GEO_MISSING,
 };
 use swarm_examples::sitl_multi_agent::{
     MultiAgentLifecycle, MultiAgentSitlManifest, MultiAgentSitlManifestAgent, SitlArtifactMetadata,
@@ -585,6 +586,53 @@ fn dry_run_artifact_missing_m81_plan_fails() {
     assert_rule(&report, RULE_MAVLINK_PLAN_MISSING);
 }
 
+#[test]
+fn urban_wgs84_dry_run_without_waypoint_geo_fails() {
+    let fixture = tempfile::tempdir().unwrap();
+    let output_dir = fixture.path().join("dry-run");
+    fs::create_dir_all(&output_dir).unwrap();
+    let mut artifact = dry_run_artifact_fixture(true);
+    artifact.mission = "urban-patrol".to_owned();
+    artifact.export_kind = "urban_route".to_owned();
+    artifact.coordinate_mode = "wgs84_node_geo".to_owned();
+    artifact.start_waypoint.as_mut().unwrap().geo = None;
+    artifact.end_waypoint.as_mut().unwrap().geo = None;
+    write_json(&output_dir.join("sitl_dry_run_artifact.v1.json"), &artifact);
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&output_dir),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::DryRun,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_URBAN_WGS84_GEO_MISSING);
+}
+
+#[test]
+fn urban_search_without_mock_perception_metadata_fails() {
+    let fixture = tempfile::tempdir().unwrap();
+    let output_dir = fixture.path().join("dry-run");
+    fs::create_dir_all(&output_dir).unwrap();
+    let mut artifact = dry_run_artifact_fixture(true);
+    artifact.mission = "urban-search".to_owned();
+    artifact.export_kind = "urban_route".to_owned();
+    artifact.coordinate_mode = "local_with_origin".to_owned();
+    artifact.urban_mock_perception = None;
+    write_json(&output_dir.join("sitl_dry_run_artifact.v1.json"), &artifact);
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&output_dir),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::DryRun,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_URBAN_MOCK_PERCEPTION_MISSING);
+}
+
 fn assert_rule(
     report: &swarm_examples::artifact_validator::ArtifactValidationReport,
     rule_id: &str,
@@ -611,6 +659,7 @@ fn dry_run_artifact_fixture(include_m81_plan: bool) -> SitlDryRunArtifact {
         x: 10.0,
         y: 20.0,
         z: 5.0,
+        geo: None,
         source: "pose_task".to_owned(),
         edge_id: None,
         from_node_id: None,
@@ -691,6 +740,10 @@ fn dry_run_artifact_fixture(include_m81_plan: bool) -> SitlDryRunArtifact {
         geo_origin: Some(origin),
         effective_geo_origin: origin,
         coordinate_frame: "local_simulation".to_owned(),
+        coordinate_mode: "local_with_origin".to_owned(),
+        urban_mission_template: None,
+        urban_blocked_route_policy: None,
+        urban_mock_perception: None,
         safety_report: SafetyValidationReport::ok(),
         command: vec!["sitl_agent".to_owned(), "--dry-run".to_owned()],
         git_commit: Some("0123456789abcdef".to_owned()),

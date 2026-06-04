@@ -239,6 +239,23 @@ fields (`edge_id`, `from_node_id`, `to_node_id`, `segment_index`,
 waypoint count, and `geo_origin`. This is a local waypoint export artifact, not
 proof of PX4 execution, hardware readiness, perception, or obstacle avoidance.
 
+M84 adds optional WGS84 node metadata for Urban maps:
+
+- `run_config.urban_state.map.nodes[].geo` may contain
+  `{ lat_deg, lon_deg, alt_m }`;
+- either every node has `geo` or no node has `geo`; mixed maps are invalid;
+- all-geo maps export with `coordinate_mode: wgs84_node_geo` and direct WGS84
+  waypoint metadata;
+- local maps export with `coordinate_mode: local_with_origin` and retain the
+  existing densified local waypoint behavior;
+- `run_config.urban_state.mission_template` may annotate canonical templates:
+  `perimeter_patrol`, `block_loop`, `search_until_target`, or
+  `inspection_corridor_candidate`.
+
+`scenarios/urban.geo-perimeter.json` is the canonical WGS84-node dry-run
+fixture. `scenarios/urban.geo-block.geojson` is a small GeoJSON importer
+fixture for generating Urban road graphs from Point/LineString features.
+
 ## Urban Search
 
 M66 adds `urban-search` as a simulation-only search mission on top of the

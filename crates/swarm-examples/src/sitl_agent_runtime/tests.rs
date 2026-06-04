@@ -87,6 +87,7 @@ fn test_waypoint(
         x,
         y,
         z,
+        geo: None,
         source: "pose_task".to_owned(),
         edge_id: None,
         from_node_id: None,
@@ -106,6 +107,7 @@ fn test_plan() -> SitlPlan {
         mission: "sitl".to_owned(),
         profile: "waypoints".to_owned(),
         coordinate_frame: crate::sitl_plan::SitlCoordinateFrame::LocalSimulation,
+        coordinate_mode: "local_with_origin".to_owned(),
         altitude_source: "pose.z".to_owned(),
         geo_origin: None,
         export_kind: "pose_tasks".to_owned(),
@@ -118,6 +120,9 @@ fn test_plan() -> SitlPlan {
             test_waypoint(1, "wp-1", 30.0, 40.0, 4.0),
         ],
         safety_report: swarm_safety::preflight::SafetyValidationReport::ok(),
+        urban_mission_template: None,
+        urban_blocked_route_policy: None,
+        urban_mock_perception: None,
         primitive_mission: None,
     }
 }

@@ -3,8 +3,8 @@ use std::collections::HashSet;
 use super::*;
 use swarm_types::{
     Aabb, Pose, UrbanBus, UrbanBusId, UrbanBusRoute, UrbanBusStop, UrbanDetectorConfig, UrbanEdge,
-    UrbanEdgeId, UrbanMap, UrbanNode, UrbanNodeId, UrbanPlannedRoute, UrbanRouteLoop,
-    UrbanRouteSegment, UrbanSearchState, UrbanStaticObstacle, UrbanViolation,
+    UrbanEdgeId, UrbanGeoPoint, UrbanMap, UrbanNode, UrbanNodeId, UrbanPlannedRoute,
+    UrbanRouteLoop, UrbanRouteSegment, UrbanSearchState, UrbanStaticObstacle, UrbanViolation,
 };
 
 fn node(id: &str, x: f64, y: f64) -> UrbanNode {
@@ -15,6 +15,7 @@ fn node(id: &str, x: f64, y: f64) -> UrbanNode {
             y,
             ..Default::default()
         },
+        geo: None,
     }
 }
 
@@ -51,6 +52,18 @@ fn block_map() -> UrbanMap {
         ],
         static_obstacles: vec![],
     }
+}
+
+fn geo_block_map() -> UrbanMap {
+    let mut map = block_map();
+    for (index, node) in map.nodes.iter_mut().enumerate() {
+        node.geo = Some(UrbanGeoPoint {
+            lat_deg: 47.0 + index as f64 * 0.0001,
+            lon_deg: 8.0 + index as f64 * 0.0001,
+            alt_m: 5.0,
+        });
+    }
+    map
 }
 
 fn corridor_delta_map() -> UrbanMap {
@@ -305,6 +318,88 @@ fn urban_route_exports_ordered_waypoints() {
     assert_eq!(
         export.waypoints[3].edge_id,
         UrbanEdgeId::from("e30".to_owned())
+    );
+}
+
+#[test]
+fn urban_route_exports_wgs84_node_geo_without_densification() {
+    let export = export_planned_route_to_waypoints(
+        &geo_block_map(),
+        UrbanPlannedRoute {
+            segments: vec![
+                UrbanRouteSegment {
+                    edge_id: UrbanEdgeId::from("e01".to_owned()),
+                    from: UrbanNodeId::from("n0".to_owned()),
+                    to: UrbanNodeId::from("n1".to_owned()),
+                    length_m: 10.0,
+                    cost: 10.0,
+                },
+                UrbanRouteSegment {
+                    edge_id: UrbanEdgeId::from("e12".to_owned()),
+                    from: UrbanNodeId::from("n1".to_owned()),
+                    to: UrbanNodeId::from("n2".to_owned()),
+                    length_m: 10.0,
+                    cost: 10.0,
+                },
+            ],
+            total_length_m: 20.0,
+            total_cost: 20.0,
+        },
+        &UrbanRouteExportOptions {
+            max_spacing_m: 1.0,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    assert_eq!(
+        export.metadata.coordinate_mode,
+        UrbanCoordinateMode::Wgs84NodeGeo
+    );
+    assert_eq!(export.waypoints.len(), 2);
+    assert_eq!(export.waypoints[0].geo.unwrap().lat_deg, 47.0001);
+    assert_eq!(export.waypoints[1].geo.unwrap().lon_deg, 8.0002);
+}
+
+#[test]
+fn urban_geojson_import_preserves_geo_and_computes_local_pose() {
+    let map = import_urban_map_from_geojson_str(
+        r#"{
+          "type": "FeatureCollection",
+          "features": [
+            {"type":"Feature","properties":{"id":"n0"},"geometry":{"type":"Point","coordinates":[8.0,47.0,5.0]}},
+            {"type":"Feature","properties":{"id":"n1"},"geometry":{"type":"Point","coordinates":[8.0001,47.0001,5.0]}},
+            {"type":"Feature","properties":{"id":"e01","from":"n0","to":"n1","corridor_width_m":6.0},"geometry":{"type":"LineString","coordinates":[[8.0,47.0],[8.0001,47.0001]]}}
+          ]
+        }"#,
+        &UrbanGeoJsonImportOptions::default(),
+    )
+    .unwrap();
+
+    assert_eq!(map.nodes.len(), 2);
+    assert_eq!(map.edges.len(), 1);
+    assert_eq!(map.nodes[0].pose.x, 0.0);
+    assert_eq!(map.nodes[0].pose.y, 0.0);
+    assert!(map.nodes[1].pose.x > 0.0);
+    assert!(map.nodes[1].pose.y > 0.0);
+    assert_eq!(map.nodes[1].geo.unwrap().lat_deg, 47.0001);
+}
+
+#[test]
+fn urban_geojson_import_rejects_unsupported_geometry() {
+    let err = import_urban_map_from_geojson_str(
+        r#"{
+          "type": "FeatureCollection",
+          "features": [
+            {"type":"Feature","properties":{"id":"building"},"geometry":{"type":"Polygon","coordinates":[]}}
+          ]
+        }"#,
+        &UrbanGeoJsonImportOptions::default(),
+    )
+    .unwrap_err();
+
+    assert!(
+        matches!(err, UrbanGeoJsonImportError::Invalid { field, .. } if field == "features[0].geometry.type")
     );
 }
 

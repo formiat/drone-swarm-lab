@@ -10,15 +10,17 @@ use swarm_comms::{
     MavlinkCommonPlanOptions, MavlinkCoordinateOrigin, MavlinkOrbitStrategy,
 };
 use swarm_mission_ir::{
-    AltitudeReference, CommandId, CompletionTolerance, CoordinateFrame, LocalPosition,
+    AltitudeReference, CommandId, CompletionTolerance, CoordinateFrame, GeoPosition, LocalPosition,
     MissionCommand, MissionCommandEntry, MissionCommandPlan, MissionCommandSummary, MissionId,
     MissionWaypoint, OrbitDirection, Position, TerminalState, TimeoutAction, TimeoutPolicy,
 };
 use swarm_safety::preflight::{SafetyValidationReport, ViolationSeverity};
 use swarm_sim::{
     export_route_loop_to_waypoints, validate_scenario_suite, GeoOrigin, PrimitiveMission,
-    ScenarioSuite, ScenarioSuiteEntry, UrbanRouteExportOptions,
+    ScenarioSuite, ScenarioSuiteEntry, UrbanCoordinateMode, UrbanMissionTemplate,
+    UrbanRouteExportOptions,
 };
+use swarm_types::{UrbanBlockedPolicy, UrbanGeoPoint};
 
 pub const DEFAULT_SITL_GEO_ORIGIN: GeoOrigin = GeoOrigin {
     lat_deg: 47.397_742,
@@ -84,6 +86,8 @@ pub struct SitlWaypointItem {
     pub x: f64,
     pub y: f64,
     pub z: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub geo: Option<UrbanGeoPoint>,
     #[serde(default)]
     pub source: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -107,6 +111,7 @@ pub struct SitlPlan {
     pub mission: String,
     pub profile: String,
     pub coordinate_frame: SitlCoordinateFrame,
+    pub coordinate_mode: String,
     pub altitude_source: String,
     pub geo_origin: Option<GeoOrigin>,
     pub export_kind: String,
@@ -116,6 +121,9 @@ pub struct SitlPlan {
     pub waypoint_count: usize,
     pub waypoints: Vec<SitlWaypointItem>,
     pub safety_report: SafetyValidationReport,
+    pub urban_mission_template: Option<String>,
+    pub urban_blocked_route_policy: Option<String>,
+    pub urban_mock_perception: Option<UrbanMockPerceptionSummary>,
     /// Present for `hover`, `orbit` and `takeoff-land` missions. Used by the
     /// real-connection upload path to build typed MAVLink `MissionItem`s.
     pub primitive_mission: Option<PrimitiveMission>,
@@ -243,6 +251,14 @@ pub struct SitlDryRunArtifact {
     pub geo_origin: Option<GeoOrigin>,
     pub effective_geo_origin: GeoOrigin,
     pub coordinate_frame: String,
+    #[serde(default = "default_coordinate_mode")]
+    pub coordinate_mode: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub urban_mission_template: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub urban_blocked_route_policy: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub urban_mock_perception: Option<UrbanMockPerceptionSummary>,
     pub safety_report: SafetyValidationReport,
     pub command: Vec<String>,
     pub git_commit: Option<String>,
@@ -257,6 +273,19 @@ pub struct SitlDryRunArtifact {
     /// This is a dry-run artifact only; it does not upload anything to hardware.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mavlink_common_plan: Option<MavlinkCommonPlan>,
+}
+
+fn default_coordinate_mode() -> String {
+    UrbanCoordinateMode::LocalWithOrigin.as_str().to_owned()
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct UrbanMockPerceptionSummary {
+    pub detector_seed: u64,
+    pub detection_range_m: f64,
+    pub detection_probability: f64,
+    pub false_positive_rate: f64,
+    pub target_count: usize,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
@@ -408,7 +437,9 @@ fn build_sitl_plan_with_task_filter(
     let validation_errors = validate_scenario_suite(suite);
     let agent_id = agent_id.into();
 
-    if entry.mission == "urban-patrol" && entry.run_config.urban_state.is_some() {
+    if matches!(entry.mission.as_str(), "urban-patrol" | "urban-search")
+        && entry.run_config.urban_state.is_some()
+    {
         if task_ids.is_some() {
             return Err(SitlError::UrbanRouteTaskSubsetUnsupported { agent_id });
         }
@@ -462,6 +493,7 @@ fn build_sitl_plan_with_task_filter(
             x: pose.x,
             y: pose.y,
             z: pose.z,
+            geo: None,
             source: "pose_task".to_owned(),
             edge_id: None,
             from_node_id: None,
@@ -528,6 +560,7 @@ fn build_sitl_plan_with_task_filter(
         mission: entry.mission.clone(),
         profile: entry.profile.clone(),
         coordinate_frame: SitlCoordinateFrame::LocalSimulation,
+        coordinate_mode: UrbanCoordinateMode::LocalWithOrigin.as_str().to_owned(),
         altitude_source: "pose.z (serde default 0.0 when omitted)".to_owned(),
         geo_origin: entry.scenario.geo_origin,
         export_kind: "pose_tasks".to_owned(),
@@ -537,6 +570,9 @@ fn build_sitl_plan_with_task_filter(
         waypoint_count: waypoints.len(),
         waypoints,
         safety_report,
+        urban_mission_template: None,
+        urban_blocked_route_policy: None,
+        urban_mock_perception: None,
         primitive_mission: None,
     })
 }
@@ -597,6 +633,7 @@ fn build_primitive_sitl_plan(
             x: item.x,
             y: item.y,
             z: item.z,
+            geo: None,
             source: format!("primitive_{}", item.label),
             edge_id: None,
             from_node_id: None,
@@ -614,6 +651,7 @@ fn build_primitive_sitl_plan(
         mission: entry.mission.clone(),
         profile: entry.profile.clone(),
         coordinate_frame: SitlCoordinateFrame::LocalSimulation,
+        coordinate_mode: UrbanCoordinateMode::LocalWithOrigin.as_str().to_owned(),
         altitude_source: "primitive_mission.altitude_m".to_owned(),
         geo_origin: entry.scenario.geo_origin,
         export_kind: "primitive_mission".to_owned(),
@@ -623,6 +661,9 @@ fn build_primitive_sitl_plan(
         waypoint_count: waypoints.len(),
         waypoints,
         safety_report,
+        urban_mission_template: None,
+        urban_blocked_route_policy: None,
+        urban_mock_perception: None,
         primitive_mission: Some(prim.clone()),
     })
 }
@@ -681,6 +722,7 @@ fn build_urban_route_sitl_plan(
             x: waypoint.pose.x,
             y: waypoint.pose.y,
             z: waypoint.pose.z,
+            geo: waypoint.geo,
             source: "urban_route".to_owned(),
             edge_id: Some(waypoint.edge_id.to_string()),
             from_node_id: Some(waypoint.from_node_id.to_string()),
@@ -698,6 +740,7 @@ fn build_urban_route_sitl_plan(
         mission: entry.mission.clone(),
         profile: entry.profile.clone(),
         coordinate_frame: SitlCoordinateFrame::LocalSimulation,
+        coordinate_mode: export.metadata.coordinate_mode.as_str().to_owned(),
         altitude_source: export.metadata.altitude_source.clone(),
         geo_origin: entry.scenario.geo_origin,
         export_kind: "urban_route".to_owned(),
@@ -707,6 +750,22 @@ fn build_urban_route_sitl_plan(
         waypoint_count: export.metadata.waypoint_count,
         waypoints,
         safety_report,
+        urban_mission_template: urban_state
+            .mission_template
+            .as_ref()
+            .map(urban_mission_template_name),
+        urban_blocked_route_policy: Some(
+            urban_blocked_policy_name(&urban_state.blocked_route_policy).to_owned(),
+        ),
+        urban_mock_perception: entry.run_config.urban_search_state.as_ref().map(|state| {
+            UrbanMockPerceptionSummary {
+                detector_seed: state.detector.seed,
+                detection_range_m: state.detector.detection_range_m,
+                detection_probability: state.detector.detection_probability,
+                false_positive_rate: state.detector.false_positive_rate,
+                target_count: state.buses.len(),
+            }
+        }),
         primitive_mission: None,
     })
 }
@@ -738,6 +797,7 @@ pub fn format_dry_run_plan(plan: &SitlPlan) -> String {
     writeln!(output, "mission: {}", plan.mission).unwrap();
     writeln!(output, "profile: {}", plan.profile).unwrap();
     writeln!(output, "coordinate_frame: {}", plan.coordinate_frame.name()).unwrap();
+    writeln!(output, "coordinate_mode: {}", plan.coordinate_mode).unwrap();
     writeln!(output, "export_kind: {}", plan.export_kind).unwrap();
     writeln!(output, "planner_or_adapter: {}", plan.planner_or_adapter).unwrap();
     writeln!(output, "altitude_source: {}", plan.altitude_source).unwrap();
@@ -762,11 +822,19 @@ pub fn format_dry_run_plan(plan: &SitlPlan) -> String {
         let rule_ids = preflight_error_rule_ids(&plan.safety_report);
         writeln!(output, "preflight_safety: failed rule_ids={rule_ids}").unwrap();
     }
-    writeln!(
-        output,
-        "limitations: x/y are local simulation coordinates, not WGS84 latitude/longitude; dry-run does not upload to PX4"
-    )
-    .unwrap();
+    if plan.coordinate_mode == UrbanCoordinateMode::Wgs84NodeGeo.as_str() {
+        writeln!(
+            output,
+            "limitations: waypoint x/y remain local simulation coordinates; waypoint geo carries WGS84 export coordinates; dry-run does not upload to PX4"
+        )
+        .unwrap();
+    } else {
+        writeln!(
+            output,
+            "limitations: x/y are local simulation coordinates, not WGS84 latitude/longitude; dry-run does not upload to PX4"
+        )
+        .unwrap();
+    }
     writeln!(output, "waypoints:").unwrap();
     for waypoint in &plan.waypoints {
         writeln!(
@@ -775,6 +843,14 @@ pub fn format_dry_run_plan(plan: &SitlPlan) -> String {
             waypoint.seq, waypoint.task_id, waypoint.x, waypoint.y, waypoint.z
         )
         .unwrap();
+        if let Some(geo) = waypoint.geo {
+            writeln!(
+                output,
+                "    geo lat_deg={:.7} lon_deg={:.7} alt_m={:.3}",
+                geo.lat_deg, geo.lon_deg, geo.alt_m
+            )
+            .unwrap();
+        }
         if waypoint.source == "urban_route" {
             writeln!(
                 output,
@@ -866,6 +942,10 @@ pub fn dry_run_artifact_with_mavlink_profile(
         geo_origin: plan.geo_origin,
         effective_geo_origin,
         coordinate_frame: plan.coordinate_frame.name().to_owned(),
+        coordinate_mode: plan.coordinate_mode.clone(),
+        urban_mission_template: plan.urban_mission_template.clone(),
+        urban_blocked_route_policy: plan.urban_blocked_route_policy.clone(),
+        urban_mock_perception: plan.urban_mock_perception.clone(),
         safety_report: plan.safety_report.clone(),
         command,
         git_commit: option_env!("GIT_COMMIT").map(str::to_owned),
@@ -898,11 +978,7 @@ fn build_command_ir_plan(plan: &SitlPlan) -> Option<MissionCommandPlan> {
             .waypoints
             .iter()
             .map(|wp| MissionWaypoint {
-                position: Position::Local(LocalPosition {
-                    x_m: wp.x,
-                    y_m: wp.y,
-                    z_m: wp.z,
-                }),
+                position: sitl_waypoint_position(wp),
                 acceptance_radius_m: None,
             })
             .collect();
@@ -965,7 +1041,11 @@ fn build_command_ir_plan(plan: &SitlPlan) -> Option<MissionCommandPlan> {
     let ir_plan = MissionCommandPlan {
         schema_version: MissionCommandPlan::SCHEMA_VERSION.to_owned(),
         mission_id,
-        coordinate_frame: CoordinateFrame::LocalEnu,
+        coordinate_frame: if plan.coordinate_mode == UrbanCoordinateMode::Wgs84NodeGeo.as_str() {
+            CoordinateFrame::Wgs84
+        } else {
+            CoordinateFrame::LocalEnu
+        },
         altitude_reference: AltitudeReference::RelativeHome,
         timeout_policy: TimeoutPolicy {
             command_timeout_secs: 5.0,
@@ -1055,11 +1135,22 @@ fn square_waypoints(side_m: f64, altitude_m: f64) -> Vec<MissionWaypoint> {
 }
 
 fn sitl_waypoint_position(waypoint: &SitlWaypointItem) -> Position {
-    Position::Local(LocalPosition {
-        x_m: waypoint.x,
-        y_m: waypoint.y,
-        z_m: waypoint.z,
-    })
+    waypoint.geo.map_or_else(
+        || {
+            Position::Local(LocalPosition {
+                x_m: waypoint.x,
+                y_m: waypoint.y,
+                z_m: waypoint.z,
+            })
+        },
+        |geo| {
+            Position::Geo(GeoPosition {
+                lat_deg: geo.lat_deg,
+                lon_deg: geo.lon_deg,
+                alt_m: geo.alt_m,
+            })
+        },
+    )
 }
 
 fn preflight_error_rule_ids(report: &SafetyValidationReport) -> String {
@@ -1076,6 +1167,13 @@ pub fn global_waypoint_summary(
     waypoint: &SitlWaypointItem,
     origin: GeoOrigin,
 ) -> SitlGlobalWaypointSummary {
+    if let Some(geo) = waypoint.geo {
+        return SitlGlobalWaypointSummary {
+            lat_deg: geo.lat_deg,
+            lon_deg: geo.lon_deg,
+            relative_alt_m: geo.alt_m,
+        };
+    }
     let lat_deg = origin.lat_deg + waypoint.y / 111_320.0;
     let meters_per_lon_degree = 111_320.0 * origin.lat_deg.to_radians().cos();
     let lon_deg = origin.lon_deg + waypoint.x / meters_per_lon_degree;
@@ -1083,6 +1181,24 @@ pub fn global_waypoint_summary(
         lat_deg,
         lon_deg,
         relative_alt_m: waypoint.z,
+    }
+}
+
+fn urban_mission_template_name(template: &UrbanMissionTemplate) -> String {
+    match template {
+        UrbanMissionTemplate::PerimeterPatrol => "perimeter_patrol",
+        UrbanMissionTemplate::BlockLoop => "block_loop",
+        UrbanMissionTemplate::SearchUntilTarget => "search_until_target",
+        UrbanMissionTemplate::InspectionCorridorCandidate => "inspection_corridor_candidate",
+    }
+    .to_owned()
+}
+
+fn urban_blocked_policy_name(policy: &UrbanBlockedPolicy) -> &'static str {
+    match policy {
+        UrbanBlockedPolicy::Wait => "wait",
+        UrbanBlockedPolicy::Replan => "replan",
+        UrbanBlockedPolicy::Abort => "abort",
     }
 }
 
@@ -1130,11 +1246,12 @@ pub fn write_dry_run_artifact_with_mavlink_profile(
 mod tests {
     use super::*;
     use swarm_sim::{
-        GeoOrigin, PrimitiveMission, RunConfig, Scenario, ScenarioSuiteEntry, UrbanState,
+        GeoOrigin, PrimitiveMission, RunConfig, Scenario, ScenarioSuiteEntry, UrbanMissionTemplate,
+        UrbanState,
     };
     use swarm_types::{
         Agent, AgentId, Health, Pose, Role, Task, TaskId, TaskKind, TaskStatus, UrbanBlockedPolicy,
-        UrbanEdge, UrbanEdgeId, UrbanMap, UrbanNode, UrbanNodeId, UrbanRouteLoop,
+        UrbanEdge, UrbanEdgeId, UrbanGeoPoint, UrbanMap, UrbanNode, UrbanNodeId, UrbanRouteLoop,
     };
 
     fn agent() -> Agent {
@@ -1201,6 +1318,16 @@ mod tests {
     fn urban_suite(geo_origin: Option<GeoOrigin>) -> ScenarioSuite {
         let n0 = UrbanNodeId::from("n0".to_owned());
         let n1 = UrbanNodeId::from("n1".to_owned());
+        let n0_geo = geo_origin.map(|origin| UrbanGeoPoint {
+            lat_deg: origin.lat_deg,
+            lon_deg: origin.lon_deg,
+            alt_m: 5.0,
+        });
+        let n1_geo = geo_origin.map(|origin| UrbanGeoPoint {
+            lat_deg: origin.lat_deg,
+            lon_deg: origin.lon_deg + 0.0002,
+            alt_m: 5.0,
+        });
         ScenarioSuite {
             schema_version: "0.1".to_owned(),
             name: "Urban Patrol Small Block".to_owned(),
@@ -1247,6 +1374,7 @@ mod tests {
                                         y: 0.0,
                                         ..Default::default()
                                     },
+                                    geo: n0_geo,
                                 },
                                 UrbanNode {
                                     id: n1.clone(),
@@ -1255,6 +1383,7 @@ mod tests {
                                         y: 0.0,
                                         ..Default::default()
                                     },
+                                    geo: n1_geo,
                                 },
                             ],
                             edges: vec![
@@ -1282,6 +1411,7 @@ mod tests {
                         route_loop: UrbanRouteLoop {
                             nodes: vec![n0, n1],
                         },
+                        mission_template: Some(UrbanMissionTemplate::PerimeterPatrol),
                         start_node: Some(UrbanNodeId::from("n0".to_owned())),
                         planner: "dijkstra".to_owned(),
                         temporary_obstacles: vec![],
@@ -1386,6 +1516,7 @@ mod tests {
 
         assert_eq!(plan.export_kind, "urban_route");
         assert_eq!(plan.geo_origin, Some(origin));
+        assert_eq!(plan.coordinate_mode, "wgs84_node_geo");
         assert_eq!(plan.route_length_m, Some(40.0));
         assert_eq!(plan.segment_count, Some(2));
         assert_eq!(plan.waypoint_count, 2);
@@ -1393,6 +1524,11 @@ mod tests {
         assert_eq!(plan.waypoints[0].source, "urban_route");
         assert_eq!(plan.waypoints[0].edge_id.as_deref(), Some("road-n0-n1"));
         assert_eq!(plan.waypoints[0].z, 5.0);
+        assert!(plan.waypoints[0].geo.is_some());
+        assert_eq!(
+            plan.urban_mission_template.as_deref(),
+            Some("perimeter_patrol")
+        );
     }
 
     #[test]
@@ -1430,6 +1566,7 @@ mod tests {
             DEFAULT_SITL_GEO_ORIGIN
         );
         assert_eq!(custom_artifact.effective_geo_origin, custom_origin);
+        assert_eq!(custom_artifact.coordinate_mode, "wgs84_node_geo");
         assert_ne!(
             default_artifact.start_global.unwrap().lat_deg,
             custom_artifact.start_global.unwrap().lat_deg
@@ -1438,6 +1575,22 @@ mod tests {
             default_artifact.start_global.unwrap().lon_deg,
             custom_artifact.start_global.unwrap().lon_deg
         );
+    }
+
+    #[test]
+    fn urban_geo_plan_builds_wgs84_follow_route_ir() {
+        let plan = build_sitl_plan(
+            &urban_suite(Some(DEFAULT_SITL_GEO_ORIGIN)),
+            "urban.json",
+            "agent-0",
+        )
+        .unwrap();
+        let artifact = dry_run_artifact(&plan, vec![]);
+        let summary = artifact.command_ir_summary.unwrap();
+
+        assert_eq!(artifact.coordinate_mode, "wgs84_node_geo");
+        assert!(artifact.start_waypoint.unwrap().geo.is_some());
+        assert_eq!(summary.coordinate_frame, "wgs84");
     }
 
     #[test]

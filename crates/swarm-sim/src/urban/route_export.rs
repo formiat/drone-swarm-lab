@@ -1,13 +1,34 @@
 use std::error::Error;
 use std::fmt;
 
-use swarm_mission_ir::{LocalPosition, MissionCommand, MissionWaypoint, Position, RouteId};
-use swarm_types::{Pose, UrbanEdgeId, UrbanMap, UrbanNodeId, UrbanPlannedRoute, UrbanRouteLoop};
+use serde::{Deserialize, Serialize};
+use swarm_mission_ir::{
+    GeoPosition, LocalPosition, MissionCommand, MissionWaypoint, Position, RouteId,
+};
+use swarm_types::{
+    Pose, UrbanEdgeId, UrbanGeoPoint, UrbanMap, UrbanNodeId, UrbanPlannedRoute, UrbanRouteLoop,
+};
 
 use super::{expand_route_loop_with_planner_name, UrbanRouteError};
 
 pub const DEFAULT_URBAN_ROUTE_ALTITUDE_M: f64 = 5.0;
 pub const DEFAULT_URBAN_ROUTE_MAX_SPACING_M: f64 = 25.0;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UrbanCoordinateMode {
+    LocalWithOrigin,
+    Wgs84NodeGeo,
+}
+
+impl UrbanCoordinateMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::LocalWithOrigin => "local_with_origin",
+            Self::Wgs84NodeGeo => "wgs84_node_geo",
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct UrbanRouteExportOptions {
@@ -31,6 +52,7 @@ pub struct UrbanRouteWaypoint {
     pub seq: u16,
     pub task_id: String,
     pub pose: Pose,
+    pub geo: Option<UrbanGeoPoint>,
     pub edge_id: UrbanEdgeId,
     pub from_node_id: UrbanNodeId,
     pub to_node_id: UrbanNodeId,
@@ -47,6 +69,7 @@ pub struct UrbanRouteExportMetadata {
     pub altitude_source: String,
     pub spacing_m: f64,
     pub planner: String,
+    pub coordinate_mode: UrbanCoordinateMode,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -61,6 +84,7 @@ pub enum UrbanRouteExportError {
     InvalidOption { field: String, message: String },
     Route(UrbanRouteError),
     MissingNode { node_id: UrbanNodeId },
+    MixedGeoNodes,
     TooManyWaypoints { count: usize },
 }
 
@@ -72,6 +96,10 @@ impl fmt::Display for UrbanRouteExportError {
             Self::MissingNode { node_id } => {
                 write!(f, "urban route references missing node '{node_id}'")
             }
+            Self::MixedGeoNodes => write!(
+                f,
+                "urban route export requires either geo coordinates on every node or none"
+            ),
             Self::TooManyWaypoints { count } => {
                 write!(f, "urban route export produced too many waypoints: {count}")
             }
@@ -98,6 +126,7 @@ pub fn export_planned_route_to_waypoints(
     options: &UrbanRouteExportOptions,
 ) -> Result<UrbanRouteExport, UrbanRouteExportError> {
     validate_options(options)?;
+    let coordinate_mode = coordinate_mode(map)?;
     let mut waypoints = Vec::new();
 
     for (segment_index, segment) in route.segments.iter().enumerate() {
@@ -105,12 +134,34 @@ pub fn export_planned_route_to_waypoints(
         let to = node_pose(map, &segment.to)?;
         let interval_count = ((segment.length_m / options.max_spacing_m).ceil() as usize).max(1);
 
-        for point_index in 1..=interval_count {
+        let point_count = match coordinate_mode {
+            UrbanCoordinateMode::LocalWithOrigin => interval_count,
+            UrbanCoordinateMode::Wgs84NodeGeo => 1,
+        };
+
+        for point_index in 1..=point_count {
             let fraction = point_index as f64 / interval_count as f64;
-            let pose = Pose {
-                x: interpolate(from.x, to.x, fraction),
-                y: interpolate(from.y, to.y, fraction),
-                z: options.default_altitude_m,
+            let (pose, geo) = match coordinate_mode {
+                UrbanCoordinateMode::LocalWithOrigin => (
+                    Pose {
+                        x: interpolate(from.x, to.x, fraction),
+                        y: interpolate(from.y, to.y, fraction),
+                        z: options.default_altitude_m,
+                    },
+                    None,
+                ),
+                UrbanCoordinateMode::Wgs84NodeGeo => {
+                    let mut geo = node_geo(map, &segment.to)?;
+                    geo.alt_m = options.default_altitude_m;
+                    (
+                        Pose {
+                            x: to.x,
+                            y: to.y,
+                            z: options.default_altitude_m,
+                        },
+                        Some(geo),
+                    )
+                }
             };
             let seq = u16::try_from(waypoints.len()).map_err(|_| {
                 UrbanRouteExportError::TooManyWaypoints {
@@ -121,6 +172,7 @@ pub fn export_planned_route_to_waypoints(
                 seq,
                 task_id: stable_task_id(segment_index, &segment.edge_id, point_index),
                 pose,
+                geo,
                 edge_id: segment.edge_id.clone(),
                 from_node_id: segment.from.clone(),
                 to_node_id: segment.to.clone(),
@@ -140,10 +192,22 @@ pub fn export_planned_route_to_waypoints(
             altitude_source: "urban_route_export.default_altitude_m".to_owned(),
             spacing_m: options.max_spacing_m,
             planner: options.planner.clone(),
+            coordinate_mode,
         },
         route,
         waypoints,
     })
+}
+
+fn coordinate_mode(map: &UrbanMap) -> Result<UrbanCoordinateMode, UrbanRouteExportError> {
+    let nodes_with_geo = map.nodes.iter().filter(|node| node.geo.is_some()).count();
+    if nodes_with_geo == 0 {
+        Ok(UrbanCoordinateMode::LocalWithOrigin)
+    } else if nodes_with_geo == map.nodes.len() {
+        Ok(UrbanCoordinateMode::Wgs84NodeGeo)
+    } else {
+        Err(UrbanRouteExportError::MixedGeoNodes)
+    }
 }
 
 fn validate_options(options: &UrbanRouteExportOptions) -> Result<(), UrbanRouteExportError> {
@@ -178,6 +242,16 @@ fn node_pose(map: &UrbanMap, node_id: &UrbanNodeId) -> Result<Pose, UrbanRouteEx
         })
 }
 
+fn node_geo(map: &UrbanMap, node_id: &UrbanNodeId) -> Result<UrbanGeoPoint, UrbanRouteExportError> {
+    map.nodes
+        .iter()
+        .find(|node| &node.id == node_id)
+        .and_then(|node| node.geo)
+        .ok_or_else(|| UrbanRouteExportError::MissingNode {
+            node_id: node_id.clone(),
+        })
+}
+
 fn interpolate(from: f64, to: f64, fraction: f64) -> f64 {
     from + (to - from) * fraction
 }
@@ -189,9 +263,10 @@ fn stable_task_id(segment_index: usize, edge_id: &UrbanEdgeId, point_index: usiz
 
 /// Converts a planned Urban route into a hardware-agnostic `MissionCommand::FollowRoute`.
 ///
-/// Each segment's destination node becomes a `MissionWaypoint` with a local
-/// position derived from the node's simulation pose. Segments whose destination
-/// node is absent from the map are silently skipped.
+/// Each segment's destination node becomes a `MissionWaypoint`. Maps where all
+/// nodes carry `UrbanGeoPoint` values produce WGS84 waypoints; local maps keep
+/// the simulation pose frame. Segments whose destination node is absent from the
+/// map are silently skipped.
 ///
 /// Returns `None` when the route has no segments, or when no destination nodes
 /// could be resolved (resulting in an empty waypoint list).
@@ -212,11 +287,22 @@ pub fn urban_route_to_follow_route(
                 .iter()
                 .find(|n| n.id == seg.to)
                 .map(|node| MissionWaypoint {
-                    position: Position::Local(LocalPosition {
-                        x_m: node.pose.x,
-                        y_m: node.pose.y,
-                        z_m: altitude_m,
-                    }),
+                    position: node.geo.map_or_else(
+                        || {
+                            Position::Local(LocalPosition {
+                                x_m: node.pose.x,
+                                y_m: node.pose.y,
+                                z_m: altitude_m,
+                            })
+                        },
+                        |geo| {
+                            Position::Geo(GeoPosition {
+                                lat_deg: geo.lat_deg,
+                                lon_deg: geo.lon_deg,
+                                alt_m: altitude_m,
+                            })
+                        },
+                    ),
                     acceptance_radius_m: None,
                 })
         })

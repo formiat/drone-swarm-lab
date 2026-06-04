@@ -91,9 +91,11 @@ let route_id = RouteId::from("urban-patrol-loop".to_owned());
 let cmd = urban_route_to_follow_route(&map, &planned_route, route_id, 5.0);
 ```
 
-Each segment's destination node becomes a `MissionWaypoint` with a local
-position (`x_m`, `y_m`, `z_m = altitude_m`). The function returns `None` when
-the route has no segments or when no node poses can be resolved.
+Each segment's destination node becomes a `MissionWaypoint`. Local Urban maps
+produce `Position::Local` (`x_m`, `y_m`, `z_m = altitude_m`). M84 WGS84-node
+maps, where every `UrbanNode` has `geo`, produce `Position::Geo` with
+`lat_deg`, `lon_deg`, and `alt_m = altitude_m`. The function returns `None`
+when the route has no segments or when no node positions can be resolved.
 
 ## What this IR is NOT
 

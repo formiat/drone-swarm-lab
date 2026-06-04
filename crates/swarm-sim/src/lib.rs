@@ -32,16 +32,18 @@ pub use report_export::{
 };
 pub use runner::{
     DynamicTaskEvent, FailureEvent, InspectionState, PartitionEvent, PrimitiveMission,
-    PrimitiveMissionItemDesc, RunConfig, ScenarioRunner, UrbanState, WildfireState, WildfireZone,
+    PrimitiveMissionItemDesc, RunConfig, ScenarioRunner, UrbanMissionTemplate, UrbanState,
+    WildfireState, WildfireZone,
 };
 pub use scenario::{GeoOrigin, Scenario};
 pub use support_matrix::{classify_support, SupportMatrixEntry, SupportReason, SupportStatus};
 pub use urban::{
     detect_blocked_ahead, detect_buses, effective_blocked_edges, expand_route_loop,
     expand_route_loop_with_planner, expand_route_loop_with_planner_name,
-    export_route_loop_to_waypoints, judge_route, plan_route, plan_route_excluding,
-    plan_route_with_mode, pose_along_segment, route_risk_score, urban_route_to_follow_route,
-    UrbanBusObservation, UrbanDetectionOutcome, UrbanPlannerMode, UrbanRouteError,
+    export_route_loop_to_waypoints, import_urban_map_from_geojson_str, judge_route, plan_route,
+    plan_route_excluding, plan_route_with_mode, pose_along_segment, route_risk_score,
+    urban_route_to_follow_route, UrbanBusObservation, UrbanCoordinateMode, UrbanDetectionOutcome,
+    UrbanGeoJsonImportError, UrbanGeoJsonImportOptions, UrbanPlannerMode, UrbanRouteError,
     UrbanRouteExport, UrbanRouteExportError, UrbanRouteExportMetadata, UrbanRouteExportOptions,
     UrbanRouteWaypoint, URBAN_BLOCKED_LOOKAHEAD_SEGMENTS,
 };

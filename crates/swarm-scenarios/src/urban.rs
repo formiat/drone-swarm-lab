@@ -211,6 +211,7 @@ pub fn build_urban_patrol_scenario(config: &UrbanConfig) -> (Scenario, RunConfig
         urban_state: Some(UrbanState {
             map,
             route_loop,
+            mission_template: None,
             start_node: Some(n0),
             planner: "dijkstra".to_owned(),
             temporary_obstacles: vec![],
@@ -454,6 +455,7 @@ pub fn build_blocked_route_wait_scenario(config: &UrbanConfig) -> (Scenario, Run
         urban_state: Some(UrbanState {
             map,
             route_loop,
+            mission_template: None,
             start_node: Some(n0),
             planner: "dijkstra".to_owned(),
             temporary_obstacles: vec![UrbanTemporaryObstacle {
@@ -521,6 +523,7 @@ pub fn build_blocked_route_replan_scenario(config: &UrbanConfig) -> (Scenario, R
         urban_state: Some(UrbanState {
             map,
             route_loop,
+            mission_template: None,
             start_node: Some(na),
             planner: "dijkstra".to_owned(),
             temporary_obstacles: vec![UrbanTemporaryObstacle {
@@ -581,6 +584,7 @@ pub fn build_blocked_route_no_alternative_scenario(config: &UrbanConfig) -> (Sce
         urban_state: Some(UrbanState {
             map,
             route_loop,
+            mission_template: None,
             start_node: Some(na),
             planner: "dijkstra".to_owned(),
             temporary_obstacles: vec![
@@ -637,6 +641,7 @@ fn node(id: &UrbanNodeId, x: f64, y: f64) -> UrbanNode {
             y,
             ..Default::default()
         },
+        geo: None,
     }
 }
 

@@ -730,6 +730,7 @@ fn urban_test_run_config(
                             y: 0.0,
                             ..Default::default()
                         },
+                        geo: None,
                     },
                     UrbanNode {
                         id: n1.clone(),
@@ -738,6 +739,7 @@ fn urban_test_run_config(
                             y: 0.0,
                             ..Default::default()
                         },
+                        geo: None,
                     },
                     UrbanNode {
                         id: n2.clone(),
@@ -746,6 +748,7 @@ fn urban_test_run_config(
                             y: 20.0,
                             ..Default::default()
                         },
+                        geo: None,
                     },
                     UrbanNode {
                         id: n3.clone(),
@@ -754,6 +757,7 @@ fn urban_test_run_config(
                             y: 20.0,
                             ..Default::default()
                         },
+                        geo: None,
                     },
                 ],
                 edges: vec![
@@ -799,6 +803,7 @@ fn urban_test_run_config(
             route_loop: UrbanRouteLoop {
                 nodes: vec![n0.clone(), n1, n2, n3, n0],
             },
+            mission_template: None,
             start_node: Some(UrbanNodeId::from("n0".to_owned())),
             planner: "dijkstra".to_owned(),
             temporary_obstacles: vec![],

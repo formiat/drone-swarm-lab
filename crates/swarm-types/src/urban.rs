@@ -98,6 +98,17 @@ pub struct UrbanBusRoute {
 pub struct UrbanNode {
     pub id: UrbanNodeId,
     pub pose: Pose,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub geo: Option<UrbanGeoPoint>,
+}
+
+/// WGS84 position attached to an Urban road-graph node.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct UrbanGeoPoint {
+    pub lat_deg: f64,
+    pub lon_deg: f64,
+    /// Altitude in metres relative to the current mission altitude reference.
+    pub alt_m: f64,
 }
 
 /// A directed road/corridor segment in a road graph.
@@ -344,6 +355,7 @@ impl UrbanMap {
         }
 
         let mut node_ids = HashSet::new();
+        let mut nodes_with_geo = 0usize;
         for (index, node) in self.nodes.iter().enumerate() {
             if !node_ids.insert(node.id.clone()) {
                 errors.push(UrbanMapValidationError::new(
@@ -352,6 +364,16 @@ impl UrbanMap {
                 ));
             }
             validate_pose(index, node.pose, &mut errors);
+            if let Some(geo) = node.geo {
+                nodes_with_geo += 1;
+                validate_geo(index, geo, &mut errors);
+            }
+        }
+        if nodes_with_geo > 0 && nodes_with_geo != self.nodes.len() {
+            errors.push(UrbanMapValidationError::new(
+                "nodes[].geo",
+                "Urban map nodes must either all carry geo coordinates or all omit them",
+            ));
         }
 
         let mut edge_ids = HashSet::new();
@@ -602,6 +624,27 @@ fn validate_pose(index: usize, pose: Pose, errors: &mut Vec<UrbanMapValidationEr
     }
 }
 
+fn validate_geo(index: usize, geo: UrbanGeoPoint, errors: &mut Vec<UrbanMapValidationError>) {
+    if !geo.lat_deg.is_finite() || geo.lat_deg < -90.0 || geo.lat_deg > 90.0 {
+        errors.push(UrbanMapValidationError::new(
+            format!("nodes[{index}].geo.lat_deg"),
+            "lat_deg must be finite and within [-90, 90]",
+        ));
+    }
+    if !geo.lon_deg.is_finite() || geo.lon_deg < -180.0 || geo.lon_deg > 180.0 {
+        errors.push(UrbanMapValidationError::new(
+            format!("nodes[{index}].geo.lon_deg"),
+            "lon_deg must be finite and within [-180, 180]",
+        ));
+    }
+    if !geo.alt_m.is_finite() {
+        errors.push(UrbanMapValidationError::new(
+            format!("nodes[{index}].geo.alt_m"),
+            "alt_m must be finite",
+        ));
+    }
+}
+
 fn validate_probability(field: &str, value: f64, errors: &mut Vec<UrbanMapValidationError>) {
     if !value.is_finite() || !(0.0..=1.0).contains(&value) {
         errors.push(UrbanMapValidationError::new(
@@ -623,6 +666,7 @@ mod tests {
                 y,
                 ..Default::default()
             },
+            geo: None,
         }
     }
 
@@ -1000,6 +1044,40 @@ mod tests {
         let json = serde_json::to_string(&policy).unwrap();
         let parsed: UrbanBlockedPolicy = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, policy);
+    }
+
+    #[test]
+    fn urban_map_accepts_complete_geo_nodes() {
+        let mut map = map();
+        map.nodes[0].geo = Some(UrbanGeoPoint {
+            lat_deg: 47.0,
+            lon_deg: 8.0,
+            alt_m: 5.0,
+        });
+        map.nodes[1].geo = Some(UrbanGeoPoint {
+            lat_deg: 47.0001,
+            lon_deg: 8.0001,
+            alt_m: 5.0,
+        });
+
+        assert!(map.validate().is_empty());
+    }
+
+    #[test]
+    fn urban_map_rejects_mixed_or_invalid_geo_nodes() {
+        let mut map = map();
+        map.nodes[0].geo = Some(UrbanGeoPoint {
+            lat_deg: 91.0,
+            lon_deg: 8.0,
+            alt_m: 5.0,
+        });
+
+        let errors = map.validate();
+
+        assert!(errors.iter().any(|error| error.field == "nodes[].geo"));
+        assert!(errors
+            .iter()
+            .any(|error| error.field == "nodes[0].geo.lat_deg"));
     }
 
     #[test]

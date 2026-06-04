@@ -172,14 +172,31 @@ cargo run --bin sitl_agent -- \
 
 Expected output includes `export_kind: urban_route`,
 `planner_or_adapter: urban_route_export:dijkstra`, `route_length_m`,
-`segment_count`, `waypoint_count`, `geo_origin`, and per-waypoint Urban route
-identity fields such as `edge_id`, `from`, `to`, `segment_index`, and
-`point_index_on_segment`.
+`segment_count`, `waypoint_count`, `geo_origin`, `coordinate_mode`, and
+per-waypoint Urban route identity fields such as `edge_id`, `from`, `to`,
+`segment_index`, and `point_index_on_segment`.
+
+M84 adds WGS84-node Urban export. If every `UrbanNode` in the map carries
+`geo`, route export uses `coordinate_mode: wgs84_node_geo`, emits one direct
+waypoint per destination road-graph node, and records the waypoint `geo` values
+in `sitl_dry_run_artifact.v1`. Local maps keep
+`coordinate_mode: local_with_origin` and the M70 densified local waypoint
+export. Mixed geo/local maps are rejected by Urban map validation.
+
+```bash
+cargo run --bin sitl_agent -- \
+  --dry-run \
+  --scenario scenarios/urban.geo-perimeter.json \
+  --agent-id agent-0 \
+  --dry-run-artifact results/urban_geo_route_export/sitl_dry_run_artifact.v1.json
+```
 
 The JSON artifact uses `sitl_dry_run_artifact.v1` and records the source
 scenario path, route length, segment count, waypoint count, start/end waypoint
-summary, altitude source, scenario `geo_origin`, effective origin, command
-args, local-to-global coordinate summaries, `command_ir_summary`, and the M81
+summary, altitude source, scenario `geo_origin`, effective origin,
+`coordinate_mode`, optional Urban mission template / blocked-policy /
+mocked-perception metadata, command args, local-to-global or direct WGS84
+coordinate summaries, `command_ir_summary`, and the M81
 `mavlink_common_plan` compiler output. The M81 section uses
 `MavlinkCommonPlan` / `mavlink_common_plan.v1`, includes typed Common commands
 such as `MAV_CMD_NAV_TAKEOFF` and `MAV_CMD_NAV_WAYPOINT`, explicit

@@ -75,6 +75,7 @@ mod tests {
                         y: 0.0,
                         ..Default::default()
                     },
+                    geo: None,
                 },
                 UrbanNode {
                     id: make_node_id("n1"),
@@ -83,6 +84,7 @@ mod tests {
                         y: 0.0,
                         ..Default::default()
                     },
+                    geo: None,
                 },
                 UrbanNode {
                     id: make_node_id("n2"),
@@ -91,6 +93,7 @@ mod tests {
                         y: 0.0,
                         ..Default::default()
                     },
+                    geo: None,
                 },
             ],
             edges: vec![

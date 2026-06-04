@@ -94,6 +94,7 @@ fn make_urban_entry() -> ScenarioSuiteEntry {
                         y: 0.0,
                         ..Default::default()
                     },
+                    geo: None,
                 },
                 UrbanNode {
                     id: UrbanNodeId::from("n1".to_owned()),
@@ -102,6 +103,7 @@ fn make_urban_entry() -> ScenarioSuiteEntry {
                         y: 0.0,
                         ..Default::default()
                     },
+                    geo: None,
                 },
             ],
             edges: vec![
@@ -133,6 +135,7 @@ fn make_urban_entry() -> ScenarioSuiteEntry {
                 UrbanNodeId::from("n0".to_owned()),
             ],
         },
+        mission_template: None,
         start_node: Some(UrbanNodeId::from("n0".to_owned())),
         planner: "dijkstra".to_owned(),
         temporary_obstacles: vec![],

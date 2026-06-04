@@ -168,6 +168,7 @@ mod tests {
             x,
             y,
             z,
+            geo: None,
             source: "pose_task".to_owned(),
             edge_id: None,
             from_node_id: None,
@@ -209,6 +210,7 @@ mod tests {
             mission: "sitl".to_owned(),
             profile: "unit".to_owned(),
             coordinate_frame: crate::sitl_plan::SitlCoordinateFrame::LocalSimulation,
+            coordinate_mode: "local_with_origin".to_owned(),
             altitude_source: "pose.z".to_owned(),
             geo_origin: None,
             export_kind: "pose_tasks".to_owned(),
@@ -218,6 +220,9 @@ mod tests {
             waypoint_count: 1,
             waypoints: vec![sitl_waypoint(7, "wp-7", 1.0, 2.0, 3.0)],
             safety_report: swarm_safety::preflight::SafetyValidationReport::ok(),
+            urban_mission_template: None,
+            urban_blocked_route_policy: None,
+            urban_mock_perception: None,
             primitive_mission: None,
         };
 

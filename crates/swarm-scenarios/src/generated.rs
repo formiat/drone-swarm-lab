@@ -256,6 +256,7 @@ impl ScenarioGenerator for SyntheticUrbanGenerator {
         let urban_state = UrbanState {
             map: graph.map,
             route_loop: route_loop.clone(),
+            mission_template: None,
             start_node: route_loop.nodes.first().cloned(),
             planner: "dijkstra".to_owned(),
             temporary_obstacles,
@@ -525,6 +526,7 @@ fn build_grid_graph(config: &SyntheticUrbanConfig, rng: &mut StdRng) -> Generate
                     y: row as f64 * spacing,
                     z: 0.0,
                 },
+                geo: None,
             });
         }
     }

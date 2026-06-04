@@ -57,6 +57,9 @@ pub const RULE_MAVLINK_PROFILE_UNSUPPORTED: &str = "artifact.mavlink_profile_uns
 pub const RULE_MAVLINK_PROFILE_HARDWARE_BLOCKING: &str =
     "artifact.mavlink_profile_hardware_blocking";
 pub const RULE_MAVLINK_PROFILE_RESULT_MISMATCH: &str = "artifact.mavlink_profile_result_mismatch";
+pub const RULE_URBAN_COORDINATE_MODE_MISSING: &str = "artifact.urban_coordinate_mode_missing";
+pub const RULE_URBAN_WGS84_GEO_MISSING: &str = "artifact.urban_wgs84_geo_missing";
+pub const RULE_URBAN_MOCK_PERCEPTION_MISSING: &str = "artifact.urban_mock_perception_missing";
 pub const RULE_PARSE_FAILED: &str = "artifact.parse_failed";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -364,6 +367,7 @@ impl<'a> Validator<'a> {
                 "current dry-run artifact must include command_ir_summary policy fields",
             );
         }
+        self.validate_urban_dry_run_metadata(&artifact, &path);
         let Some(plan) = artifact.mavlink_common_plan.as_ref() else {
             self.push_error(
                 RULE_MAVLINK_PLAN_MISSING,
@@ -373,6 +377,47 @@ impl<'a> Validator<'a> {
             return;
         };
         self.validate_mavlink_common_plan(plan, &self.paths.dry_run_artifact);
+    }
+
+    fn validate_urban_dry_run_metadata(&mut self, artifact: &SitlDryRunArtifact, path: &Path) {
+        let is_urban =
+            artifact.export_kind == "urban_route" || artifact.mission.starts_with("urban-");
+        if !is_urban {
+            return;
+        }
+        if artifact.coordinate_mode.trim().is_empty() {
+            self.push_error(
+                RULE_URBAN_COORDINATE_MODE_MISSING,
+                Some(path.to_path_buf()),
+                "urban dry-run artifacts must include coordinate_mode",
+            );
+        }
+        if artifact.coordinate_mode == "wgs84_node_geo" {
+            let has_geo_start = artifact
+                .start_waypoint
+                .as_ref()
+                .and_then(|waypoint| waypoint.geo)
+                .is_some();
+            let has_geo_end = artifact
+                .end_waypoint
+                .as_ref()
+                .and_then(|waypoint| waypoint.geo)
+                .is_some();
+            if !has_geo_start || !has_geo_end {
+                self.push_error(
+                    RULE_URBAN_WGS84_GEO_MISSING,
+                    Some(path.to_path_buf()),
+                    "wgs84_node_geo urban artifacts must include geo on start and end waypoints",
+                );
+            }
+        }
+        if artifact.mission == "urban-search" && artifact.urban_mock_perception.is_none() {
+            self.push_error(
+                RULE_URBAN_MOCK_PERCEPTION_MISSING,
+                Some(path.to_path_buf()),
+                "urban-search dry-run artifacts must include urban_mock_perception metadata",
+            );
+        }
     }
 
     fn validate_mavlink_common_plan(&mut self, plan: &MavlinkCommonPlan, path: &Option<PathBuf>) {

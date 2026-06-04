@@ -618,6 +618,7 @@ mod tests {
                                     y: 0.0,
                                     z: 0.0,
                                 },
+                                geo: None,
                             },
                             UrbanNode {
                                 id: n1.clone(),
@@ -626,6 +627,7 @@ mod tests {
                                     y: 0.0,
                                     z: 0.0,
                                 },
+                                geo: None,
                             },
                         ],
                         edges: vec![
@@ -653,6 +655,7 @@ mod tests {
                     route_loop: UrbanRouteLoop {
                         nodes: vec![n0, n1],
                     },
+                    mission_template: None,
                     start_node: None,
                     planner: "dijkstra".to_owned(),
                     temporary_obstacles: vec![],
