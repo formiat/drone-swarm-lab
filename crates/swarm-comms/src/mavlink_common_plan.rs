@@ -767,7 +767,7 @@ impl<'a> Compiler<'a> {
             let profile = self.options.capability_profile.profile();
             let (fence_items, enable_command) = compile_fence_items(fence_plan, profile)?;
             if let Some(command) = enable_command {
-                self.command_prelude.push(command);
+                self.command_prelude.insert(0, command);
             }
             geofence_prelude = Some(fence_items);
             fence_summary = Some(fence_artifact(fence_plan, profile));
@@ -1096,10 +1096,42 @@ mod tests {
         );
         assert_eq!(compiled.fence_summary.as_ref().unwrap().item_count, 1);
         assert!(compiled.fc_contract_result.is_some());
-        assert!(compiled.command_prelude.iter().any(|command| {
-            command.command == MavlinkCommonCommandName::DoFenceEnable
-                && command.command_id == "fence-enable-0"
-        }));
+        let fence_enable_index = compiled
+            .command_prelude
+            .iter()
+            .position(|command| command.command == MavlinkCommonCommandName::DoFenceEnable)
+            .unwrap();
+        let arm_index = compiled
+            .command_prelude
+            .iter()
+            .position(|command| command.command == MavlinkCommonCommandName::ComponentArmDisarm)
+            .unwrap();
+        let takeoff_index = compiled
+            .command_prelude
+            .iter()
+            .position(|command| command.command == MavlinkCommonCommandName::NavTakeoff)
+            .unwrap();
+        assert_eq!(fence_enable_index, 0);
+        assert!(fence_enable_index < arm_index);
+        assert!(fence_enable_index < takeoff_index);
+        let fence_ack_index = compiled
+            .expected_acks
+            .iter()
+            .position(|ack| ack.command == Some(MavlinkCommonCommandName::DoFenceEnable))
+            .unwrap();
+        let arm_ack_index = compiled
+            .expected_acks
+            .iter()
+            .position(|ack| ack.command == Some(MavlinkCommonCommandName::ComponentArmDisarm))
+            .unwrap();
+        let takeoff_ack_index = compiled
+            .expected_acks
+            .iter()
+            .position(|ack| ack.command == Some(MavlinkCommonCommandName::NavTakeoff))
+            .unwrap();
+        assert_eq!(fence_ack_index, 0);
+        assert!(fence_ack_index < arm_ack_index);
+        assert!(fence_ack_index < takeoff_ack_index);
         assert!(compiled.validation_result.passed);
     }
 

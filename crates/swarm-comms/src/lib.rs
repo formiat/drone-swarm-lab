@@ -14,11 +14,12 @@ pub use mavlink::{
     task_to_waypoint, waypoint_status_to_task_status, MavlinkError, MockMavlinkTransport, Waypoint,
 };
 pub use mavlink_capability_profile::{
-    classify_mavlink_plan_compatibility, compatibility_matrix_rows, FenceItemSupportRule,
-    MavlinkCapabilityProfile, MavlinkCapabilityProfileId, MavlinkCapabilityProfileParseError,
-    MavlinkCommandCapabilityRule, MavlinkCommandCompatibility, MavlinkCompatibilityClass,
-    MavlinkCompatibilityMatrixRow, MavlinkCompatibilityReport, MavlinkExecutionMode,
-    MavlinkModeRequirement, MavlinkModeTransitionRule, MavlinkRequiredModeTransition,
+    classify_mavlink_plan_compatibility, compatibility_matrix_rows, fence_item_support_rule,
+    FenceItemSupportRule, MavlinkCapabilityProfile, MavlinkCapabilityProfileId,
+    MavlinkCapabilityProfileParseError, MavlinkCommandCapabilityRule, MavlinkCommandCompatibility,
+    MavlinkCompatibilityClass, MavlinkCompatibilityMatrixRow, MavlinkCompatibilityReport,
+    MavlinkExecutionMode, MavlinkModeRequirement, MavlinkModeTransitionRule,
+    MavlinkRequiredModeTransition,
 };
 pub use mavlink_common_plan::{
     compile_mavlink_common_plan, MavlinkCommonCommand, MavlinkCommonCommandName,
