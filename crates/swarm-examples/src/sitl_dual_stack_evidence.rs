@@ -364,12 +364,11 @@ pub fn validate_dual_stack_evidence_pack(
         .iter()
         .map(|profile| profile.mavlink_profile)
         .collect::<HashSet<_>>();
-    if profile_set
-        != HashSet::from([
-            MavlinkCapabilityProfileId::Px4,
-            MavlinkCapabilityProfileId::ArduPilot,
-        ])
-    {
+    let expected_profiles = HashSet::from([
+        MavlinkCapabilityProfileId::Px4,
+        MavlinkCapabilityProfileId::ArduPilot,
+    ]);
+    if pack.profiles.len() != expected_profiles.len() || profile_set != expected_profiles {
         violations.push("profile_set".to_owned());
     }
     for artifact in dry_run_artifacts {

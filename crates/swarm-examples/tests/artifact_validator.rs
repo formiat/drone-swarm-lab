@@ -759,6 +759,30 @@ fn dual_stack_evidence_swapped_profile_path_fails() {
 }
 
 #[test]
+fn dual_stack_evidence_duplicate_profile_fails() {
+    let fixture = dual_stack_fixture_json();
+    let path = fixture.path().join(SITL_DUAL_STACK_EVIDENCE_FILE);
+    let mut json = read_json_value(&path);
+    let duplicate_profile = json["profiles"][0].clone();
+    json["profiles"]
+        .as_array_mut()
+        .unwrap()
+        .push(duplicate_profile);
+    write_json(&path, &json);
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(fixture.path()),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::DualStackEvidence,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_DUAL_STACK_PROFILE_MISMATCH);
+}
+
+#[test]
 fn dual_stack_evidence_missing_referenced_dry_run_fails() {
     let fixture = dual_stack_fixture_json();
     fs::remove_file(fixture.path().join("px4/sitl_dry_run_artifact.v1.json")).unwrap();
