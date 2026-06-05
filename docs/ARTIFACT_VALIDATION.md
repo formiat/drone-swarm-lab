@@ -43,9 +43,11 @@ command-route decisions. Strict current artifacts validate that topology
 summary counters match the full artifact, every manifest agent has a GCS route
 decision, P2P peer route decisions are materialized, allowed route paths use
 known nodes and available links, blocked routes include a reason and match
-unreachable topology paths, mothership dependencies are valid, mothership child
-routes pass through their declared parent node, and the transport assumptions
-explicitly state the hardware boundary.
+unreachable topology paths, blocked routes have matching
+`SwarmCommandRouteBlocked` event evidence when an event log is present,
+mothership dependencies are valid, mothership child routes pass through their
+declared parent node, and the transport assumptions explicitly state the
+hardware boundary plus concrete delay/drop policy values.
 
 For dry-run validation, the output directory may contain:
 
@@ -173,9 +175,9 @@ Exit codes:
 | `artifact.swarm_sync_partial_unreported` | A synchronized GCS command partial failure/timed-out result has no matching synchronized command window in the artifact. |
 | `artifact.swarm_topology_missing` | A current strict supervisor command-plane artifact has no M88 topology, has duplicate/missing topology nodes, unknown link or route endpoints, or summary counters that do not match the full topology artifact. |
 | `artifact.swarm_topology_route_missing` | A manifest agent has no M88 GCS command-route decision, or a route path does not match available topology reachability. |
-| `artifact.swarm_topology_blocked_unreported` | A blocked M88 command route has no reason. |
+| `artifact.swarm_topology_blocked_unreported` | A blocked M88 command route has no reason or no matching `SwarmCommandRouteBlocked` event when an event log is present. |
 | `artifact.swarm_mothership_dependency_invalid` | A M88 mothership dependency references an unknown agent, creates a dependency cycle, or a child route bypasses its declared parent node. |
-| `artifact.swarm_transport_assumption_missing` | A M88 topology transport section has no explicit hardware-boundary text. |
+| `artifact.swarm_transport_assumption_missing` | A M88 topology transport section has no explicit hardware-boundary text or, in strict current mode, no concrete delay/drop policy values. |
 | `artifact.parse_failed` | A required artifact could not be read or parsed. |
 
 ## Local Harness

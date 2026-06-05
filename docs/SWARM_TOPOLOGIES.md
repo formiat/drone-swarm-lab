@@ -68,6 +68,10 @@ Every topology has explicit `transport` assumptions:
 - `hardware_boundary`, which must state that the artifact is not a hardware RF
   guarantee.
 
+The schema keeps delay/drop fields optional for historical and hand-authored
+fixtures, but strict current supervisor artifacts must include concrete
+`max_delay_ms` and `drop_rate` values.
+
 The old UDP prototype remains a legacy/test transport. M88 does not promote it
 to a production radio layer.
 
@@ -93,6 +97,8 @@ Strict current supervisor artifacts validate:
 - every GCS-to-agent route and peer route references known nodes;
 - allowed routes match available topology links step by step;
 - blocked routes match the absence of a reachable topology path;
+- blocked routes have matching `SwarmCommandRouteBlocked` event evidence when
+  an event log is present;
 - blocked routes include a reason;
 - topology nodes, route nodes, and link endpoints are known;
 - mothership dependencies reference known agents and are acyclic;

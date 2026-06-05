@@ -23,9 +23,10 @@ use swarm_examples::artifact_validator::{
     RULE_REPLACEMENT_SEQ_MISMATCH, RULE_REPLAY_SUMMARY_COUNT_MISMATCH, RULE_SAFETY_REPORT_MISSING,
     RULE_SWARM_ACK_MISMATCH, RULE_SWARM_AGENT_PLAN_MISSING, RULE_SWARM_DUPLICATE_OWNERSHIP,
     RULE_SWARM_HANDOFF_MISSING, RULE_SWARM_SYNC_PARTIAL_UNREPORTED,
-    RULE_SWARM_TOPOLOGY_ROUTE_MISSING, RULE_SWARM_TRANSPORT_ASSUMPTION_MISSING,
-    RULE_URBAN_DECONFLICTION_DUPLICATE_SEGMENT_OWNER, RULE_URBAN_GEO_ROUTE_METADATA_MISSING,
-    RULE_URBAN_MOCK_PERCEPTION_MISSING, RULE_URBAN_WGS84_GEO_MISSING,
+    RULE_SWARM_TOPOLOGY_BLOCKED_UNREPORTED, RULE_SWARM_TOPOLOGY_ROUTE_MISSING,
+    RULE_SWARM_TRANSPORT_ASSUMPTION_MISSING, RULE_URBAN_DECONFLICTION_DUPLICATE_SEGMENT_OWNER,
+    RULE_URBAN_GEO_ROUTE_METADATA_MISSING, RULE_URBAN_MOCK_PERCEPTION_MISSING,
+    RULE_URBAN_WGS84_GEO_MISSING,
 };
 use swarm_examples::sitl_multi_agent::{
     MultiAgentLifecycle, MultiAgentSitlManifest, MultiAgentSitlManifestAgent,
@@ -267,6 +268,76 @@ fn swarm_topology_route_without_link_fails() {
     );
 
     assert_rule(&report, RULE_SWARM_TOPOLOGY_ROUTE_MISSING);
+}
+
+#[test]
+fn swarm_topology_blocked_route_without_event_fails() {
+    let fixture = ArtifactFixture::new();
+    fixture.write_manifest(mark_agent_0_route_blocked);
+    fixture.write_event_log(|_| {});
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&fixture.output_dir),
+        ArtifactValidationOptions {
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_SWARM_TOPOLOGY_BLOCKED_UNREPORTED);
+}
+
+#[test]
+fn swarm_topology_blocked_route_with_matching_event_passes() {
+    let fixture = ArtifactFixture::new();
+    fixture.write_manifest(mark_agent_0_route_blocked);
+    fixture.write_event_log(|log| {
+        log.events.push(SitlEvent::SwarmCommandRouteBlocked {
+            step: 6,
+            route_id: "route:gcs:agent-0".to_owned(),
+            from_node_id: "gcs".to_owned(),
+            to_agent_id: "agent-0".to_owned(),
+            reason: "centralized_gcs_route_unavailable".to_owned(),
+        });
+    });
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&fixture.output_dir),
+        ArtifactValidationOptions {
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert!(
+        report
+            .violations
+            .iter()
+            .all(|violation| violation.rule_id != RULE_SWARM_TOPOLOGY_BLOCKED_UNREPORTED),
+        "{:?}",
+        report.violations
+    );
+}
+
+#[test]
+fn swarm_topology_missing_delay_drop_policy_fails_in_strict_mode() {
+    let fixture = ArtifactFixture::new();
+    fixture.write_manifest(|manifest| {
+        let artifact = manifest.command_plane_artifact.as_mut().unwrap();
+        let topology = artifact.topology.as_mut().unwrap();
+        topology.transport.max_delay_ms = None;
+        topology.transport.drop_rate = None;
+    });
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&fixture.output_dir),
+        ArtifactValidationOptions {
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_SWARM_TRANSPORT_ASSUMPTION_MISSING);
 }
 
 #[test]
@@ -1384,6 +1455,37 @@ fn test_command_plane_artifact() -> SwarmCommandPlan {
         mavlink_options: MavlinkCommonPlanOptions::default(),
     })
     .unwrap()
+}
+
+fn mark_agent_0_route_blocked(manifest: &mut MultiAgentSitlManifest) {
+    let artifact = manifest.command_plane_artifact.as_mut().unwrap();
+    let topology = artifact.topology.as_mut().unwrap();
+    topology
+        .links
+        .retain(|link| !(link.from_node_id == "gcs" && link.to_node_id == "agent:agent-0"));
+    let route = artifact
+        .command_routes
+        .iter_mut()
+        .find(|route| route.route_id == "route:gcs:agent-0")
+        .unwrap();
+    route.allowed = false;
+    route.degraded = true;
+    route.via_node_ids.clear();
+    route.reason = "centralized_gcs_route_unavailable".to_owned();
+
+    artifact.summary.topology_link_count = topology.links.len();
+    artifact.summary.degraded_route_count = artifact
+        .command_routes
+        .iter()
+        .filter(|route| route.degraded)
+        .count();
+    if let Some(summary) = manifest.command_plane.as_mut() {
+        *summary = artifact.summary.clone();
+    }
+    if let Some(summary) = manifest.topology.as_mut() {
+        summary.link_count = topology.links.len();
+        summary.degraded_route_count = artifact.summary.degraded_route_count;
+    }
 }
 
 fn command_plane_assignment(agent_id: &str, task_id: &str) -> AgentCommandAssignment {

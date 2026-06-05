@@ -273,6 +273,7 @@ impl<'a> Validator<'a> {
 
         if let Some(log) = &event_log {
             self.validate_replacement_completion_seq(log);
+            self.validate_swarm_topology_event_evidence(&manifest, log);
         }
 
         if let (Some(log), Some(report)) = (&event_log, &run_report) {
@@ -986,6 +987,17 @@ impl<'a> Validator<'a> {
                 "M88 topology transport assumptions must include an explicit hardware boundary",
             );
         }
+        if self.options.strict
+            && !self.options.allow_historical
+            && !matches!(self.options.mode, ArtifactValidationMode::Historical)
+            && (topology.transport.max_delay_ms.is_none() || topology.transport.drop_rate.is_none())
+        {
+            self.push_error(
+                RULE_SWARM_TRANSPORT_ASSUMPTION_MISSING,
+                Some(self.paths.manifest.clone()),
+                "strict current M88 topology transport assumptions must include max_delay_ms and drop_rate policy values",
+            );
+        }
         if summary.topology_kind.as_ref() != Some(&topology.kind)
             || summary.topology_node_count != topology.nodes.len()
             || summary.topology_link_count != topology.links.len()
@@ -1025,6 +1037,53 @@ impl<'a> Validator<'a> {
                     RULE_SWARM_TOPOLOGY_BLOCKED_UNREPORTED,
                     Some(self.paths.manifest.clone()),
                     format!("blocked M88 route '{}' has no reason", route.route_id),
+                );
+            }
+        }
+    }
+
+    fn validate_swarm_topology_event_evidence(
+        &mut self,
+        manifest: &MultiAgentSitlManifest,
+        event_log: &SitlEventLog,
+    ) {
+        if !self.options.strict
+            || self.options.allow_historical
+            || matches!(self.options.mode, ArtifactValidationMode::Historical)
+        {
+            return;
+        }
+        let Some(artifact) = manifest.command_plane_artifact.as_ref() else {
+            return;
+        };
+        for route in artifact
+            .command_routes
+            .iter()
+            .filter(|route| !route.allowed)
+        {
+            let has_matching_event = event_log.events.iter().any(|event| {
+                matches!(
+                    event,
+                    SitlEvent::SwarmCommandRouteBlocked {
+                        route_id,
+                        from_node_id,
+                        to_agent_id,
+                        reason,
+                        ..
+                    } if route_id == &route.route_id
+                        && from_node_id == &route.from_node_id
+                        && to_agent_id == &route.to_agent_id.to_string()
+                        && reason == &route.reason
+                )
+            });
+            if !has_matching_event {
+                self.push_error(
+                    RULE_SWARM_TOPOLOGY_BLOCKED_UNREPORTED,
+                    self.paths.event_log.clone(),
+                    format!(
+                        "blocked M88 route '{}' has no matching SwarmCommandRouteBlocked event",
+                        route.route_id
+                    ),
                 );
             }
         }

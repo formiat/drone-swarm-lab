@@ -135,8 +135,9 @@ when validated in historical mode.
 
 M88 strict validation additionally checks topology nodes/links, per-agent GCS
 route decisions, P2P peer route decisions, allowed route paths, blocked-route
-reasons, mothership dependency acyclicity, mothership child route parent
-dependency, and explicit transport hardware-boundary text.
+reasons and event evidence, mothership dependency acyclicity, mothership child
+route parent dependency, and explicit transport hardware-boundary plus
+delay/drop policy text.
 
 ## Test Boundary
 
