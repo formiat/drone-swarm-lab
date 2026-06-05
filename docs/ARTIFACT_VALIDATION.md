@@ -82,6 +82,19 @@ cargo run -p swarm-examples --bin artifact_validator -- \
   --strict
 ```
 
+Validate a benchmark pack with optional Urban analysis ownership artifacts.
+This mode does not require SITL supervisor files; when
+`urban_analysis/manifest.json` exists it checks every referenced
+`*.segment-ownership.json` file for overlapping holders on the same Urban
+road-graph segment:
+
+```bash
+cargo run -p swarm-examples --bin artifact_validator -- \
+  --output-dir target/m85-urban-deconflict \
+  --mode benchmark-pack \
+  --strict
+```
+
 Exit codes:
 
 | Code | Meaning |
@@ -132,7 +145,7 @@ Exit codes:
 | `artifact.urban_geo_route_metadata_missing` | An Urban dry-run artifact uses `coordinate_mode: wgs84_node_geo` but is missing full waypoint route metadata, or its MAVLink `mission_items[].lat_e7` / `lon_e7` / `relative_alt_m` do not match the exported waypoint `geo` metadata. |
 | `artifact.urban_wgs84_geo_missing` | An Urban dry-run artifact uses `coordinate_mode: wgs84_node_geo` but start/end waypoints or one of the exported route waypoints do not carry `geo`. |
 | `artifact.urban_mock_perception_missing` | An `urban-search` dry-run artifact is missing `urban_mock_perception` metadata. |
-| `artifact.urban_deconfliction_duplicate_segment_owner` | Future M85 benchmark-pack ownership artifacts report more than one holder for the same `(edge_id, tick)`. Current M85 runtime tests enforce this invariant from replay events; standalone artifact-validator support is optional until ownership JSON/CSV artifacts are emitted. |
+| `artifact.urban_deconfliction_duplicate_segment_owner` | M85 benchmark-pack ownership artifacts report overlapping holders for the same Urban `edge_id` interval. The `benchmark-pack` validator mode checks this when `urban_analysis/manifest.json` references `*.segment-ownership.json` files. |
 | `artifact.parse_failed` | A required artifact could not be read or parsed. |
 
 ## Local Harness

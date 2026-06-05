@@ -820,6 +820,10 @@ make the losing agent `wait`, `replan`, or `abort` according to
 `urban_deconflict_conflict_count`, `urban_deconflict_wait_ticks`,
 `urban_deconflict_replan_count`, `urban_deconflict_abort_count`,
 `urban_segment_utilization`, and `urban_avg_delay_per_agent_ticks` metrics.
+Benchmark packs with `urban_analysis/manifest.json` can be checked with
+`artifact_validator --mode benchmark-pack`; the validator fails with
+`artifact.urban_deconfliction_duplicate_segment_owner` if ownership intervals
+overlap on the same Urban edge.
 This is mission-level graph deconfliction only: it is not lidar/raycast, not physical collision avoidance, not RF coordination, not PX4/SITL execution evidence, not hardware readiness, and not real perception.
 
 M68 adds `scenarios/urban.corridor-delta.json`, a small before/after algorithm

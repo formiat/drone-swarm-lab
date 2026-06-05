@@ -136,6 +136,15 @@ Expected evidence:
 - `urban_deconflict_conflict_count > 0` for the fixture;
 - docs and reports describe this as mission-level segment ownership only.
 
+Validate the ownership artifact boundary:
+
+```bash
+cargo run -p swarm-examples --bin artifact_validator -- \
+  --output-dir target/m85-urban-deconflict \
+  --mode benchmark-pack \
+  --strict
+```
+
 ## Runbook 3: SITL Dry-Run / Export
 
 Use dry-run before any connection mode.

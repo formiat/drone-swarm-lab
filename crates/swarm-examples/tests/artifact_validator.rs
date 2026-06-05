@@ -16,8 +16,8 @@ use swarm_examples::artifact_validator::{
     RULE_MAVLINK_PROFILE_HARDWARE_BLOCKING, RULE_MAVLINK_PROFILE_MISSING,
     RULE_MAVLINK_PROFILE_RESULT_MISMATCH, RULE_MAVLINK_PROFILE_UNSUPPORTED,
     RULE_REPLACEMENT_SEQ_MISMATCH, RULE_REPLAY_SUMMARY_COUNT_MISMATCH, RULE_SAFETY_REPORT_MISSING,
-    RULE_URBAN_GEO_ROUTE_METADATA_MISSING, RULE_URBAN_MOCK_PERCEPTION_MISSING,
-    RULE_URBAN_WGS84_GEO_MISSING,
+    RULE_URBAN_DECONFLICTION_DUPLICATE_SEGMENT_OWNER, RULE_URBAN_GEO_ROUTE_METADATA_MISSING,
+    RULE_URBAN_MOCK_PERCEPTION_MISSING, RULE_URBAN_WGS84_GEO_MISSING,
 };
 use swarm_examples::sitl_multi_agent::{
     MultiAgentLifecycle, MultiAgentSitlManifest, MultiAgentSitlManifestAgent, SitlArtifactMetadata,
@@ -655,6 +655,77 @@ fn urban_wgs84_mavlink_mission_item_mismatch_fails() {
     assert_rule(&report, RULE_URBAN_GEO_ROUTE_METADATA_MISSING);
 }
 
+#[test]
+fn benchmark_pack_without_urban_ownership_overlap_passes_without_sitl_manifest() {
+    let fixture = tempfile::tempdir().unwrap();
+    let output_dir = fixture.path().join("benchmark-pack");
+    write_urban_ownership_pack(
+        &output_dir,
+        serde_json::json!([
+            {
+                "edge_id": "road-n0-n1",
+                "agent_id": "agent-0",
+                "acquired_tick": 0,
+                "released_tick": 10,
+                "held_ticks": 10
+            },
+            {
+                "edge_id": "road-n0-n1",
+                "agent_id": "agent-1",
+                "acquired_tick": 10,
+                "released_tick": 20,
+                "held_ticks": 10
+            }
+        ]),
+    );
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&output_dir),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::BenchmarkPack,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert!(report.passed, "{:?}", report.violations);
+}
+
+#[test]
+fn benchmark_pack_duplicate_urban_segment_owner_fails() {
+    let fixture = tempfile::tempdir().unwrap();
+    let output_dir = fixture.path().join("benchmark-pack");
+    write_urban_ownership_pack(
+        &output_dir,
+        serde_json::json!([
+            {
+                "edge_id": "road-n0-n1",
+                "agent_id": "agent-0",
+                "acquired_tick": 0,
+                "released_tick": 10,
+                "held_ticks": 10
+            },
+            {
+                "edge_id": "road-n0-n1",
+                "agent_id": "agent-1",
+                "acquired_tick": 9,
+                "released_tick": 20,
+                "held_ticks": 11
+            }
+        ]),
+    );
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&output_dir),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::BenchmarkPack,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_URBAN_DECONFLICTION_DUPLICATE_SEGMENT_OWNER);
+}
+
 fn assert_rule(
     report: &swarm_examples::artifact_validator::ArtifactValidationReport,
     rule_id: &str,
@@ -666,6 +737,46 @@ fn assert_rule(
             .any(|violation| violation.rule_id == rule_id),
         "missing {rule_id}; violations={:?}",
         report.violations
+    );
+}
+
+fn write_urban_ownership_pack(output_dir: &Path, records: serde_json::Value) {
+    let analysis_dir = output_dir.join("urban_analysis");
+    fs::create_dir_all(&analysis_dir).unwrap();
+    write_json(
+        &analysis_dir.join("manifest.json"),
+        &serde_json::json!({
+            "schema_version": "urban_analysis.v1",
+            "separation_threshold_m": 5.0,
+            "artifacts": [
+                {
+                    "replay_log_index": 0,
+                    "run_id": "urban-deconflict-test",
+                    "scenario_name": "urban_deconflict_test",
+                    "route_trace_json": "urban_analysis/000.route-trace.json",
+                    "route_trace_csv": "urban_analysis/000.route-trace.csv",
+                    "judge_report_json": "urban_analysis/000.judge-report.json",
+                    "judge_report_csv": "urban_analysis/000.judge-report.csv",
+                    "segment_ownership_json": "urban_analysis/000.segment-ownership.json",
+                    "segment_ownership_csv": "urban_analysis/000.segment-ownership.csv",
+                    "event_counts": {},
+                    "separation_summary": {
+                        "threshold_m": 5.0,
+                        "separation_violation_count": 0,
+                        "route_conflict_count": 0,
+                        "conflicts": []
+                    }
+                }
+            ]
+        }),
+    );
+    write_json(
+        &analysis_dir.join("000.segment-ownership.json"),
+        &serde_json::json!({
+            "run_id": "urban-deconflict-test",
+            "scenario_name": "urban_deconflict_test",
+            "records": records
+        }),
     );
 }
 

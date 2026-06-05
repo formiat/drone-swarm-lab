@@ -61,6 +61,8 @@ pub const RULE_URBAN_COORDINATE_MODE_MISSING: &str = "artifact.urban_coordinate_
 pub const RULE_URBAN_GEO_ROUTE_METADATA_MISSING: &str = "artifact.urban_geo_route_metadata_missing";
 pub const RULE_URBAN_WGS84_GEO_MISSING: &str = "artifact.urban_wgs84_geo_missing";
 pub const RULE_URBAN_MOCK_PERCEPTION_MISSING: &str = "artifact.urban_mock_perception_missing";
+pub const RULE_URBAN_DECONFLICTION_DUPLICATE_SEGMENT_OWNER: &str =
+    "artifact.urban_deconfliction_duplicate_segment_owner";
 pub const RULE_PARSE_FAILED: &str = "artifact.parse_failed";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -68,6 +70,7 @@ pub enum ArtifactValidationMode {
     SupervisorRun,
     DryRun,
     Historical,
+    BenchmarkPack,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -99,6 +102,7 @@ pub struct ArtifactPackPaths {
     pub config_snapshot: Option<PathBuf>,
     pub command_capture: Option<PathBuf>,
     pub dry_run_artifact: Option<PathBuf>,
+    pub urban_analysis_manifest: Option<PathBuf>,
 }
 
 impl ArtifactPackPaths {
@@ -117,6 +121,7 @@ impl ArtifactPackPaths {
                 &output_dir,
                 &["sitl_dry_run_artifact.v1.json", "dry-run.json"],
             ),
+            urban_analysis_manifest: optional_path(&output_dir, "urban_analysis/manifest.json"),
             output_dir,
         }
     }
@@ -199,6 +204,10 @@ impl<'a> Validator<'a> {
             self.validate_dry_run_artifact();
             return;
         }
+        if matches!(self.options.mode, ArtifactValidationMode::BenchmarkPack) {
+            self.validate_urban_analysis_ownership();
+            return;
+        }
 
         let Some(manifest) = self.load_manifest() else {
             return;
@@ -233,6 +242,8 @@ impl<'a> Validator<'a> {
                 self.validate_limitations(report);
             }
         }
+
+        self.validate_urban_analysis_ownership();
     }
 
     fn into_report(self) -> ArtifactValidationReport {
@@ -1117,6 +1128,77 @@ impl<'a> Validator<'a> {
         }
     }
 
+    fn validate_urban_analysis_ownership(&mut self) {
+        let Some(manifest_path) = self.paths.urban_analysis_manifest.clone() else {
+            return;
+        };
+        let Some(manifest) = self.load_json::<UrbanAnalysisValidationManifest>(&manifest_path)
+        else {
+            return;
+        };
+
+        for artifact in manifest.artifacts {
+            let Some(relative_path) = artifact.segment_ownership_json else {
+                continue;
+            };
+            let path = if relative_path.is_absolute() {
+                relative_path
+            } else {
+                self.paths.output_dir.join(relative_path)
+            };
+            let Some(report) = self.load_json::<UrbanSegmentOwnershipValidationReport>(&path)
+            else {
+                continue;
+            };
+            self.validate_urban_segment_ownership_report(&path, &report);
+        }
+    }
+
+    fn validate_urban_segment_ownership_report(
+        &mut self,
+        path: &Path,
+        report: &UrbanSegmentOwnershipValidationReport,
+    ) {
+        let mut intervals = Vec::<UrbanSegmentOwnershipInterval>::new();
+        for record in &report.records {
+            let start = record.acquired_tick;
+            let end = record
+                .released_tick
+                .or_else(|| {
+                    record
+                        .held_ticks
+                        .map(|held_ticks| record.acquired_tick.saturating_add(held_ticks))
+                })
+                .unwrap_or(u64::MAX);
+            for interval in &intervals {
+                if interval.edge_id == record.edge_id
+                    && intervals_overlap(start, end, interval.start_tick, interval.end_tick)
+                {
+                    self.push_error(
+                        RULE_URBAN_DECONFLICTION_DUPLICATE_SEGMENT_OWNER,
+                        Some(path.to_path_buf()),
+                        format!(
+                            "edge '{}' has overlapping owners '{}' and '{}' across ticks {}..{} and {}..{}",
+                            record.edge_id,
+                            interval.agent_id,
+                            record.agent_id,
+                            interval.start_tick,
+                            display_interval_end(interval.end_tick),
+                            start,
+                            display_interval_end(end)
+                        ),
+                    );
+                }
+            }
+            intervals.push(UrbanSegmentOwnershipInterval {
+                edge_id: record.edge_id.clone(),
+                agent_id: record.agent_id.clone(),
+                start_tick: start,
+                end_tick: end,
+            });
+        }
+    }
+
     fn validate_limitations(&mut self, report: &SitlMultiAgentRunReport) {
         if report.limitations.is_empty() || report.known_limitations.is_empty() {
             self.push_error(
@@ -1219,4 +1301,51 @@ fn mavlink_compatibility_result_matches(
         && actual.command == expected.command
         && actual.phase == expected.phase
         && actual.frame.as_deref() == expected.frame
+}
+
+#[derive(Debug, Deserialize)]
+struct UrbanAnalysisValidationManifest {
+    artifacts: Vec<UrbanAnalysisValidationManifestEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UrbanAnalysisValidationManifestEntry {
+    #[serde(default)]
+    segment_ownership_json: Option<PathBuf>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UrbanSegmentOwnershipValidationReport {
+    records: Vec<UrbanSegmentOwnershipValidationRecord>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UrbanSegmentOwnershipValidationRecord {
+    edge_id: String,
+    agent_id: String,
+    acquired_tick: u64,
+    #[serde(default)]
+    released_tick: Option<u64>,
+    #[serde(default)]
+    held_ticks: Option<u64>,
+}
+
+#[derive(Debug)]
+struct UrbanSegmentOwnershipInterval {
+    edge_id: String,
+    agent_id: String,
+    start_tick: u64,
+    end_tick: u64,
+}
+
+fn intervals_overlap(left_start: u64, left_end: u64, right_start: u64, right_end: u64) -> bool {
+    left_start < right_end && right_start < left_end
+}
+
+fn display_interval_end(tick: u64) -> String {
+    if tick == u64::MAX {
+        "open".to_owned()
+    } else {
+        tick.to_string()
+    }
 }

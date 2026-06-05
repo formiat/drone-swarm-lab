@@ -64,10 +64,14 @@ evidence, or production safety evidence.
 It is not hardware evidence.
 
 M72 `artifact_validator` validates local SITL supervisor packs, including event
-log/report/replay summary/safety consistency and replacement seq semantics. It
-does not currently validate full benchmark result directories such as
-`results/all_1000_jobs14_m69_release/`; benchmark-pack validation remains future
-work. See `docs/ARTIFACT_VALIDATION.md`.
+log/report/replay summary/safety consistency and replacement seq semantics.
+M85 adds `artifact_validator --mode benchmark-pack` for benchmark directories:
+when `urban_analysis/manifest.json` is present, it validates referenced
+segment-ownership artifacts and rejects overlapping holders with
+`artifact.urban_deconfliction_duplicate_segment_owner`. It still does not make
+old full benchmark directories such as `results/all_1000_jobs14_m69_release/`
+current Urban evidence unless those packs contain Urban analysis artifacts. See
+`docs/ARTIFACT_VALIDATION.md`.
 
 ## M69 Current 1000-Seed Run
 

@@ -165,7 +165,9 @@ status table.
   `abort`, with dedicated replay events and `urban_deconflict_*` metrics. This
   is not lidar/raycast, not physical collision avoidance, not RF coordination,
   not PX4/SITL execution evidence, not hardware readiness, and not real
-  perception.
+  perception. `artifact_validator --mode benchmark-pack` now checks M85
+  `urban_analysis/*.segment-ownership.json` artifacts for overlapping holders
+  on the same Urban edge when such artifacts are present.
 - **Urban Corridor-Aware Planner**: M68 adds `planner: "corridor-aware"` as an
   experimental mission-level route planner. It penalizes narrow corridors and
   low static-obstacle clearance to reduce `urban_route_risk_score` on the

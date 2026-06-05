@@ -122,12 +122,13 @@ fn parse_mode(value: &str) -> Result<ArtifactValidationMode, String> {
         "supervisor-run" => Ok(ArtifactValidationMode::SupervisorRun),
         "dry-run" => Ok(ArtifactValidationMode::DryRun),
         "historical" => Ok(ArtifactValidationMode::Historical),
+        "benchmark-pack" => Ok(ArtifactValidationMode::BenchmarkPack),
         _ => Err(format!(
-            "unsupported --mode '{value}' (expected supervisor-run, dry-run, or historical)"
+            "unsupported --mode '{value}' (expected supervisor-run, dry-run, historical, or benchmark-pack)"
         )),
     }
 }
 
 fn usage() -> String {
-    "usage: artifact_validator --output-dir <path> [--mode supervisor-run|dry-run|historical] [--allow-historical] [--strict] [--json]".to_owned()
+    "usage: artifact_validator --output-dir <path> [--mode supervisor-run|dry-run|historical|benchmark-pack] [--allow-historical] [--strict] [--json]".to_owned()
 }
