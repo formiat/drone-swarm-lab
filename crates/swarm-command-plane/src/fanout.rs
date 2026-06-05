@@ -3,10 +3,11 @@ use swarm_mission_ir::MissionCommandPlan;
 use swarm_types::AgentId;
 
 use crate::summary::summarize_swarm_command_plan;
+use crate::topology::route_command_plan;
 use crate::types::{
     SwarmAbortPolicy, SwarmAgentCommandPlan, SwarmCommandPlan, SwarmCommandRole,
-    SwarmOwnershipRecord, SwarmOwnershipRef, SwarmSupervisorState, SynchronizedCommandWindow,
-    SWARM_COMMAND_PLANE_SCHEMA_VERSION,
+    SwarmOwnershipRecord, SwarmOwnershipRef, SwarmSupervisorState, SwarmTopologyConfig,
+    SynchronizedCommandWindow, SWARM_COMMAND_PLANE_SCHEMA_VERSION,
 };
 use crate::validation::{validate_swarm_command_plan, SwarmCommandPlaneError};
 
@@ -28,6 +29,7 @@ pub struct SwarmCommandFanoutInput {
     pub ownership: Vec<SwarmOwnershipRecord>,
     pub global_abort_policy: SwarmAbortPolicy,
     pub sync_operations: Vec<SynchronizedCommandWindow>,
+    pub topology: Option<SwarmTopologyConfig>,
     pub mavlink_options: MavlinkCommonPlanOptions,
 }
 
@@ -55,6 +57,11 @@ pub fn build_swarm_command_plan(
         });
     }
 
+    let topology = input
+        .topology
+        .unwrap_or_else(|| SwarmTopologyConfig::centralized_gcs_for_agents(&agents));
+    let command_routes = route_command_plan(&topology, &agents);
+
     let mut plan = SwarmCommandPlan {
         schema_version: SWARM_COMMAND_PLANE_SCHEMA_VERSION.to_owned(),
         plan_id: input.plan_id,
@@ -65,6 +72,8 @@ pub fn build_swarm_command_plan(
         global_abort_policy: input.global_abort_policy,
         sync_operations: input.sync_operations,
         sync_results: Vec::new(),
+        topology: Some(topology),
+        command_routes,
         summary: Default::default(),
     };
     plan.summary = summarize_swarm_command_plan(&plan);

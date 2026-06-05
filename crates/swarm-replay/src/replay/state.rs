@@ -102,7 +102,12 @@ pub fn replay(log: &EventLog) -> ReplayState {
             | Event::SwarmOwnershipHandoff { .. }
             | Event::SwarmSupervisorStateChanged { .. }
             | Event::SwarmSyncCommandIssued { .. }
-            | Event::SwarmSyncCommandResult { .. } => {}
+            | Event::SwarmSyncCommandResult { .. }
+            | Event::SwarmTopologyConfigured { .. }
+            | Event::SwarmCommandRouteSelected { .. }
+            | Event::SwarmCommandRouteBlocked { .. }
+            | Event::SwarmTopologyDegraded { .. }
+            | Event::SwarmMothershipDependencyRecorded { .. } => {}
         }
     }
 

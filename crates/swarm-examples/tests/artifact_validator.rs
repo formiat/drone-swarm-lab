@@ -23,12 +23,14 @@ use swarm_examples::artifact_validator::{
     RULE_REPLACEMENT_SEQ_MISMATCH, RULE_REPLAY_SUMMARY_COUNT_MISMATCH, RULE_SAFETY_REPORT_MISSING,
     RULE_SWARM_ACK_MISMATCH, RULE_SWARM_AGENT_PLAN_MISSING, RULE_SWARM_DUPLICATE_OWNERSHIP,
     RULE_SWARM_HANDOFF_MISSING, RULE_SWARM_SYNC_PARTIAL_UNREPORTED,
+    RULE_SWARM_TOPOLOGY_ROUTE_MISSING, RULE_SWARM_TRANSPORT_ASSUMPTION_MISSING,
     RULE_URBAN_DECONFLICTION_DUPLICATE_SEGMENT_OWNER, RULE_URBAN_GEO_ROUTE_METADATA_MISSING,
     RULE_URBAN_MOCK_PERCEPTION_MISSING, RULE_URBAN_WGS84_GEO_MISSING,
 };
 use swarm_examples::sitl_multi_agent::{
-    MultiAgentLifecycle, MultiAgentSitlManifest, MultiAgentSitlManifestAgent, SitlArtifactMetadata,
-    TaskOwnershipSummary, MULTI_AGENT_SITL_MANIFEST_SCHEMA_VERSION,
+    MultiAgentLifecycle, MultiAgentSitlManifest, MultiAgentSitlManifestAgent,
+    MultiAgentSitlTopologySummary, SitlArtifactMetadata, TaskOwnershipSummary,
+    MULTI_AGENT_SITL_MANIFEST_SCHEMA_VERSION,
 };
 use swarm_examples::sitl_observability::{
     format_sitl_summary, summarize_sitl_event_log, SitlEvent, SitlEventLog, SitlEventLogMode,
@@ -213,6 +215,56 @@ fn command_plane_partial_sync_result_without_window_fails() {
     );
 
     assert_rule(&report, RULE_SWARM_SYNC_PARTIAL_UNREPORTED);
+}
+
+#[test]
+fn swarm_topology_missing_route_fails() {
+    let fixture = ArtifactFixture::new();
+    fixture.write_manifest(|manifest| {
+        manifest
+            .command_plane_artifact
+            .as_mut()
+            .unwrap()
+            .command_routes
+            .retain(|route| route.to_agent_id.to_string() != "agent-1");
+    });
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&fixture.output_dir),
+        ArtifactValidationOptions {
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_SWARM_TOPOLOGY_ROUTE_MISSING);
+}
+
+#[test]
+fn swarm_topology_missing_transport_boundary_fails() {
+    let fixture = ArtifactFixture::new();
+    fixture.write_manifest(|manifest| {
+        manifest
+            .command_plane_artifact
+            .as_mut()
+            .unwrap()
+            .topology
+            .as_mut()
+            .unwrap()
+            .transport
+            .hardware_boundary
+            .clear();
+    });
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&fixture.output_dir),
+        ArtifactValidationOptions {
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_SWARM_TRANSPORT_ASSUMPTION_MISSING);
 }
 
 #[test]
@@ -1156,6 +1208,7 @@ impl ArtifactFixture {
     }
 
     fn write_manifest(&self, mutate: impl FnOnce(&mut MultiAgentSitlManifest)) {
+        let command_plane_artifact = test_command_plane_artifact();
         let mut manifest = MultiAgentSitlManifest {
             schema_version: MULTI_AGENT_SITL_MANIFEST_SCHEMA_VERSION.to_owned(),
             scenario_path: PathBuf::from("scenarios/sitl.multi-agent.json"),
@@ -1173,8 +1226,21 @@ impl ArtifactFixture {
                 unassigned_pose_tasks: Vec::new(),
                 duplicate_task_ids: Vec::new(),
             },
-            command_plane: Some(test_command_plane_artifact().summary.clone()),
-            command_plane_artifact: Some(test_command_plane_artifact()),
+            command_plane: Some(command_plane_artifact.summary.clone()),
+            topology: command_plane_artifact.topology.as_ref().map(|topology| {
+                MultiAgentSitlTopologySummary {
+                    kind: topology.kind.clone(),
+                    node_count: topology.nodes.len(),
+                    link_count: topology.links.len(),
+                    route_count: command_plane_artifact.command_routes.len(),
+                    degraded_route_count: command_plane_artifact
+                        .command_routes
+                        .iter()
+                        .filter(|route| route.degraded)
+                        .count(),
+                }
+            }),
+            command_plane_artifact: Some(command_plane_artifact),
             artifact_metadata: SitlArtifactMetadata {
                 command: vec!["sitl_supervisor".to_owned(), "--mock".to_owned()],
                 git_commit: Some("0123456789abcdef".to_owned()),
@@ -1285,6 +1351,7 @@ fn test_command_plane_artifact() -> SwarmCommandPlan {
         ownership,
         global_abort_policy: SwarmAbortPolicy::AbortMission,
         sync_operations: Vec::new(),
+        topology: None,
         mavlink_options: MavlinkCommonPlanOptions::default(),
     })
     .unwrap()

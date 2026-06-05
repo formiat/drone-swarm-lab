@@ -2,6 +2,7 @@ pub mod fanout;
 pub mod policy;
 pub mod summary;
 pub mod sync;
+pub mod topology;
 pub mod types;
 pub mod validation;
 
@@ -9,12 +10,15 @@ pub use fanout::{build_swarm_command_plan, AgentCommandAssignment, SwarmCommandF
 pub use policy::{apply_agent_failure, SwarmFailureDecision};
 pub use summary::summarize_swarm_command_plan;
 pub use sync::{evaluate_synchronized_command, SyncAgentOutcome};
+pub use topology::{agent_node_id, route_between, route_command_plan, DEFAULT_GCS_NODE_ID};
 pub use types::{
     PartialSuccessPolicy, SwarmAbortPolicy, SwarmAgentCommandPlan, SwarmCommandArtifactSummary,
-    SwarmCommandPlan, SwarmCommandRole, SwarmOwnershipHandoff, SwarmOwnershipKind,
-    SwarmOwnershipRecord, SwarmOwnershipRef, SwarmOwnershipStatus, SwarmSupervisorState,
-    SynchronizedCommandKind, SynchronizedCommandResult, SynchronizedCommandWindow,
-    SWARM_COMMAND_PLANE_SCHEMA_VERSION,
+    SwarmCommandPlan, SwarmCommandRole, SwarmCommandRoute, SwarmMothershipDependency,
+    SwarmOwnershipHandoff, SwarmOwnershipKind, SwarmOwnershipRecord, SwarmOwnershipRef,
+    SwarmOwnershipStatus, SwarmSupervisorState, SwarmTopologyConfig, SwarmTopologyKind,
+    SwarmTopologyLink, SwarmTopologyNode, SwarmTopologyNodeKind, SwarmTransportAssumptions,
+    SwarmTransportDeliveryModel, SynchronizedCommandKind, SynchronizedCommandResult,
+    SynchronizedCommandWindow, SWARM_COMMAND_PLANE_SCHEMA_VERSION,
 };
 pub use validation::{validate_swarm_command_plan, SwarmCommandPlaneError};
 
@@ -118,6 +122,7 @@ mod tests {
                 timeout_ms: 1_000,
                 partial_success_policy: PartialSuccessPolicy::RequireAll,
             }],
+            topology: None,
             mavlink_options: MavlinkCommonPlanOptions::default(),
         }
     }
@@ -129,6 +134,11 @@ mod tests {
         assert_eq!(plan.schema_version, SWARM_COMMAND_PLANE_SCHEMA_VERSION);
         assert_eq!(plan.agents.len(), 2);
         assert_eq!(plan.summary.agent_plan_count, 2);
+        assert_eq!(
+            plan.summary.topology_kind,
+            Some(SwarmTopologyKind::CentralizedGcs)
+        );
+        assert_eq!(plan.summary.command_route_count, 2);
         assert_eq!(
             plan.agents[0].expected_acks.len(),
             plan.agents[0].mavlink_plan.expected_acks.len()

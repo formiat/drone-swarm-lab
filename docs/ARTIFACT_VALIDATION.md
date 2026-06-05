@@ -37,6 +37,13 @@ plans, ownership records, handoffs, synchronized command windows, and optional
 sync results. Historical artifacts remain readable without this section when
 validated with `--allow-historical` or `--mode historical`.
 
+M88 extends the same artifact with logical topology evidence: topology kind,
+nodes, links, transport assumptions, mothership dependencies, and deterministic
+command-route decisions. Strict current artifacts validate that topology
+summary counters match the full artifact, every manifest agent has a route
+decision, blocked routes include a reason, mothership dependencies are valid,
+and the transport assumptions explicitly state the hardware boundary.
+
 For dry-run validation, the output directory may contain:
 
 ```text
@@ -161,6 +168,11 @@ Exit codes:
 | `artifact.swarm_ack_mismatch` | A per-agent command-plane ACK list does not match the compiled MAVLink plan ACKs for that agent. |
 | `artifact.swarm_handoff_missing` | Released ownership and active ownership for the same resource cross agents without an explicit `SwarmOwnershipHandoff`. |
 | `artifact.swarm_sync_partial_unreported` | A synchronized GCS command partial failure/timed-out result has no matching synchronized command window in the artifact. |
+| `artifact.swarm_topology_missing` | A current strict supervisor command-plane artifact has no M88 topology, has duplicate/missing topology nodes, unknown link endpoints, or summary counters that do not match the full topology artifact. |
+| `artifact.swarm_topology_route_missing` | A manifest agent has no M88 command-route decision. |
+| `artifact.swarm_topology_blocked_unreported` | A blocked M88 command route has no reason. |
+| `artifact.swarm_mothership_dependency_invalid` | A M88 mothership dependency references an unknown agent or creates a dependency cycle. |
+| `artifact.swarm_transport_assumption_missing` | A M88 topology transport section has no explicit hardware-boundary text. |
 | `artifact.parse_failed` | A required artifact could not be read or parsed. |
 
 ## Local Harness

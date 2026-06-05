@@ -355,6 +355,21 @@ Example `multi_sitl.v1` config:
 }
 ```
 
+M88 allows an optional `topology` section in the same `multi_sitl.v1` config.
+If the field is omitted, the command-plane artifact uses a default logical
+centralized GCS topology. Portable examples are available in:
+
+- `scenarios/sitl.multi-agent.topology.centralized.json`;
+- `scenarios/sitl.multi-agent.topology.p2p.json`;
+- `scenarios/sitl.multi-agent.topology.relay.json`;
+- `scenarios/sitl.multi-agent.topology.mesh-partition.json`;
+- `scenarios/sitl.multi-agent.topology.mothership.json`.
+
+These files exercise topology artifact generation and replay/validator
+coverage. They do not start PX4, do not require hardware, and do not prove RF
+mesh, production radio routing, physical mothership behavior, or distributed
+consensus.
+
 Use `sitl_supervisor` to inspect the full dry-run manifest:
 
 ```bash

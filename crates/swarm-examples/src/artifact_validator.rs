@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use swarm_command_plane::{
-    validate_swarm_command_plan, SwarmCommandPlaneError, SWARM_COMMAND_PLANE_SCHEMA_VERSION,
+    validate_swarm_command_plan, SwarmCommandArtifactSummary, SwarmCommandPlan,
+    SwarmCommandPlaneError, SWARM_COMMAND_PLANE_SCHEMA_VERSION,
 };
 use swarm_comms::{
     MavlinkCapabilityProfileId, MavlinkCommandCompatibility, MavlinkCommonCommand,
@@ -72,6 +73,14 @@ pub const RULE_SWARM_DUPLICATE_OWNERSHIP: &str = "artifact.swarm_duplicate_owner
 pub const RULE_SWARM_ACK_MISMATCH: &str = "artifact.swarm_ack_mismatch";
 pub const RULE_SWARM_HANDOFF_MISSING: &str = "artifact.swarm_handoff_missing";
 pub const RULE_SWARM_SYNC_PARTIAL_UNREPORTED: &str = "artifact.swarm_sync_partial_unreported";
+pub const RULE_SWARM_TOPOLOGY_MISSING: &str = "artifact.swarm_topology_missing";
+pub const RULE_SWARM_TOPOLOGY_ROUTE_MISSING: &str = "artifact.swarm_topology_route_missing";
+pub const RULE_SWARM_TOPOLOGY_BLOCKED_UNREPORTED: &str =
+    "artifact.swarm_topology_blocked_unreported";
+pub const RULE_SWARM_MOTHERSHIP_DEPENDENCY_INVALID: &str =
+    "artifact.swarm_mothership_dependency_invalid";
+pub const RULE_SWARM_TRANSPORT_ASSUMPTION_MISSING: &str =
+    "artifact.swarm_transport_assumption_missing";
 pub const RULE_PARSE_FAILED: &str = "artifact.parse_failed";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -194,6 +203,20 @@ fn swarm_command_plane_rule_for_error(error: &SwarmCommandPlaneError) -> &'stati
         | SwarmCommandPlaneError::MissingReplacementAgent
         | SwarmCommandPlaneError::MissingFailedAgent { .. }
         | SwarmCommandPlaneError::MissingAbortTargets => RULE_SWARM_AGENT_PLAN_MISSING,
+        SwarmCommandPlaneError::MissingTopologyNode { .. }
+        | SwarmCommandPlaneError::DuplicateTopologyNode { .. }
+        | SwarmCommandPlaneError::UnknownTopologyLinkEndpoint { .. } => RULE_SWARM_TOPOLOGY_MISSING,
+        SwarmCommandPlaneError::MissingCommandRoute { .. } => RULE_SWARM_TOPOLOGY_ROUTE_MISSING,
+        SwarmCommandPlaneError::BlockedRouteWithoutReason { .. } => {
+            RULE_SWARM_TOPOLOGY_BLOCKED_UNREPORTED
+        }
+        SwarmCommandPlaneError::MothershipDependencyCycle { .. }
+        | SwarmCommandPlaneError::UnknownMothershipDependencyAgent { .. } => {
+            RULE_SWARM_MOTHERSHIP_DEPENDENCY_INVALID
+        }
+        SwarmCommandPlaneError::MissingTransportAssumption => {
+            RULE_SWARM_TRANSPORT_ASSUMPTION_MISSING
+        }
         SwarmCommandPlaneError::UnsupportedSchema { .. } => RULE_SWARM_COMMAND_PLANE_MISSING,
     }
 }
@@ -889,6 +912,7 @@ impl<'a> Validator<'a> {
                 format!("command_plane_artifact validation failed: {error}"),
             );
         }
+        self.validate_swarm_topology_summary(summary, artifact, manifest);
         for agent in &artifact.agents {
             if agent.expected_acks != agent.mavlink_plan.expected_acks {
                 self.push_error(
@@ -931,6 +955,73 @@ impl<'a> Validator<'a> {
                     summary.agent_plan_count, manifest.agents_count
                 ),
             );
+        }
+    }
+
+    fn validate_swarm_topology_summary(
+        &mut self,
+        summary: &SwarmCommandArtifactSummary,
+        artifact: &SwarmCommandPlan,
+        manifest: &MultiAgentSitlManifest,
+    ) {
+        let Some(topology) = artifact.topology.as_ref() else {
+            if self.options.strict && !self.options.allow_historical {
+                self.push_error(
+                    RULE_SWARM_TOPOLOGY_MISSING,
+                    Some(self.paths.manifest.clone()),
+                    "strict current supervisor command-plane artifact must include M88 topology",
+                );
+            }
+            return;
+        };
+        if topology.transport.hardware_boundary.trim().is_empty() {
+            self.push_error(
+                RULE_SWARM_TRANSPORT_ASSUMPTION_MISSING,
+                Some(self.paths.manifest.clone()),
+                "M88 topology transport assumptions must include an explicit hardware boundary",
+            );
+        }
+        if summary.topology_kind.as_ref() != Some(&topology.kind)
+            || summary.topology_node_count != topology.nodes.len()
+            || summary.topology_link_count != topology.links.len()
+            || summary.command_route_count != artifact.command_routes.len()
+            || summary.degraded_route_count
+                != artifact
+                    .command_routes
+                    .iter()
+                    .filter(|route| route.degraded)
+                    .count()
+        {
+            self.push_error(
+                RULE_SWARM_TOPOLOGY_MISSING,
+                Some(self.paths.manifest.clone()),
+                "command_plane topology summary does not match command_plane_artifact topology",
+            );
+        }
+        for agent in &manifest.agents {
+            let has_route = artifact
+                .command_routes
+                .iter()
+                .any(|route| route.to_agent_id.to_string() == agent.agent_id);
+            if !has_route {
+                self.push_error(
+                    RULE_SWARM_TOPOLOGY_ROUTE_MISSING,
+                    Some(self.paths.manifest.clone()),
+                    format!(
+                        "M88 topology has no route decision for agent '{}'",
+                        agent.agent_id
+                    ),
+                );
+            }
+        }
+        for route in &artifact.command_routes {
+            if !route.allowed && route.reason.trim().is_empty() {
+                self.push_error(
+                    RULE_SWARM_TOPOLOGY_BLOCKED_UNREPORTED,
+                    Some(self.paths.manifest.clone()),
+                    format!("blocked M88 route '{}' has no reason", route.route_id),
+                );
+            }
         }
     }
 

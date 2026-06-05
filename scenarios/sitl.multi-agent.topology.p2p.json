@@ -1,0 +1,43 @@
+{
+  "schema_version": "multi_sitl.v1",
+  "topology": {
+    "kind": "p2p_logical",
+    "gcs_node_id": "gcs",
+    "nodes": [
+      { "node_id": "gcs", "kind": "gcs", "available": true },
+      { "node_id": "agent:agent-0", "agent_id": "agent-0", "kind": "agent", "available": true },
+      { "node_id": "agent:agent-1", "agent_id": "agent-1", "kind": "agent", "available": true }
+    ],
+    "links": [
+      { "from_node_id": "gcs", "to_node_id": "agent:agent-0", "available": true },
+      { "from_node_id": "agent:agent-0", "to_node_id": "agent:agent-1", "available": true },
+      { "from_node_id": "agent:agent-1", "to_node_id": "agent:agent-0", "available": true }
+    ],
+    "transport": {
+      "delivery_model": "in_memory",
+      "max_delay_ms": 10,
+      "drop_rate": 0.0,
+      "hardware_boundary": "logical P2P command-plane routing only; not a production radio link"
+    }
+  },
+  "agents": [
+    {
+      "agent_id": "agent-0",
+      "system_id": 1,
+      "component_id": 1,
+      "connection_string": "udpin:127.0.0.1:14550",
+      "start_delay_ms": 0,
+      "lifecycle": "upload_only",
+      "task_ids": ["wp-0", "wp-1"]
+    },
+    {
+      "agent_id": "agent-1",
+      "system_id": 2,
+      "component_id": 1,
+      "connection_string": "udpin:127.0.0.1:14560",
+      "start_delay_ms": 250,
+      "lifecycle": "upload_only",
+      "task_ids": ["wp-2", "wp-3"]
+    }
+  ]
+}

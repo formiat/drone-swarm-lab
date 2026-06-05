@@ -131,7 +131,12 @@ pub fn build_urban_route_trace(log: &EventLog) -> UrbanRouteTrace {
             | Event::SwarmOwnershipHandoff { .. }
             | Event::SwarmSupervisorStateChanged { .. }
             | Event::SwarmSyncCommandIssued { .. }
-            | Event::SwarmSyncCommandResult { .. } => {}
+            | Event::SwarmSyncCommandResult { .. }
+            | Event::SwarmTopologyConfigured { .. }
+            | Event::SwarmCommandRouteSelected { .. }
+            | Event::SwarmCommandRouteBlocked { .. }
+            | Event::SwarmTopologyDegraded { .. }
+            | Event::SwarmMothershipDependencyRecorded { .. } => {}
         }
     }
 

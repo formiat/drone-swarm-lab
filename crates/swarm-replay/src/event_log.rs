@@ -361,6 +361,40 @@ pub enum Event {
         timed_out_agent_ids: Vec<AgentId>,
         partial_success: bool,
     },
+    // M88: Logical Swarm Topologies
+    SwarmTopologyConfigured {
+        tick: u64,
+        topology_kind: String,
+        node_count: usize,
+        link_count: usize,
+    },
+    SwarmCommandRouteSelected {
+        tick: u64,
+        route_id: String,
+        from_node_id: String,
+        to_agent_id: AgentId,
+        via_node_ids: Vec<String>,
+        degraded: bool,
+    },
+    SwarmCommandRouteBlocked {
+        tick: u64,
+        route_id: String,
+        from_node_id: String,
+        to_agent_id: AgentId,
+        reason: String,
+    },
+    SwarmTopologyDegraded {
+        tick: u64,
+        topology_kind: String,
+        affected_agent_ids: Vec<AgentId>,
+        reason: String,
+    },
+    SwarmMothershipDependencyRecorded {
+        tick: u64,
+        parent_agent_id: AgentId,
+        child_agent_id: AgentId,
+        dependency_kind: String,
+    },
 }
 
 /// Reason why a message was dropped.

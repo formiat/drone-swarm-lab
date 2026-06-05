@@ -148,6 +148,39 @@ pub enum SitlEvent {
         timed_out_agent_ids: Vec<String>,
         partial_success: bool,
     },
+    SwarmTopologyConfigured {
+        step: u64,
+        topology_kind: String,
+        node_count: usize,
+        link_count: usize,
+    },
+    SwarmCommandRouteSelected {
+        step: u64,
+        route_id: String,
+        from_node_id: String,
+        to_agent_id: String,
+        via_node_ids: Vec<String>,
+        degraded: bool,
+    },
+    SwarmCommandRouteBlocked {
+        step: u64,
+        route_id: String,
+        from_node_id: String,
+        to_agent_id: String,
+        reason: String,
+    },
+    SwarmTopologyDegraded {
+        step: u64,
+        topology_kind: String,
+        affected_agent_ids: Vec<String>,
+        reason: String,
+    },
+    SwarmMothershipDependencyRecorded {
+        step: u64,
+        parent_agent_id: String,
+        child_agent_id: String,
+        dependency_kind: String,
+    },
     ConnectionOpened {
         step: u64,
         mode: SitlEventLogMode,
@@ -610,6 +643,89 @@ impl SitlEventRecorder {
         });
     }
 
+    pub fn push_swarm_topology_configured(
+        &mut self,
+        topology_kind: impl Into<String>,
+        node_count: usize,
+        link_count: usize,
+    ) {
+        let step = self.next_step();
+        self.log.events.push(SitlEvent::SwarmTopologyConfigured {
+            step,
+            topology_kind: topology_kind.into(),
+            node_count,
+            link_count,
+        });
+    }
+
+    pub fn push_swarm_command_route_selected(
+        &mut self,
+        route_id: impl Into<String>,
+        from_node_id: impl Into<String>,
+        to_agent_id: impl Into<String>,
+        via_node_ids: Vec<String>,
+        degraded: bool,
+    ) {
+        let step = self.next_step();
+        self.log.events.push(SitlEvent::SwarmCommandRouteSelected {
+            step,
+            route_id: route_id.into(),
+            from_node_id: from_node_id.into(),
+            to_agent_id: to_agent_id.into(),
+            via_node_ids,
+            degraded,
+        });
+    }
+
+    pub fn push_swarm_command_route_blocked(
+        &mut self,
+        route_id: impl Into<String>,
+        from_node_id: impl Into<String>,
+        to_agent_id: impl Into<String>,
+        reason: impl Into<String>,
+    ) {
+        let step = self.next_step();
+        self.log.events.push(SitlEvent::SwarmCommandRouteBlocked {
+            step,
+            route_id: route_id.into(),
+            from_node_id: from_node_id.into(),
+            to_agent_id: to_agent_id.into(),
+            reason: reason.into(),
+        });
+    }
+
+    pub fn push_swarm_topology_degraded(
+        &mut self,
+        topology_kind: impl Into<String>,
+        affected_agent_ids: Vec<String>,
+        reason: impl Into<String>,
+    ) {
+        let step = self.next_step();
+        self.log.events.push(SitlEvent::SwarmTopologyDegraded {
+            step,
+            topology_kind: topology_kind.into(),
+            affected_agent_ids,
+            reason: reason.into(),
+        });
+    }
+
+    pub fn push_swarm_mothership_dependency_recorded(
+        &mut self,
+        parent_agent_id: impl Into<String>,
+        child_agent_id: impl Into<String>,
+        dependency_kind: impl Into<String>,
+    ) {
+        let step = self.next_step();
+        self.log
+            .events
+            .push(SitlEvent::SwarmMothershipDependencyRecorded {
+                step,
+                parent_agent_id: parent_agent_id.into(),
+                child_agent_id: child_agent_id.into(),
+                dependency_kind: dependency_kind.into(),
+            });
+    }
+
     pub fn push_connection_opened(&mut self) {
         let step = self.next_step();
         self.log.events.push(SitlEvent::ConnectionOpened {
@@ -1008,6 +1124,11 @@ pub struct SitlEventLogSummary {
     pub swarm_sync_command_issued: usize,
     pub swarm_sync_command_result: usize,
     pub swarm_sync_partial_failure: usize,
+    pub swarm_topology_configured: usize,
+    pub swarm_command_route_selected: usize,
+    pub swarm_command_route_blocked: usize,
+    pub swarm_topology_degraded: usize,
+    pub swarm_mothership_dependency_recorded: usize,
     pub final_status: Option<String>,
 }
 
@@ -1092,6 +1213,21 @@ pub fn summarize_sitl_event_log(log: &SitlEventLog) -> SitlEventLogSummary {
                 if !failed_agent_ids.is_empty() || !timed_out_agent_ids.is_empty() {
                     summary.swarm_sync_partial_failure += 1;
                 }
+            }
+            SitlEvent::SwarmTopologyConfigured { .. } => {
+                summary.swarm_topology_configured += 1;
+            }
+            SitlEvent::SwarmCommandRouteSelected { .. } => {
+                summary.swarm_command_route_selected += 1;
+            }
+            SitlEvent::SwarmCommandRouteBlocked { .. } => {
+                summary.swarm_command_route_blocked += 1;
+            }
+            SitlEvent::SwarmTopologyDegraded { .. } => {
+                summary.swarm_topology_degraded += 1;
+            }
+            SitlEvent::SwarmMothershipDependencyRecorded { .. } => {
+                summary.swarm_mothership_dependency_recorded += 1;
             }
             SitlEvent::ConnectionOpened { .. } => summary.connection_opened += 1,
             SitlEvent::HeartbeatSeen { .. } => summary.heartbeat_seen += 1,
@@ -1279,6 +1415,69 @@ pub fn format_sitl_summary(summary: &SitlEventLogSummary) -> String {
             summary.swarm_sync_command_result,
             summary.swarm_sync_partial_failure
         ),
+        format!(
+            "Swarm topologies: configured={} route_selected={} route_blocked={} degraded={} mothership_dependencies={}",
+            summary.swarm_topology_configured,
+            summary.swarm_command_route_selected,
+            summary.swarm_command_route_blocked,
+            summary.swarm_topology_degraded,
+            summary.swarm_mothership_dependency_recorded
+        ),
     ]
     .join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+
+    #[test]
+    fn sitl_topology_events_summarize() {
+        let mut recorder = SitlEventRecorder::new(SitlEventLogMetadata {
+            run_id: "m88".to_owned(),
+            scenario_path: PathBuf::from("scenario.json"),
+            scenario_name: "sitl_multi_agent".to_owned(),
+            mission: "sitl".to_owned(),
+            profile: "mock".to_owned(),
+            agent_id: "supervisor".to_owned(),
+            connection_string: None,
+            mode: SitlEventLogMode::Mock,
+        });
+
+        recorder.push_swarm_topology_configured("mesh", 3, 2);
+        recorder.push_swarm_command_route_selected(
+            "route:gcs:agent-0",
+            "gcs",
+            "agent-0",
+            vec!["gcs".to_owned(), "agent:agent-0".to_owned()],
+            false,
+        );
+        recorder.push_swarm_command_route_blocked(
+            "route:gcs:agent-1",
+            "gcs",
+            "agent-1",
+            "mesh_partition_or_blocked_link",
+        );
+        recorder.push_swarm_topology_degraded(
+            "mesh",
+            vec!["agent-1".to_owned()],
+            "one_or_more_command_routes_degraded",
+        );
+        recorder.push_swarm_mothership_dependency_recorded(
+            "agent-0",
+            "agent-1",
+            "command_dependency",
+        );
+
+        let summary = summarize_sitl_event_log(recorder.log());
+
+        assert_eq!(summary.swarm_topology_configured, 1);
+        assert_eq!(summary.swarm_command_route_selected, 1);
+        assert_eq!(summary.swarm_command_route_blocked, 1);
+        assert_eq!(summary.swarm_topology_degraded, 1);
+        assert_eq!(summary.swarm_mothership_dependency_recorded, 1);
+        assert!(format_sitl_summary(&summary).contains("Swarm topologies"));
+    }
 }

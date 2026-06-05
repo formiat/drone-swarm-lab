@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-05
 **HEAD commit:** see `git rev-parse HEAD`
-**Last audit:** M87 Swarm Command Plane
+**Last audit:** M88 Logical Swarm Topologies
 
 This document is the current status summary for the repository. It supersedes
 the older M39b-only audit and should be read together with the README current
@@ -63,6 +63,7 @@ status table.
 | M85 Urban Multi-Agent Deconfliction | Complete as simulation-only route ownership layer | `urban-patrol` can opt into mission-level segment ownership to avoid assigning the same road segment to multiple agents at the same time. Replay/analysis artifacts expose segment locks, conflicts, and separation diagnostics. This is not physical collision avoidance, not PX4 execution, not real perception, and not hardware readiness. |
 | M86 MAVLink Safety / FC Contract | Complete as transport-free FC contract layer | `swarm-comms` now exposes FC geofence types, fence compilation into `MavlinkCommonPlan.geofence_prelude`, `fence_summary`, `FcParamRequirement` / `FcParamSnapshot` validation, known PX4/ArduPilot parameter metadata, and `FcContractValidationResult`. Capability profiles include per-kind fence rules; PX4 polygon fences are modeled with caveats, PX4 circle fences and all ArduPilot fences remain blocked until evidence exists. `swarm-sim::safety_config_to_fence_plan` bridges simulation AABB safety config into FC fence plans. This is dry-run contract evidence only: no live fence upload, no parameter read/write transport, no hardware readiness, and no certified safety claim. See `docs/FC_CONTRACT.md`. |
 | M87 Swarm Command Plane | Complete as supervisor-integrated mission-level command-plane foundation | New crate `swarm-command-plane` defines `swarm_command_plane.v1`, command-plane roles, per-agent fanout into M80 `MissionCommandPlan` and M81/M82/M86 `MavlinkCommonPlan`, ownership records/handoffs, per-agent failure policies, synchronized GCS command windows, full manifest/report command-plane artifacts, SITL replay events, summary counters, and strict artifact-validator checks. This is mission-level coordination only: no RF mesh, no distributed consensus guarantee, no physical collision avoidance, no simultaneous hardware takeoff claim, and no PX4/ArduPilot equivalence guarantee. See `docs/SWARM_COMMAND_PLANE.md`. |
+| M88 Logical Swarm Topologies | Complete as coordination-layer topology contract | `swarm-command-plane` now records logical topology config and deterministic command-route decisions for centralized GCS, P2P logical links, relay paths, mesh partitions, and mothership dependencies. `multi_sitl.v1` accepts optional topology configs, manifests include compact topology summaries and full route artifacts, SITL/generic replay logs emit topology configured/route selected/blocked/degraded/dependency events, and strict artifact validation checks topology consistency. This is not an RF mesh stack, not production radio routing, not physical mothership behavior, not distributed consensus, and not hardware readiness. See `docs/SWARM_TOPOLOGIES.md`. |
 
 ## Current Known Limitations
 

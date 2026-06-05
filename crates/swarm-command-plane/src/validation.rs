@@ -3,7 +3,11 @@ use std::collections::{HashMap, HashSet};
 use swarm_types::AgentId;
 use thiserror::Error;
 
-use crate::types::{SwarmAbortPolicy, SwarmCommandPlan, SwarmOwnershipKind, SwarmOwnershipStatus};
+use crate::topology::has_mothership_cycle;
+use crate::types::{
+    SwarmAbortPolicy, SwarmCommandPlan, SwarmOwnershipKind, SwarmOwnershipStatus,
+    SwarmTopologyConfig,
+};
 
 /// M87 command-plane validation error.
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
@@ -44,6 +48,22 @@ pub enum SwarmCommandPlaneError {
     },
     #[error("abort mission policy requires at least one agent command plan")]
     MissingAbortTargets,
+    #[error("topology node '{node_id}' is required but missing")]
+    MissingTopologyNode { node_id: String },
+    #[error("duplicate topology node '{node_id}'")]
+    DuplicateTopologyNode { node_id: String },
+    #[error("topology link references unknown node '{node_id}'")]
+    UnknownTopologyLinkEndpoint { node_id: String },
+    #[error("missing command route for agent {agent_id}")]
+    MissingCommandRoute { agent_id: AgentId },
+    #[error("blocked command route '{route_id}' must include a reason")]
+    BlockedRouteWithoutReason { route_id: String },
+    #[error("mothership dependency graph contains a cycle at agent {agent_id}")]
+    MothershipDependencyCycle { agent_id: AgentId },
+    #[error("mothership dependency references unknown agent {agent_id}")]
+    UnknownMothershipDependencyAgent { agent_id: AgentId },
+    #[error("topology transport assumptions are incomplete")]
+    MissingTransportAssumption,
 }
 
 /// Validate a complete M87 command-plane artifact.
@@ -124,6 +144,87 @@ pub fn validate_swarm_command_plan(plan: &SwarmCommandPlan) -> Result<(), SwarmC
         if agent.abort_policy == SwarmAbortPolicy::ReplaceFromReserve {
             ensure_replacement_candidate_for_agent(plan, &agent.agent_id)?;
         }
+    }
+    if let Some(topology) = &plan.topology {
+        validate_topology(plan, topology)?;
+    }
+
+    Ok(())
+}
+
+fn validate_topology(
+    plan: &SwarmCommandPlan,
+    topology: &SwarmTopologyConfig,
+) -> Result<(), SwarmCommandPlaneError> {
+    if topology.transport.hardware_boundary.trim().is_empty() {
+        return Err(SwarmCommandPlaneError::MissingTransportAssumption);
+    }
+
+    let mut node_ids = HashSet::new();
+    for node in &topology.nodes {
+        if !node_ids.insert(node.node_id.clone()) {
+            return Err(SwarmCommandPlaneError::DuplicateTopologyNode {
+                node_id: node.node_id.clone(),
+            });
+        }
+    }
+    if !node_ids.contains(&topology.gcs_node_id) {
+        return Err(SwarmCommandPlaneError::MissingTopologyNode {
+            node_id: topology.gcs_node_id.clone(),
+        });
+    }
+    for link in &topology.links {
+        for endpoint in [&link.from_node_id, &link.to_node_id] {
+            if !node_ids.contains(endpoint) {
+                return Err(SwarmCommandPlaneError::UnknownTopologyLinkEndpoint {
+                    node_id: endpoint.clone(),
+                });
+            }
+        }
+    }
+
+    let agent_ids: HashSet<_> = plan
+        .agents
+        .iter()
+        .map(|agent| agent.agent_id.clone())
+        .collect();
+    for agent in &plan.agents {
+        let has_node = topology
+            .nodes
+            .iter()
+            .any(|node| node.agent_id.as_ref() == Some(&agent.agent_id));
+        if !has_node {
+            return Err(SwarmCommandPlaneError::MissingTopologyNode {
+                node_id: format!("agent:{}", agent.agent_id),
+            });
+        }
+        let Some(route) = plan
+            .command_routes
+            .iter()
+            .find(|route| route.to_agent_id == agent.agent_id)
+        else {
+            return Err(SwarmCommandPlaneError::MissingCommandRoute {
+                agent_id: agent.agent_id.clone(),
+            });
+        };
+        if !route.allowed && route.reason.trim().is_empty() {
+            return Err(SwarmCommandPlaneError::BlockedRouteWithoutReason {
+                route_id: route.route_id.clone(),
+            });
+        }
+    }
+
+    for dependency in &topology.mothership_dependencies {
+        for agent_id in [&dependency.parent_agent_id, &dependency.child_agent_id] {
+            if !agent_ids.contains(agent_id) {
+                return Err(SwarmCommandPlaneError::UnknownMothershipDependencyAgent {
+                    agent_id: agent_id.clone(),
+                });
+            }
+        }
+    }
+    if let Some(agent_id) = has_mothership_cycle(&topology.mothership_dependencies) {
+        return Err(SwarmCommandPlaneError::MothershipDependencyCycle { agent_id });
     }
 
     Ok(())

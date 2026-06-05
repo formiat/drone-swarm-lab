@@ -15,6 +15,7 @@ const MAVLINK_COMMON_COMPILER: &str = include_str!("../../../docs/MAVLINK_COMMON
 const MAVLINK_CAPABILITY_PROFILES: &str =
     include_str!("../../../docs/MAVLINK_CAPABILITY_PROFILES.md");
 const SWARM_COMMAND_PLANE: &str = include_str!("../../../docs/SWARM_COMMAND_PLANE.md");
+const SWARM_TOPOLOGIES: &str = include_str!("../../../docs/SWARM_TOPOLOGIES.md");
 const M62_RESULT_README: &str =
     include_str!("../../../results/all_500_jobs14_m62_release/README.md");
 
@@ -262,6 +263,82 @@ fn sitl_docs_explain_portable_and_manual_boundaries() {
         assert!(
             BENCHMARK_RESULTS.contains(required),
             "Benchmark results doc missing {required}"
+        );
+    }
+}
+
+#[test]
+fn m88_swarm_topology_docs_are_synchronized() {
+    for required in [
+        "Logical Swarm Topologies",
+        "swarm_command_plane.v1",
+        "centralized GCS",
+        "P2P",
+        "relay",
+        "mesh",
+        "mothership",
+        "no RF mesh",
+        "production radio routing",
+        "physical mothership",
+        "hardware readiness",
+    ] {
+        assert!(README.contains(required), "README missing {required}");
+        assert!(STATUS.contains(required), "STATUS missing {required}");
+        assert!(
+            SWARM_TOPOLOGIES.contains(required),
+            "SWARM_TOPOLOGIES missing {required}"
+        );
+    }
+
+    for required in [
+        "SwarmTopologyConfigured",
+        "SwarmCommandRouteSelected",
+        "SwarmCommandRouteBlocked",
+        "SwarmTopologyDegraded",
+        "SwarmMothershipDependencyRecorded",
+    ] {
+        assert!(REPLAY.contains(required), "REPLAY missing {required}");
+        assert!(
+            SWARM_TOPOLOGIES.contains(required),
+            "SWARM_TOPOLOGIES missing {required}"
+        );
+    }
+
+    for required in [
+        "artifact.swarm_topology_missing",
+        "artifact.swarm_topology_route_missing",
+        "artifact.swarm_topology_blocked_unreported",
+        "artifact.swarm_mothership_dependency_invalid",
+        "artifact.swarm_transport_assumption_missing",
+    ] {
+        assert!(
+            ARTIFACT_VALIDATION.contains(required),
+            "ARTIFACT_VALIDATION missing {required}"
+        );
+        assert!(
+            OPERATIONAL_RUNBOOKS.contains(required),
+            "OPERATIONAL_RUNBOOKS missing {required}"
+        );
+    }
+
+    for required in [
+        "sitl.multi-agent.topology.centralized.json",
+        "sitl.multi-agent.topology.p2p.json",
+        "sitl.multi-agent.topology.relay.json",
+        "sitl.multi-agent.topology.mesh-partition.json",
+        "sitl.multi-agent.topology.mothership.json",
+    ] {
+        assert!(
+            SITL_SETUP.contains(required),
+            "SITL_SETUP missing {required}"
+        );
+        assert!(
+            SCENARIO_DSL.contains(required),
+            "SCENARIO_DSL missing {required}"
+        );
+        assert!(
+            SWARM_TOPOLOGIES.contains(required),
+            "SWARM_TOPOLOGIES missing {required}"
         );
     }
 }

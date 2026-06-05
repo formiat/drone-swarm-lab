@@ -471,6 +471,12 @@ The repository includes pre-built scenario files in `scenarios/`, including:
 - `urban.corridor-delta.json` — M68 Dijkstra vs corridor-aware planner delta
 - `urban.generated.tiny.json` — M76 deterministic synthetic Urban generator
   fixture with `generator_manifest`
+- `sitl.multi-agent.topology.centralized.json`,
+  `sitl.multi-agent.topology.p2p.json`,
+  `sitl.multi-agent.topology.relay.json`,
+  `sitl.multi-agent.topology.mesh-partition.json`,
+  `sitl.multi-agent.topology.mothership.json` — M88 portable
+  `multi_sitl.v1` topology config fixtures for command-plane artifact tests
 - standard generated Urban profiles also include M75 `search-moving-bus` and
   `perimeter-square`; these are builder-level fixtures and do not imply
   hardware or physics evidence.

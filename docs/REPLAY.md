@@ -58,6 +58,11 @@ Each simulation run can optionally produce an `EventLog` — a JSON file contain
 | `SwarmSupervisorStateChanged` | M87 supervisor state changed | `tick`, `from`, `to`, `reason` |
 | `SwarmSyncCommandIssued` | M87 synchronized GCS operation was issued | `tick`, `kind`, `agent_ids` |
 | `SwarmSyncCommandResult` | M87 synchronized GCS operation completed, failed, timed out, or partially succeeded | `tick`, `kind`, `succeeded_agent_ids`, `failed_agent_ids`, `timed_out_agent_ids`, `partial_success` |
+| `SwarmTopologyConfigured` | M88 logical topology was attached to a command plan | `tick`, `topology_kind`, `node_count`, `link_count` |
+| `SwarmCommandRouteSelected` | M88 command route was selected for an agent | `tick`, `route_id`, `from_node_id`, `to_agent_id`, `via_node_ids`, `degraded` |
+| `SwarmCommandRouteBlocked` | M88 command route was blocked by missing topology reachability | `tick`, `route_id`, `from_node_id`, `to_agent_id`, `reason` |
+| `SwarmTopologyDegraded` | M88 topology produced one or more degraded route decisions | `tick`, `topology_kind`, `affected_agent_ids`, `reason` |
+| `SwarmMothershipDependencyRecorded` | M88 mission-level mothership dependency was recorded | `tick`, `parent_agent_id`, `child_agent_id`, `dependency_kind` |
 | `BusObserved` | Urban Search mocked detector observed an in-range bus | `agent_id`, `tick`, `bus_id`, `pose`, `distance_m`, `detector_seed` |
 | `BusDetected` | Urban Search mocked detector confirmed a real bus detection | `agent_id`, `tick`, `bus_id`, `pose`, `distance_m`, `detector_seed` |
 | `BusFalsePositive` | Urban Search mocked detector produced a false positive | `agent_id`, `tick`, `pose`, `detector_seed` |
@@ -81,6 +86,11 @@ ownership transitions, supervisor states, and synchronized GCS operation
 outcomes at mission level. They do not imply distributed consensus, RF mesh,
 physical collision avoidance, simultaneous hardware takeoff, or identical
 flight-controller behavior.
+
+M88 adds logical topology events. They explain coordination-layer route
+decisions for centralized GCS, P2P, relay, mesh, and mothership modes. They do
+not imply an RF mesh stack, production radio routing, physical mothership
+behavior, consensus, or hardware readiness.
 
 M67 adds diagnostic replay tooling for Urban work. `UrbanViolation.obstacle_id`
 is an additive optional field and old logs without it still deserialize.
@@ -164,6 +174,11 @@ SITL event types are serialized in `snake_case`:
 | `multi_agent_task_completed` | One supervised agent SITL task marked completed | `step`, `agent_id`, `seq`, `task_id` |
 | `multi_agent_failure` | One supervised agent terminal or bounded failure | `step`, `agent_id`, `status`, `error` |
 | `multi_agent_run_finished` | Common supervisor run finished | `step`, `overall_status` |
+| `swarm_topology_configured` | M88 logical topology was attached to a supervised command plane | `step`, `topology_kind`, `node_count`, `link_count` |
+| `swarm_command_route_selected` | M88 command route was selected for a supervised agent | `step`, `route_id`, `from_node_id`, `to_agent_id`, `via_node_ids`, `degraded` |
+| `swarm_command_route_blocked` | M88 command route was blocked for a supervised agent | `step`, `route_id`, `from_node_id`, `to_agent_id`, `reason` |
+| `swarm_topology_degraded` | M88 topology emitted degraded route evidence | `step`, `topology_kind`, `affected_agent_ids`, `reason` |
+| `swarm_mothership_dependency_recorded` | M88 mission-level mothership dependency was recorded | `step`, `parent_agent_id`, `child_agent_id`, `dependency_kind` |
 | `connection_opened` | Runtime connection/context opened | `step`, `mode`, `connection_string` |
 | `heartbeat_seen` | MAVLink heartbeat or telemetry heartbeat observed | `step` |
 | `mission_clear_sent` | Existing mission clear command sent | `step` |

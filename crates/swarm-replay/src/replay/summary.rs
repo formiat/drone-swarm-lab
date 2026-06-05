@@ -41,6 +41,12 @@ pub struct ReplaySummary {
     pub swarm_ownership_handoff_count: usize,
     pub swarm_sync_partial_failure_count: usize,
     pub swarm_supervisor_state_change_count: usize,
+    // M88 Logical Swarm Topologies
+    pub swarm_topology_configured_count: usize,
+    pub swarm_command_route_selected_count: usize,
+    pub swarm_command_route_blocked_count: usize,
+    pub swarm_topology_degraded_count: usize,
+    pub swarm_mothership_dependency_count: usize,
 }
 
 /// Summarize an event log into key metrics.
@@ -147,6 +153,21 @@ pub fn summarize(log: &EventLog) -> ReplaySummary {
             Event::SwarmSupervisorStateChanged { .. } => {
                 summary.swarm_supervisor_state_change_count += 1;
             }
+            Event::SwarmTopologyConfigured { .. } => {
+                summary.swarm_topology_configured_count += 1;
+            }
+            Event::SwarmCommandRouteSelected { .. } => {
+                summary.swarm_command_route_selected_count += 1;
+            }
+            Event::SwarmCommandRouteBlocked { .. } => {
+                summary.swarm_command_route_blocked_count += 1;
+            }
+            Event::SwarmTopologyDegraded { .. } => {
+                summary.swarm_topology_degraded_count += 1;
+            }
+            Event::SwarmMothershipDependencyRecorded { .. } => {
+                summary.swarm_mothership_dependency_count += 1;
+            }
             _ => {}
         }
     }
@@ -201,6 +222,27 @@ mod tests {
                     timed_out_agent_ids: Vec::new(),
                     partial_success: true,
                 },
+                Event::SwarmTopologyConfigured {
+                    tick: 6,
+                    topology_kind: "mesh".to_owned(),
+                    node_count: 3,
+                    link_count: 2,
+                },
+                Event::SwarmCommandRouteSelected {
+                    tick: 7,
+                    route_id: "route:gcs:agent-0".to_owned(),
+                    from_node_id: "gcs".to_owned(),
+                    to_agent_id: AgentId::from("agent-0".to_owned()),
+                    via_node_ids: vec!["gcs".to_owned(), "agent:agent-0".to_owned()],
+                    degraded: false,
+                },
+                Event::SwarmCommandRouteBlocked {
+                    tick: 8,
+                    route_id: "route:gcs:agent-1".to_owned(),
+                    from_node_id: "gcs".to_owned(),
+                    to_agent_id: AgentId::from("agent-1".to_owned()),
+                    reason: "mesh_partition_or_blocked_link".to_owned(),
+                },
             ],
         };
 
@@ -211,5 +253,8 @@ mod tests {
         assert_eq!(summary.swarm_ownership_handoff_count, 1);
         assert_eq!(summary.swarm_supervisor_state_change_count, 1);
         assert_eq!(summary.swarm_sync_partial_failure_count, 1);
+        assert_eq!(summary.swarm_topology_configured_count, 1);
+        assert_eq!(summary.swarm_command_route_selected_count, 1);
+        assert_eq!(summary.swarm_command_route_blocked_count, 1);
     }
 }

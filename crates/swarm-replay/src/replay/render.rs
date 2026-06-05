@@ -297,7 +297,12 @@ fn event_category(event: &Event) -> ReplayEventCategory {
         | Event::SwarmOwnershipHandoff { .. }
         | Event::SwarmSupervisorStateChanged { .. }
         | Event::SwarmSyncCommandIssued { .. }
-        | Event::SwarmSyncCommandResult { .. } => ReplayEventCategory::Generic,
+        | Event::SwarmSyncCommandResult { .. }
+        | Event::SwarmTopologyConfigured { .. }
+        | Event::SwarmCommandRouteSelected { .. }
+        | Event::SwarmCommandRouteBlocked { .. }
+        | Event::SwarmTopologyDegraded { .. }
+        | Event::SwarmMothershipDependencyRecorded { .. } => ReplayEventCategory::Generic,
     }
 }
 
@@ -356,7 +361,14 @@ fn event_agent_id(event: &Event) -> Option<AgentId> {
         | Event::SwarmCommandPlanDispatched { .. }
         | Event::SwarmSupervisorStateChanged { .. }
         | Event::SwarmSyncCommandIssued { .. }
-        | Event::SwarmSyncCommandResult { .. } => None,
+        | Event::SwarmSyncCommandResult { .. }
+        | Event::SwarmTopologyConfigured { .. }
+        | Event::SwarmTopologyDegraded { .. } => None,
+        Event::SwarmCommandRouteSelected { to_agent_id, .. }
+        | Event::SwarmCommandRouteBlocked { to_agent_id, .. } => Some(to_agent_id.clone()),
+        Event::SwarmMothershipDependencyRecorded { child_agent_id, .. } => {
+            Some(child_agent_id.clone())
+        }
         Event::WildfirePriorityTaskReleased {
             previous_agent_id, ..
         } => previous_agent_id.clone(),
@@ -417,7 +429,12 @@ fn event_tick(event: &Event) -> u64 {
         | Event::SwarmOwnershipHandoff { tick, .. }
         | Event::SwarmSupervisorStateChanged { tick, .. }
         | Event::SwarmSyncCommandIssued { tick, .. }
-        | Event::SwarmSyncCommandResult { tick, .. } => *tick,
+        | Event::SwarmSyncCommandResult { tick, .. }
+        | Event::SwarmTopologyConfigured { tick, .. }
+        | Event::SwarmCommandRouteSelected { tick, .. }
+        | Event::SwarmCommandRouteBlocked { tick, .. }
+        | Event::SwarmTopologyDegraded { tick, .. }
+        | Event::SwarmMothershipDependencyRecorded { tick, .. } => *tick,
     }
 }
 
@@ -478,6 +495,11 @@ fn event_name(event: &Event) -> &'static str {
         Event::SwarmSupervisorStateChanged { .. } => "SwarmSupervisorStateChanged",
         Event::SwarmSyncCommandIssued { .. } => "SwarmSyncCommandIssued",
         Event::SwarmSyncCommandResult { .. } => "SwarmSyncCommandResult",
+        Event::SwarmTopologyConfigured { .. } => "SwarmTopologyConfigured",
+        Event::SwarmCommandRouteSelected { .. } => "SwarmCommandRouteSelected",
+        Event::SwarmCommandRouteBlocked { .. } => "SwarmCommandRouteBlocked",
+        Event::SwarmTopologyDegraded { .. } => "SwarmTopologyDegraded",
+        Event::SwarmMothershipDependencyRecorded { .. } => "SwarmMothershipDependencyRecorded",
     }
 }
 
@@ -756,6 +778,47 @@ fn event_details(event: &Event) -> String {
             succeeded_agent_ids.len(),
             failed_agent_ids.len(),
             timed_out_agent_ids.len()
+        ),
+        Event::SwarmTopologyConfigured {
+            topology_kind,
+            node_count,
+            link_count,
+            ..
+        } => format!("topology={topology_kind} nodes={node_count} links={link_count}"),
+        Event::SwarmCommandRouteSelected {
+            route_id,
+            from_node_id,
+            to_agent_id,
+            via_node_ids,
+            degraded,
+            ..
+        } => format!(
+            "route={route_id} from={from_node_id} to={to_agent_id} hops={} degraded={degraded}",
+            via_node_ids.len()
+        ),
+        Event::SwarmCommandRouteBlocked {
+            route_id,
+            from_node_id,
+            to_agent_id,
+            reason,
+            ..
+        } => format!("route={route_id} from={from_node_id} to={to_agent_id} reason={reason}"),
+        Event::SwarmTopologyDegraded {
+            topology_kind,
+            affected_agent_ids,
+            reason,
+            ..
+        } => format!(
+            "topology={topology_kind} affected_agents={} reason={reason}",
+            affected_agent_ids.len()
+        ),
+        Event::SwarmMothershipDependencyRecorded {
+            parent_agent_id,
+            child_agent_id,
+            dependency_kind,
+            ..
+        } => format!(
+            "parent={parent_agent_id} child={child_agent_id} dependency={dependency_kind}"
         ),
     }
 }

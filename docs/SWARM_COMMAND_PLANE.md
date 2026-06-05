@@ -1,6 +1,8 @@
 # Swarm Command Plane
 
 M87 adds a mission-level command plane for coordinated multi-agent missions.
+M88 extends that command plane with logical topology contracts and deterministic
+command-route decisions.
 It connects existing assignment outputs to per-agent command plans and replayable
 ownership/state transitions.
 
@@ -8,6 +10,7 @@ This is not drone-to-drone RF firmware, distributed consensus, low-level
 collision avoidance, or a simultaneous hardware takeoff guarantee. PX4 and
 ArduPilot can still interpret MAVLink commands differently; M87 only records
 the command intent and policy decisions before transport-specific execution.
+For topology details, see [`SWARM_TOPOLOGIES.md`](SWARM_TOPOLOGIES.md).
 
 ## Schema
 
@@ -25,6 +28,9 @@ The reusable implementation lives in `swarm-command-plane`:
   policy, and ownership references.
 - `SwarmCommandArtifactSummary` is the compact manifest/report section used by
   `swarm-examples` artifacts.
+- `SwarmTopologyConfig` and `SwarmCommandRoute` record M88 logical topology
+  assumptions and route decisions inside the same additive
+  `swarm_command_plane.v1` artifact.
 
 ## Roles
 
@@ -114,6 +120,8 @@ Generic M87 replay events explain command fanout and ownership over time:
 
 `ReplaySummary` counts command-plan dispatches, per-agent dispatches,
 ownership handoffs, sync partial failures, and supervisor state changes.
+M88 adds topology configured, route selected, route blocked, topology degraded,
+and mothership dependency events/counters.
 
 ## Artifact Validation
 
@@ -125,8 +133,13 @@ MAVLink plans, and partial synchronized command results without matching command
 windows. Historical supervisor artifacts remain readable without M87 sections
 when validated in historical mode.
 
+M88 strict validation additionally checks topology nodes/links, per-agent route
+decisions, blocked-route reasons, mothership dependency acyclicity, and explicit
+transport hardware-boundary text.
+
 ## Test Boundary
 
 M87 is covered by portable Rust tests. No PX4, ArduPilot, Gazebo, HIL, real
 hardware, long benchmark, or 1000-seed run is required for the command-plane
-foundation.
+foundation. M88 topology checks are also portable and do not require PX4,
+ArduPilot, Gazebo, HIL, real hardware, long benchmarks, or a 1000-seed run.

@@ -6,7 +6,7 @@ use swarm_command_plane::{
     build_swarm_command_plan, AgentCommandAssignment, PartialSuccessPolicy, SwarmAbortPolicy,
     SwarmCommandArtifactSummary, SwarmCommandFanoutInput, SwarmCommandPlan, SwarmCommandRole,
     SwarmOwnershipKind, SwarmOwnershipRecord, SwarmOwnershipRef, SwarmOwnershipStatus,
-    SynchronizedCommandKind, SynchronizedCommandWindow,
+    SwarmTopologyConfig, SwarmTopologyKind, SynchronizedCommandKind, SynchronizedCommandWindow,
 };
 use swarm_comms::{MavlinkCommonPlanOptions, MavlinkCoordinateOrigin};
 use swarm_mission_ir::{
@@ -25,9 +25,11 @@ use crate::sitl_plan::{
 pub const MULTI_AGENT_SITL_CONFIG_SCHEMA_VERSION: &str = "multi_sitl.v1";
 pub const MULTI_AGENT_SITL_MANIFEST_SCHEMA_VERSION: &str = "multi_sitl_manifest.v1";
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MultiAgentSitlConfig {
     pub schema_version: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub topology: Option<SwarmTopologyConfig>,
     pub agents: Vec<MultiAgentSitlAgentConfig>,
 }
 
@@ -75,9 +77,20 @@ pub struct MultiAgentSitlManifest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command_plane: Option<SwarmCommandArtifactSummary>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub topology: Option<MultiAgentSitlTopologySummary>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command_plane_artifact: Option<SwarmCommandPlan>,
     #[serde(default)]
     pub artifact_metadata: SitlArtifactMetadata,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MultiAgentSitlTopologySummary {
+    pub kind: SwarmTopologyKind,
+    pub node_count: usize,
+    pub link_count: usize,
+    pub route_count: usize,
+    pub degraded_route_count: usize,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -181,6 +194,7 @@ pub fn build_multi_agent_manifest(
     let ownership_summary = ownership_summary(suite, config)?;
     let command_plane_artifact = build_manifest_command_plane(entry, config, &agents)?;
     let command_plane = Some(command_plane_artifact.summary.clone());
+    let topology = topology_summary(&command_plane_artifact);
 
     Ok(MultiAgentSitlManifest {
         schema_version: MULTI_AGENT_SITL_MANIFEST_SCHEMA_VERSION.to_owned(),
@@ -192,8 +206,24 @@ pub fn build_multi_agent_manifest(
         agents,
         ownership_summary,
         command_plane,
+        topology,
         command_plane_artifact: Some(command_plane_artifact),
         artifact_metadata: SitlArtifactMetadata::default(),
+    })
+}
+
+fn topology_summary(plan: &SwarmCommandPlan) -> Option<MultiAgentSitlTopologySummary> {
+    let topology = plan.topology.as_ref()?;
+    Some(MultiAgentSitlTopologySummary {
+        kind: topology.kind.clone(),
+        node_count: topology.nodes.len(),
+        link_count: topology.links.len(),
+        route_count: plan.command_routes.len(),
+        degraded_route_count: plan
+            .command_routes
+            .iter()
+            .filter(|route| route.degraded)
+            .count(),
     })
 }
 
@@ -248,6 +278,7 @@ fn build_manifest_command_plane(
         ownership,
         global_abort_policy: SwarmAbortPolicy::AbortMission,
         sync_operations: sync_operations_for_config(config),
+        topology: config.topology.clone(),
         mavlink_options: MavlinkCommonPlanOptions {
             home_origin: Some(MavlinkCoordinateOrigin {
                 lat_deg: DEFAULT_SITL_GEO_ORIGIN.lat_deg,
@@ -591,6 +622,7 @@ mod tests {
     fn config() -> MultiAgentSitlConfig {
         MultiAgentSitlConfig {
             schema_version: MULTI_AGENT_SITL_CONFIG_SCHEMA_VERSION.to_owned(),
+            topology: None,
             agents: vec![
                 MultiAgentSitlAgentConfig {
                     agent_id: "agent-0".to_owned(),
@@ -656,6 +688,7 @@ mod tests {
     fn multi_agent_config_rejects_empty_agents() {
         let config = MultiAgentSitlConfig {
             schema_version: MULTI_AGENT_SITL_CONFIG_SCHEMA_VERSION.to_owned(),
+            topology: None,
             agents: vec![],
         };
         let error = build_multi_agent_manifest(&suite(), "scenario.json", "multi.json", &config)
@@ -752,6 +785,30 @@ mod tests {
     }
 
     #[test]
+    fn sitl_topology_fixture_embeds_command_routes() {
+        let mut config: MultiAgentSitlConfig = serde_json::from_str(include_str!(
+            "../../../scenarios/sitl.multi-agent.topology.mesh-partition.json"
+        ))
+        .unwrap();
+        config.agents[0].task_ids = vec!["wp-0".to_owned()];
+        config.agents[1].task_ids = vec!["wp-1".to_owned()];
+
+        let manifest =
+            build_multi_agent_manifest(&suite(), "scenario.json", "topology.json", &config)
+                .unwrap();
+
+        let topology = manifest.topology.as_ref().unwrap();
+        let command_plane = manifest.command_plane.as_ref().unwrap();
+        let artifact = manifest.command_plane_artifact.as_ref().unwrap();
+
+        assert_eq!(topology.kind, SwarmTopologyKind::Mesh);
+        assert_eq!(command_plane.topology_kind, Some(SwarmTopologyKind::Mesh));
+        assert_eq!(topology.route_count, 2);
+        assert_eq!(artifact.command_routes.len(), 2);
+        assert!(artifact.command_routes.iter().any(|route| !route.allowed));
+    }
+
+    #[test]
     fn unassigned_pose_tasks_are_reported_test() {
         let mut invalid_config = config();
         invalid_config.agents[1].task_ids = vec![];
@@ -763,6 +820,7 @@ mod tests {
         let base_config = config();
         let config = MultiAgentSitlConfig {
             schema_version: MULTI_AGENT_SITL_CONFIG_SCHEMA_VERSION.to_owned(),
+            topology: None,
             agents: vec![base_config.agents[0].clone()],
         };
         let manifest =

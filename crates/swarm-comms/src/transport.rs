@@ -9,6 +9,27 @@ pub struct RawMessage {
     pub payload: Vec<u8>,
 }
 
+/// Typed command-plane envelope that can be carried by test transports.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommandEnvelope {
+    pub envelope_id: String,
+    pub route_id: String,
+    pub from: AgentId,
+    pub to: AgentId,
+    pub payload: Vec<u8>,
+    pub topology_kind: String,
+}
+
+impl CommandEnvelope {
+    pub fn into_raw_message(self) -> RawMessage {
+        RawMessage {
+            from: self.from,
+            to: self.to,
+            payload: self.payload,
+        }
+    }
+}
+
 /// Pluggable point-to-point message transport between agents.
 ///
 /// Implementations may be in-memory, UDP-backed, or MAVLink-backed.
@@ -38,5 +59,26 @@ mod tests {
         assert_eq!(back.from, msg.from);
         assert_eq!(back.to, msg.to);
         assert_eq!(back.payload, msg.payload);
+    }
+
+    #[test]
+    fn command_envelope_serializes_deterministically() {
+        let envelope = CommandEnvelope {
+            envelope_id: "env-1".to_owned(),
+            route_id: "route:gcs:agent-0".to_owned(),
+            from: AgentId::from("gcs".to_owned()),
+            to: AgentId::from("agent-0".to_owned()),
+            payload: b"command".to_vec(),
+            topology_kind: "centralized_gcs".to_owned(),
+        };
+
+        let json = serde_json::to_string(&envelope).unwrap();
+        let back: CommandEnvelope = serde_json::from_str(&json).unwrap();
+        let raw = back.clone().into_raw_message();
+
+        assert_eq!(back, envelope);
+        assert_eq!(raw.from, AgentId::from("gcs".to_owned()));
+        assert_eq!(raw.to, AgentId::from("agent-0".to_owned()));
+        assert_eq!(raw.payload, b"command".to_vec());
     }
 }

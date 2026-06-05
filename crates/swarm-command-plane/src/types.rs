@@ -3,7 +3,7 @@ use swarm_comms::{MavlinkCommonPlan, MavlinkExpectedAck, MavlinkTelemetryMilesto
 use swarm_mission_ir::MissionCommandPlan;
 use swarm_types::{AgentId, Role};
 
-/// Schema identifier for M87 command-plane artifacts.
+/// Schema identifier for M87/M88 command-plane artifacts.
 pub const SWARM_COMMAND_PLANE_SCHEMA_VERSION: &str = "swarm_command_plane.v1";
 
 /// Mission-level role used by the swarm command plane.
@@ -140,6 +140,112 @@ pub struct SynchronizedCommandResult {
     pub accepted: bool,
 }
 
+/// Logical topology kind used by the command plane.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SwarmTopologyKind {
+    CentralizedGcs,
+    P2pLogical,
+    Mothership,
+    Relay,
+    Mesh,
+}
+
+/// Node category in a logical command-plane topology.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SwarmTopologyNodeKind {
+    Gcs,
+    Agent,
+    Relay,
+    Mothership,
+    Carrier,
+}
+
+/// Transport abstraction described by a topology artifact.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SwarmTransportDeliveryModel {
+    InMemory,
+    Logical,
+    LegacyUdp,
+    FutureMavlinkRouter,
+}
+
+/// Explicit non-hardware assumptions for topology routing evidence.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SwarmTransportAssumptions {
+    pub delivery_model: SwarmTransportDeliveryModel,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_delay_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drop_rate: Option<f64>,
+    pub hardware_boundary: String,
+}
+
+/// One logical topology node.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SwarmTopologyNode {
+    pub node_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<AgentId>,
+    pub kind: SwarmTopologyNodeKind,
+    #[serde(default = "default_available")]
+    pub available: bool,
+}
+
+/// One directed logical topology link.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SwarmTopologyLink {
+    pub from_node_id: String,
+    pub to_node_id: String,
+    #[serde(default = "default_available")]
+    pub available: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delay_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drop_rate: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// Mission-level parent/child dependency for mothership-style coordination.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SwarmMothershipDependency {
+    pub parent_agent_id: AgentId,
+    pub child_agent_id: AgentId,
+    pub dependency_kind: String,
+    pub reason: String,
+}
+
+/// Logical topology configuration embedded in command-plane artifacts.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SwarmTopologyConfig {
+    pub kind: SwarmTopologyKind,
+    pub gcs_node_id: String,
+    pub nodes: Vec<SwarmTopologyNode>,
+    pub links: Vec<SwarmTopologyLink>,
+    pub transport: SwarmTransportAssumptions,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mothership_dependencies: Vec<SwarmMothershipDependency>,
+}
+
+/// Deterministic routing decision for a command delivered to an agent.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SwarmCommandRoute {
+    pub route_id: String,
+    pub from_node_id: String,
+    pub to_agent_id: AgentId,
+    pub via_node_ids: Vec<String>,
+    pub allowed: bool,
+    pub degraded: bool,
+    pub reason: String,
+}
+
+fn default_available() -> bool {
+    true
+}
+
 /// Per-agent command plan produced by M87 fanout.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SwarmAgentCommandPlan {
@@ -162,9 +268,21 @@ pub struct SwarmCommandArtifactSummary {
     pub active_ownership_count: usize,
     pub handoff_count: usize,
     pub sync_operation_count: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub topology_kind: Option<SwarmTopologyKind>,
+    #[serde(default)]
+    pub topology_node_count: usize,
+    #[serde(default)]
+    pub topology_link_count: usize,
+    #[serde(default)]
+    pub command_route_count: usize,
+    #[serde(default)]
+    pub degraded_route_count: usize,
+    #[serde(default)]
+    pub mothership_dependency_count: usize,
 }
 
-/// Complete M87 command-plane artifact.
+/// Complete M87/M88 command-plane artifact.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SwarmCommandPlan {
     pub schema_version: String,
@@ -177,5 +295,9 @@ pub struct SwarmCommandPlan {
     pub sync_operations: Vec<SynchronizedCommandWindow>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sync_results: Vec<SynchronizedCommandResult>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub topology: Option<SwarmTopologyConfig>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub command_routes: Vec<SwarmCommandRoute>,
     pub summary: SwarmCommandArtifactSummary,
 }

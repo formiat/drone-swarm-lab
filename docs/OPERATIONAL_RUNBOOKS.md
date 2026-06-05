@@ -242,6 +242,11 @@ Stop/abort conditions:
 - `artifact.safety_report_missing`;
 - `artifact.limitations_missing`;
 - `artifact.swarm_agent_plan_missing` when validating an M87 command-plane artifact;
+- `artifact.swarm_topology_missing`,
+  `artifact.swarm_topology_route_missing`,
+  `artifact.swarm_topology_blocked_unreported`,
+  `artifact.swarm_mothership_dependency_invalid`, or
+  `artifact.swarm_transport_assumption_missing` when validating an M88 topology artifact;
 - any new artifact rule id that is not understood by the operator.
 
 ## Runbook 4b: M87 Swarm Command Plane Local Check
@@ -271,6 +276,31 @@ Stop/abort conditions:
   readiness;
 - a long benchmark, PX4/SITL, Gazebo, HIL, or hardware run is required to
   support the claim. M87 does not require those runs.
+
+## Runbook 4c: M88 Logical Swarm Topologies Local Check
+
+Use this when the claim is about centralized GCS, P2P, relay, mesh, or
+mothership command-routing evidence at the coordination layer.
+
+```bash
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 /home/formi/.local/bin/runlim cargo test -p swarm-command-plane topology -- --nocapture
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 /home/formi/.local/bin/runlim cargo test -p swarm-examples sitl_topology -- --nocapture
+```
+
+Expected evidence:
+
+- `swarm_command_plane.v1` includes a topology section and command routes;
+- blocked/degraded routes carry explicit reasons;
+- topology events appear in SITL event summaries;
+- strict artifacts reject invalid topology nodes, missing routes, bad
+  mothership dependencies, and missing transport boundary text.
+
+Stop/abort conditions:
+
+- topology artifacts are described as RF mesh, production radio routing,
+  physical mothership behavior, consensus, or hardware readiness;
+- topology fixtures require PX4, ArduPilot, serial ports, external network
+  sockets, or real hardware.
 
 ## Runbook 4a: M83 Primitive Command Dry-Run
 

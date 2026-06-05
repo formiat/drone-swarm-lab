@@ -50,7 +50,8 @@ use crate::sitl_report::write_sitl_multi_agent_run_report;
 use crate::sitl_report::SitlMultiAgentRunReport;
 use swarm_alloc::GreedyAllocator;
 use swarm_command_plane::{
-    SwarmCommandPlan, SwarmOwnershipKind, SwarmOwnershipStatus, SynchronizedCommandKind,
+    SwarmCommandPlan, SwarmOwnershipKind, SwarmOwnershipStatus, SwarmTopologyKind,
+    SynchronizedCommandKind,
 };
 use swarm_comms::{MockMavlinkTransport, RawMessage};
 use swarm_runtime::{AgentNode, Coordinator, RuntimeMessage};
@@ -668,6 +669,7 @@ fn record_swarm_command_plane_dispatch(
     };
     recorder.push_swarm_supervisor_state_changed("planned", "dispatched", "manifest_loaded");
     recorder.push_swarm_command_plan_dispatched(plan.plan_id.clone(), plan.agents.len());
+    record_swarm_topology_events(recorder, plan);
     for agent in &plan.agents {
         recorder.push_swarm_agent_command_dispatched(
             plan.plan_id.clone(),
@@ -689,6 +691,54 @@ fn record_swarm_command_plane_dispatch(
             result.failed.iter().map(ToString::to_string).collect(),
             result.timed_out.iter().map(ToString::to_string).collect(),
             !result.failed.is_empty() || !result.timed_out.is_empty(),
+        );
+    }
+}
+
+fn record_swarm_topology_events(recorder: &mut SitlEventRecorder, plan: &SwarmCommandPlan) {
+    let Some(topology) = plan.topology.as_ref() else {
+        return;
+    };
+    let topology_kind = topology_kind_label(&topology.kind);
+    recorder.push_swarm_topology_configured(
+        topology_kind,
+        topology.nodes.len(),
+        topology.links.len(),
+    );
+    let mut degraded_agent_ids = Vec::new();
+    for route in &plan.command_routes {
+        if route.allowed {
+            recorder.push_swarm_command_route_selected(
+                route.route_id.clone(),
+                route.from_node_id.clone(),
+                route.to_agent_id.to_string(),
+                route.via_node_ids.clone(),
+                route.degraded,
+            );
+        } else {
+            recorder.push_swarm_command_route_blocked(
+                route.route_id.clone(),
+                route.from_node_id.clone(),
+                route.to_agent_id.to_string(),
+                route.reason.clone(),
+            );
+        }
+        if route.degraded {
+            degraded_agent_ids.push(route.to_agent_id.to_string());
+        }
+    }
+    if !degraded_agent_ids.is_empty() {
+        recorder.push_swarm_topology_degraded(
+            topology_kind,
+            degraded_agent_ids,
+            "one_or_more_command_routes_degraded",
+        );
+    }
+    for dependency in &topology.mothership_dependencies {
+        recorder.push_swarm_mothership_dependency_recorded(
+            dependency.parent_agent_id.to_string(),
+            dependency.child_agent_id.to_string(),
+            dependency.dependency_kind.clone(),
         );
     }
 }
@@ -718,6 +768,16 @@ fn record_swarm_ownership_events(recorder: &mut SitlEventRecorder, plan: &SwarmC
             handoff.resource_id.clone(),
             handoff.reason.clone(),
         );
+    }
+}
+
+fn topology_kind_label(kind: &SwarmTopologyKind) -> &'static str {
+    match kind {
+        SwarmTopologyKind::CentralizedGcs => "centralized_gcs",
+        SwarmTopologyKind::P2pLogical => "p2p_logical",
+        SwarmTopologyKind::Mothership => "mothership",
+        SwarmTopologyKind::Relay => "relay",
+        SwarmTopologyKind::Mesh => "mesh",
     }
 }
 
