@@ -28,6 +28,10 @@ path = "src/bin/regression_runner.rs"
 name = "artifact_validator"
 path = "src/bin/artifact_validator.rs"
 
+[[bin]]
+name = "sitl_dual_stack_evidence"
+path = "src/bin/sitl_dual_stack_evidence.rs"
+
 [dependencies]
 chrono             = { workspace = true }
 serde              = { workspace = true }

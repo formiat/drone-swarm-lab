@@ -287,6 +287,40 @@ perimeter metrics and reuses the same Urban route/waypoint export shape. Moving
 bus targets are mocked semantic detections in simulation and are not exported
 as PX4 perception, traffic, or obstacle-avoidance behavior.
 
+## M89 Dual-Stack Dry-Run Evidence
+
+M89 adds a portable evidence pack for checking that the same primitive command
+IR can be compiled for PX4 and ArduPilot profiles without installing either
+autopilot:
+
+```bash
+cargo run -p swarm-examples --bin sitl_dual_stack_evidence -- \
+  --scenario scenarios/primitive.takeoff-hold-land.json \
+  --agent-id agent-0 \
+  --output-dir target/m89-dual-stack \
+  --force
+
+cargo run -p swarm-examples --bin artifact_validator -- \
+  --output-dir target/m89-dual-stack \
+  --mode dual-stack-evidence \
+  --strict
+```
+
+The command writes `px4/sitl_dry_run_artifact.v1.json`,
+`ardupilot/sitl_dry_run_artifact.v1.json`, and
+`sitl_dual_stack_evidence_pack.v1.json`. The pack records `command_ir_hash`,
+profile-specific compatibility caveats, expected ACK/telemetry counts, an
+explicit `abort_replacement` section, and an explicit `fc_safety_contract`
+section. For the primitive single-agent pack, replacement is serialized as
+`not_applicable_single_agent_primitive`: timeout abort policy and terminal state
+are evidence, but live failover/reupload is not claimed. FC/safety evidence
+mirrors `safety_report`, `fence_summary`, `fc_contract_result`, geofence
+support, parameter support, and visible profile caveats.
+
+This is dry-run evidence only. It does not prove ArduPilot command acceptance,
+PX4/ArduPilot behavioral equivalence, live failsafe behavior, hardware
+readiness, or certified flight safety.
+
 ## Quick Start: Mock Mode
 
 Mock mode sends the same extracted waypoints to an in-memory

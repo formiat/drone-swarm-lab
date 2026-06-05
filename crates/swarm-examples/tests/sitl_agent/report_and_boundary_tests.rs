@@ -571,6 +571,46 @@ fn dry_run_artifact_can_select_px4_mavlink_profile() {
 }
 
 #[test]
+fn dry_run_artifact_can_select_ardupilot_mavlink_profile() {
+    let scenario = public_scenario("scenarios/primitive.takeoff-hold-land.json");
+    let report_dir = tempfile::tempdir().unwrap();
+    let artifact = report_dir.path().join("primitive-ardupilot-dry-run.json");
+    let output = run_sitl_agent(&[
+        "--dry-run",
+        "--scenario",
+        &scenario,
+        "--agent-id",
+        "agent-0",
+        "--dry-run-artifact",
+        artifact.to_str().unwrap(),
+        "--mavlink-profile",
+        "ardupilot",
+    ]);
+
+    assert!(output.status.success());
+    let json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&artifact).unwrap()).unwrap();
+    assert_eq!(json["mavlink_common_plan"]["backend_profile"], "ardupilot");
+    assert_eq!(
+        json["mavlink_common_plan"]["compatibility"]["profile"],
+        "ardupilot"
+    );
+    assert_eq!(
+        json["command_ir_summary"]["timeout_policy"]["on_timeout"],
+        "abort"
+    );
+    assert_eq!(
+        json["command_ir_summary"]["expected_terminal_state"],
+        "landed"
+    );
+    assert!(json["mavlink_common_plan"]["compatibility"]["caveats"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|value| value.as_str().unwrap().contains("ArduPilot")));
+}
+
+#[test]
 fn dry_run_rejects_invalid_mavlink_profile() {
     let scenario = write_sitl_scenario();
     let output = run_sitl_agent(&[

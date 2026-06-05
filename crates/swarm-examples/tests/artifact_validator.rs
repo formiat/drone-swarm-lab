@@ -16,8 +16,11 @@ use swarm_examples::artifact_validator::{
     RULE_BUILD_PROFILE_MISSING, RULE_COMPLETED_TASK_MISSING_EVENT, RULE_DEGRADED_EVENT_MISSING,
     RULE_DEGRADED_FINAL_STATUS_MISMATCH, RULE_DEGRADED_RECORD_MISSING,
     RULE_DEGRADED_RECOVERY_TASK_MISMATCH, RULE_DRY_RUN_POLICY_MISSING,
-    RULE_DRY_RUN_SAFETY_REPORT_FAILED, RULE_FINAL_STATUS_MISMATCH, RULE_MANIFEST_MISSING,
-    RULE_MAVLINK_PLAN_MISSING, RULE_MAVLINK_PLAN_ORDER_UNSAFE, RULE_MAVLINK_PLAN_TELEMETRY_MISSING,
+    RULE_DRY_RUN_SAFETY_REPORT_FAILED, RULE_DUAL_STACK_ABORT_POLICY_MISMATCH,
+    RULE_DUAL_STACK_ABORT_REPLACEMENT_MISSING, RULE_DUAL_STACK_FC_CONTRACT_HIDDEN_CAVEAT,
+    RULE_DUAL_STACK_FC_CONTRACT_MISSING, RULE_DUAL_STACK_IR_HASH_MISMATCH,
+    RULE_FINAL_STATUS_MISMATCH, RULE_MANIFEST_MISSING, RULE_MAVLINK_PLAN_MISSING,
+    RULE_MAVLINK_PLAN_ORDER_UNSAFE, RULE_MAVLINK_PLAN_TELEMETRY_MISSING,
     RULE_MAVLINK_PROFILE_HARDWARE_BLOCKING, RULE_MAVLINK_PROFILE_MISSING,
     RULE_MAVLINK_PROFILE_RESULT_MISMATCH, RULE_MAVLINK_PROFILE_UNSUPPORTED,
     RULE_REPLACEMENT_SEQ_MISMATCH, RULE_REPLAY_SUMMARY_COUNT_MISMATCH, RULE_SAFETY_REPORT_MISSING,
@@ -27,6 +30,9 @@ use swarm_examples::artifact_validator::{
     RULE_SWARM_TRANSPORT_ASSUMPTION_MISSING, RULE_URBAN_DECONFLICTION_DUPLICATE_SEGMENT_OWNER,
     RULE_URBAN_GEO_ROUTE_METADATA_MISSING, RULE_URBAN_MOCK_PERCEPTION_MISSING,
     RULE_URBAN_WGS84_GEO_MISSING,
+};
+use swarm_examples::sitl_dual_stack_evidence::{
+    write_dual_stack_evidence_pack, SITL_DUAL_STACK_EVIDENCE_FILE,
 };
 use swarm_examples::sitl_multi_agent::{
     MultiAgentLifecycle, MultiAgentSitlManifest, MultiAgentSitlManifestAgent,
@@ -707,6 +713,133 @@ fn dry_run_artifact_with_unsupported_profile_result_fails() {
 }
 
 #[test]
+fn dual_stack_evidence_pack_passes() {
+    let fixture = tempfile::tempdir().unwrap();
+    write_dual_stack_evidence_pack(
+        public_scenario_path("scenarios/primitive.takeoff-hold-land.json"),
+        "agent-0",
+        fixture.path(),
+        true,
+    )
+    .unwrap();
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(fixture.path()),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::DualStackEvidence,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert!(report.passed, "{:?}", report.violations);
+}
+
+#[test]
+fn dual_stack_evidence_missing_abort_replacement_fails() {
+    let fixture = dual_stack_fixture_json();
+    let path = fixture.path().join(SITL_DUAL_STACK_EVIDENCE_FILE);
+    let mut json = read_json_value(&path);
+    json.as_object_mut().unwrap().remove("abort_replacement");
+    write_json(&path, &json);
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(fixture.path()),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::DualStackEvidence,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_DUAL_STACK_ABORT_REPLACEMENT_MISSING);
+}
+
+#[test]
+fn dual_stack_evidence_mismatched_abort_policy_fails() {
+    let fixture = dual_stack_fixture_json();
+    let path = fixture.path().join(SITL_DUAL_STACK_EVIDENCE_FILE);
+    let mut json = read_json_value(&path);
+    json["abort_replacement"]["timeout_policy"]["completion_timeout_secs"] =
+        serde_json::json!(999.0);
+    write_json(&path, &json);
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(fixture.path()),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::DualStackEvidence,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_DUAL_STACK_ABORT_POLICY_MISMATCH);
+}
+
+#[test]
+fn dual_stack_evidence_missing_fc_contract_section_fails() {
+    let fixture = dual_stack_fixture_json();
+    let path = fixture.path().join(SITL_DUAL_STACK_EVIDENCE_FILE);
+    let mut json = read_json_value(&path);
+    json["profiles"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("fc_safety_contract");
+    write_json(&path, &json);
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(fixture.path()),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::DualStackEvidence,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_DUAL_STACK_FC_CONTRACT_MISSING);
+}
+
+#[test]
+fn dual_stack_evidence_hidden_fc_contract_caveat_fails() {
+    let fixture = dual_stack_fixture_json();
+    let path = fixture.path().join(SITL_DUAL_STACK_EVIDENCE_FILE);
+    let mut json = read_json_value(&path);
+    json["profiles"][1]["fc_safety_contract"]["caveats"] = serde_json::json!([]);
+    write_json(&path, &json);
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(fixture.path()),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::DualStackEvidence,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_DUAL_STACK_FC_CONTRACT_HIDDEN_CAVEAT);
+}
+
+#[test]
+fn dual_stack_evidence_mismatched_ir_hash_fails() {
+    let fixture = dual_stack_fixture_json();
+    let path = fixture.path().join(SITL_DUAL_STACK_EVIDENCE_FILE);
+    let mut json = read_json_value(&path);
+    json["command_ir_hash"] = serde_json::json!("different");
+    write_json(&path, &json);
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(fixture.path()),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::DualStackEvidence,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_DUAL_STACK_IR_HASH_MISMATCH);
+}
+
+#[test]
 fn dry_run_artifact_stale_m82_compatibility_frame_fails() {
     let fixture = tempfile::tempdir().unwrap();
     let output_dir = fixture.path().join("dry-run");
@@ -1017,6 +1150,28 @@ fn assert_rule(
         "missing {rule_id}; violations={:?}",
         report.violations
     );
+}
+
+fn public_scenario_path(path: &str) -> PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join(path)
+}
+
+fn dual_stack_fixture_json() -> tempfile::TempDir {
+    let fixture = tempfile::tempdir().unwrap();
+    write_dual_stack_evidence_pack(
+        public_scenario_path("scenarios/primitive.takeoff-hold-land.json"),
+        "agent-0",
+        fixture.path(),
+        true,
+    )
+    .unwrap();
+    fixture
+}
+
+fn read_json_value(path: &Path) -> serde_json::Value {
+    serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap()
 }
 
 fn write_urban_ownership_pack(output_dir: &Path, records: serde_json::Value) {

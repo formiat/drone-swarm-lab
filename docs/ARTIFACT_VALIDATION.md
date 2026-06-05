@@ -103,6 +103,32 @@ cargo run -p swarm-examples --bin artifact_validator -- \
   --strict
 ```
 
+Validate an M89 dual-stack evidence pack. This validates
+`sitl_dual_stack_evidence_pack.v1.json`, recursively validates the referenced
+PX4 and ArduPilot dry-run artifacts, and checks the shared command IR hash,
+profile coverage, abort/replacement section, and FC/safety contract section:
+
+```bash
+cargo run -p swarm-examples --bin artifact_validator -- \
+  --output-dir target/m89-dual-stack \
+  --mode dual-stack-evidence \
+  --strict
+```
+
+Additional M89 rule ids include:
+
+- `artifact.dual_stack_evidence_missing`;
+- `artifact.dual_stack_profile_missing`;
+- `artifact.dual_stack_profile_mismatch`;
+- `artifact.dual_stack_ir_hash_mismatch`;
+- `artifact.dual_stack_hardware_claim_unsafe`;
+- `artifact.dual_stack_abort_replacement_missing`;
+- `artifact.dual_stack_abort_policy_mismatch`;
+- `artifact.dual_stack_replacement_policy_mismatch`;
+- `artifact.dual_stack_fc_contract_missing`;
+- `artifact.dual_stack_fc_contract_hidden_caveat`;
+- `artifact.dual_stack_fc_contract_claim_unsafe`.
+
 Validate a benchmark pack with optional Urban analysis ownership artifacts.
 This mode does not require SITL supervisor files; when
 `urban_analysis/manifest.json` exists it checks every referenced

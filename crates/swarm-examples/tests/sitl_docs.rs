@@ -16,6 +16,7 @@ const MAVLINK_CAPABILITY_PROFILES: &str =
     include_str!("../../../docs/MAVLINK_CAPABILITY_PROFILES.md");
 const SWARM_COMMAND_PLANE: &str = include_str!("../../../docs/SWARM_COMMAND_PLANE.md");
 const SWARM_TOPOLOGIES: &str = include_str!("../../../docs/SWARM_TOPOLOGIES.md");
+const ARDUPILOT_SITL: &str = include_str!("../../../docs/ARDUPILOT_SITL.md");
 const M62_RESULT_README: &str =
     include_str!("../../../results/all_500_jobs14_m62_release/README.md");
 
@@ -263,6 +264,51 @@ fn sitl_docs_explain_portable_and_manual_boundaries() {
         assert!(
             BENCHMARK_RESULTS.contains(required),
             "Benchmark results doc missing {required}"
+        );
+    }
+}
+
+#[test]
+fn m89_docs_explain_dual_stack_evidence_boundaries() {
+    for required in [
+        "sitl_dual_stack_evidence",
+        "sitl_dual_stack_evidence_pack.v1.json",
+        "dual-stack-evidence",
+        "abort_replacement",
+        "fc_safety_contract",
+        "not_applicable_single_agent_primitive",
+    ] {
+        assert!(README.contains(required), "README missing {required}");
+        assert!(
+            SITL_SETUP.contains(required),
+            "SITL setup missing {required}"
+        );
+        assert!(
+            OPERATIONAL_RUNBOOKS.contains(required),
+            "Operational runbooks missing {required}"
+        );
+    }
+
+    for required in [
+        "ArduPilot SITL evidence is optional/manual",
+        "Dry-run dual-stack evidence does not prove ArduPilot command acceptance",
+        "no hardware readiness",
+        "PX4/ArduPilot",
+    ] {
+        assert!(
+            ARDUPILOT_SITL.contains(required),
+            "ArduPilot runbook missing {required}"
+        );
+    }
+
+    for required in [
+        "artifact.dual_stack_abort_replacement_missing",
+        "artifact.dual_stack_fc_contract_missing",
+        "artifact.dual_stack_fc_contract_hidden_caveat",
+    ] {
+        assert!(
+            ARTIFACT_VALIDATION.contains(required),
+            "Artifact validation doc missing {required}"
         );
     }
 }

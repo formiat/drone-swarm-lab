@@ -1,0 +1,110 @@
+{
+  "schema_version": "sitl_dual_stack_evidence_pack.v1",
+  "source_scenario_path": "scenarios/primitive.takeoff-hold-land.json",
+  "mission": "takeoff-hold-land",
+  "profile": "takeoff-hold-land-3m-10s",
+  "agent_id": "agent-0",
+  "command_ir_hash": "a4b1b5cff986223606cc2154e7d0976ccc63a1cb51943aa92b0970ed4778149c",
+  "abort_replacement": {
+    "timeout_policy": {
+      "command_timeout_secs": 5.0,
+      "completion_timeout_secs": 120.0,
+      "on_timeout": "abort"
+    },
+    "expected_terminal_state": "landed",
+    "replacement_policy": "not_applicable_single_agent_primitive",
+    "evidence_status": "not_applicable_single_agent_primitive",
+    "caveats": [
+      "Primitive single-agent dry-run evidence records timeout abort policy and terminal state, but does not exercise live replacement.",
+      "Command-plane replacement evidence remains in M87/M59 artifacts and is not implied by this pack."
+    ]
+  },
+  "profiles": [
+    {
+      "mavlink_profile": "px4",
+      "stack_name": "PX4",
+      "dry_run_artifact_path": "px4/sitl_dry_run_artifact.v1.json",
+      "backend_profile": "px4",
+      "overall_classification": "supported_with_caveats",
+      "hardware_facing_allowed": true,
+      "expected_ack_count": 5,
+      "telemetry_milestone_count": 3,
+      "command_prelude_count": 2,
+      "mission_item_count": 1,
+      "command_postlude_count": 1,
+      "safety_passed": true,
+      "abort_replacement": {
+        "timeout_on_timeout": "abort",
+        "expected_terminal_state": "landed",
+        "abort_command": "MAV_CMD_NAV_RETURN_TO_LAUNCH",
+        "rtl_available": "unknown_until_sitl_or_hardware",
+        "replacement_policy": "not_applicable_single_agent_primitive",
+        "caveats": [
+          "Replacement is not applicable for this primitive single-agent dry-run pack."
+        ]
+      },
+      "fc_safety_contract": {
+        "safety_report_passed": true,
+        "fence_summary_present": false,
+        "fc_contract_result_present": false,
+        "fc_contract_passed": null,
+        "geofence_support": "supported_with_caveats",
+        "parameter_support": "supported_with_caveats",
+        "unsupported_or_unknown_claims": [],
+        "caveats": [
+          "PX4 support is based on local SIH evidence and still requires operator validation"
+        ]
+      },
+      "caveats": [
+        "PX4 support is based on local SIH evidence and still requires operator validation"
+      ]
+    },
+    {
+      "mavlink_profile": "ardupilot",
+      "stack_name": "ArduPilot",
+      "dry_run_artifact_path": "ardupilot/sitl_dry_run_artifact.v1.json",
+      "backend_profile": "ardupilot",
+      "overall_classification": "unknown_until_sitl_or_hardware",
+      "hardware_facing_allowed": false,
+      "expected_ack_count": 5,
+      "telemetry_milestone_count": 3,
+      "command_prelude_count": 2,
+      "mission_item_count": 1,
+      "command_postlude_count": 1,
+      "safety_passed": true,
+      "abort_replacement": {
+        "timeout_on_timeout": "abort",
+        "expected_terminal_state": "landed",
+        "abort_command": "MAV_CMD_NAV_RETURN_TO_LAUNCH",
+        "rtl_available": "unknown_until_sitl_or_hardware",
+        "replacement_policy": "not_applicable_single_agent_primitive",
+        "caveats": [
+          "Replacement is not applicable for this primitive single-agent dry-run pack."
+        ]
+      },
+      "fc_safety_contract": {
+        "safety_report_passed": true,
+        "fence_summary_present": false,
+        "fc_contract_result_present": false,
+        "fc_contract_passed": null,
+        "geofence_support": "unknown_until_sitl_or_hardware",
+        "parameter_support": "unknown_until_sitl_or_hardware",
+        "unsupported_or_unknown_claims": [
+          "geofence_support=unknown_until_sitl_or_hardware",
+          "parameter_support=unknown_until_sitl_or_hardware"
+        ],
+        "caveats": [
+          "ArduPilot acceptance is unknown until ArduPilot SITL or hardware evidence is captured"
+        ]
+      },
+      "caveats": [
+        "ArduPilot acceptance is unknown until ArduPilot SITL or hardware evidence is captured"
+      ]
+    }
+  ],
+  "limitations": [
+    "Dual-stack dry-run evidence does not prove PX4/ArduPilot command acceptance equivalence.",
+    "ArduPilot evidence is dry-run only until a local ArduPilot SITL artifact is captured.",
+    "No hardware readiness, certified safety, or live failover claim is made by this artifact."
+  ]
+}

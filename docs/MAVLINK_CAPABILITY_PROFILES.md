@@ -134,6 +134,26 @@ Supported values are:
 M82 does not wire profile selection into live MAVLink upload. The live PX4/SIH
 path remains a separate experimental workflow.
 
+## M89 Dual-Stack Evidence
+
+M89 uses the same capability profiles to generate one dry-run artifact for PX4
+and one dry-run artifact for ArduPilot from the same primitive command IR:
+
+```bash
+cargo run -p swarm-examples --bin sitl_dual_stack_evidence -- \
+  --scenario scenarios/primitive.takeoff-hold-land.json \
+  --agent-id agent-0 \
+  --output-dir target/m89-dual-stack \
+  --force
+```
+
+The resulting `sitl_dual_stack_evidence_pack.v1.json` compares profile
+evidence without claiming equivalence. PX4 may show local SIH caveats;
+ArduPilot keeps `unknown_until_sitl_or_hardware` caveats visible until a real
+ArduPilot SITL artifact is captured. The pack also records abort/replacement
+and FC/safety contract summaries so safety-related unknowns are not hidden
+behind a single boolean.
+
 ## M83 Primitive Mission Profiles
 
 M83 primitive dry-run artifacts can be generated with any supported

@@ -341,6 +341,45 @@ Stop/abort conditions:
 - any output is described as real flight, hardware upload, or certified flight
   safety.
 
+## Runbook 4b: M89 Dual-Stack Evidence Pack
+
+Use this before claiming that a primitive command mission has both PX4 and
+ArduPilot dry-run evidence:
+
+```bash
+cargo run -p swarm-examples --bin sitl_dual_stack_evidence -- \
+  --scenario scenarios/primitive.takeoff-hold-land.json \
+  --agent-id agent-0 \
+  --output-dir target/m89-dual-stack \
+  --force
+
+cargo run -p swarm-examples --bin artifact_validator -- \
+  --output-dir target/m89-dual-stack \
+  --mode dual-stack-evidence \
+  --strict
+```
+
+Expected evidence:
+
+- `px4/sitl_dry_run_artifact.v1.json`;
+- `ardupilot/sitl_dry_run_artifact.v1.json`;
+- `sitl_dual_stack_evidence_pack.v1.json`;
+- identical `command_ir_hash` across both profiles;
+- profile-specific compatibility caveats;
+- expected ACK and telemetry counts;
+- `abort_replacement` with timeout abort policy and
+  `not_applicable_single_agent_primitive` replacement status;
+- `fc_safety_contract` with `safety_report`, fence/parameter support classes,
+  and visible PX4/ArduPilot caveats.
+
+Stop/abort conditions:
+
+- `artifact_validator --mode dual-stack-evidence --strict` fails;
+- ArduPilot dry-run evidence is described as live ArduPilot SITL evidence;
+- the primitive single-agent replacement status is described as live failover;
+- FC/safety contract evidence is described as certified flight safety or
+  hardware readiness.
+
 ## Runbook 5: Local PX4/SIH
 
 Local PX4/SIH remains manual and experimental. It is not automated PX4 CI,

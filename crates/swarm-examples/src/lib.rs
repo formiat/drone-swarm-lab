@@ -3,6 +3,7 @@ pub mod benchmark_stress_profile;
 pub mod regression_lib;
 pub mod sitl_agent_runtime;
 pub mod sitl_connection;
+pub mod sitl_dual_stack_evidence;
 pub mod sitl_multi_agent;
 pub mod sitl_observability;
 pub mod sitl_plan;

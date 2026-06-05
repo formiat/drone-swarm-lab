@@ -14,6 +14,10 @@ use swarm_comms::{
 };
 use swarm_safety::preflight::SafetyValidationReport;
 
+use crate::sitl_dual_stack_evidence::{
+    validate_dual_stack_evidence_pack, ReplacementEvidenceStatus, SitlDualStackEvidencePack,
+    SITL_DUAL_STACK_EVIDENCE_FILE,
+};
 use crate::sitl_multi_agent::{MultiAgentSitlManifest, MULTI_AGENT_SITL_MANIFEST_SCHEMA_VERSION};
 use crate::sitl_observability::{
     format_sitl_summary, read_sitl_event_log, summarize_sitl_event_log, SitlEvent, SitlEventLog,
@@ -81,12 +85,28 @@ pub const RULE_SWARM_MOTHERSHIP_DEPENDENCY_INVALID: &str =
     "artifact.swarm_mothership_dependency_invalid";
 pub const RULE_SWARM_TRANSPORT_ASSUMPTION_MISSING: &str =
     "artifact.swarm_transport_assumption_missing";
+pub const RULE_DUAL_STACK_EVIDENCE_MISSING: &str = "artifact.dual_stack_evidence_missing";
+pub const RULE_DUAL_STACK_PROFILE_MISSING: &str = "artifact.dual_stack_profile_missing";
+pub const RULE_DUAL_STACK_PROFILE_MISMATCH: &str = "artifact.dual_stack_profile_mismatch";
+pub const RULE_DUAL_STACK_IR_HASH_MISMATCH: &str = "artifact.dual_stack_ir_hash_mismatch";
+pub const RULE_DUAL_STACK_HARDWARE_CLAIM_UNSAFE: &str = "artifact.dual_stack_hardware_claim_unsafe";
+pub const RULE_DUAL_STACK_ABORT_REPLACEMENT_MISSING: &str =
+    "artifact.dual_stack_abort_replacement_missing";
+pub const RULE_DUAL_STACK_ABORT_POLICY_MISMATCH: &str = "artifact.dual_stack_abort_policy_mismatch";
+pub const RULE_DUAL_STACK_REPLACEMENT_POLICY_MISMATCH: &str =
+    "artifact.dual_stack_replacement_policy_mismatch";
+pub const RULE_DUAL_STACK_FC_CONTRACT_MISSING: &str = "artifact.dual_stack_fc_contract_missing";
+pub const RULE_DUAL_STACK_FC_CONTRACT_HIDDEN_CAVEAT: &str =
+    "artifact.dual_stack_fc_contract_hidden_caveat";
+pub const RULE_DUAL_STACK_FC_CONTRACT_CLAIM_UNSAFE: &str =
+    "artifact.dual_stack_fc_contract_claim_unsafe";
 pub const RULE_PARSE_FAILED: &str = "artifact.parse_failed";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ArtifactValidationMode {
     SupervisorRun,
     DryRun,
+    DualStackEvidence,
     Historical,
     BenchmarkPack,
 }
@@ -120,6 +140,7 @@ pub struct ArtifactPackPaths {
     pub config_snapshot: Option<PathBuf>,
     pub command_capture: Option<PathBuf>,
     pub dry_run_artifact: Option<PathBuf>,
+    pub dual_stack_evidence: Option<PathBuf>,
     pub urban_analysis_manifest: Option<PathBuf>,
 }
 
@@ -139,6 +160,7 @@ impl ArtifactPackPaths {
                 &output_dir,
                 &["sitl_dry_run_artifact.v1.json", "dry-run.json"],
             ),
+            dual_stack_evidence: optional_path(&output_dir, SITL_DUAL_STACK_EVIDENCE_FILE),
             urban_analysis_manifest: optional_path(&output_dir, "urban_analysis/manifest.json"),
             output_dir,
         }
@@ -253,6 +275,10 @@ impl<'a> Validator<'a> {
     fn validate(&mut self) {
         if matches!(self.options.mode, ArtifactValidationMode::DryRun) {
             self.validate_dry_run_artifact();
+            return;
+        }
+        if matches!(self.options.mode, ArtifactValidationMode::DualStackEvidence) {
+            self.validate_dual_stack_evidence();
             return;
         }
         if matches!(self.options.mode, ArtifactValidationMode::BenchmarkPack) {
@@ -446,6 +472,167 @@ impl<'a> Validator<'a> {
         };
         self.validate_urban_dry_run_metadata(&artifact, plan, &path);
         self.validate_mavlink_common_plan(plan, &self.paths.dry_run_artifact);
+    }
+
+    fn validate_dual_stack_evidence(&mut self) {
+        let Some(path) = self.paths.dual_stack_evidence.clone() else {
+            self.push_error(
+                RULE_DUAL_STACK_EVIDENCE_MISSING,
+                None,
+                format!("dual-stack validation requires {SITL_DUAL_STACK_EVIDENCE_FILE}"),
+            );
+            return;
+        };
+        let Some(pack) = self.load_json::<SitlDualStackEvidencePack>(&path) else {
+            return;
+        };
+        let mut artifacts = Vec::new();
+        for profile in &pack.profiles {
+            let artifact_path = self.paths.output_dir.join(&profile.dry_run_artifact_path);
+            let Some(artifact) = self.load_json::<SitlDryRunArtifact>(&artifact_path) else {
+                self.push_error(
+                    RULE_DUAL_STACK_PROFILE_MISSING,
+                    Some(artifact_path),
+                    format!(
+                        "profile '{}' references a missing or invalid dry-run artifact",
+                        profile.mavlink_profile
+                    ),
+                );
+                continue;
+            };
+            artifacts.push(artifact);
+
+            let dry_run_dir = artifact_path
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| self.paths.output_dir.clone());
+            let report = validate_artifact_pack(
+                &ArtifactPackPaths::from_output_dir(dry_run_dir),
+                ArtifactValidationOptions {
+                    mode: ArtifactValidationMode::DryRun,
+                    allow_historical: self.options.allow_historical,
+                    strict: self.options.strict,
+                },
+            );
+            for violation in report.violations {
+                self.violations.push(violation);
+            }
+        }
+
+        for key in validate_dual_stack_evidence_pack(&pack, &artifacts) {
+            let rule_id = match key.as_str() {
+                "schema_version" => RULE_DUAL_STACK_EVIDENCE_MISSING,
+                "abort_replacement" => RULE_DUAL_STACK_ABORT_REPLACEMENT_MISSING,
+                "profile_set" => RULE_DUAL_STACK_PROFILE_MISMATCH,
+                "command_ir_hash" => RULE_DUAL_STACK_IR_HASH_MISMATCH,
+                "abort_policy" => RULE_DUAL_STACK_ABORT_POLICY_MISMATCH,
+                "replacement_policy" => RULE_DUAL_STACK_REPLACEMENT_POLICY_MISMATCH,
+                "fc_contract" => RULE_DUAL_STACK_FC_CONTRACT_MISSING,
+                "fc_contract_caveat" => RULE_DUAL_STACK_FC_CONTRACT_HIDDEN_CAVEAT,
+                _ => RULE_DUAL_STACK_PROFILE_MISMATCH,
+            };
+            self.push_error(
+                rule_id,
+                Some(path.clone()),
+                format!("dual-stack evidence validation failed: {key}"),
+            );
+        }
+
+        if !pack
+            .profiles
+            .iter()
+            .any(|profile| profile.mavlink_profile == MavlinkCapabilityProfileId::Px4)
+        {
+            self.push_error(
+                RULE_DUAL_STACK_PROFILE_MISSING,
+                Some(path.clone()),
+                "dual-stack evidence must include PX4 profile evidence",
+            );
+        }
+        if !pack
+            .profiles
+            .iter()
+            .any(|profile| profile.mavlink_profile == MavlinkCapabilityProfileId::ArduPilot)
+        {
+            self.push_error(
+                RULE_DUAL_STACK_PROFILE_MISSING,
+                Some(path.clone()),
+                "dual-stack evidence must include ArduPilot profile evidence",
+            );
+        }
+        for profile in &pack.profiles {
+            if profile.hardware_facing_allowed
+                && profile.mavlink_profile == MavlinkCapabilityProfileId::ArduPilot
+            {
+                self.push_error(
+                    RULE_DUAL_STACK_HARDWARE_CLAIM_UNSAFE,
+                    Some(path.clone()),
+                    "ArduPilot dry-run evidence must not claim hardware-facing readiness",
+                );
+            }
+            let Some(profile_abort) = profile.abort_replacement.as_ref() else {
+                self.push_error(
+                    RULE_DUAL_STACK_ABORT_REPLACEMENT_MISSING,
+                    Some(path.clone()),
+                    format!(
+                        "profile '{}' is missing abort/replacement evidence",
+                        profile.mavlink_profile
+                    ),
+                );
+                continue;
+            };
+            let pack_replacement_policy = pack
+                .abort_replacement
+                .as_ref()
+                .map(|evidence| &evidence.replacement_policy);
+            if profile_abort.replacement_policy
+                != ReplacementEvidenceStatus::NotApplicableSingleAgentPrimitive
+                && pack_replacement_policy
+                    == Some(&ReplacementEvidenceStatus::NotApplicableSingleAgentPrimitive)
+            {
+                self.push_error(
+                    RULE_DUAL_STACK_REPLACEMENT_POLICY_MISMATCH,
+                    Some(path.clone()),
+                    format!(
+                        "profile '{}' replacement policy does not match pack-level primitive boundary",
+                        profile.mavlink_profile
+                    ),
+                );
+            }
+            let Some(fc_contract) = profile.fc_safety_contract.as_ref() else {
+                self.push_error(
+                    RULE_DUAL_STACK_FC_CONTRACT_MISSING,
+                    Some(path.clone()),
+                    format!(
+                        "profile '{}' is missing FC safety contract evidence",
+                        profile.mavlink_profile
+                    ),
+                );
+                continue;
+            };
+            if !fc_contract.safety_report_passed {
+                self.push_error(
+                    RULE_DUAL_STACK_FC_CONTRACT_CLAIM_UNSAFE,
+                    Some(path.clone()),
+                    format!(
+                        "profile '{}' has failing safety report evidence",
+                        profile.mavlink_profile
+                    ),
+                );
+            }
+            if !fc_contract.unsupported_or_unknown_claims.is_empty()
+                && fc_contract.caveats.is_empty()
+            {
+                self.push_error(
+                    RULE_DUAL_STACK_FC_CONTRACT_HIDDEN_CAVEAT,
+                    Some(path.clone()),
+                    format!(
+                        "profile '{}' hides unsupported/unknown FC safety caveats",
+                        profile.mavlink_profile
+                    ),
+                );
+            }
+        }
     }
 
     fn validate_urban_dry_run_metadata(

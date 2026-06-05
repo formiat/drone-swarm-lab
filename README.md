@@ -694,6 +694,7 @@ points, not a published semver-stable SDK.
 | M86 | ✅ | MAVLink Safety / FC Contract: transport-free FC geofence and parameter contract layer with `MavlinkFencePlan`, `geofence_prelude`, `fence_summary`, `FcParamRequirement` / `FcParamSnapshot`, known PX4/ArduPilot parameter metadata, conservative per-profile fence rules, and `swarm-sim::safety_config_to_fence_plan`; dry-run contract evidence only, with no live fence upload, no FC parameter transport, no hardware readiness, and no certified safety claim |
 | M87 | ✅ | Swarm Command Plane: reusable `swarm-command-plane` crate, per-agent M80/M81 fanout, command-plane roles, ownership validation/handoff records, replacement/global-abort policy decisions, synchronized GCS command windows, SITL replay events/summary counters, full `command_plane_artifact` manifest/report evidence, strict artifact-validator checks, and docs. No RF mesh, consensus, physical avoidance, simultaneous takeoff, or hardware proof |
 | M88 | ✅ | Logical Swarm Topologies: additive `swarm_command_plane.v1` topology section, deterministic GCS/P2P peer/relay/mesh/mothership command-route decisions, parent-routed mothership child routes, blocked/degraded route reasons, transport assumptions, SITL and generic replay topology events/counters, strict artifact-validator rules, portable `multi_sitl.v1` topology fixtures, and docs. No RF mesh stack, production radio routing, physical mothership behavior, consensus, or hardware proof |
+| M89 | ✅ | SITL Dual-Stack Evidence Pack: `sitl_dual_stack_evidence` generates PX4 and ArduPilot dry-run artifacts from the same primitive command IR plus `sitl_dual_stack_evidence_pack.v1.json`; `artifact_validator --mode dual-stack-evidence` checks profile coverage, shared `command_ir_hash`, ACK/telemetry sections, explicit `abort_replacement` boundary with `not_applicable_single_agent_primitive` replacement status, and explicit `fc_safety_contract` evidence. This is dry-run evidence only: no mandatory PX4/ArduPilot install, no live ArduPilot SITL proof, no hardware readiness, and no PX4/ArduPilot equivalence claim |
 
 ---
 
@@ -715,6 +716,7 @@ points, not a published semver-stable SDK.
 | [`docs/MAVLINK_CAPABILITY_PROFILES.md`](docs/MAVLINK_CAPABILITY_PROFILES.md) | M82 MAVLink capability profiles: Common/PX4/ArduPilot compatibility classes, required mode transitions, dry-run artifact report fields, and compatibility matrix |
 | [`docs/FC_CONTRACT.md`](docs/FC_CONTRACT.md) | M86 MAVLink Safety / FC Contract: transport-free geofence prelude, FC parameter requirements, profile validation, and safety-config bridge |
 | [`docs/SWARM_COMMAND_PLANE.md`](docs/SWARM_COMMAND_PLANE.md) | M87 swarm command plane: roles, per-agent fanout, ownership, failure policy, synchronized GCS operations, replay events, artifact validation, and non-goals |
+| [`docs/ARDUPILOT_SITL.md`](docs/ARDUPILOT_SITL.md) | M89 optional ArduPilot SITL runbook: dry-run-first workflow, operator-provided local SITL commands, evidence boundaries, and no-hardware/no-equivalence claims |
 
 ---
 
