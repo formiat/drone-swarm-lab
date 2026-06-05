@@ -71,6 +71,7 @@ mod tests {
             event_log_path: Some(PathBuf::from("events.sitl-log.json")),
             task_ownership: TaskOwnershipSummary::default(),
             command_plane: None,
+            command_plane_artifact: None,
             events_summary: SitlEventLogSummary::default(),
             final_status: final_status.to_owned(),
             reallocation: SitlMultiAgentReallocationReport::default(),

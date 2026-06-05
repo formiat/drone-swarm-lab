@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use swarm_command_plane::SwarmCommandArtifactSummary;
+use swarm_command_plane::{SwarmCommandArtifactSummary, SwarmCommandPlan};
 
 use crate::sitl_multi_agent::TaskOwnershipSummary;
 use crate::sitl_observability::SitlEventLogSummary;
@@ -43,7 +43,7 @@ pub struct SitlRunReport {
     pub abort_result: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SitlMultiAgentRunReport {
     pub schema_version: String,
     pub run_id: String,
@@ -63,6 +63,8 @@ pub struct SitlMultiAgentRunReport {
     pub task_ownership: TaskOwnershipSummary,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command_plane: Option<SwarmCommandArtifactSummary>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command_plane_artifact: Option<SwarmCommandPlan>,
     #[serde(default)]
     pub events_summary: SitlEventLogSummary,
     #[serde(default)]
@@ -257,6 +259,7 @@ mod tests {
                 duplicate_task_ids: Vec::new(),
             },
             command_plane: None,
+            command_plane_artifact: None,
             events_summary: SitlEventLogSummary {
                 run_id: "run-1".to_owned(),
                 scenario_name: "sitl_multi_agent".to_owned(),
@@ -307,6 +310,7 @@ mod tests {
                 duplicate_task_ids: Vec::new(),
             },
             command_plane: None,
+            command_plane_artifact: None,
             events_summary: SitlEventLogSummary {
                 run_id: "run-reallocation".to_owned(),
                 scenario_name: "sitl_multi_agent".to_owned(),

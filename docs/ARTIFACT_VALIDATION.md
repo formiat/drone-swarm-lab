@@ -28,11 +28,14 @@ snapshot paths, and command capture path. Old committed M58/M59 artifacts may
 lack that metadata; validate them with `--allow-historical` or `--mode
 historical`.
 
-Current multi-agent manifests may also include an optional M87 `command_plane`
-summary with schema `swarm_command_plane.v1`. This compact section records the
-command-plane plan id, per-agent plan count, active ownership count, handoff
-count, and synchronized operation count. Historical artifacts remain readable
-without this section.
+Current strict multi-agent manifests must include M87 `command_plane` summary
+metadata plus the full `command_plane_artifact` with schema
+`swarm_command_plane.v1`. The compact summary records the command-plane plan id,
+per-agent plan count, active ownership count, handoff count, and synchronized
+operation count; the full artifact carries the per-agent command plans, MAVLink
+plans, ownership records, handoffs, synchronized command windows, and optional
+sync results. Historical artifacts remain readable without this section when
+validated with `--allow-historical` or `--mode historical`.
 
 For dry-run validation, the output directory may contain:
 
@@ -152,12 +155,12 @@ Exit codes:
 | `artifact.urban_wgs84_geo_missing` | An Urban dry-run artifact uses `coordinate_mode: wgs84_node_geo` but start/end waypoints or one of the exported route waypoints do not carry `geo`. |
 | `artifact.urban_mock_perception_missing` | An `urban-search` dry-run artifact is missing `urban_mock_perception` metadata. |
 | `artifact.urban_deconfliction_duplicate_segment_owner` | M85 benchmark-pack ownership artifacts report overlapping holders for the same Urban `edge_id` interval. The `benchmark-pack` validator mode checks this when `urban_analysis/manifest.json` references `*.segment-ownership.json` files. |
-| `artifact.swarm_command_plane_missing` | A current strict supervisor artifact has no optional M87 `command_plane` summary, or the summary schema is not `swarm_command_plane.v1`. Historical artifacts may omit it. |
-| `artifact.swarm_agent_plan_missing` | An M87 `command_plane` summary is present but has zero agent plans or does not match manifest `agents_count`. |
-| `artifact.swarm_duplicate_ownership` | Reserved M87 rule id for duplicate command-plane ownership in strict command-plane artifacts. |
-| `artifact.swarm_ack_mismatch` | Reserved M87 rule id for mismatch between per-agent command plan ACK expectations and compiled MAVLink plan ACKs. |
-| `artifact.swarm_handoff_missing` | Reserved M87 rule id for replacement/reassignment artifacts missing ownership handoff evidence. |
-| `artifact.swarm_sync_partial_unreported` | Reserved M87 rule id for synchronized GCS command partial failures not represented in artifact/replay evidence. |
+| `artifact.swarm_command_plane_missing` | A current strict supervisor artifact has no M87 `command_plane` summary/full `command_plane_artifact`, or the summary schema is not `swarm_command_plane.v1`. Historical artifacts may omit it. |
+| `artifact.swarm_agent_plan_missing` | The M87 summary has zero agent plans, does not match manifest `agents_count`, does not match `command_plane_artifact.summary`, or the full artifact has invalid agent/source/replacement policy records. |
+| `artifact.swarm_duplicate_ownership` | The full command-plane artifact has duplicate active ownership for the same task, route segment, target, or replacement mission. |
+| `artifact.swarm_ack_mismatch` | A per-agent command-plane ACK list does not match the compiled MAVLink plan ACKs for that agent. |
+| `artifact.swarm_handoff_missing` | Released ownership and active ownership for the same resource cross agents without an explicit `SwarmOwnershipHandoff`. |
+| `artifact.swarm_sync_partial_unreported` | A synchronized GCS command partial failure/timed-out result has no matching synchronized command window in the artifact. |
 | `artifact.parse_failed` | A required artifact could not be read or parsed. |
 
 ## Local Harness

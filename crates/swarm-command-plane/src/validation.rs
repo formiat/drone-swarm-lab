@@ -33,6 +33,15 @@ pub enum SwarmCommandPlaneError {
     },
     #[error("replacement policy requires reserve or recovery agent")]
     MissingReplacementAgent,
+    #[error("failed agent {agent_id} is not present in command plan")]
+    MissingFailedAgent { agent_id: AgentId },
+    #[error("ownership handoff missing for {kind:?}:{resource_id} from {from_agent_id} to {to_agent_id}")]
+    MissingHandoffEvidence {
+        kind: SwarmOwnershipKind,
+        resource_id: String,
+        from_agent_id: AgentId,
+        to_agent_id: AgentId,
+    },
     #[error("abort mission policy requires at least one agent command plan")]
     MissingAbortTargets,
 }
@@ -67,8 +76,14 @@ pub fn validate_swarm_command_plan(plan: &SwarmCommandPlan) -> Result<(), SwarmC
     }
 
     let mut active_ownership = HashMap::new();
+    let mut released_ownership: HashMap<(SwarmOwnershipKind, String), Vec<AgentId>> =
+        HashMap::new();
     for record in &plan.ownership {
-        if record.status != SwarmOwnershipStatus::Active {
+        if record.status == SwarmOwnershipStatus::Released {
+            released_ownership
+                .entry((record.kind.clone(), record.resource_id.clone()))
+                .or_default()
+                .push(record.agent_id.clone());
             continue;
         }
         let key = (record.kind.clone(), record.resource_id.clone());
@@ -82,6 +97,8 @@ pub fn validate_swarm_command_plan(plan: &SwarmCommandPlan) -> Result<(), SwarmC
             });
         }
     }
+
+    validate_handoff_evidence(plan, &active_ownership, &released_ownership)?;
 
     for agent in &plan.agents {
         for ownership in &agent.ownership_refs {
@@ -100,7 +117,47 @@ pub fn validate_swarm_command_plan(plan: &SwarmCommandPlan) -> Result<(), SwarmC
     if plan.global_abort_policy == SwarmAbortPolicy::AbortMission && plan.agents.is_empty() {
         return Err(SwarmCommandPlaneError::MissingAbortTargets);
     }
+    if plan.global_abort_policy == SwarmAbortPolicy::ReplaceFromReserve {
+        ensure_replacement_candidate(plan)?;
+    }
+    for agent in &plan.agents {
+        if agent.abort_policy == SwarmAbortPolicy::ReplaceFromReserve {
+            ensure_replacement_candidate_for_agent(plan, &agent.agent_id)?;
+        }
+    }
 
+    Ok(())
+}
+
+fn validate_handoff_evidence(
+    plan: &SwarmCommandPlan,
+    active_ownership: &HashMap<(SwarmOwnershipKind, String), AgentId>,
+    released_ownership: &HashMap<(SwarmOwnershipKind, String), Vec<AgentId>>,
+) -> Result<(), SwarmCommandPlaneError> {
+    for (key, from_agent_ids) in released_ownership {
+        let Some(to_agent_id) = active_ownership.get(key) else {
+            continue;
+        };
+        for from_agent_id in from_agent_ids {
+            if from_agent_id == to_agent_id {
+                continue;
+            }
+            let has_handoff = plan.handoffs.iter().any(|handoff| {
+                handoff.kind == key.0
+                    && handoff.resource_id == key.1
+                    && handoff.from_agent_id == *from_agent_id
+                    && handoff.to_agent_id == *to_agent_id
+            });
+            if !has_handoff {
+                return Err(SwarmCommandPlaneError::MissingHandoffEvidence {
+                    kind: key.0.clone(),
+                    resource_id: key.1.clone(),
+                    from_agent_id: from_agent_id.clone(),
+                    to_agent_id: to_agent_id.clone(),
+                });
+            }
+        }
+    }
     Ok(())
 }
 
@@ -113,6 +170,24 @@ pub(crate) fn ensure_replacement_candidate(
             agent.role,
             crate::types::SwarmCommandRole::Reserve | crate::types::SwarmCommandRole::Recovery
         )
+    });
+    if has_candidate {
+        Ok(())
+    } else {
+        Err(SwarmCommandPlaneError::MissingReplacementAgent)
+    }
+}
+
+pub(crate) fn ensure_replacement_candidate_for_agent(
+    plan: &SwarmCommandPlan,
+    failed_agent_id: &AgentId,
+) -> Result<(), SwarmCommandPlaneError> {
+    let has_candidate = plan.agents.iter().any(|agent| {
+        &agent.agent_id != failed_agent_id
+            && matches!(
+                agent.role,
+                crate::types::SwarmCommandRole::Reserve | crate::types::SwarmCommandRole::Recovery
+            )
     });
     if has_candidate {
         Ok(())

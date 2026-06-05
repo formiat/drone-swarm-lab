@@ -3,7 +3,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use swarm_command_plane::SWARM_COMMAND_PLANE_SCHEMA_VERSION;
+use swarm_command_plane::{
+    validate_swarm_command_plan, SwarmCommandPlaneError, SWARM_COMMAND_PLANE_SCHEMA_VERSION,
+};
 use swarm_comms::{
     MavlinkCapabilityProfileId, MavlinkCommandCompatibility, MavlinkCommonCommand,
     MavlinkCommonCommandName, MavlinkCommonPlan, MavlinkCompatibilityClass, MavlinkExpectedAckKind,
@@ -180,6 +182,20 @@ fn optional_first_path(output_dir: &Path, file_names: &[&str]) -> Option<PathBuf
 
 fn scaled_e7(value: f64) -> i32 {
     (value * 10_000_000.0).round() as i32
+}
+
+fn swarm_command_plane_rule_for_error(error: &SwarmCommandPlaneError) -> &'static str {
+    match error {
+        SwarmCommandPlaneError::DuplicateOwnership { .. } => RULE_SWARM_DUPLICATE_OWNERSHIP,
+        SwarmCommandPlaneError::MissingHandoffEvidence { .. } => RULE_SWARM_HANDOFF_MISSING,
+        SwarmCommandPlaneError::DuplicateAgentPlan { .. }
+        | SwarmCommandPlaneError::MissingActiveOwnership { .. }
+        | SwarmCommandPlaneError::SourceAgentMismatch { .. }
+        | SwarmCommandPlaneError::MissingReplacementAgent
+        | SwarmCommandPlaneError::MissingFailedAgent { .. }
+        | SwarmCommandPlaneError::MissingAbortTargets => RULE_SWARM_AGENT_PLAN_MISSING,
+        SwarmCommandPlaneError::UnsupportedSchema { .. } => RULE_SWARM_COMMAND_PLANE_MISSING,
+    }
 }
 
 struct Validator<'a> {
@@ -831,10 +847,10 @@ impl<'a> Validator<'a> {
     fn validate_swarm_command_plane_manifest(&mut self, manifest: &MultiAgentSitlManifest) {
         let Some(summary) = manifest.command_plane.as_ref() else {
             if self.options.strict && !self.options.allow_historical {
-                self.push_warning(
+                self.push_error(
                     RULE_SWARM_COMMAND_PLANE_MISSING,
                     Some(self.paths.manifest.clone()),
-                    "strict current supervisor artifacts may include optional M87 command_plane summary; historical artifacts are allowed without it",
+                    "strict current supervisor artifacts must include M87 command_plane summary; historical artifacts are allowed without it",
                 );
             }
             return;
@@ -848,6 +864,56 @@ impl<'a> Validator<'a> {
                     summary.schema_version
                 ),
             );
+        }
+        let Some(artifact) = manifest.command_plane_artifact.as_ref() else {
+            if self.options.strict && !self.options.allow_historical {
+                self.push_error(
+                    RULE_SWARM_COMMAND_PLANE_MISSING,
+                    Some(self.paths.manifest.clone()),
+                    "strict current supervisor artifacts must include full M87 command_plane_artifact, not only command_plane summary",
+                );
+            }
+            return;
+        };
+        if artifact.summary != *summary {
+            self.push_error(
+                RULE_SWARM_AGENT_PLAN_MISSING,
+                Some(self.paths.manifest.clone()),
+                "command_plane summary does not match command_plane_artifact.summary",
+            );
+        }
+        if let Err(error) = validate_swarm_command_plan(artifact) {
+            self.push_error(
+                swarm_command_plane_rule_for_error(&error),
+                Some(self.paths.manifest.clone()),
+                format!("command_plane_artifact validation failed: {error}"),
+            );
+        }
+        for agent in &artifact.agents {
+            if agent.expected_acks != agent.mavlink_plan.expected_acks {
+                self.push_error(
+                    RULE_SWARM_ACK_MISMATCH,
+                    Some(self.paths.manifest.clone()),
+                    format!(
+                        "command_plane_artifact agent '{}' expected_acks do not match mavlink_plan.expected_acks",
+                        agent.agent_id
+                    ),
+                );
+            }
+        }
+        for result in &artifact.sync_results {
+            let has_matching_window = artifact
+                .sync_operations
+                .iter()
+                .any(|window| window.kind == result.kind);
+            let has_partial = !result.failed.is_empty() || !result.timed_out.is_empty();
+            if has_partial && !has_matching_window {
+                self.push_error(
+                    RULE_SWARM_SYNC_PARTIAL_UNREPORTED,
+                    Some(self.paths.manifest.clone()),
+                    "partial synchronized command result has no matching sync operation window",
+                );
+            }
         }
         if summary.agent_plan_count == 0 {
             self.push_error(

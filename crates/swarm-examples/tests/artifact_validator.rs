@@ -1,7 +1,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use swarm_command_plane::{SwarmCommandArtifactSummary, SWARM_COMMAND_PLANE_SCHEMA_VERSION};
+use swarm_command_plane::{
+    build_swarm_command_plan, AgentCommandAssignment, SwarmAbortPolicy, SwarmCommandFanoutInput,
+    SwarmCommandPlan, SwarmCommandRole, SwarmOwnershipKind, SwarmOwnershipRecord,
+    SwarmOwnershipRef, SwarmOwnershipStatus, SynchronizedCommandKind, SynchronizedCommandResult,
+};
 use swarm_comms::{
     compile_mavlink_common_plan, MavlinkCommonCommand, MavlinkCommonCommandName,
     MavlinkCommonPlanOptions, MavlinkCompatibilityClass, MavlinkCoordinateOrigin,
@@ -17,9 +21,10 @@ use swarm_examples::artifact_validator::{
     RULE_MAVLINK_PROFILE_HARDWARE_BLOCKING, RULE_MAVLINK_PROFILE_MISSING,
     RULE_MAVLINK_PROFILE_RESULT_MISMATCH, RULE_MAVLINK_PROFILE_UNSUPPORTED,
     RULE_REPLACEMENT_SEQ_MISMATCH, RULE_REPLAY_SUMMARY_COUNT_MISMATCH, RULE_SAFETY_REPORT_MISSING,
-    RULE_SWARM_AGENT_PLAN_MISSING, RULE_URBAN_DECONFLICTION_DUPLICATE_SEGMENT_OWNER,
-    RULE_URBAN_GEO_ROUTE_METADATA_MISSING, RULE_URBAN_MOCK_PERCEPTION_MISSING,
-    RULE_URBAN_WGS84_GEO_MISSING,
+    RULE_SWARM_ACK_MISMATCH, RULE_SWARM_AGENT_PLAN_MISSING, RULE_SWARM_DUPLICATE_OWNERSHIP,
+    RULE_SWARM_HANDOFF_MISSING, RULE_SWARM_SYNC_PARTIAL_UNREPORTED,
+    RULE_URBAN_DECONFLICTION_DUPLICATE_SEGMENT_OWNER, RULE_URBAN_GEO_ROUTE_METADATA_MISSING,
+    RULE_URBAN_MOCK_PERCEPTION_MISSING, RULE_URBAN_WGS84_GEO_MISSING,
 };
 use swarm_examples::sitl_multi_agent::{
     MultiAgentLifecycle, MultiAgentSitlManifest, MultiAgentSitlManifestAgent, SitlArtifactMetadata,
@@ -106,6 +111,108 @@ fn command_plane_agent_count_mismatch_fails() {
     );
 
     assert_rule(&report, RULE_SWARM_AGENT_PLAN_MISSING);
+}
+
+#[test]
+fn command_plane_duplicate_ownership_fails() {
+    let fixture = ArtifactFixture::new();
+    fixture.write_manifest(|manifest| {
+        manifest
+            .command_plane_artifact
+            .as_mut()
+            .unwrap()
+            .ownership
+            .push(command_plane_ownership("agent-1", "wp-0"));
+    });
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&fixture.output_dir),
+        ArtifactValidationOptions {
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_SWARM_DUPLICATE_OWNERSHIP);
+}
+
+#[test]
+fn command_plane_released_active_without_handoff_fails() {
+    let fixture = ArtifactFixture::new();
+    fixture.write_manifest(|manifest| {
+        let artifact = manifest.command_plane_artifact.as_mut().unwrap();
+        artifact.ownership = vec![
+            SwarmOwnershipRecord {
+                status: SwarmOwnershipStatus::Released,
+                ..command_plane_ownership("agent-0", "wp-0")
+            },
+            command_plane_ownership("agent-1", "wp-0"),
+        ];
+        artifact.agents[0].ownership_refs.clear();
+        artifact.agents[1].ownership_refs = vec![SwarmOwnershipRef {
+            kind: SwarmOwnershipKind::Task,
+            resource_id: "wp-0".to_owned(),
+        }];
+    });
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&fixture.output_dir),
+        ArtifactValidationOptions {
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_SWARM_HANDOFF_MISSING);
+}
+
+#[test]
+fn command_plane_ack_mismatch_fails() {
+    let fixture = ArtifactFixture::new();
+    fixture.write_manifest(|manifest| {
+        manifest.command_plane_artifact.as_mut().unwrap().agents[0]
+            .expected_acks
+            .clear();
+    });
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&fixture.output_dir),
+        ArtifactValidationOptions {
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_SWARM_ACK_MISMATCH);
+}
+
+#[test]
+fn command_plane_partial_sync_result_without_window_fails() {
+    let fixture = ArtifactFixture::new();
+    fixture.write_manifest(|manifest| {
+        manifest
+            .command_plane_artifact
+            .as_mut()
+            .unwrap()
+            .sync_results
+            .push(SynchronizedCommandResult {
+                kind: SynchronizedCommandKind::AbortAll,
+                succeeded: Vec::new(),
+                failed: vec![swarm_types::AgentId::from("agent-0".to_owned())],
+                timed_out: Vec::new(),
+                accepted: false,
+            });
+    });
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&fixture.output_dir),
+        ArtifactValidationOptions {
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_SWARM_SYNC_PARTIAL_UNREPORTED);
 }
 
 #[test]
@@ -1066,14 +1173,8 @@ impl ArtifactFixture {
                 unassigned_pose_tasks: Vec::new(),
                 duplicate_task_ids: Vec::new(),
             },
-            command_plane: Some(SwarmCommandArtifactSummary {
-                schema_version: SWARM_COMMAND_PLANE_SCHEMA_VERSION.to_owned(),
-                plan_id: "sitl_multi_agent:sitl:multi-agent".to_owned(),
-                agent_plan_count: 2,
-                active_ownership_count: 2,
-                handoff_count: 0,
-                sync_operation_count: 0,
-            }),
+            command_plane: Some(test_command_plane_artifact().summary.clone()),
+            command_plane_artifact: Some(test_command_plane_artifact()),
             artifact_metadata: SitlArtifactMetadata {
                 command: vec!["sitl_supervisor".to_owned(), "--mock".to_owned()],
                 git_commit: Some("0123456789abcdef".to_owned()),
@@ -1166,6 +1267,76 @@ fn manifest_agent(agent_id: &str, system_id: u8, task_ids: &[&str]) -> MultiAgen
         waypoint_count: task_ids.len(),
         waypoints: Vec::new(),
         standalone_command: Vec::new(),
+    }
+}
+
+fn test_command_plane_artifact() -> SwarmCommandPlan {
+    let assignments = vec![
+        command_plane_assignment("agent-0", "wp-0"),
+        command_plane_assignment("agent-1", "wp-1"),
+    ];
+    let ownership = vec![
+        command_plane_ownership("agent-0", "wp-0"),
+        command_plane_ownership("agent-1", "wp-1"),
+    ];
+    build_swarm_command_plan(SwarmCommandFanoutInput {
+        plan_id: "sitl_multi_agent:sitl:multi-agent".to_owned(),
+        assignments,
+        ownership,
+        global_abort_policy: SwarmAbortPolicy::AbortMission,
+        sync_operations: Vec::new(),
+        mavlink_options: MavlinkCommonPlanOptions::default(),
+    })
+    .unwrap()
+}
+
+fn command_plane_assignment(agent_id: &str, task_id: &str) -> AgentCommandAssignment {
+    AgentCommandAssignment {
+        agent_id: swarm_types::AgentId::from(agent_id.to_owned()),
+        role: SwarmCommandRole::Scout,
+        command_plan: command_plane_command_plan(agent_id, task_id),
+        abort_policy: SwarmAbortPolicy::AbortMission,
+        ownership_refs: vec![SwarmOwnershipRef {
+            kind: SwarmOwnershipKind::Task,
+            resource_id: task_id.to_owned(),
+        }],
+    }
+}
+
+fn command_plane_command_plan(agent_id: &str, task_id: &str) -> MissionCommandPlan {
+    MissionCommandPlan {
+        schema_version: MissionCommandPlan::SCHEMA_VERSION.to_owned(),
+        mission_id: MissionId::from(format!("test:{agent_id}")),
+        coordinate_frame: CoordinateFrame::LocalNed,
+        altitude_reference: AltitudeReference::RelativeHome,
+        timeout_policy: TimeoutPolicy {
+            command_timeout_secs: 5.0,
+            completion_timeout_secs: 30.0,
+            on_timeout: TimeoutAction::Abort,
+        },
+        expected_terminal_state: TerminalState::Landed,
+        completion_tolerance: CompletionTolerance {
+            position_m: 1.0,
+            altitude_m: 0.5,
+        },
+        commands: vec![MissionCommandEntry {
+            command_id: CommandId::from(format!("{agent_id}:{task_id}:arm")),
+            command: MissionCommand::Arm,
+            source_task_id: Some(task_id.to_owned()),
+            source_route_id: None,
+            source_agent_id: Some(agent_id.to_owned()),
+        }],
+    }
+}
+
+fn command_plane_ownership(agent_id: &str, task_id: &str) -> SwarmOwnershipRecord {
+    SwarmOwnershipRecord {
+        agent_id: swarm_types::AgentId::from(agent_id.to_owned()),
+        kind: SwarmOwnershipKind::Task,
+        resource_id: task_id.to_owned(),
+        status: SwarmOwnershipStatus::Active,
+        tick: 0,
+        reason: "test_assignment".to_owned(),
     }
 }
 
@@ -1324,6 +1495,7 @@ fn base_report(
             duplicate_task_ids: Vec::new(),
         },
         command_plane: None,
+        command_plane_artifact: None,
         events_summary: summary,
         final_status: "completed".to_owned(),
         reallocation: SitlMultiAgentReallocationReport::default(),

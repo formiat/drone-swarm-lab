@@ -64,6 +64,7 @@ pub fn build_swarm_command_plan(
         handoffs: Vec::new(),
         global_abort_policy: input.global_abort_policy,
         sync_operations: input.sync_operations,
+        sync_results: Vec::new(),
         summary: Default::default(),
     };
     plan.summary = summarize_swarm_command_plan(&plan);

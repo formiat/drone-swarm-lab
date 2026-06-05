@@ -175,5 +175,7 @@ pub struct SwarmCommandPlan {
     pub handoffs: Vec<SwarmOwnershipHandoff>,
     pub global_abort_policy: SwarmAbortPolicy,
     pub sync_operations: Vec<SynchronizedCommandWindow>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sync_results: Vec<SynchronizedCommandResult>,
     pub summary: SwarmCommandArtifactSummary,
 }

@@ -81,12 +81,13 @@ mod tests {
         agent_id: &str,
         role: SwarmCommandRole,
         resource_id: &str,
+        abort_policy: SwarmAbortPolicy,
     ) -> AgentCommandAssignment {
         AgentCommandAssignment {
             agent_id: AgentId::from(agent_id.to_owned()),
             role,
             command_plan: command_plan(agent_id, resource_id),
-            abort_policy: SwarmAbortPolicy::AbortAgentOnly,
+            abort_policy,
             ownership_refs: vec![SwarmOwnershipRef {
                 kind: SwarmOwnershipKind::Task,
                 resource_id: resource_id.to_owned(),
@@ -98,8 +99,13 @@ mod tests {
         SwarmCommandFanoutInput {
             plan_id: "plan-1".to_owned(),
             assignments: vec![
-                assignment("agent-0", SwarmCommandRole::Scout, "wp-0"),
-                assignment("agent-1", SwarmCommandRole::Reserve, "wp-1"),
+                assignment("agent-0", SwarmCommandRole::Scout, "wp-0", policy.clone()),
+                assignment(
+                    "agent-1",
+                    SwarmCommandRole::Reserve,
+                    "wp-1",
+                    SwarmAbortPolicy::AbortAgentOnly,
+                ),
             ],
             ownership: vec![
                 ownership("agent-0", SwarmOwnershipKind::Task, "wp-0"),
@@ -219,6 +225,94 @@ mod tests {
             decision,
             SwarmFailureDecision::AbortMission { abort_agent_ids, .. }
                 if abort_agent_ids == vec![agent_id("agent-0"), agent_id("agent-1")]
+        ));
+    }
+
+    #[test]
+    fn per_agent_abort_policy_overrides_global_policy() {
+        let mut input = fanout_input(SwarmAbortPolicy::AbortMission);
+        input.assignments[0].abort_policy = SwarmAbortPolicy::AbortAgentOnly;
+        let plan = build_swarm_command_plan(input).unwrap();
+
+        let decision = apply_agent_failure(&plan, &agent_id("agent-0")).unwrap();
+
+        assert!(matches!(
+            decision,
+            SwarmFailureDecision::AbortAgentOnly { agent_id: failed } if failed == agent_id("agent-0")
+        ));
+    }
+
+    #[test]
+    fn per_agent_replacement_policy_overrides_global_continue_degraded() {
+        let mut input = fanout_input(SwarmAbortPolicy::ContinueDegraded);
+        input.assignments[0].abort_policy = SwarmAbortPolicy::ReplaceFromReserve;
+        let plan = build_swarm_command_plan(input).unwrap();
+
+        let decision = apply_agent_failure(&plan, &agent_id("agent-0")).unwrap();
+
+        assert!(matches!(
+            decision,
+            SwarmFailureDecision::ReplaceFromReserve { replacement_agent_id, .. }
+                if replacement_agent_id == agent_id("agent-1")
+        ));
+    }
+
+    #[test]
+    fn missing_failed_agent_fails_policy_application() {
+        let plan = build_swarm_command_plan(fanout_input(SwarmAbortPolicy::AbortMission)).unwrap();
+
+        let error = apply_agent_failure(&plan, &agent_id("missing")).unwrap_err();
+
+        assert!(matches!(
+            error,
+            SwarmCommandPlaneError::MissingFailedAgent { agent_id: missing } if missing == agent_id("missing")
+        ));
+    }
+
+    #[test]
+    fn global_replacement_policy_requires_reserve_or_recovery() {
+        let mut input = fanout_input(SwarmAbortPolicy::ReplaceFromReserve);
+        input.assignments[1].role = SwarmCommandRole::Observer;
+
+        let error = build_swarm_command_plan(input).unwrap_err();
+
+        assert_eq!(error, SwarmCommandPlaneError::MissingReplacementAgent);
+    }
+
+    #[test]
+    fn per_agent_replacement_policy_requires_reserve_or_recovery() {
+        let mut input = fanout_input(SwarmAbortPolicy::AbortMission);
+        input.assignments[0].abort_policy = SwarmAbortPolicy::ReplaceFromReserve;
+        input.assignments[1].role = SwarmCommandRole::Observer;
+
+        let error = build_swarm_command_plan(input).unwrap_err();
+
+        assert_eq!(error, SwarmCommandPlaneError::MissingReplacementAgent);
+    }
+
+    #[test]
+    fn released_and_active_same_resource_requires_handoff() {
+        let mut plan =
+            build_swarm_command_plan(fanout_input(SwarmAbortPolicy::AbortMission)).unwrap();
+        plan.ownership = vec![
+            SwarmOwnershipRecord {
+                status: SwarmOwnershipStatus::Released,
+                ..ownership("agent-0", SwarmOwnershipKind::Task, "wp-0")
+            },
+            ownership("agent-1", SwarmOwnershipKind::Task, "wp-0"),
+        ];
+        plan.agents[0].ownership_refs.clear();
+        plan.agents[1].ownership_refs = vec![SwarmOwnershipRef {
+            kind: SwarmOwnershipKind::Task,
+            resource_id: "wp-0".to_owned(),
+        }];
+
+        let error = validate_swarm_command_plan(&plan).unwrap_err();
+
+        assert!(matches!(
+            error,
+            SwarmCommandPlaneError::MissingHandoffEvidence { resource_id, .. }
+                if resource_id == "wp-0"
         ));
     }
 

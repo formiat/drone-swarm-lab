@@ -117,10 +117,13 @@ ownership handoffs, sync partial failures, and supervisor state changes.
 
 ## Artifact Validation
 
-`artifact_validator` knows the M87 rule ids and checks optional command-plane
-manifest summaries when they are present. Historical supervisor artifacts remain
-readable without M87 sections; strict current validation may warn when a current
-supervisor artifact lacks the optional summary.
+`artifact_validator` knows the M87 rule ids and checks full command-plane
+manifest artifacts for strict current supervisor runs. It validates the
+summary/artifact identity, duplicate active ownership, missing handoff evidence
+for released-to-active ownership moves, per-agent ACK consistency with compiled
+MAVLink plans, and partial synchronized command results without matching command
+windows. Historical supervisor artifacts remain readable without M87 sections
+when validated in historical mode.
 
 ## Test Boundary
 

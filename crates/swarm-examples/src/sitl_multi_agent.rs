@@ -3,14 +3,23 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use swarm_command_plane::{
-    SwarmAbortPolicy, SwarmCommandArtifactSummary, SwarmCommandRole,
-    SWARM_COMMAND_PLANE_SCHEMA_VERSION,
+    build_swarm_command_plan, AgentCommandAssignment, PartialSuccessPolicy, SwarmAbortPolicy,
+    SwarmCommandArtifactSummary, SwarmCommandFanoutInput, SwarmCommandPlan, SwarmCommandRole,
+    SwarmOwnershipKind, SwarmOwnershipRecord, SwarmOwnershipRef, SwarmOwnershipStatus,
+    SynchronizedCommandKind, SynchronizedCommandWindow,
+};
+use swarm_comms::{MavlinkCommonPlanOptions, MavlinkCoordinateOrigin};
+use swarm_mission_ir::{
+    AltitudeReference, CommandId, CompletionTolerance, CoordinateFrame, LocalPosition,
+    MissionCommand, MissionCommandEntry, MissionCommandPlan, MissionId, MissionWaypoint, Position,
+    RouteId, TerminalState, TimeoutAction, TimeoutPolicy,
 };
 use swarm_sim::ScenarioSuite;
+use swarm_types::AgentId;
 
 use crate::sitl_plan::{
     build_sitl_plan_for_task_ids, first_sitl_entry, validate_connection_string, SitlError,
-    SitlWaypointItem,
+    SitlWaypointItem, DEFAULT_SITL_GEO_ORIGIN,
 };
 
 pub const MULTI_AGENT_SITL_CONFIG_SCHEMA_VERSION: &str = "multi_sitl.v1";
@@ -65,6 +74,8 @@ pub struct MultiAgentSitlManifest {
     pub ownership_summary: TaskOwnershipSummary,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command_plane: Option<SwarmCommandArtifactSummary>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command_plane_artifact: Option<SwarmCommandPlan>,
     #[serde(default)]
     pub artifact_metadata: SitlArtifactMetadata,
 }
@@ -168,17 +179,8 @@ pub fn build_multi_agent_manifest(
     }
 
     let ownership_summary = ownership_summary(suite, config)?;
-    let command_plane = Some(SwarmCommandArtifactSummary {
-        schema_version: SWARM_COMMAND_PLANE_SCHEMA_VERSION.to_owned(),
-        plan_id: format!(
-            "{}:{}:{}",
-            entry.scenario.name, entry.mission, entry.profile
-        ),
-        agent_plan_count: agents.len(),
-        active_ownership_count: ownership_summary.assigned_task_count,
-        handoff_count: 0,
-        sync_operation_count: 0,
-    });
+    let command_plane_artifact = build_manifest_command_plane(entry, config, &agents)?;
+    let command_plane = Some(command_plane_artifact.summary.clone());
 
     Ok(MultiAgentSitlManifest {
         schema_version: MULTI_AGENT_SITL_MANIFEST_SCHEMA_VERSION.to_owned(),
@@ -190,8 +192,147 @@ pub fn build_multi_agent_manifest(
         agents,
         ownership_summary,
         command_plane,
+        command_plane_artifact: Some(command_plane_artifact),
         artifact_metadata: SitlArtifactMetadata::default(),
     })
+}
+
+fn build_manifest_command_plane(
+    entry: &swarm_sim::ScenarioSuiteEntry,
+    config: &MultiAgentSitlConfig,
+    agents: &[MultiAgentSitlManifestAgent],
+) -> Result<SwarmCommandPlan, SitlError> {
+    let plan_id = format!(
+        "{}:{}:{}",
+        entry.scenario.name, entry.mission, entry.profile
+    );
+    let assignments = agents
+        .iter()
+        .map(|agent| AgentCommandAssignment {
+            agent_id: AgentId::from(agent.agent_id.clone()),
+            role: agent
+                .command_role
+                .clone()
+                .unwrap_or(SwarmCommandRole::Scout),
+            command_plan: manifest_agent_command_plan(&plan_id, agent),
+            abort_policy: agent
+                .abort_policy
+                .clone()
+                .unwrap_or(SwarmAbortPolicy::AbortMission),
+            ownership_refs: agent
+                .task_ids
+                .iter()
+                .map(|task_id| SwarmOwnershipRef {
+                    kind: SwarmOwnershipKind::Task,
+                    resource_id: task_id.clone(),
+                })
+                .collect(),
+        })
+        .collect();
+    let ownership = agents
+        .iter()
+        .flat_map(|agent| {
+            agent.task_ids.iter().map(|task_id| SwarmOwnershipRecord {
+                agent_id: AgentId::from(agent.agent_id.clone()),
+                kind: SwarmOwnershipKind::Task,
+                resource_id: task_id.clone(),
+                status: SwarmOwnershipStatus::Active,
+                tick: 0,
+                reason: "manifest_assignment".to_owned(),
+            })
+        })
+        .collect();
+    build_swarm_command_plan(SwarmCommandFanoutInput {
+        plan_id,
+        assignments,
+        ownership,
+        global_abort_policy: SwarmAbortPolicy::AbortMission,
+        sync_operations: sync_operations_for_config(config),
+        mavlink_options: MavlinkCommonPlanOptions {
+            home_origin: Some(MavlinkCoordinateOrigin {
+                lat_deg: DEFAULT_SITL_GEO_ORIGIN.lat_deg,
+                lon_deg: DEFAULT_SITL_GEO_ORIGIN.lon_deg,
+                alt_m: DEFAULT_SITL_GEO_ORIGIN.alt_m,
+            }),
+            ..Default::default()
+        },
+    })
+    .map_err(|error| SitlError::MultiAgentConfigInvalid {
+        message: format!("command-plane build failed: {error}"),
+    })
+}
+
+fn manifest_agent_command_plan(
+    plan_id: &str,
+    agent: &MultiAgentSitlManifestAgent,
+) -> MissionCommandPlan {
+    let route_id_value = format!("{plan_id}:{}", agent.agent_id);
+    let route_id = RouteId::from(route_id_value.clone());
+    let waypoints: Vec<MissionWaypoint> = agent
+        .waypoints
+        .iter()
+        .map(|waypoint| MissionWaypoint {
+            position: Position::Local(LocalPosition {
+                x_m: waypoint.x,
+                y_m: waypoint.y,
+                z_m: waypoint.z,
+            }),
+            acceptance_radius_m: None,
+        })
+        .collect();
+    let commands = if waypoints.is_empty() {
+        Vec::new()
+    } else {
+        vec![MissionCommandEntry {
+            command_id: CommandId::from(format!("{plan_id}:{}:follow-route", agent.agent_id)),
+            command: MissionCommand::FollowRoute {
+                route_id: route_id.clone(),
+                waypoints,
+            },
+            source_task_id: None,
+            source_route_id: Some(route_id_value),
+            source_agent_id: Some(agent.agent_id.clone()),
+        }]
+    };
+    MissionCommandPlan {
+        schema_version: MissionCommandPlan::SCHEMA_VERSION.to_owned(),
+        mission_id: MissionId::from(format!("{plan_id}:{}", agent.agent_id)),
+        coordinate_frame: CoordinateFrame::LocalNed,
+        altitude_reference: AltitudeReference::RelativeHome,
+        timeout_policy: TimeoutPolicy {
+            command_timeout_secs: 5.0,
+            completion_timeout_secs: 120.0,
+            on_timeout: TimeoutAction::Abort,
+        },
+        expected_terminal_state: TerminalState::Landed,
+        completion_tolerance: CompletionTolerance {
+            position_m: 1.0,
+            altitude_m: 0.5,
+        },
+        commands,
+    }
+}
+
+fn sync_operations_for_config(config: &MultiAgentSitlConfig) -> Vec<SynchronizedCommandWindow> {
+    let agent_ids: Vec<AgentId> = config
+        .agents
+        .iter()
+        .map(|agent| AgentId::from(agent.agent_id.clone()))
+        .collect();
+    [
+        SynchronizedCommandKind::ArmAll,
+        SynchronizedCommandKind::TakeoffAll,
+        SynchronizedCommandKind::StartAll,
+        SynchronizedCommandKind::AbortAll,
+    ]
+    .into_iter()
+    .map(|kind| SynchronizedCommandWindow {
+        kind,
+        agent_ids: agent_ids.clone(),
+        timeout_ms: 5_000,
+        partial_success_policy: PartialSuccessPolicy::RequireAll,
+    })
+    .collect()
 }
 
 fn validate_multi_agent_config(

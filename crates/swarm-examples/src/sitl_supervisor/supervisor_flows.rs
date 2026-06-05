@@ -49,6 +49,9 @@ use crate::sitl_plan::{check_preflight_or_err, first_sitl_entry, SitlError};
 use crate::sitl_report::write_sitl_multi_agent_run_report;
 use crate::sitl_report::SitlMultiAgentRunReport;
 use swarm_alloc::GreedyAllocator;
+use swarm_command_plane::{
+    SwarmCommandPlan, SwarmOwnershipKind, SwarmOwnershipStatus, SynchronizedCommandKind,
+};
 use swarm_comms::{MockMavlinkTransport, RawMessage};
 use swarm_runtime::{AgentNode, Coordinator, RuntimeMessage};
 use swarm_types::AgentId;
@@ -190,6 +193,7 @@ pub(super) fn run_live_supervisor_with_controllers_and_safety_gate<
         mode: SitlEventLogMode::ConnectionExecute,
     });
     recorder.push_multi_agent_run_started(manifest.agents_count, manifest.scenario_name.clone());
+    record_swarm_command_plane_dispatch(&mut recorder, manifest);
 
     eprintln!(
         "Multi-Agent SITL Execute: agents={} scenario={} config={}",
@@ -576,6 +580,8 @@ pub(super) fn run_supervisor_with_controllers<C: AgentController>(
         mode: SitlEventLogMode::Mock,
     });
     recorder.push_connection_opened();
+    recorder.push_multi_agent_run_started(manifest.agents_count, manifest.scenario_name.clone());
+    record_swarm_command_plane_dispatch(&mut recorder, manifest);
 
     eprintln!(
         "Multi-Agent SITL Foundation: mock agents={} assigned_tasks={} unassigned_pose_tasks={}",
@@ -651,4 +657,84 @@ pub(super) fn run_supervisor_with_controllers<C: AgentController>(
     }
 
     Ok(metrics)
+}
+
+fn record_swarm_command_plane_dispatch(
+    recorder: &mut SitlEventRecorder,
+    manifest: &MultiAgentSitlManifest,
+) {
+    let Some(plan) = manifest.command_plane_artifact.as_ref() else {
+        return;
+    };
+    recorder.push_swarm_supervisor_state_changed("planned", "dispatched", "manifest_loaded");
+    recorder.push_swarm_command_plan_dispatched(plan.plan_id.clone(), plan.agents.len());
+    for agent in &plan.agents {
+        recorder.push_swarm_agent_command_dispatched(
+            plan.plan_id.clone(),
+            agent.agent_id.to_string(),
+            agent.command_plan.commands.len(),
+        );
+    }
+    record_swarm_ownership_events(recorder, plan);
+    for sync in &plan.sync_operations {
+        recorder.push_swarm_sync_command_issued(
+            sync_kind_label(&sync.kind),
+            sync.agent_ids.iter().map(ToString::to_string).collect(),
+        );
+    }
+    for result in &plan.sync_results {
+        recorder.push_swarm_sync_command_result(
+            sync_kind_label(&result.kind),
+            result.succeeded.iter().map(ToString::to_string).collect(),
+            result.failed.iter().map(ToString::to_string).collect(),
+            result.timed_out.iter().map(ToString::to_string).collect(),
+            !result.failed.is_empty() || !result.timed_out.is_empty(),
+        );
+    }
+}
+
+fn record_swarm_ownership_events(recorder: &mut SitlEventRecorder, plan: &SwarmCommandPlan) {
+    for ownership in &plan.ownership {
+        match ownership.status {
+            SwarmOwnershipStatus::Active => recorder.push_swarm_ownership_acquired(
+                ownership.agent_id.to_string(),
+                ownership_kind_label(&ownership.kind),
+                ownership.resource_id.clone(),
+                ownership.reason.clone(),
+            ),
+            SwarmOwnershipStatus::Released => recorder.push_swarm_ownership_released(
+                ownership.agent_id.to_string(),
+                ownership_kind_label(&ownership.kind),
+                ownership.resource_id.clone(),
+                ownership.reason.clone(),
+            ),
+        }
+    }
+    for handoff in &plan.handoffs {
+        recorder.push_swarm_ownership_handoff(
+            handoff.from_agent_id.to_string(),
+            handoff.to_agent_id.to_string(),
+            ownership_kind_label(&handoff.kind),
+            handoff.resource_id.clone(),
+            handoff.reason.clone(),
+        );
+    }
+}
+
+fn ownership_kind_label(kind: &SwarmOwnershipKind) -> &'static str {
+    match kind {
+        SwarmOwnershipKind::Task => "task",
+        SwarmOwnershipKind::RouteSegment => "route_segment",
+        SwarmOwnershipKind::Target => "target",
+        SwarmOwnershipKind::ReplacementMission => "replacement_mission",
+    }
+}
+
+fn sync_kind_label(kind: &SynchronizedCommandKind) -> &'static str {
+    match kind {
+        SynchronizedCommandKind::ArmAll => "arm_all",
+        SynchronizedCommandKind::TakeoffAll => "takeoff_all",
+        SynchronizedCommandKind::StartAll => "start_all",
+        SynchronizedCommandKind::AbortAll => "abort_all",
+    }
 }

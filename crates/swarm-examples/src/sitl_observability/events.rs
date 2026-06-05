@@ -96,6 +96,58 @@ pub enum SitlEvent {
         step: u64,
         overall_status: String,
     },
+    SwarmCommandPlanDispatched {
+        step: u64,
+        plan_id: String,
+        agent_count: usize,
+    },
+    SwarmAgentCommandDispatched {
+        step: u64,
+        plan_id: String,
+        agent_id: String,
+        command_count: usize,
+    },
+    SwarmOwnershipAcquired {
+        step: u64,
+        agent_id: String,
+        ownership_kind: String,
+        resource_id: String,
+        reason: String,
+    },
+    SwarmOwnershipReleased {
+        step: u64,
+        agent_id: String,
+        ownership_kind: String,
+        resource_id: String,
+        reason: String,
+    },
+    SwarmOwnershipHandoff {
+        step: u64,
+        from_agent_id: String,
+        to_agent_id: String,
+        ownership_kind: String,
+        resource_id: String,
+        reason: String,
+    },
+    SwarmSupervisorStateChanged {
+        step: u64,
+        from: String,
+        to: String,
+        reason: String,
+    },
+    SwarmSyncCommandIssued {
+        step: u64,
+        kind: String,
+        agent_ids: Vec<String>,
+    },
+    SwarmSyncCommandResult {
+        step: u64,
+        kind: String,
+        succeeded_agent_ids: Vec<String>,
+        failed_agent_ids: Vec<String>,
+        timed_out_agent_ids: Vec<String>,
+        partial_success: bool,
+    },
     ConnectionOpened {
         step: u64,
         mode: SitlEventLogMode,
@@ -423,6 +475,138 @@ impl SitlEventRecorder {
         self.log.events.push(SitlEvent::MultiAgentRunFinished {
             step,
             overall_status: overall_status.into(),
+        });
+    }
+
+    pub fn push_swarm_command_plan_dispatched(
+        &mut self,
+        plan_id: impl Into<String>,
+        agent_count: usize,
+    ) {
+        let step = self.next_step();
+        self.log.events.push(SitlEvent::SwarmCommandPlanDispatched {
+            step,
+            plan_id: plan_id.into(),
+            agent_count,
+        });
+    }
+
+    pub fn push_swarm_agent_command_dispatched(
+        &mut self,
+        plan_id: impl Into<String>,
+        agent_id: impl Into<String>,
+        command_count: usize,
+    ) {
+        let step = self.next_step();
+        self.log
+            .events
+            .push(SitlEvent::SwarmAgentCommandDispatched {
+                step,
+                plan_id: plan_id.into(),
+                agent_id: agent_id.into(),
+                command_count,
+            });
+    }
+
+    pub fn push_swarm_ownership_acquired(
+        &mut self,
+        agent_id: impl Into<String>,
+        ownership_kind: impl Into<String>,
+        resource_id: impl Into<String>,
+        reason: impl Into<String>,
+    ) {
+        let step = self.next_step();
+        self.log.events.push(SitlEvent::SwarmOwnershipAcquired {
+            step,
+            agent_id: agent_id.into(),
+            ownership_kind: ownership_kind.into(),
+            resource_id: resource_id.into(),
+            reason: reason.into(),
+        });
+    }
+
+    pub fn push_swarm_ownership_released(
+        &mut self,
+        agent_id: impl Into<String>,
+        ownership_kind: impl Into<String>,
+        resource_id: impl Into<String>,
+        reason: impl Into<String>,
+    ) {
+        let step = self.next_step();
+        self.log.events.push(SitlEvent::SwarmOwnershipReleased {
+            step,
+            agent_id: agent_id.into(),
+            ownership_kind: ownership_kind.into(),
+            resource_id: resource_id.into(),
+            reason: reason.into(),
+        });
+    }
+
+    pub fn push_swarm_ownership_handoff(
+        &mut self,
+        from_agent_id: impl Into<String>,
+        to_agent_id: impl Into<String>,
+        ownership_kind: impl Into<String>,
+        resource_id: impl Into<String>,
+        reason: impl Into<String>,
+    ) {
+        let step = self.next_step();
+        self.log.events.push(SitlEvent::SwarmOwnershipHandoff {
+            step,
+            from_agent_id: from_agent_id.into(),
+            to_agent_id: to_agent_id.into(),
+            ownership_kind: ownership_kind.into(),
+            resource_id: resource_id.into(),
+            reason: reason.into(),
+        });
+    }
+
+    pub fn push_swarm_supervisor_state_changed(
+        &mut self,
+        from: impl Into<String>,
+        to: impl Into<String>,
+        reason: impl Into<String>,
+    ) {
+        let step = self.next_step();
+        self.log
+            .events
+            .push(SitlEvent::SwarmSupervisorStateChanged {
+                step,
+                from: from.into(),
+                to: to.into(),
+                reason: reason.into(),
+            });
+    }
+
+    pub fn push_swarm_sync_command_issued(
+        &mut self,
+        kind: impl Into<String>,
+        agent_ids: Vec<String>,
+    ) {
+        let step = self.next_step();
+        self.log.events.push(SitlEvent::SwarmSyncCommandIssued {
+            step,
+            kind: kind.into(),
+            agent_ids,
+        });
+    }
+
+    pub fn push_swarm_sync_command_result(
+        &mut self,
+        kind: impl Into<String>,
+        succeeded_agent_ids: Vec<String>,
+        failed_agent_ids: Vec<String>,
+        timed_out_agent_ids: Vec<String>,
+        partial_success: bool,
+    ) {
+        let step = self.next_step();
+        self.log.events.push(SitlEvent::SwarmSyncCommandResult {
+            step,
+            kind: kind.into(),
+            succeeded_agent_ids,
+            failed_agent_ids,
+            timed_out_agent_ids,
+            partial_success,
         });
     }
 
@@ -815,6 +999,15 @@ pub struct SitlEventLogSummary {
     pub multi_agent_task_completed: usize,
     pub multi_agent_failures: usize,
     pub multi_agent_agent_count: Option<usize>,
+    pub swarm_command_plan_dispatched: usize,
+    pub swarm_agent_command_dispatched: usize,
+    pub swarm_ownership_acquired: usize,
+    pub swarm_ownership_released: usize,
+    pub swarm_ownership_handoff: usize,
+    pub swarm_supervisor_state_changed: usize,
+    pub swarm_sync_command_issued: usize,
+    pub swarm_sync_command_result: usize,
+    pub swarm_sync_partial_failure: usize,
     pub final_status: Option<String>,
 }
 
@@ -868,6 +1061,37 @@ pub fn summarize_sitl_event_log(log: &SitlEventLog) -> SitlEventLogSummary {
             SitlEvent::MultiAgentRunFinished { overall_status, .. } => {
                 summary.multi_agent_run_finished += 1;
                 summary.final_status = Some(overall_status.clone());
+            }
+            SitlEvent::SwarmCommandPlanDispatched { .. } => {
+                summary.swarm_command_plan_dispatched += 1;
+            }
+            SitlEvent::SwarmAgentCommandDispatched { .. } => {
+                summary.swarm_agent_command_dispatched += 1;
+            }
+            SitlEvent::SwarmOwnershipAcquired { .. } => {
+                summary.swarm_ownership_acquired += 1;
+            }
+            SitlEvent::SwarmOwnershipReleased { .. } => {
+                summary.swarm_ownership_released += 1;
+            }
+            SitlEvent::SwarmOwnershipHandoff { .. } => {
+                summary.swarm_ownership_handoff += 1;
+            }
+            SitlEvent::SwarmSupervisorStateChanged { .. } => {
+                summary.swarm_supervisor_state_changed += 1;
+            }
+            SitlEvent::SwarmSyncCommandIssued { .. } => {
+                summary.swarm_sync_command_issued += 1;
+            }
+            SitlEvent::SwarmSyncCommandResult {
+                failed_agent_ids,
+                timed_out_agent_ids,
+                ..
+            } => {
+                summary.swarm_sync_command_result += 1;
+                if !failed_agent_ids.is_empty() || !timed_out_agent_ids.is_empty() {
+                    summary.swarm_sync_partial_failure += 1;
+                }
             }
             SitlEvent::ConnectionOpened { .. } => summary.connection_opened += 1,
             SitlEvent::HeartbeatSeen { .. } => summary.heartbeat_seen += 1,
@@ -1042,6 +1266,18 @@ pub fn format_sitl_summary(summary: &SitlEventLogSummary) -> String {
             summary.multi_agent_waypoint_reached,
             summary.multi_agent_task_completed,
             summary.multi_agent_failures
+        ),
+        format!(
+            "Swarm command plane: plans={} agent_plans={} ownership_acquired={} ownership_released={} handoffs={} supervisor_states={} sync_issued={} sync_results={} sync_partial_failures={}",
+            summary.swarm_command_plan_dispatched,
+            summary.swarm_agent_command_dispatched,
+            summary.swarm_ownership_acquired,
+            summary.swarm_ownership_released,
+            summary.swarm_ownership_handoff,
+            summary.swarm_supervisor_state_changed,
+            summary.swarm_sync_command_issued,
+            summary.swarm_sync_command_result,
+            summary.swarm_sync_partial_failure
         ),
     ]
     .join("\n")

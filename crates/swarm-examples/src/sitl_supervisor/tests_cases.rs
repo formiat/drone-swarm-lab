@@ -218,6 +218,11 @@ fn fake_live_supervisor_writes_report_and_replay_log() {
     assert_eq!(summary.multi_agent_mission_item_sent, 2);
     assert_eq!(summary.multi_agent_waypoint_reached, 2);
     assert_eq!(summary.multi_agent_task_completed, 2);
+    assert_eq!(summary.swarm_command_plan_dispatched, 1);
+    assert_eq!(summary.swarm_agent_command_dispatched, 2);
+    assert_eq!(summary.swarm_ownership_acquired, 2);
+    assert_eq!(summary.swarm_sync_command_issued, 4);
+    assert_eq!(summary.swarm_supervisor_state_changed, 1);
     assert_eq!(summary.mission_count_sent, 2);
     assert_eq!(summary.mission_item_sent, 2);
     assert_eq!(summary.waypoint_reached, 2);

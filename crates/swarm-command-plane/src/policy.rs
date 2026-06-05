@@ -4,7 +4,7 @@ use crate::types::{
     SwarmAbortPolicy, SwarmCommandPlan, SwarmCommandRole, SwarmOwnershipHandoff,
     SwarmOwnershipRecord, SwarmOwnershipStatus,
 };
-use crate::validation::{ensure_replacement_candidate, SwarmCommandPlaneError};
+use crate::validation::{ensure_replacement_candidate_for_agent, SwarmCommandPlaneError};
 
 /// Deterministic failure decision for one failed agent.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -27,12 +27,19 @@ pub enum SwarmFailureDecision {
     },
 }
 
-/// Apply an agent failure according to the plan's global abort policy.
+/// Apply an agent failure according to the failed agent's per-agent policy.
 pub fn apply_agent_failure(
     plan: &SwarmCommandPlan,
     failed_agent_id: &AgentId,
 ) -> Result<SwarmFailureDecision, SwarmCommandPlaneError> {
-    match plan.global_abort_policy {
+    let failed_agent = plan
+        .agents
+        .iter()
+        .find(|agent| &agent.agent_id == failed_agent_id)
+        .ok_or_else(|| SwarmCommandPlaneError::MissingFailedAgent {
+            agent_id: failed_agent_id.clone(),
+        })?;
+    match failed_agent.abort_policy {
         SwarmAbortPolicy::AbortAgentOnly => Ok(SwarmFailureDecision::AbortAgentOnly {
             agent_id: failed_agent_id.clone(),
         }),
@@ -49,7 +56,7 @@ pub fn apply_agent_failure(
             released: released_ownership(plan, failed_agent_id),
         }),
         SwarmAbortPolicy::ReplaceFromReserve => {
-            ensure_replacement_candidate(plan)?;
+            ensure_replacement_candidate_for_agent(plan, failed_agent_id)?;
             let replacement_agent_id = plan
                 .agents
                 .iter()
