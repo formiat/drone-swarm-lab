@@ -45,6 +45,9 @@ PX4 и ArduPilot профили, с честными caveats и без claims о
   `compile_mavlink_common_plan`.
 - `crates/swarm-comms/src/mavlink_common_plan.rs:108` -
   `MavlinkCommonPlan`.
+- `crates/swarm-comms/src/mavlink_common_plan.rs:125` - `fence_summary`.
+- `crates/swarm-comms/src/mavlink_common_plan.rs:129` -
+  `fc_contract_result`.
 - `crates/swarm-examples/src/artifact_validator.rs:390` -
   `validate_dry_run_artifact`.
 - `crates/swarm-examples/src/artifact_validator.rs:558` -
@@ -80,7 +83,8 @@ PX4 и ArduPilot профили, с честными caveats и без claims о
 - `crates/swarm-examples/src/sitl_plan.rs` - расширить dry-run/evidence модели
   или добавить M89-specific DTO рядом с `SitlDryRunArtifact`.
 - `crates/swarm-examples/src/sitl_dual_stack_evidence.rs` - новый модуль для
-  генерации dual-stack evidence pack из двух профильных dry-run artifacts.
+  генерации dual-stack evidence pack из двух профильных dry-run artifacts,
+  включая явные `abort_replacement` и `fc_safety_contract` sections.
 - `crates/swarm-examples/src/lib.rs` - экспорт нового модуля.
 - `crates/swarm-examples/src/bin/sitl_dual_stack_evidence.rs` - новый portable
   CLI для генерации evidence pack без запуска SITL.
@@ -132,6 +136,7 @@ PX4 и ArduPilot профили, с честными caveats и без claims о
          pub profile: String,
          pub agent_id: String,
          pub command_ir_hash: String,
+         pub abort_replacement: DualStackAbortReplacementEvidence,
          pub profiles: Vec<SitlDualStackProfileEvidence>,
          pub limitations: Vec<String>,
      }
@@ -149,8 +154,38 @@ PX4 и ArduPilot профили, с честными caveats и без claims о
          pub mission_item_count: usize,
          pub command_postlude_count: usize,
          pub safety_passed: bool,
+         pub abort_replacement: ProfileAbortReplacementEvidence,
+         pub fc_safety_contract: ProfileFcSafetyContractEvidence,
          pub caveats: Vec<String>,
      }
+
+     pub struct DualStackAbortReplacementEvidence {
+         pub timeout_policy: TimeoutPolicy,
+         pub expected_terminal_state: TerminalState,
+         pub replacement_policy: ReplacementEvidenceStatus,
+         pub evidence_status: String,
+         pub caveats: Vec<String>,
+      }
+
+     pub struct ProfileAbortReplacementEvidence {
+         pub timeout_on_timeout: TimeoutAction,
+         pub expected_terminal_state: TerminalState,
+         pub abort_command: Option<MavlinkCommonCommandName>,
+         pub rtl_available: MavlinkCompatibilityClass,
+         pub replacement_policy: ReplacementEvidenceStatus,
+         pub caveats: Vec<String>,
+      }
+
+     pub struct ProfileFcSafetyContractEvidence {
+         pub safety_report_passed: bool,
+         pub fence_summary_present: bool,
+         pub fc_contract_result_present: bool,
+         pub fc_contract_passed: Option<bool>,
+         pub geofence_support: MavlinkCompatibilityClass,
+         pub parameter_support: MavlinkCompatibilityClass,
+         pub unsupported_or_unknown_claims: Vec<String>,
+         pub caveats: Vec<String>,
+      }
      ```
    - Нетривиальная логика:
      ```rust
@@ -158,7 +193,24 @@ PX4 и ArduPilot профили, с честными caveats и без claims о
      ensure(px4.command_ir_hash == ardupilot.command_ir_hash);
      ensure(profiles == ["px4", "ardupilot"]);
      ensure(!ardupilot.hardware_facing_allowed || ardupilot has explicit SITL evidence flag);
+
+     // Primitive single-agent evidence still records abort/replacement explicitly.
+     ensure(pack.abort_replacement.timeout_policy.on_timeout == TimeoutAction::Abort);
+     ensure(pack.abort_replacement.expected_terminal_state == TerminalState::Landed);
+     ensure(pack.abort_replacement.replacement_policy
+         == ReplacementEvidenceStatus::NotApplicableSingleAgentPrimitive);
+
+     // Do not reduce FC evidence to a boolean.
+     ensure(profile.fc_safety_contract.safety_report_passed == artifact.safety_report.passed);
+     ensure(profile.fc_safety_contract.fc_contract_result_present
+         == artifact.mavlink_common_plan.fc_contract_result.is_some());
+     ensure(unknown_or_unsupported_safety_claims are visible in caveats);
      ```
+   - Для M89 primitive `takeoff-hold-land` replacement обычно не применяется,
+     но это должно быть сериализовано как
+     `not_applicable_single_agent_primitive`, а не пропущено. Если позже M89
+     evidence pack строится по multi-agent command-plane artifact, тот же DTO
+     должен уметь явно фиксировать `command_plane_replacement_supported`.
 
 2. Добавить portable CLI для генерации dual-stack evidence.
    - Файлы:
@@ -202,6 +254,12 @@ PX4 и ArduPilot профили, с честными caveats и без claims о
      - `artifact.dual_stack_profile_mismatch`;
      - `artifact.dual_stack_ir_hash_mismatch`;
      - `artifact.dual_stack_hardware_claim_unsafe`.
+     - `artifact.dual_stack_abort_replacement_missing`;
+     - `artifact.dual_stack_abort_policy_mismatch`;
+     - `artifact.dual_stack_replacement_policy_mismatch`;
+     - `artifact.dual_stack_fc_contract_missing`;
+     - `artifact.dual_stack_fc_contract_hidden_caveat`;
+     - `artifact.dual_stack_fc_contract_claim_unsafe`.
    - Нетривиальная проверка:
      ```rust
      let profiles = pack.profiles.iter().map(|p| p.mavlink_profile).collect();
@@ -210,7 +268,19 @@ PX4 и ArduPilot профили, с честными caveats и без claims о
      require(all referenced artifacts validate with ArtifactValidationMode::DryRun);
      require(all command_ir_hash values are equal);
      require(ardupilot.hardware_facing_allowed == false unless explicit manual SITL evidence exists);
+     require(pack.abort_replacement exists);
+     require(pack.abort_replacement.timeout_policy == source command_ir_summary.timeout_policy);
+     require(pack.abort_replacement.expected_terminal_state
+         == source command_ir_summary.expected_terminal_state);
+     require(profile.abort_replacement.replacement_policy is explicit, even when not_applicable);
+     require(profile.fc_safety_contract exists);
+     require(profile.fc_safety_contract.safety_report_passed == dry_run.safety_report.passed);
+     require(profile.fc_safety_contract mirrors mavlink_common_plan.fence_summary/fc_contract_result);
+     require(UnknownUntilSitlOrHardware safety/fence/parameter classifications have visible caveats);
      ```
+   - Validator не должен требовать live replacement для single-agent primitive
+     pack. Он должен требовать, чтобы отсутствие replacement было
+     объяснено explicit status/reason.
 
 4. Усилить/параметризовать dry-run profile tests для PX4 и ArduPilot.
    - Файлы:
@@ -225,6 +295,8 @@ PX4 и ArduPilot профили, с честными caveats и без claims о
        - `compatibility.profile == "ardupilot"`;
        - caveat содержит `ArduPilot`;
        - hardware-facing unknown/caveat не скрыт.
+       - `command_ir_summary.timeout_policy.on_timeout == "abort"`;
+       - `command_ir_summary.expected_terminal_state == "landed"`.
    - Tests не должны запускать PX4/ArduPilot.
 
 5. Добавить tests для M89 evidence generator.
@@ -240,6 +312,11 @@ PX4 и ArduPilot профили, с честными caveats и без claims о
        - duplicate profile;
        - missing ArduPilot profile;
        - unsafe `hardware_facing_allowed=true` for unknown ArduPilot behavior.
+       - missing `abort_replacement`;
+       - mismatched timeout policy between `command_ir_summary` and
+         `abort_replacement`;
+       - missing `fc_safety_contract`;
+       - hidden `UnknownUntilSitlOrHardware` FC/fence/parameter caveat.
 
 6. Добавить artifact-validator tests для M89.
    - Файлы:
@@ -250,6 +327,10 @@ PX4 и ArduPilot профили, с честными caveats и без claims о
      - `dual_stack_evidence_mismatched_ir_hash_fails`.
      - `dual_stack_evidence_missing_referenced_dry_run_fails`.
      - `dual_stack_evidence_unsafe_hardware_claim_fails`.
+     - `dual_stack_evidence_missing_abort_replacement_fails`.
+     - `dual_stack_evidence_mismatched_abort_policy_fails`.
+     - `dual_stack_evidence_missing_fc_contract_section_fails`.
+     - `dual_stack_evidence_hidden_fc_contract_caveat_fails`.
 
 7. Добавить optional ArduPilot SITL docs/runbook.
    - Файлы:
@@ -297,6 +378,13 @@ PX4 и ArduPilot профили, с честными caveats и без claims о
        - ArduPilot dry-run evidence vs missing live SITL evidence;
        - no hardware claim;
        - no PX4/ArduPilot equivalence claim;
+       - abort/replacement evidence boundary: primitive single-agent pack records
+         timeout abort policy and terminal state, but replacement is
+         `not_applicable_single_agent_primitive` unless a command-plane/multi-agent
+         artifact is used;
+       - FC/safety contract boundary: `safety_report`, `fence_summary`,
+         `fc_contract_result`, geofence support, parameter support and profile
+         caveats are evidence fields, not certified flight safety;
        - какие команды запускать для dry-run evidence pack.
 
 10. Зафиксировать быстрые generated evidence artifacts, если они небольшие и
@@ -346,15 +434,29 @@ PX4 и ArduPilot профили, с честными caveats и без claims о
   - unit test: pack generation from two valid dry-run artifacts;
   - unit test: profile set must be exactly PX4 + ArduPilot;
   - unit test: `command_ir_hash` mismatch fails.
+  - unit test: pack contains `abort_replacement` with
+    `timeout_policy.on_timeout=Abort`,
+    `expected_terminal_state=Landed`, and
+    `replacement_policy=not_applicable_single_agent_primitive` for primitive
+    single-agent evidence.
+  - unit test: pack contains `fc_safety_contract` for each profile and mirrors
+    `safety_report.passed`, `fence_summary`, `fc_contract_result`,
+    `geofence_support`, and `parameter_support`.
 - `crates/swarm-examples/tests/artifact_validator.rs`:
   - valid dual-stack pack passes;
   - missing ArduPilot profile fails;
   - missing referenced dry-run artifact fails;
   - unsafe hardware-facing ArduPilot claim fails.
+  - missing `abort_replacement` section fails;
+  - mismatched timeout/abort policy fails;
+  - missing `fc_safety_contract` section fails;
+  - unsafe hidden FC/fence/parameter claim fails.
 - `crates/swarm-examples/tests/sitl_docs.rs`:
   - M89 docs mention `sitl_dual_stack_evidence_pack.v1`;
   - docs mention `--mavlink-profile px4`;
   - docs mention `--mavlink-profile ardupilot`;
+  - docs mention abort/replacement evidence boundary;
+  - docs mention FC/safety contract evidence boundary;
   - docs mention no hardware readiness / no equivalence claim.
 
 ### 2. Tests that need light refactoring
@@ -365,9 +467,15 @@ PX4 и ArduPilot профили, с честными caveats и без claims о
 - Extract small fixture builder in
   `crates/swarm-examples/tests/artifact_validator.rs:1062` so dry-run artifact
   fixtures can be built for PX4 and ArduPilot without copy-paste.
+- Extract shared assertion helper for dual-stack evidence sections:
+  - `assert_abort_replacement_evidence_matches_ir(pack, dry_run)`;
+  - `assert_fc_safety_contract_evidence_matches_plan(profile, dry_run)`.
 - Add `ArtifactValidationMode::DualStackEvidence` parsing in
   `crates/swarm-examples/src/bin/artifact_validator.rs:120` and shared path
   discovery in `ArtifactPackPaths`.
+- Add reusable validator helper for command ACK/telemetry plus
+  abort/replacement and FC/safety sections, so M89 validation does not duplicate
+  all dry-run checks by string matching.
 - Add docs smoke helper for M89 anchors in
   `crates/swarm-examples/tests/sitl_docs.rs`.
 
@@ -402,6 +510,16 @@ PX4 и ArduPilot профили, с честными caveats и без claims о
   Mitigation: разрешить unknown classifications для dry-run evidence, если
   `hardware_facing_allowed=false` и caveats видны. Блокировать только скрытые
   unsafe claims.
+
+- **Risk: abort/replacement section выглядит как обещание live failover.**
+  Mitigation: для primitive single-agent pack сериализовать explicit
+  `not_applicable_single_agent_primitive`; live replacement разрешать только
+  при наличии command-plane/multi-agent artifact evidence.
+
+- **Risk: FC/safety contract будет снова сведён к `safety_passed=true`.**
+  Mitigation: отдельный `fc_safety_contract` DTO и validator rules должны
+  проверять `safety_report`, `fence_summary`, `fc_contract_result`,
+  geofence/parameter support class и видимые caveats.
 
 - **Risk: generated JSON artifacts будут шумными из-за `git_commit` или command
   args.**
