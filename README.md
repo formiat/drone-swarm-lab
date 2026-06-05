@@ -600,11 +600,11 @@ See [Strategy Support Matrix](#strategy-support-matrix) for per-strategy known l
 | Crate | Purpose |
 | --- | --- |
 | `swarm-types` | Shared IDs, agent/task/message types, pose, velocity, mission semantics (`TaskKind`, `MissionAdapter`). |
-| `swarm-comms` | Transport trait, in-memory network, UDP transport, optional MAVLink transport, M81 transport-free MAVLink Common compiler (`MavlinkCommonPlan`), and M82 MAVLink capability profiles for Common/PX4/ArduPilot dry-run compatibility annotations. |
+| `swarm-comms` | Transport trait, in-memory network, UDP transport, optional MAVLink transport, M81 transport-free MAVLink Common compiler (`MavlinkCommonPlan`), M82 MAVLink capability profiles for Common/PX4/ArduPilot dry-run compatibility annotations, and M86 FC geofence/parameter contract types. |
 | `swarm-mission-ir` | Hardware-agnostic mission command IR: 13 primitives, explicit semantics, typed validation. Foundation for backend compilers such as M81. |
 | `swarm-runtime` | Membership, failure detection, task registry, coordinator, `AgentNode`. |
 | `swarm-alloc` | Greedy, auction, connectivity-aware, centralized, CBBA allocation strategies. |
-| `swarm-sim` | Deterministic clock, scenario model, generic scenario runner, DSL loader, JSON/CSV export, Urban replay analysis artifacts. |
+| `swarm-sim` | Deterministic clock, scenario model, generic scenario runner, DSL loader, JSON/CSV export, Urban replay analysis artifacts, and the M86 `SafetyConfig` to FC fence-plan bridge. |
 | `swarm-scenarios` | Scenario builders: Coverage, Emergency Mesh, SAR, Infrastructure Inspection, Wildfire Mapping, Urban Patrol, Urban Search; flood remains future work. |
 | `swarm-metrics` | Per-run and aggregate metrics, including Urban route planning, patrol completion, mocked bus-search detection/time/false-positive/distance fields, and diagnostic separation/conflict fields. |
 | `swarm-replay` | Event log, replay engine, summary/timeline CLI, ASCII visualization. |
@@ -687,6 +687,8 @@ points, not a published semver-stable SDK.
 | M82 | ✅ | PX4 / ArduPilot Capability Profiles: `swarm-comms` exposes `MavlinkCapabilityProfileId`, conservative Common/PX4/ArduPilot profile data, `MavlinkCompatibilityReport`, per-command `required_execution_mode` / `required_mode_transitions` / caveats, `compatibility_matrix_rows()` for the docs compatibility matrix, and dry-run `--mavlink-profile mavlink_common_generic\|px4\|ardupilot`; `artifact_validator --mode dry-run` now checks the compatibility section and hardware-blocking unknown/unsupported classifications; no exhaustive autopilot certification, no vendor SDK integration, no hardware upload |
 | M83 | ✅ | Primitive Real Mission Pack: canonical `takeoff-hold-land`, `orbit`, and `waypoint-square` missions compile through dry-run into `MissionCommandPlan` and `MavlinkCommonPlan` artifacts with command sequence, expected ACKs, telemetry milestones, timeout/abort policy, `safety_report.passed=true`, and PX4/ArduPilot profile annotations; validates artifacts only, with no real flight, no connected vehicle, no PX4/ArduPilot equivalence claim, and no certified flight safety |
 | M84 | ✅ | Urban Geo Route Export + Mission Templates: Urban nodes may carry WGS84 `geo`; route export emits `coordinate_mode` and direct WGS84 waypoint metadata when every node has geo, keeps local densified export otherwise, includes Urban mission template / blocked-policy / mocked detector metadata in dry-run artifacts, adds canonical `scenarios/urban.geo-block-loop.json`, `scenarios/urban.geo-search-bus.json`, `scenarios/urban.geo-inspection-corridor.json`, and GeoJSON fixture `scenarios/fixtures/urban_small_block.geojson`, and extends artifact validation for Urban coordinate/perception metadata; still no full OSM parser, real perception, not certified collision avoidance, PX4 execution, or hardware readiness |
+| M85 | ✅ | Urban Multi-Agent Deconfliction: opt-in simulation-only segment ownership for `urban-patrol`, replay lock/conflict events, and Urban separation diagnostics; no physical collision avoidance, PX4 execution, real perception, or hardware readiness |
+| M86 | ✅ | MAVLink Safety / FC Contract: transport-free FC geofence and parameter contract layer with `MavlinkFencePlan`, `geofence_prelude`, `fence_summary`, `FcParamRequirement` / `FcParamSnapshot`, known PX4/ArduPilot parameter metadata, conservative per-profile fence rules, and `swarm-sim::safety_config_to_fence_plan`; dry-run contract evidence only, with no live fence upload, no FC parameter transport, no hardware readiness, and no certified safety claim |
 
 ---
 
@@ -705,6 +707,7 @@ points, not a published semver-stable SDK.
 | [`docs/MISSION_COMMAND_IR.md`](docs/MISSION_COMMAND_IR.md) | M80 mission command IR: 13 command primitives, validation rules, Urban route bridge, and boundary explanation |
 | [`docs/MAVLINK_COMMON_COMPILER.md`](docs/MAVLINK_COMMON_COMPILER.md) | M81 MAVLink Common Compiler: `MavlinkCommonPlan`, supported Common commands, dry-run validation, and no-hardware-upload boundary |
 | [`docs/MAVLINK_CAPABILITY_PROFILES.md`](docs/MAVLINK_CAPABILITY_PROFILES.md) | M82 MAVLink capability profiles: Common/PX4/ArduPilot compatibility classes, required mode transitions, dry-run artifact report fields, and compatibility matrix |
+| [`docs/FC_CONTRACT.md`](docs/FC_CONTRACT.md) | M86 MAVLink Safety / FC Contract: transport-free geofence prelude, FC parameter requirements, profile validation, and safety-config bridge |
 
 ---
 

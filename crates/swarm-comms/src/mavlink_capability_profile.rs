@@ -6,6 +6,7 @@ use crate::mavlink_common_plan::{
     MavlinkCommonCommand, MavlinkCommonCommandName, MavlinkCommonMissionItem, MavlinkCommonPlan,
     MavlinkPlanPhase,
 };
+use crate::mavlink_geofence::FcGeofenceItemKind;
 
 const MAVLINK_GLOBAL_RELATIVE_ALT_INT: &str = "MAV_FRAME_GLOBAL_RELATIVE_ALT_INT";
 
@@ -127,7 +128,7 @@ impl MavlinkCompatibilityClass {
         }
     }
 
-    fn max(self, other: Self) -> Self {
+    pub fn max(self, other: Self) -> Self {
         if self.rank() >= other.rank() {
             self
         } else {
@@ -201,8 +202,18 @@ pub struct MavlinkCapabilityProfile {
     pub geofence_support: MavlinkCompatibilityClass,
     /// Parameter support classification.
     pub parameter_support: MavlinkCompatibilityClass,
+    /// Per-kind fence item support.
+    pub fence_item_support: &'static [FenceItemSupportRule],
     /// Profile-level caveats.
     pub known_caveats: &'static [&'static str],
+}
+
+/// Support rule for a specific fence item kind.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FenceItemSupportRule {
+    pub kind: FcGeofenceItemKind,
+    pub classification: MavlinkCompatibilityClass,
+    pub caveats: &'static [&'static str],
 }
 
 /// Command support rule in a capability profile.
@@ -338,6 +349,17 @@ pub struct MavlinkCompatibilityMatrixRow {
 /// Return static compatibility matrix rows used by docs tests.
 pub fn compatibility_matrix_rows() -> &'static [MavlinkCompatibilityMatrixRow] {
     COMPATIBILITY_MATRIX_ROWS
+}
+
+/// Lookup fence item support rule for a profile and kind.
+pub fn fence_item_support_rule(
+    profile: &MavlinkCapabilityProfile,
+    kind: FcGeofenceItemKind,
+) -> Option<&FenceItemSupportRule> {
+    profile
+        .fence_item_support
+        .iter()
+        .find(|rule| rule.kind == kind)
 }
 
 /// Classify a compiled MAVLink Common plan against a capability profile.
@@ -578,6 +600,11 @@ const ALL_COMMON_COMMANDS_GENERIC: &[MavlinkCommandCapabilityRule] = &[
     generic_command_rule(MavlinkCommonCommandName::NavWaypoint),
     generic_command_rule(MavlinkCommonCommandName::NavLoiterTime),
     generic_command_rule(MavlinkCommonCommandName::MissionStart),
+    generic_command_rule(MavlinkCommonCommandName::FenceCircleInclusion),
+    generic_command_rule(MavlinkCommonCommandName::FenceCircleExclusion),
+    generic_command_rule(MavlinkCommonCommandName::FencePolygonVertexInclusion),
+    generic_command_rule(MavlinkCommonCommandName::FencePolygonVertexExclusion),
+    generic_command_rule(MavlinkCommonCommandName::DoFenceEnable),
 ];
 
 const PX4_COMMANDS: &[MavlinkCommandCapabilityRule] = &[
@@ -588,6 +615,11 @@ const PX4_COMMANDS: &[MavlinkCommandCapabilityRule] = &[
     px4_command_rule(MavlinkCommonCommandName::NavWaypoint),
     px4_command_rule(MavlinkCommonCommandName::NavLoiterTime),
     px4_command_rule(MavlinkCommonCommandName::MissionStart),
+    px4_command_rule(MavlinkCommonCommandName::FenceCircleInclusion),
+    px4_command_rule(MavlinkCommonCommandName::FenceCircleExclusion),
+    px4_command_rule(MavlinkCommonCommandName::FencePolygonVertexInclusion),
+    px4_command_rule(MavlinkCommonCommandName::FencePolygonVertexExclusion),
+    px4_command_rule(MavlinkCommonCommandName::DoFenceEnable),
 ];
 
 const ARDUPILOT_COMMANDS: &[MavlinkCommandCapabilityRule] = &[
@@ -598,6 +630,11 @@ const ARDUPILOT_COMMANDS: &[MavlinkCommandCapabilityRule] = &[
     ardupilot_command_rule(MavlinkCommonCommandName::NavWaypoint),
     ardupilot_command_rule(MavlinkCommonCommandName::NavLoiterTime),
     ardupilot_command_rule(MavlinkCommonCommandName::MissionStart),
+    ardupilot_command_rule(MavlinkCommonCommandName::FenceCircleInclusion),
+    ardupilot_command_rule(MavlinkCommonCommandName::FenceCircleExclusion),
+    ardupilot_command_rule(MavlinkCommonCommandName::FencePolygonVertexInclusion),
+    ardupilot_command_rule(MavlinkCommonCommandName::FencePolygonVertexExclusion),
+    ardupilot_command_rule(MavlinkCommonCommandName::DoFenceEnable),
 ];
 
 const fn generic_command_rule(command: MavlinkCommonCommandName) -> MavlinkCommandCapabilityRule {
@@ -695,6 +732,87 @@ const ARDUPILOT_MODE_TRANSITIONS: &[MavlinkModeTransitionRule] = &[
     },
 ];
 
+const GENERIC_FENCE_RULES: &[FenceItemSupportRule] = &[
+    fence_rule(
+        FcGeofenceItemKind::CircleInclusion,
+        MavlinkCompatibilityClass::Supported,
+        &[GENERIC_CAVEAT],
+    ),
+    fence_rule(
+        FcGeofenceItemKind::CircleExclusion,
+        MavlinkCompatibilityClass::Supported,
+        &[GENERIC_CAVEAT],
+    ),
+    fence_rule(
+        FcGeofenceItemKind::PolygonInclusion,
+        MavlinkCompatibilityClass::Supported,
+        &[GENERIC_CAVEAT],
+    ),
+    fence_rule(
+        FcGeofenceItemKind::PolygonExclusion,
+        MavlinkCompatibilityClass::Supported,
+        &[GENERIC_CAVEAT],
+    ),
+];
+
+const PX4_FENCE_RULES: &[FenceItemSupportRule] = &[
+    fence_rule(
+        FcGeofenceItemKind::CircleInclusion,
+        MavlinkCompatibilityClass::UnknownUntilSitlOrHardware,
+        &[PX4_SIH_CAVEAT],
+    ),
+    fence_rule(
+        FcGeofenceItemKind::CircleExclusion,
+        MavlinkCompatibilityClass::UnknownUntilSitlOrHardware,
+        &[PX4_SIH_CAVEAT],
+    ),
+    fence_rule(
+        FcGeofenceItemKind::PolygonInclusion,
+        MavlinkCompatibilityClass::SupportedWithCaveats,
+        &[PX4_SIH_CAVEAT, "Breach behavior depends on PX4 GF_ACTION"],
+    ),
+    fence_rule(
+        FcGeofenceItemKind::PolygonExclusion,
+        MavlinkCompatibilityClass::SupportedWithCaveats,
+        &[PX4_SIH_CAVEAT, "Breach behavior depends on PX4 GF_ACTION"],
+    ),
+];
+
+const ARDUPILOT_FENCE_RULES: &[FenceItemSupportRule] = &[
+    fence_rule(
+        FcGeofenceItemKind::CircleInclusion,
+        MavlinkCompatibilityClass::UnknownUntilSitlOrHardware,
+        &[ARDUPILOT_EVIDENCE_CAVEAT],
+    ),
+    fence_rule(
+        FcGeofenceItemKind::CircleExclusion,
+        MavlinkCompatibilityClass::UnknownUntilSitlOrHardware,
+        &[ARDUPILOT_EVIDENCE_CAVEAT],
+    ),
+    fence_rule(
+        FcGeofenceItemKind::PolygonInclusion,
+        MavlinkCompatibilityClass::UnknownUntilSitlOrHardware,
+        &[ARDUPILOT_EVIDENCE_CAVEAT],
+    ),
+    fence_rule(
+        FcGeofenceItemKind::PolygonExclusion,
+        MavlinkCompatibilityClass::UnknownUntilSitlOrHardware,
+        &[ARDUPILOT_EVIDENCE_CAVEAT],
+    ),
+];
+
+const fn fence_rule(
+    kind: FcGeofenceItemKind,
+    classification: MavlinkCompatibilityClass,
+    caveats: &'static [&'static str],
+) -> FenceItemSupportRule {
+    FenceItemSupportRule {
+        kind,
+        classification,
+        caveats,
+    }
+}
+
 static MAVLINK_COMMON_GENERIC_PROFILE: MavlinkCapabilityProfile = MavlinkCapabilityProfile {
     id: MavlinkCapabilityProfileId::MavlinkCommonGeneric,
     stack_name: "MAVLink Common generic",
@@ -704,8 +822,9 @@ static MAVLINK_COMMON_GENERIC_PROFILE: MavlinkCapabilityProfile = MavlinkCapabil
     mission_start_semantics:
         "Syntax-level MAV_CMD_MISSION_START only; no autopilot acceptance proof.",
     takeoff_landing_constraints: &["Takeoff/landing commands are syntax-level only."],
-    geofence_support: MavlinkCompatibilityClass::UnknownUntilSitlOrHardware,
+    geofence_support: MavlinkCompatibilityClass::Supported,
     parameter_support: MavlinkCompatibilityClass::UnknownUntilSitlOrHardware,
+    fence_item_support: GENERIC_FENCE_RULES,
     known_caveats: &[GENERIC_CAVEAT],
 };
 
@@ -720,8 +839,9 @@ static PX4_PROFILE: MavlinkCapabilityProfile = MavlinkCapabilityProfile {
         "Requires heartbeat and accepted arm/takeoff flow.",
         "Evidence is local PX4/SIH, not hardware certification.",
     ],
-    geofence_support: MavlinkCompatibilityClass::UnknownUntilSitlOrHardware,
+    geofence_support: MavlinkCompatibilityClass::SupportedWithCaveats,
     parameter_support: MavlinkCompatibilityClass::SupportedWithCaveats,
+    fence_item_support: PX4_FENCE_RULES,
     known_caveats: &[PX4_SIH_CAVEAT],
 };
 
@@ -738,6 +858,7 @@ static ARDUPILOT_PROFILE: MavlinkCapabilityProfile = MavlinkCapabilityProfile {
     ],
     geofence_support: MavlinkCompatibilityClass::UnknownUntilSitlOrHardware,
     parameter_support: MavlinkCompatibilityClass::UnknownUntilSitlOrHardware,
+    fence_item_support: ARDUPILOT_FENCE_RULES,
     known_caveats: &[ARDUPILOT_EVIDENCE_CAVEAT],
 };
 
@@ -781,8 +902,8 @@ const COMPATIBILITY_MATRIX_ROWS: &[MavlinkCompatibilityMatrixRow] = &[
         "mavlink_common_generic:geofence",
         MavlinkCapabilityProfileId::MavlinkCommonGeneric,
         "geofence",
-        MavlinkCompatibilityClass::UnknownUntilSitlOrHardware,
-        "No geofence compiler output yet.",
+        MavlinkCompatibilityClass::Supported,
+        "Common fence mission item syntax is emitted; autopilot acceptance is not implied.",
     ),
     matrix_row(
         "mavlink_common_generic:parameters",
@@ -830,8 +951,8 @@ const COMPATIBILITY_MATRIX_ROWS: &[MavlinkCompatibilityMatrixRow] = &[
         "px4:geofence",
         MavlinkCapabilityProfileId::Px4,
         "geofence",
-        MavlinkCompatibilityClass::UnknownUntilSitlOrHardware,
-        "Geofence profile is future work.",
+        MavlinkCompatibilityClass::SupportedWithCaveats,
+        "Polygon fence items are modeled with PX4 caveats; circle fence remains unknown.",
     ),
     matrix_row(
         "px4:parameters",

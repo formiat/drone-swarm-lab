@@ -43,6 +43,25 @@ Preflight returns `SafetyValidationReport`:
   `artifact.safety_report_missing` when it is absent. See
   [`docs/ARTIFACT_VALIDATION.md`](ARTIFACT_VALIDATION.md).
 
+## M86 FC Contract Bridge
+
+M71 preflight is a simulation/input gate. M86 adds a separate FC-facing contract
+layer for dry-run artifacts:
+
+- `swarm-sim::safety_config_to_fence_plan` converts `SafetyConfig.geofence`
+  AABB bounds into a MAVLink polygon inclusion fence.
+- Each `SafetyConfig.no_fly_zones[]` AABB converts into a MAVLink polygon
+  exclusion fence.
+- `MavlinkCommonPlanOptions.fence_plan` compiles those items into
+  `MavlinkCommonPlan.geofence_prelude`.
+- `fc_contract_result` records whether the selected MAVLink capability profile
+  and optional FC parameter snapshot allow the mission to start.
+
+Passing M71 preflight does not mean an FC geofence was uploaded. Passing M86 FC
+contract validation means only that the dry-run artifact is internally
+consistent for the selected profile and parameter snapshot. Neither layer is
+certified flight safety or hardware validation.
+
 ## Exit Code Convention
 
 | Code | Category |

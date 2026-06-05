@@ -14,6 +14,11 @@ use crate::mavlink_coords::{
     local_to_mavlink_int, relative_altitude, scaled_coordinate, MavlinkCoordinateError,
     MavlinkCoordinateOrigin, MavlinkIntCoordinate,
 };
+use crate::mavlink_fc_contract::{validate_fc_contract, FcContract, FcContractValidationResult};
+use crate::mavlink_geofence::{
+    compile_fence_items, fence_artifact, FenceCompilerError, MavlinkFenceArtifact, MavlinkFencePlan,
+};
+use crate::mavlink_parameters::{FcParamRequirement, FcParamSnapshot};
 
 /// Schema version emitted by the M81 MAVLink Common compiler.
 pub const MAVLINK_COMMON_PLAN_SCHEMA_VERSION: &str = "mavlink_common_plan.v1";
@@ -51,6 +56,12 @@ pub struct MavlinkCommonPlanOptions {
     pub default_hold_position: Option<Position>,
     /// Orbit handling policy.
     pub orbit_strategy: MavlinkOrbitStrategy,
+    /// Optional FC geofence plan compiled into `geofence_prelude`.
+    pub fence_plan: Option<MavlinkFencePlan>,
+    /// FC parameter requirements that should be checked when a snapshot is available.
+    pub param_requirements: Vec<FcParamRequirement>,
+    /// Optional dry-run/preflight parameter snapshot used for contract validation.
+    pub param_snapshot: Option<FcParamSnapshot>,
 }
 
 impl Default for MavlinkCommonPlanOptions {
@@ -61,6 +72,9 @@ impl Default for MavlinkCommonPlanOptions {
             home_origin: None,
             default_hold_position: None,
             orbit_strategy: MavlinkOrbitStrategy::Unsupported,
+            fence_plan: None,
+            param_requirements: Vec::new(),
+            param_snapshot: None,
         }
     }
 }
@@ -104,9 +118,15 @@ pub struct MavlinkCommonPlan {
     pub backend_profile: String,
     /// Commands that must be sent before mission upload/start.
     pub command_prelude: Vec<MavlinkCommonCommand>,
-    /// Reserved for future geofence compiler output.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// FC geofence mission items that must be uploaded before the mission body.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub geofence_prelude: Option<Vec<MavlinkCommonMissionItem>>,
+    /// Human-readable FC geofence summary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fence_summary: Option<MavlinkFenceArtifact>,
+    /// FC contract validation result for fence and parameter requirements.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fc_contract_result: Option<FcContractValidationResult>,
     /// Ordered uploaded mission items.
     pub mission_items: Vec<MavlinkCommonMissionItem>,
     /// Optional mission start command when upload items exist.
@@ -196,6 +216,21 @@ pub enum MavlinkCommonCommandName {
     /// `MAV_CMD_MISSION_START`.
     #[serde(rename = "MAV_CMD_MISSION_START")]
     MissionStart,
+    /// `MAV_CMD_NAV_FENCE_CIRCLE_INCLUSION`.
+    #[serde(rename = "MAV_CMD_NAV_FENCE_CIRCLE_INCLUSION")]
+    FenceCircleInclusion,
+    /// `MAV_CMD_NAV_FENCE_CIRCLE_EXCLUSION`.
+    #[serde(rename = "MAV_CMD_NAV_FENCE_CIRCLE_EXCLUSION")]
+    FenceCircleExclusion,
+    /// `MAV_CMD_NAV_FENCE_POLYGON_VERTEX_INCLUSION`.
+    #[serde(rename = "MAV_CMD_NAV_FENCE_POLYGON_VERTEX_INCLUSION")]
+    FencePolygonVertexInclusion,
+    /// `MAV_CMD_NAV_FENCE_POLYGON_VERTEX_EXCLUSION`.
+    #[serde(rename = "MAV_CMD_NAV_FENCE_POLYGON_VERTEX_EXCLUSION")]
+    FencePolygonVertexExclusion,
+    /// `MAV_CMD_DO_FENCE_ENABLE`.
+    #[serde(rename = "MAV_CMD_DO_FENCE_ENABLE")]
+    DoFenceEnable,
 }
 
 impl MavlinkCommonCommandName {
@@ -209,6 +244,11 @@ impl MavlinkCommonCommandName {
             Self::NavWaypoint => "MAV_CMD_NAV_WAYPOINT",
             Self::NavLoiterTime => "MAV_CMD_NAV_LOITER_TIME",
             Self::MissionStart => "MAV_CMD_MISSION_START",
+            Self::FenceCircleInclusion => "MAV_CMD_NAV_FENCE_CIRCLE_INCLUSION",
+            Self::FenceCircleExclusion => "MAV_CMD_NAV_FENCE_CIRCLE_EXCLUSION",
+            Self::FencePolygonVertexInclusion => "MAV_CMD_NAV_FENCE_POLYGON_VERTEX_INCLUSION",
+            Self::FencePolygonVertexExclusion => "MAV_CMD_NAV_FENCE_POLYGON_VERTEX_EXCLUSION",
+            Self::DoFenceEnable => "MAV_CMD_DO_FENCE_ENABLE",
         }
     }
 }
@@ -349,6 +389,12 @@ pub enum MavlinkCommonCompilerError {
     IrSerialization {
         /// Serialization message.
         message: String,
+    },
+    /// FC geofence compilation failed.
+    #[error("fence compilation failed: {source}")]
+    FenceCompilation {
+        #[from]
+        source: FenceCompilerError,
     },
 }
 
@@ -714,7 +760,32 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn finish(self) -> Result<MavlinkCommonPlan, MavlinkCommonCompilerError> {
+    fn finish(mut self) -> Result<MavlinkCommonPlan, MavlinkCommonCompilerError> {
+        let mut geofence_prelude = None;
+        let mut fence_summary = None;
+        if let Some(fence_plan) = &self.options.fence_plan {
+            let profile = self.options.capability_profile.profile();
+            let (fence_items, enable_command) = compile_fence_items(fence_plan, profile)?;
+            if let Some(command) = enable_command {
+                self.command_prelude.push(command);
+            }
+            geofence_prelude = Some(fence_items);
+            fence_summary = Some(fence_artifact(fence_plan, profile));
+        }
+        let fc_contract_result =
+            if self.options.fence_plan.is_some() || !self.options.param_requirements.is_empty() {
+                let contract = FcContract {
+                    profile: self.options.capability_profile,
+                    fence_plan: self.options.fence_plan.clone(),
+                    param_requirements: self.options.param_requirements.clone(),
+                };
+                Some(validate_fc_contract(
+                    &contract,
+                    self.options.param_snapshot.as_ref(),
+                ))
+            } else {
+                None
+            };
         let mission_start = (!self.mission_items.is_empty()).then_some(MavlinkCommonCommand {
             command_id: "mission-start-0".to_owned(),
             command: MavlinkCommonCommandName::MissionStart,
@@ -757,7 +828,9 @@ impl<'a> Compiler<'a> {
             command_ir_hash: command_ir_hash(self.plan)?,
             backend_profile: self.options.capability_profile.as_str().to_owned(),
             command_prelude: self.command_prelude,
-            geofence_prelude: None,
+            geofence_prelude,
+            fence_summary,
+            fc_contract_result,
             mission_items: self.mission_items,
             mission_start,
             command_postlude: self.command_postlude,
@@ -784,6 +857,16 @@ impl<'a> Compiler<'a> {
                 "{profile_unsupported_count} profile compatibility issue(s) are unsupported by {}",
                 self.options.capability_profile.as_str()
             ));
+        }
+        if let Some(contract_result) = &compiled.fc_contract_result {
+            if contract_result.blocks_mission_start {
+                let violation_count = contract_result.violations.len();
+                compiled.validation_result.passed = false;
+                compiled.validation_result.unsupported_required_count += violation_count;
+                compiled.validation_result.notes.push(format!(
+                    "{violation_count} FC contract violation(s) block mission start"
+                ));
+            }
         }
         compiled.compatibility = Some(compatibility);
         Ok(compiled)
@@ -889,6 +972,10 @@ fn build_telemetry_milestones(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mavlink_geofence::{
+        FcGeofenceItem, FcGeofenceItemKind, FcGeofenceShape, MavlinkFencePlan,
+    };
+    use crate::mavlink_parameters::{FcParamId, FcParamRange, FcParamRequirement};
     use swarm_mission_ir::{
         AltitudeReference, CommandId, CompletionTolerance, LocalPosition, MissionId,
         MissionWaypoint, RouteId, TimeoutAction, TimeoutPolicy,
@@ -943,6 +1030,23 @@ mod tests {
         }
     }
 
+    fn polygon_fence_plan() -> MavlinkFencePlan {
+        MavlinkFencePlan {
+            items: vec![FcGeofenceItem {
+                id: "test-fence".to_owned(),
+                kind: FcGeofenceItemKind::PolygonInclusion,
+                shape: FcGeofenceShape::Polygon {
+                    vertices: vec![
+                        (473_977_420, 85_455_940),
+                        (473_977_430, 85_455_940),
+                        (473_977_430, 85_455_950),
+                    ],
+                },
+            }],
+            enable_fence: true,
+        }
+    }
+
     #[test]
     fn takeoff_and_land_compile_to_common_commands() {
         let plan = plan(vec![
@@ -967,6 +1071,65 @@ mod tests {
         );
         assert!(compiled.mission_items.is_empty());
         assert!(compiled.validation_result.passed);
+    }
+
+    #[test]
+    fn fence_plan_populates_geofence_prelude_and_summary() {
+        let plan = plan(vec![
+            entry("arm", MissionCommand::Arm),
+            entry("takeoff", MissionCommand::Takeoff { altitude_m: 3.0 }),
+        ]);
+        let mut options = options();
+        options.fence_plan = Some(polygon_fence_plan());
+        options.param_requirements = vec![FcParamRequirement {
+            param_id: FcParamId::from("GF_ACTION".to_owned()),
+            required_range: FcParamRange::IntBounds { min: 0, max: 5 },
+            reason: "PX4 geofence action must be known before execution".to_owned(),
+        }];
+
+        let compiled = compile_mavlink_common_plan(&plan, &options).unwrap();
+
+        assert_eq!(compiled.geofence_prelude.as_ref().unwrap().len(), 3);
+        assert_eq!(
+            compiled.geofence_prelude.as_ref().unwrap()[0].command,
+            MavlinkCommonCommandName::FencePolygonVertexInclusion
+        );
+        assert_eq!(compiled.fence_summary.as_ref().unwrap().item_count, 1);
+        assert!(compiled.fc_contract_result.is_some());
+        assert!(compiled.command_prelude.iter().any(|command| {
+            command.command == MavlinkCommonCommandName::DoFenceEnable
+                && command.command_id == "fence-enable-0"
+        }));
+        assert!(compiled.validation_result.passed);
+    }
+
+    #[test]
+    fn unsupported_fence_plan_returns_compiler_error() {
+        let plan = plan(vec![entry(
+            "takeoff",
+            MissionCommand::Takeoff { altitude_m: 3.0 },
+        )]);
+        let mut options = options();
+        options.capability_profile = MavlinkCapabilityProfileId::Px4;
+        options.fence_plan = Some(MavlinkFencePlan {
+            items: vec![FcGeofenceItem {
+                id: "circle".to_owned(),
+                kind: FcGeofenceItemKind::CircleInclusion,
+                shape: FcGeofenceShape::Circle {
+                    center_lat_e7: 473_977_420,
+                    center_lon_e7: 85_455_940,
+                    radius_m: 25.0,
+                },
+            }],
+            enable_fence: true,
+        });
+
+        let error = compile_mavlink_common_plan(&plan, &options).unwrap_err();
+
+        assert!(matches!(
+            error,
+            MavlinkCommonCompilerError::FenceCompilation { .. }
+        ));
     }
 
     #[test]

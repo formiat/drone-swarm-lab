@@ -1,6 +1,7 @@
 pub mod benchmark;
 pub mod clock;
 pub mod dsl;
+pub mod fc_bridge;
 pub mod preflight;
 pub mod regression;
 pub mod report_export;
@@ -20,6 +21,7 @@ pub use dsl::{
     ScenarioGeneratorParameter, ScenarioSuite, ScenarioSuiteEntry, ValidationError,
     SCENARIO_GENERATOR_MANIFEST_SCHEMA_VERSION,
 };
+pub use fc_bridge::{safety_config_to_fence_plan, FcBridgeError};
 pub use preflight::run_preflight;
 pub use regression::{
     all_suites, default_suites, suites_by_group, Baseline, BaselineDelta, DeltaStatus,

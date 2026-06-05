@@ -2,6 +2,9 @@
 
 **M82 - PX4 / ArduPilot Capability Profiles**
 
+M86 extends these profiles with FC geofence and parameter contract metadata. See
+[`docs/FC_CONTRACT.md`](FC_CONTRACT.md) for the fence/parameter artifact layer.
+
 M82 keeps the M81 MAVLink Common compiler as a generic, transport-free compiler
 and adds a conservative profile pass on top of the compiled
 `MavlinkCommonPlan`. The pass writes a `MavlinkCompatibilityReport` into
@@ -53,6 +56,8 @@ as hardware-facing success.
 - `compatibility.command_results[]`;
 - `compatibility.aggregate_mode_requirements[]`;
 - `compatibility.caveats[]`.
+- optional M86 fields: `geofence_prelude`, `fence_summary`, and
+  `fc_contract_result`.
 
 Each `command_results[]` row records command/frame classification plus
 `required_execution_mode`, `required_mode_transitions`, `preconditions`, and
@@ -74,22 +79,38 @@ The compatibility matrix below is checked against `compatibility_matrix_rows()` 
 | `mavlink_common_generic:mode_transitions` | `mavlink_common_generic` | mode_transitions | `unknown_until_sitl_or_hardware` | No concrete autopilot mode proof. |
 | `mavlink_common_generic:mission_start` | `mavlink_common_generic` | mission_start | `supported_with_caveats` | `MAV_CMD_MISSION_START` syntax only. |
 | `mavlink_common_generic:loiter_orbit` | `mavlink_common_generic` | loiter_orbit | `supported_via_fallback` | Loiter time and waypoint orbit fallback only. |
-| `mavlink_common_generic:geofence` | `mavlink_common_generic` | geofence | `unknown_until_sitl_or_hardware` | No geofence compiler output yet. |
+| `mavlink_common_generic:geofence` | `mavlink_common_generic` | geofence | `supported` | Common fence mission item syntax is emitted; autopilot acceptance is not implied. |
 | `mavlink_common_generic:parameters` | `mavlink_common_generic` | parameters | `unknown_until_sitl_or_hardware` | No autopilot metadata validation. |
 | `px4:command_support` | `px4` | command_support | `supported_with_caveats` | Core primitive commands have local PX4/SIH evidence. |
 | `px4:frame_support` | `px4` | frame_support | `supported_with_caveats` | Uses `MAV_FRAME_GLOBAL_RELATIVE_ALT_INT` in local SIH evidence. |
 | `px4:mode_transitions` | `px4` | mode_transitions | `supported_with_caveats` | Heartbeat, arm, takeoff, upload and mission-start assumptions are explicit. |
 | `px4:mission_start` | `px4` | mission_start | `supported_with_caveats` | `MAV_CMD_MISSION_START` is the current PX4 path. |
 | `px4:loiter_orbit` | `px4` | loiter_orbit | `supported_via_fallback` | Orbit is waypoint approximation; direct orbit is not claimed. |
-| `px4:geofence` | `px4` | geofence | `unknown_until_sitl_or_hardware` | Geofence profile is future work. |
+| `px4:geofence` | `px4` | geofence | `supported_with_caveats` | Polygon fence items are modeled with PX4 caveats; circle fence remains unknown. |
 | `px4:parameters` | `px4` | parameters | `supported_with_caveats` | Only emitted primitive parameters are covered. |
 | `ardupilot:command_support` | `ardupilot` | command_support | `unknown_until_sitl_or_hardware` | Common syntax is known; acceptance is not evidenced. |
 | `ardupilot:frame_support` | `ardupilot` | frame_support | `unknown_until_sitl_or_hardware` | Frame syntax is known; ArduPilot acceptance needs SITL evidence. |
 | `ardupilot:mode_transitions` | `ardupilot` | mode_transitions | `unknown_until_sitl_or_hardware` | Mode mapping requires ArduPilot SITL evidence. |
 | `ardupilot:mission_start` | `ardupilot` | mission_start | `unknown_until_sitl_or_hardware` | Mission start semantics are not claimed yet. |
 | `ardupilot:loiter_orbit` | `ardupilot` | loiter_orbit | `unknown_until_sitl_or_hardware` | Loiter/orbit acceptance is not evidenced. |
-| `ardupilot:geofence` | `ardupilot` | geofence | `unknown_until_sitl_or_hardware` | Geofence profile is future work. |
+| `ardupilot:geofence` | `ardupilot` | geofence | `unknown_until_sitl_or_hardware` | ArduPilot fence acceptance needs ArduPilot SITL evidence. |
 | `ardupilot:parameters` | `ardupilot` | parameters | `unknown_until_sitl_or_hardware` | No ArduPilot parameter metadata validation. |
+
+## M86 FC Contract Additions
+
+Profiles now include per-kind fence rules for circle inclusion/exclusion and
+polygon inclusion/exclusion. `compile_mavlink_common_plan` uses those rules when
+`MavlinkCommonPlanOptions.fence_plan` is provided:
+
+- unsupported or unknown fence kinds fail compilation before the plan can be
+  treated as valid;
+- a successful fence plan emits `geofence_prelude` and optional
+  `MAV_CMD_DO_FENCE_ENABLE`;
+- `fc_contract_result` records whether fence and optional parameter checks block
+  mission start.
+
+This remains a dry-run contract. The live PX4/SIH path does not yet upload M86
+fence items or read/write FC parameters.
 
 ## CLI
 

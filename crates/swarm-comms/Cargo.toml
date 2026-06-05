@@ -7,6 +7,7 @@ license.workspace = true
 [dependencies]
 swarm-types = { workspace = true }
 rand        = { workspace = true }
+derive_more = { workspace = true }
 serde       = { workspace = true }
 serde_json  = { workspace = true }
 sha2        = { workspace = true }

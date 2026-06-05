@@ -3,6 +3,9 @@ pub mod mavlink;
 pub mod mavlink_capability_profile;
 pub mod mavlink_common_plan;
 pub mod mavlink_coords;
+pub mod mavlink_fc_contract;
+pub mod mavlink_geofence;
+pub mod mavlink_parameters;
 pub mod network;
 pub mod transport;
 
@@ -11,11 +14,11 @@ pub use mavlink::{
     task_to_waypoint, waypoint_status_to_task_status, MavlinkError, MockMavlinkTransport, Waypoint,
 };
 pub use mavlink_capability_profile::{
-    classify_mavlink_plan_compatibility, compatibility_matrix_rows, MavlinkCapabilityProfile,
-    MavlinkCapabilityProfileId, MavlinkCapabilityProfileParseError, MavlinkCommandCapabilityRule,
-    MavlinkCommandCompatibility, MavlinkCompatibilityClass, MavlinkCompatibilityMatrixRow,
-    MavlinkCompatibilityReport, MavlinkExecutionMode, MavlinkModeRequirement,
-    MavlinkModeTransitionRule, MavlinkRequiredModeTransition,
+    classify_mavlink_plan_compatibility, compatibility_matrix_rows, FenceItemSupportRule,
+    MavlinkCapabilityProfile, MavlinkCapabilityProfileId, MavlinkCapabilityProfileParseError,
+    MavlinkCommandCapabilityRule, MavlinkCommandCompatibility, MavlinkCompatibilityClass,
+    MavlinkCompatibilityMatrixRow, MavlinkCompatibilityReport, MavlinkExecutionMode,
+    MavlinkModeRequirement, MavlinkModeTransitionRule, MavlinkRequiredModeTransition,
 };
 pub use mavlink_common_plan::{
     compile_mavlink_common_plan, MavlinkCommonCommand, MavlinkCommonCommandName,
@@ -27,6 +30,19 @@ pub use mavlink_common_plan::{
 pub use mavlink_coords::{
     local_to_mavlink_int, relative_altitude, scaled_coordinate, MavlinkCoordinateError,
     MavlinkCoordinateOrigin, MavlinkIntCoordinate,
+};
+pub use mavlink_fc_contract::{
+    validate_fc_contract, FcContract, FcContractValidationResult, FcContractViolation,
+};
+pub use mavlink_geofence::{
+    compile_fence_items, fence_artifact, FcGeofenceItem, FcGeofenceItemKind, FcGeofenceShape,
+    FenceCompilerError, MavlinkFenceArtifact, MavlinkFencePlan,
+};
+pub use mavlink_parameters::{
+    check_param_requirement, read_plan_from_requirements, validate_param_requirements,
+    FcKnownParam, FcParamId, FcParamRange, FcParamReadPlan, FcParamRequirement, FcParamSnapshot,
+    FcParamValidationResult, FcParamValue, FcParamViolation, FcParamWritePlan,
+    FC_KNOWN_PARAMS_ARDUPILOT, FC_KNOWN_PARAMS_PX4,
 };
 pub use network::{InMemAgentTransport, InMemNetwork, NetworkConfig};
 pub use transport::{RawMessage, Transport};
