@@ -21,8 +21,9 @@ M88 is additive inside `swarm_command_plane.v1`.
 `SwarmCommandPlan` now includes:
 
 - `topology`: a logical `SwarmTopologyConfig`;
-- `command_routes`: one deterministic `SwarmCommandRoute` per agent command
-  target;
+- `command_routes`: deterministic `SwarmCommandRoute` decisions for every
+  GCS-to-agent command target plus explicit peer command decisions for
+  `p2p_logical` topologies;
 - summary counters for topology kind, node count, link count, route count,
   degraded route count, and mothership dependency count.
 
@@ -35,10 +36,10 @@ logical route from `gcs` to every agent.
 | Kind | Meaning |
 |---|---|
 | `centralized_gcs` | The supervisor/GCS is the command source. Commands route from `gcs` to each agent node. |
-| `p2p_logical` | Explicit logical peer links may carry command routes. This is still a coordination artifact, not RF behavior. |
+| `p2p_logical` | Explicit logical peer links may carry command routes. The artifact records peer route decisions between agent nodes, including blocked peer commands when no declared path exists. This is still a coordination artifact, not RF behavior. |
 | `relay` | Commands may route through declared relay nodes when a direct route is unavailable or undesirable. |
 | `mesh` | Commands route over explicit logical links with deterministic BFS. Unavailable links produce blocked/degraded route evidence. |
-| `mothership` | Parent/child command dependencies are recorded at mission level. This does not create physical deploy/recover commands. |
+| `mothership` | Parent/child command dependencies are recorded at mission level. Child command routes must pass through the parent/mothership/carrier node or be blocked. This does not create physical deploy/recover commands. |
 
 ## Route Decisions
 
@@ -47,6 +48,11 @@ Routes are computed deterministically:
 - neighbor expansion is stable by node id;
 - missing agent nodes produce blocked routes;
 - unavailable links are ignored;
+- `p2p_logical` artifacts include peer route decisions between agent nodes, so
+  a missing peer path is visible as a blocked route instead of being only an
+  implicit topology caveat;
+- `mothership` child routes are rewritten through the declared parent node
+  when possible and blocked when the parent path is unavailable;
 - a route with no path is recorded as `allowed=false`, `degraded=true`, and
   a topology-specific reason such as `mesh_partition_or_blocked_link`;
 - successful routes include `via_node_ids` so replay and artifact validators
@@ -84,9 +90,13 @@ Strict current supervisor artifacts validate:
 
 - topology summary matches the full `command_plane_artifact`;
 - every manifest agent has a route decision;
+- every GCS-to-agent route and peer route references known nodes;
+- allowed routes match available topology links step by step;
+- blocked routes match the absence of a reachable topology path;
 - blocked routes include a reason;
-- topology nodes and link endpoints are known;
+- topology nodes, route nodes, and link endpoints are known;
 - mothership dependencies reference known agents and are acyclic;
+- mothership child routes do not bypass their declared parent node;
 - transport assumptions include an explicit hardware boundary.
 
 Historical artifacts can still be validated in historical mode.

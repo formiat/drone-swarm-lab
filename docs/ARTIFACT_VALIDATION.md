@@ -40,9 +40,12 @@ validated with `--allow-historical` or `--mode historical`.
 M88 extends the same artifact with logical topology evidence: topology kind,
 nodes, links, transport assumptions, mothership dependencies, and deterministic
 command-route decisions. Strict current artifacts validate that topology
-summary counters match the full artifact, every manifest agent has a route
-decision, blocked routes include a reason, mothership dependencies are valid,
-and the transport assumptions explicitly state the hardware boundary.
+summary counters match the full artifact, every manifest agent has a GCS route
+decision, P2P peer route decisions are materialized, allowed route paths use
+known nodes and available links, blocked routes include a reason and match
+unreachable topology paths, mothership dependencies are valid, mothership child
+routes pass through their declared parent node, and the transport assumptions
+explicitly state the hardware boundary.
 
 For dry-run validation, the output directory may contain:
 
@@ -168,10 +171,10 @@ Exit codes:
 | `artifact.swarm_ack_mismatch` | A per-agent command-plane ACK list does not match the compiled MAVLink plan ACKs for that agent. |
 | `artifact.swarm_handoff_missing` | Released ownership and active ownership for the same resource cross agents without an explicit `SwarmOwnershipHandoff`. |
 | `artifact.swarm_sync_partial_unreported` | A synchronized GCS command partial failure/timed-out result has no matching synchronized command window in the artifact. |
-| `artifact.swarm_topology_missing` | A current strict supervisor command-plane artifact has no M88 topology, has duplicate/missing topology nodes, unknown link endpoints, or summary counters that do not match the full topology artifact. |
-| `artifact.swarm_topology_route_missing` | A manifest agent has no M88 command-route decision. |
+| `artifact.swarm_topology_missing` | A current strict supervisor command-plane artifact has no M88 topology, has duplicate/missing topology nodes, unknown link or route endpoints, or summary counters that do not match the full topology artifact. |
+| `artifact.swarm_topology_route_missing` | A manifest agent has no M88 GCS command-route decision, or a route path does not match available topology reachability. |
 | `artifact.swarm_topology_blocked_unreported` | A blocked M88 command route has no reason. |
-| `artifact.swarm_mothership_dependency_invalid` | A M88 mothership dependency references an unknown agent or creates a dependency cycle. |
+| `artifact.swarm_mothership_dependency_invalid` | A M88 mothership dependency references an unknown agent, creates a dependency cycle, or a child route bypasses its declared parent node. |
 | `artifact.swarm_transport_assumption_missing` | A M88 topology transport section has no explicit hardware-boundary text. |
 | `artifact.parse_failed` | A required artifact could not be read or parsed. |
 

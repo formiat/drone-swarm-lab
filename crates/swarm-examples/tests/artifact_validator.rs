@@ -241,6 +241,35 @@ fn swarm_topology_missing_route_fails() {
 }
 
 #[test]
+fn swarm_topology_route_without_link_fails() {
+    let fixture = ArtifactFixture::new();
+    fixture.write_manifest(|manifest| {
+        let artifact = manifest.command_plane_artifact.as_mut().unwrap();
+        let topology = artifact.topology.as_mut().unwrap();
+        topology
+            .links
+            .retain(|link| !(link.from_node_id == "gcs" && link.to_node_id == "agent:agent-0"));
+        artifact.summary.topology_link_count = topology.links.len();
+        if let Some(summary) = manifest.command_plane.as_mut() {
+            summary.topology_link_count = topology.links.len();
+        }
+        if let Some(summary) = manifest.topology.as_mut() {
+            summary.link_count = topology.links.len();
+        }
+    });
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&fixture.output_dir),
+        ArtifactValidationOptions {
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_SWARM_TOPOLOGY_ROUTE_MISSING);
+}
+
+#[test]
 fn swarm_topology_missing_transport_boundary_fails() {
     let fixture = ArtifactFixture::new();
     fixture.write_manifest(|manifest| {

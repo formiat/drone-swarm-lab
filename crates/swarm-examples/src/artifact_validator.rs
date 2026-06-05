@@ -205,13 +205,18 @@ fn swarm_command_plane_rule_for_error(error: &SwarmCommandPlaneError) -> &'stati
         | SwarmCommandPlaneError::MissingAbortTargets => RULE_SWARM_AGENT_PLAN_MISSING,
         SwarmCommandPlaneError::MissingTopologyNode { .. }
         | SwarmCommandPlaneError::DuplicateTopologyNode { .. }
-        | SwarmCommandPlaneError::UnknownTopologyLinkEndpoint { .. } => RULE_SWARM_TOPOLOGY_MISSING,
-        SwarmCommandPlaneError::MissingCommandRoute { .. } => RULE_SWARM_TOPOLOGY_ROUTE_MISSING,
+        | SwarmCommandPlaneError::UnknownTopologyLinkEndpoint { .. }
+        | SwarmCommandPlaneError::UnknownCommandRouteNode { .. } => RULE_SWARM_TOPOLOGY_MISSING,
+        SwarmCommandPlaneError::MissingCommandRoute { .. }
+        | SwarmCommandPlaneError::CommandRoutePathMismatch { .. } => {
+            RULE_SWARM_TOPOLOGY_ROUTE_MISSING
+        }
         SwarmCommandPlaneError::BlockedRouteWithoutReason { .. } => {
             RULE_SWARM_TOPOLOGY_BLOCKED_UNREPORTED
         }
         SwarmCommandPlaneError::MothershipDependencyCycle { .. }
-        | SwarmCommandPlaneError::UnknownMothershipDependencyAgent { .. } => {
+        | SwarmCommandPlaneError::UnknownMothershipDependencyAgent { .. }
+        | SwarmCommandPlaneError::MothershipRouteBypassesParent { .. } => {
             RULE_SWARM_MOTHERSHIP_DEPENDENCY_INVALID
         }
         SwarmCommandPlaneError::MissingTransportAssumption => {

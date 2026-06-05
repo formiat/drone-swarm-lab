@@ -78,10 +78,38 @@ pub fn route_command_plan(
     topology: &SwarmTopologyConfig,
     agents: &[SwarmAgentCommandPlan],
 ) -> Vec<SwarmCommandRoute> {
-    agents
+    let mut routes: Vec<_> = agents
         .iter()
         .map(|agent| route_between(topology, &topology.gcs_node_id, &agent.agent_id))
-        .collect()
+        .collect();
+
+    if topology.kind == SwarmTopologyKind::P2pLogical {
+        let mut agent_nodes: Vec<_> = topology
+            .nodes
+            .iter()
+            .filter(|node| node.agent_id.is_some())
+            .collect();
+        agent_nodes.sort_by(|left, right| left.node_id.cmp(&right.node_id));
+        for source in &agent_nodes {
+            for target in &agent_nodes {
+                if source.node_id == target.node_id {
+                    continue;
+                }
+                let Some(target_agent_id) = &target.agent_id else {
+                    continue;
+                };
+                let route = route_between(topology, &source.node_id, target_agent_id);
+                if routes
+                    .iter()
+                    .all(|existing| existing.route_id != route.route_id)
+                {
+                    routes.push(route);
+                }
+            }
+        }
+    }
+
+    routes
 }
 
 pub fn route_between(
@@ -102,7 +130,8 @@ pub fn route_between(
         };
     };
 
-    let Some(path) = bfs_path(topology, from_node_id, &target_node_id) else {
+    let Some(path) = route_path_for_kind(topology, from_node_id, &target_node_id, to_agent_id)
+    else {
         return SwarmCommandRoute {
             route_id,
             from_node_id: from_node_id.to_owned(),
@@ -114,10 +143,7 @@ pub fn route_between(
         };
     };
 
-    let degraded = topology
-        .links
-        .iter()
-        .any(|link| !link.available || link.drop_rate.unwrap_or(0.0) > 0.0);
+    let degraded = route_path_degraded(topology, &path);
     SwarmCommandRoute {
         route_id,
         from_node_id: from_node_id.to_owned(),
@@ -127,6 +153,58 @@ pub fn route_between(
         degraded,
         reason: route_reason(topology),
     }
+}
+
+pub fn agent_node_id_in_topology(
+    topology: &SwarmTopologyConfig,
+    agent_id: &AgentId,
+) -> Option<String> {
+    topology
+        .nodes
+        .iter()
+        .find(|node| node.agent_id.as_ref() == Some(agent_id))
+        .map(|node| node.node_id.clone())
+}
+
+pub fn mothership_parent_node_id(
+    topology: &SwarmTopologyConfig,
+    child_agent_id: &AgentId,
+) -> Option<String> {
+    topology
+        .mothership_dependencies
+        .iter()
+        .find(|dependency| &dependency.child_agent_id == child_agent_id)
+        .and_then(|dependency| agent_node_id_in_topology(topology, &dependency.parent_agent_id))
+}
+
+pub fn available_link_exists(
+    topology: &SwarmTopologyConfig,
+    from_node_id: &str,
+    to_node_id: &str,
+) -> bool {
+    topology.links.iter().any(|link| {
+        link.available && link.from_node_id == from_node_id && link.to_node_id == to_node_id
+    })
+}
+
+fn route_path_for_kind(
+    topology: &SwarmTopologyConfig,
+    from_node_id: &str,
+    target_node_id: &str,
+    to_agent_id: &AgentId,
+) -> Option<Vec<String>> {
+    if topology.kind == SwarmTopologyKind::Mothership {
+        if let Some(parent_node_id) = mothership_parent_node_id(topology, to_agent_id) {
+            if parent_node_id != target_node_id {
+                let mut path = bfs_path(topology, from_node_id, &parent_node_id)?;
+                let child_path = bfs_path(topology, &parent_node_id, target_node_id)?;
+                path.extend(child_path.into_iter().skip(1));
+                return Some(path);
+            }
+        }
+    }
+
+    bfs_path(topology, from_node_id, target_node_id)
 }
 
 pub fn has_mothership_cycle(dependencies: &[SwarmMothershipDependency]) -> Option<AgentId> {
@@ -171,14 +249,6 @@ fn dfs_cycle(
     visiting.remove(agent_id);
     visited.insert(agent_id.clone());
     false
-}
-
-fn agent_node_id_in_topology(topology: &SwarmTopologyConfig, agent_id: &AgentId) -> Option<String> {
-    topology
-        .nodes
-        .iter()
-        .find(|node| node.agent_id.as_ref() == Some(agent_id))
-        .map(|node| node.node_id.clone())
 }
 
 fn bfs_path(
@@ -231,6 +301,17 @@ fn bfs_path(
     }
 
     None
+}
+
+fn route_path_degraded(topology: &SwarmTopologyConfig, path: &[String]) -> bool {
+    path.windows(2).any(|pair| {
+        topology.links.iter().any(|link| {
+            link.available
+                && link.from_node_id == pair[0]
+                && link.to_node_id == pair[1]
+                && link.drop_rate.unwrap_or(0.0) > 0.0
+        })
+    })
 }
 
 fn reconstruct_path<'a>(
@@ -326,6 +407,31 @@ mod tests {
         }
     }
 
+    fn node(
+        node_id: &str,
+        agent_id: Option<&AgentId>,
+        kind: SwarmTopologyNodeKind,
+        available: bool,
+    ) -> SwarmTopologyNode {
+        SwarmTopologyNode {
+            node_id: node_id.to_owned(),
+            agent_id: agent_id.cloned(),
+            kind,
+            available,
+        }
+    }
+
+    fn link(from_node_id: &str, to_node_id: &str, available: bool) -> SwarmTopologyLink {
+        SwarmTopologyLink {
+            from_node_id: from_node_id.to_owned(),
+            to_node_id: to_node_id.to_owned(),
+            available,
+            delay_ms: Some(0),
+            drop_rate: Some(0.0),
+            reason: None,
+        }
+    }
+
     #[test]
     fn centralized_topology_routes_all_commands_through_gcs() {
         let agents = vec![agent("agent-0"), agent("agent-1")];
@@ -403,7 +509,7 @@ mod tests {
 
     #[test]
     fn partition_blocks_command_path_and_marks_degraded() {
-        let agents = vec![agent("agent-0")];
+        let agents = [agent("agent-0")];
         let mut topology = SwarmTopologyConfig::centralized_gcs_for_agents(&agents);
         topology.kind = SwarmTopologyKind::Mesh;
         topology.links.clear();
@@ -413,6 +519,165 @@ mod tests {
         assert!(!route.allowed);
         assert!(route.degraded);
         assert_eq!(route.reason, "mesh_partition_or_blocked_link");
+    }
+
+    #[test]
+    fn p2p_topology_permits_peer_command_when_link_exists() {
+        let agents = vec![agent("agent-0"), agent("agent-1")];
+        let agent_0_node_id = agent_node_id(&agents[0].agent_id);
+        let agent_1_node_id = agent_node_id(&agents[1].agent_id);
+        let topology = SwarmTopologyConfig {
+            kind: SwarmTopologyKind::P2pLogical,
+            gcs_node_id: DEFAULT_GCS_NODE_ID.to_owned(),
+            nodes: vec![
+                node(DEFAULT_GCS_NODE_ID, None, SwarmTopologyNodeKind::Gcs, true),
+                node(
+                    &agent_0_node_id,
+                    Some(&agents[0].agent_id),
+                    SwarmTopologyNodeKind::Agent,
+                    true,
+                ),
+                node(
+                    &agent_1_node_id,
+                    Some(&agents[1].agent_id),
+                    SwarmTopologyNodeKind::Agent,
+                    true,
+                ),
+            ],
+            links: vec![
+                link(DEFAULT_GCS_NODE_ID, &agent_0_node_id, true),
+                link(DEFAULT_GCS_NODE_ID, &agent_1_node_id, true),
+                link(&agent_0_node_id, &agent_1_node_id, true),
+            ],
+            transport: SwarmTransportAssumptions::in_memory_logical(),
+            mothership_dependencies: Vec::new(),
+        };
+
+        let routes = route_command_plan(&topology, &agents);
+        let peer_route = routes
+            .iter()
+            .find(|route| {
+                route.from_node_id == agent_0_node_id && route.to_agent_id == agents[1].agent_id
+            })
+            .unwrap();
+
+        assert!(peer_route.allowed);
+        assert_eq!(peer_route.reason, "p2p_logical_route");
+        assert_eq!(
+            peer_route.via_node_ids,
+            vec![agent_0_node_id, agent_1_node_id]
+        );
+    }
+
+    #[test]
+    fn p2p_topology_blocks_peer_command_without_link() {
+        let agents = vec![agent("agent-0"), agent("agent-1")];
+        let agent_0_node_id = agent_node_id(&agents[0].agent_id);
+        let agent_1_node_id = agent_node_id(&agents[1].agent_id);
+        let topology = SwarmTopologyConfig {
+            kind: SwarmTopologyKind::P2pLogical,
+            gcs_node_id: DEFAULT_GCS_NODE_ID.to_owned(),
+            nodes: vec![
+                node(DEFAULT_GCS_NODE_ID, None, SwarmTopologyNodeKind::Gcs, true),
+                node(
+                    &agent_0_node_id,
+                    Some(&agents[0].agent_id),
+                    SwarmTopologyNodeKind::Agent,
+                    true,
+                ),
+                node(
+                    &agent_1_node_id,
+                    Some(&agents[1].agent_id),
+                    SwarmTopologyNodeKind::Agent,
+                    true,
+                ),
+            ],
+            links: vec![
+                link(DEFAULT_GCS_NODE_ID, &agent_0_node_id, true),
+                link(DEFAULT_GCS_NODE_ID, &agent_1_node_id, true),
+            ],
+            transport: SwarmTransportAssumptions::in_memory_logical(),
+            mothership_dependencies: Vec::new(),
+        };
+
+        let routes = route_command_plan(&topology, &agents);
+        let peer_route = routes
+            .iter()
+            .find(|route| {
+                route.from_node_id == agent_0_node_id && route.to_agent_id == agents[1].agent_id
+            })
+            .unwrap();
+
+        assert!(!peer_route.allowed);
+        assert!(peer_route.degraded);
+        assert_eq!(peer_route.reason, "p2p_logical_link_missing");
+    }
+
+    #[test]
+    fn relay_node_improves_model_reachability_when_available() {
+        let agents = [agent("agent-0")];
+        let target = agent_node_id(&agents[0].agent_id);
+        let topology = SwarmTopologyConfig {
+            kind: SwarmTopologyKind::Relay,
+            gcs_node_id: DEFAULT_GCS_NODE_ID.to_owned(),
+            nodes: vec![
+                node(DEFAULT_GCS_NODE_ID, None, SwarmTopologyNodeKind::Gcs, true),
+                node("relay:1", None, SwarmTopologyNodeKind::Relay, true),
+                node(
+                    &target,
+                    Some(&agents[0].agent_id),
+                    SwarmTopologyNodeKind::Agent,
+                    true,
+                ),
+            ],
+            links: vec![
+                link(DEFAULT_GCS_NODE_ID, "relay:1", true),
+                link("relay:1", &target, true),
+            ],
+            transport: SwarmTransportAssumptions::in_memory_logical(),
+            mothership_dependencies: Vec::new(),
+        };
+
+        let route = route_between(&topology, DEFAULT_GCS_NODE_ID, &agents[0].agent_id);
+
+        assert!(route.allowed);
+        assert_eq!(
+            route.via_node_ids,
+            vec![DEFAULT_GCS_NODE_ID.to_owned(), "relay:1".to_owned(), target]
+        );
+        assert_eq!(route.reason, "relay_route");
+    }
+
+    #[test]
+    fn relay_topology_marks_degraded_when_relay_unavailable() {
+        let agents = [agent("agent-0")];
+        let target = agent_node_id(&agents[0].agent_id);
+        let topology = SwarmTopologyConfig {
+            kind: SwarmTopologyKind::Relay,
+            gcs_node_id: DEFAULT_GCS_NODE_ID.to_owned(),
+            nodes: vec![
+                node(DEFAULT_GCS_NODE_ID, None, SwarmTopologyNodeKind::Gcs, true),
+                node("relay:1", None, SwarmTopologyNodeKind::Relay, false),
+                node(
+                    &target,
+                    Some(&agents[0].agent_id),
+                    SwarmTopologyNodeKind::Agent,
+                    true,
+                ),
+            ],
+            links: vec![
+                link(DEFAULT_GCS_NODE_ID, "relay:1", true),
+                link("relay:1", &target, true),
+            ],
+            transport: SwarmTransportAssumptions::in_memory_logical(),
+            mothership_dependencies: Vec::new(),
+        };
+
+        let route = route_between(&topology, DEFAULT_GCS_NODE_ID, &agents[0].agent_id);
+
+        assert!(!route.allowed);
+        assert!(route.degraded);
+        assert_eq!(route.reason, "relay_unavailable_or_partitioned");
     }
 
     #[test]
@@ -435,6 +700,60 @@ mod tests {
         assert_eq!(
             has_mothership_cycle(&dependencies),
             Some(AgentId::from("agent-0".to_owned()))
+        );
+    }
+
+    #[test]
+    fn mothership_deployment_creates_dependent_child_missions() {
+        let agents = vec![agent("agent-0"), agent("agent-1")];
+        let parent_node_id = agent_node_id(&agents[0].agent_id);
+        let child_node_id = agent_node_id(&agents[1].agent_id);
+        let topology = SwarmTopologyConfig {
+            kind: SwarmTopologyKind::Mothership,
+            gcs_node_id: DEFAULT_GCS_NODE_ID.to_owned(),
+            nodes: vec![
+                node(DEFAULT_GCS_NODE_ID, None, SwarmTopologyNodeKind::Gcs, true),
+                node(
+                    &parent_node_id,
+                    Some(&agents[0].agent_id),
+                    SwarmTopologyNodeKind::Mothership,
+                    true,
+                ),
+                node(
+                    &child_node_id,
+                    Some(&agents[1].agent_id),
+                    SwarmTopologyNodeKind::Agent,
+                    true,
+                ),
+            ],
+            links: vec![
+                link(DEFAULT_GCS_NODE_ID, &parent_node_id, true),
+                link(DEFAULT_GCS_NODE_ID, &child_node_id, true),
+                link(&parent_node_id, &child_node_id, true),
+            ],
+            transport: SwarmTransportAssumptions::in_memory_logical(),
+            mothership_dependencies: vec![SwarmMothershipDependency {
+                parent_agent_id: agents[0].agent_id.clone(),
+                child_agent_id: agents[1].agent_id.clone(),
+                dependency_kind: "deploy".to_owned(),
+                reason: "child commands depend on parent carrier".to_owned(),
+            }],
+        };
+
+        let routes = route_command_plan(&topology, &agents);
+        let child_route = routes
+            .iter()
+            .find(|route| route.to_agent_id == agents[1].agent_id)
+            .unwrap();
+
+        assert!(child_route.allowed);
+        assert_eq!(
+            child_route.via_node_ids,
+            vec![
+                DEFAULT_GCS_NODE_ID.to_owned(),
+                parent_node_id,
+                child_node_id
+            ]
         );
     }
 

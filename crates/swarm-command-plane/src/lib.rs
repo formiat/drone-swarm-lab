@@ -327,6 +327,113 @@ mod tests {
     }
 
     #[test]
+    fn topology_validation_rejects_unknown_route_node() {
+        let mut plan =
+            build_swarm_command_plan(fanout_input(SwarmAbortPolicy::AbortMission)).unwrap();
+        plan.command_routes[0]
+            .via_node_ids
+            .push("missing-node".to_owned());
+
+        let error = validate_swarm_command_plan(&plan).unwrap_err();
+
+        assert!(matches!(
+            error,
+            SwarmCommandPlaneError::UnknownCommandRouteNode { node_id, .. } if node_id == "missing-node"
+        ));
+    }
+
+    #[test]
+    fn topology_validation_rejects_route_without_available_link() {
+        let mut plan =
+            build_swarm_command_plan(fanout_input(SwarmAbortPolicy::AbortMission)).unwrap();
+        let topology = plan.topology.as_mut().unwrap();
+        topology.links.retain(|link| {
+            !(link.from_node_id == DEFAULT_GCS_NODE_ID && link.to_node_id == "agent:agent-0")
+        });
+
+        let error = validate_swarm_command_plan(&plan).unwrap_err();
+
+        assert!(matches!(
+            error,
+            SwarmCommandPlaneError::CommandRoutePathMismatch { .. }
+        ));
+    }
+
+    #[test]
+    fn topology_validation_rejects_mothership_child_route_bypassing_parent() {
+        let mut input = fanout_input(SwarmAbortPolicy::AbortMission);
+        let mut topology = SwarmTopologyConfig::centralized_gcs_for_agents(&[]);
+        topology.kind = SwarmTopologyKind::Mothership;
+        topology.nodes = vec![
+            SwarmTopologyNode {
+                node_id: DEFAULT_GCS_NODE_ID.to_owned(),
+                agent_id: None,
+                kind: SwarmTopologyNodeKind::Gcs,
+                available: true,
+            },
+            SwarmTopologyNode {
+                node_id: "agent:agent-0".to_owned(),
+                agent_id: Some(agent_id("agent-0")),
+                kind: SwarmTopologyNodeKind::Mothership,
+                available: true,
+            },
+            SwarmTopologyNode {
+                node_id: "agent:agent-1".to_owned(),
+                agent_id: Some(agent_id("agent-1")),
+                kind: SwarmTopologyNodeKind::Agent,
+                available: true,
+            },
+        ];
+        topology.links = vec![
+            SwarmTopologyLink {
+                from_node_id: DEFAULT_GCS_NODE_ID.to_owned(),
+                to_node_id: "agent:agent-0".to_owned(),
+                available: true,
+                delay_ms: Some(0),
+                drop_rate: Some(0.0),
+                reason: None,
+            },
+            SwarmTopologyLink {
+                from_node_id: DEFAULT_GCS_NODE_ID.to_owned(),
+                to_node_id: "agent:agent-1".to_owned(),
+                available: true,
+                delay_ms: Some(0),
+                drop_rate: Some(0.0),
+                reason: None,
+            },
+            SwarmTopologyLink {
+                from_node_id: "agent:agent-0".to_owned(),
+                to_node_id: "agent:agent-1".to_owned(),
+                available: true,
+                delay_ms: Some(0),
+                drop_rate: Some(0.0),
+                reason: None,
+            },
+        ];
+        topology.mothership_dependencies = vec![SwarmMothershipDependency {
+            parent_agent_id: agent_id("agent-0"),
+            child_agent_id: agent_id("agent-1"),
+            dependency_kind: "deploy".to_owned(),
+            reason: "child depends on parent carrier".to_owned(),
+        }];
+        input.topology = Some(topology);
+        let mut plan = build_swarm_command_plan(input).unwrap();
+        let child_route = plan
+            .command_routes
+            .iter_mut()
+            .find(|route| route.to_agent_id == agent_id("agent-1"))
+            .unwrap();
+        child_route.via_node_ids = vec![DEFAULT_GCS_NODE_ID.to_owned(), "agent:agent-1".to_owned()];
+
+        let error = validate_swarm_command_plan(&plan).unwrap_err();
+
+        assert!(matches!(
+            error,
+            SwarmCommandPlaneError::CommandRoutePathMismatch { .. }
+        ));
+    }
+
+    #[test]
     fn synchronized_takeoff_reports_partial_failure_deterministically() {
         let window = SynchronizedCommandWindow {
             kind: SynchronizedCommandKind::TakeoffAll,

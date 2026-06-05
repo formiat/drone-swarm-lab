@@ -133,9 +133,10 @@ MAVLink plans, and partial synchronized command results without matching command
 windows. Historical supervisor artifacts remain readable without M87 sections
 when validated in historical mode.
 
-M88 strict validation additionally checks topology nodes/links, per-agent route
-decisions, blocked-route reasons, mothership dependency acyclicity, and explicit
-transport hardware-boundary text.
+M88 strict validation additionally checks topology nodes/links, per-agent GCS
+route decisions, P2P peer route decisions, allowed route paths, blocked-route
+reasons, mothership dependency acyclicity, mothership child route parent
+dependency, and explicit transport hardware-boundary text.
 
 ## Test Boundary
 
