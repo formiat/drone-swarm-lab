@@ -15,8 +15,8 @@ use swarm_comms::{
 use swarm_safety::preflight::SafetyValidationReport;
 
 use crate::sitl_dual_stack_evidence::{
-    validate_dual_stack_evidence_pack, ReplacementEvidenceStatus, SitlDualStackEvidencePack,
-    SITL_DUAL_STACK_EVIDENCE_FILE,
+    validate_dual_stack_evidence_pack, validate_dual_stack_profile_evidence,
+    ReplacementEvidenceStatus, SitlDualStackEvidencePack, SITL_DUAL_STACK_EVIDENCE_FILE,
 };
 use crate::sitl_multi_agent::{MultiAgentSitlManifest, MULTI_AGENT_SITL_MANIFEST_SCHEMA_VERSION};
 use crate::sitl_observability::{
@@ -245,6 +245,20 @@ fn swarm_command_plane_rule_for_error(error: &SwarmCommandPlaneError) -> &'stati
             RULE_SWARM_TRANSPORT_ASSUMPTION_MISSING
         }
         SwarmCommandPlaneError::UnsupportedSchema { .. } => RULE_SWARM_COMMAND_PLANE_MISSING,
+    }
+}
+
+fn dual_stack_rule_for_key(key: &str) -> &'static str {
+    match key {
+        "schema_version" => RULE_DUAL_STACK_EVIDENCE_MISSING,
+        "abort_replacement" => RULE_DUAL_STACK_ABORT_REPLACEMENT_MISSING,
+        "profile_set" | "profile_mismatch" => RULE_DUAL_STACK_PROFILE_MISMATCH,
+        "command_ir_hash" => RULE_DUAL_STACK_IR_HASH_MISMATCH,
+        "abort_policy" => RULE_DUAL_STACK_ABORT_POLICY_MISMATCH,
+        "replacement_policy" => RULE_DUAL_STACK_REPLACEMENT_POLICY_MISMATCH,
+        "fc_contract" => RULE_DUAL_STACK_FC_CONTRACT_MISSING,
+        "fc_contract_caveat" => RULE_DUAL_STACK_FC_CONTRACT_HIDDEN_CAVEAT,
+        _ => RULE_DUAL_STACK_PROFILE_MISMATCH,
     }
 }
 
@@ -500,6 +514,17 @@ impl<'a> Validator<'a> {
                 );
                 continue;
             };
+            for key in validate_dual_stack_profile_evidence(profile, &artifact) {
+                let rule_id = dual_stack_rule_for_key(&key);
+                self.push_error(
+                    rule_id,
+                    Some(artifact_path.clone()),
+                    format!(
+                        "profile '{}' does not match referenced dry-run artifact: {key}",
+                        profile.mavlink_profile
+                    ),
+                );
+            }
             artifacts.push(artifact);
 
             let dry_run_dir = artifact_path
@@ -520,17 +545,7 @@ impl<'a> Validator<'a> {
         }
 
         for key in validate_dual_stack_evidence_pack(&pack, &artifacts) {
-            let rule_id = match key.as_str() {
-                "schema_version" => RULE_DUAL_STACK_EVIDENCE_MISSING,
-                "abort_replacement" => RULE_DUAL_STACK_ABORT_REPLACEMENT_MISSING,
-                "profile_set" => RULE_DUAL_STACK_PROFILE_MISMATCH,
-                "command_ir_hash" => RULE_DUAL_STACK_IR_HASH_MISMATCH,
-                "abort_policy" => RULE_DUAL_STACK_ABORT_POLICY_MISMATCH,
-                "replacement_policy" => RULE_DUAL_STACK_REPLACEMENT_POLICY_MISMATCH,
-                "fc_contract" => RULE_DUAL_STACK_FC_CONTRACT_MISSING,
-                "fc_contract_caveat" => RULE_DUAL_STACK_FC_CONTRACT_HIDDEN_CAVEAT,
-                _ => RULE_DUAL_STACK_PROFILE_MISMATCH,
-            };
+            let rule_id = dual_stack_rule_for_key(&key);
             self.push_error(
                 rule_id,
                 Some(path.clone()),

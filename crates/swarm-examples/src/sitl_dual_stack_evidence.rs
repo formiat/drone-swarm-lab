@@ -409,6 +409,90 @@ pub fn validate_dual_stack_evidence_pack(
     violations
 }
 
+pub fn validate_dual_stack_profile_evidence(
+    profile: &SitlDualStackProfileEvidence,
+    artifact: &SitlDryRunArtifact,
+) -> Vec<String> {
+    let mut violations = Vec::new();
+    let Some(plan) = artifact.mavlink_common_plan.as_ref() else {
+        return vec!["profile_mismatch".to_owned()];
+    };
+    let Some(compatibility) = plan.compatibility.as_ref() else {
+        return vec!["profile_mismatch".to_owned()];
+    };
+    if profile.mavlink_profile != compatibility.profile
+        || profile.backend_profile != plan.backend_profile
+        || profile.overall_classification != compatibility.overall_classification
+        || profile.hardware_facing_allowed != compatibility.hardware_facing_allowed
+    {
+        violations.push("profile_mismatch".to_owned());
+    }
+    if profile.expected_ack_count != plan.expected_acks.len()
+        || profile.telemetry_milestone_count != plan.telemetry_milestones.len()
+        || profile.command_prelude_count != plan.command_prelude.len()
+        || profile.mission_item_count != plan.mission_items.len()
+        || profile.command_postlude_count != plan.command_postlude.len()
+    {
+        violations.push("profile_mismatch".to_owned());
+    }
+    if profile.safety_passed != artifact.safety_report.passed {
+        violations.push("fc_contract".to_owned());
+    }
+
+    let Some(summary) = artifact.command_ir_summary.as_ref() else {
+        violations.push("abort_policy".to_owned());
+        return sorted_unique(violations);
+    };
+    let Some(profile_abort) = profile.abort_replacement.as_ref() else {
+        violations.push("abort_replacement".to_owned());
+        return sorted_unique(violations);
+    };
+    if profile_abort.timeout_on_timeout != summary.timeout_policy.on_timeout
+        || profile_abort.expected_terminal_state != summary.expected_terminal_state
+    {
+        violations.push("abort_policy".to_owned());
+    }
+
+    let Some(fc_contract) = profile.fc_safety_contract.as_ref() else {
+        violations.push("fc_contract".to_owned());
+        return sorted_unique(violations);
+    };
+    let capability_profile = compatibility.profile.profile();
+    if fc_contract.safety_report_passed != artifact.safety_report.passed
+        || fc_contract.fence_summary_present != plan.fence_summary.is_some()
+        || fc_contract.fc_contract_result_present != plan.fc_contract_result.is_some()
+        || fc_contract.fc_contract_passed
+            != plan
+                .fc_contract_result
+                .as_ref()
+                .map(|result| !result.blocks_mission_start)
+        || fc_contract.geofence_support != capability_profile.geofence_support
+        || fc_contract.parameter_support != capability_profile.parameter_support
+    {
+        violations.push("fc_contract".to_owned());
+    }
+    let expected_claims = unsupported_or_unknown_claims(plan, compatibility.profile);
+    if fc_contract.unsupported_or_unknown_claims != expected_claims {
+        violations.push("fc_contract".to_owned());
+    }
+    if !expected_claims.is_empty() && fc_contract.caveats.is_empty() {
+        violations.push("fc_contract_caveat".to_owned());
+    }
+    for caveat in &compatibility.caveats {
+        if !profile.caveats.iter().any(|actual| actual == caveat) {
+            violations.push("profile_mismatch".to_owned());
+        }
+    }
+
+    sorted_unique(violations)
+}
+
+fn sorted_unique(mut values: Vec<String>) -> Vec<String> {
+    values.sort();
+    values.dedup();
+    values
+}
+
 fn command_for_profile(
     scenario_path: &Path,
     agent_id: &str,

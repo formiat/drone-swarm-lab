@@ -18,7 +18,9 @@ use swarm_examples::artifact_validator::{
     RULE_DEGRADED_RECOVERY_TASK_MISMATCH, RULE_DRY_RUN_POLICY_MISSING,
     RULE_DRY_RUN_SAFETY_REPORT_FAILED, RULE_DUAL_STACK_ABORT_POLICY_MISMATCH,
     RULE_DUAL_STACK_ABORT_REPLACEMENT_MISSING, RULE_DUAL_STACK_FC_CONTRACT_HIDDEN_CAVEAT,
-    RULE_DUAL_STACK_FC_CONTRACT_MISSING, RULE_DUAL_STACK_IR_HASH_MISMATCH,
+    RULE_DUAL_STACK_FC_CONTRACT_MISSING, RULE_DUAL_STACK_HARDWARE_CLAIM_UNSAFE,
+    RULE_DUAL_STACK_IR_HASH_MISMATCH, RULE_DUAL_STACK_PROFILE_MISMATCH,
+    RULE_DUAL_STACK_PROFILE_MISSING, RULE_DUAL_STACK_REPLACEMENT_POLICY_MISMATCH,
     RULE_FINAL_STATUS_MISMATCH, RULE_MANIFEST_MISSING, RULE_MAVLINK_PLAN_MISSING,
     RULE_MAVLINK_PLAN_ORDER_UNSAFE, RULE_MAVLINK_PLAN_TELEMETRY_MISSING,
     RULE_MAVLINK_PROFILE_HARDWARE_BLOCKING, RULE_MAVLINK_PROFILE_MISSING,
@@ -733,6 +735,131 @@ fn dual_stack_evidence_pack_passes() {
     );
 
     assert!(report.passed, "{:?}", report.violations);
+}
+
+#[test]
+fn dual_stack_evidence_swapped_profile_path_fails() {
+    let fixture = dual_stack_fixture_json();
+    let path = fixture.path().join(SITL_DUAL_STACK_EVIDENCE_FILE);
+    let mut json = read_json_value(&path);
+    json["profiles"][0]["dry_run_artifact_path"] =
+        serde_json::json!("ardupilot/sitl_dry_run_artifact.v1.json");
+    write_json(&path, &json);
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(fixture.path()),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::DualStackEvidence,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_DUAL_STACK_PROFILE_MISMATCH);
+}
+
+#[test]
+fn dual_stack_evidence_missing_referenced_dry_run_fails() {
+    let fixture = dual_stack_fixture_json();
+    fs::remove_file(fixture.path().join("px4/sitl_dry_run_artifact.v1.json")).unwrap();
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(fixture.path()),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::DualStackEvidence,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_DUAL_STACK_PROFILE_MISSING);
+}
+
+#[test]
+fn dual_stack_evidence_missing_px4_profile_fails() {
+    let fixture = dual_stack_fixture_json();
+    let path = fixture.path().join(SITL_DUAL_STACK_EVIDENCE_FILE);
+    let mut json = read_json_value(&path);
+    json["profiles"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|profile| profile["mavlink_profile"] != "px4");
+    write_json(&path, &json);
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(fixture.path()),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::DualStackEvidence,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_DUAL_STACK_PROFILE_MISSING);
+}
+
+#[test]
+fn dual_stack_evidence_missing_ardupilot_profile_fails() {
+    let fixture = dual_stack_fixture_json();
+    let path = fixture.path().join(SITL_DUAL_STACK_EVIDENCE_FILE);
+    let mut json = read_json_value(&path);
+    json["profiles"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|profile| profile["mavlink_profile"] != "ardupilot");
+    write_json(&path, &json);
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(fixture.path()),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::DualStackEvidence,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_DUAL_STACK_PROFILE_MISSING);
+}
+
+#[test]
+fn dual_stack_evidence_unsafe_ardupilot_hardware_claim_fails() {
+    let fixture = dual_stack_fixture_json();
+    let path = fixture.path().join(SITL_DUAL_STACK_EVIDENCE_FILE);
+    let mut json = read_json_value(&path);
+    json["profiles"][1]["hardware_facing_allowed"] = serde_json::json!(true);
+    write_json(&path, &json);
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(fixture.path()),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::DualStackEvidence,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_DUAL_STACK_HARDWARE_CLAIM_UNSAFE);
+}
+
+#[test]
+fn dual_stack_evidence_replacement_policy_mismatch_fails() {
+    let fixture = dual_stack_fixture_json();
+    let path = fixture.path().join(SITL_DUAL_STACK_EVIDENCE_FILE);
+    let mut json = read_json_value(&path);
+    json["profiles"][0]["abort_replacement"]["replacement_policy"] =
+        serde_json::json!("manual_evidence_required");
+    write_json(&path, &json);
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(fixture.path()),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::DualStackEvidence,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_DUAL_STACK_REPLACEMENT_POLICY_MISMATCH);
 }
 
 #[test]
