@@ -973,6 +973,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "swarm-command-plane"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "swarm-comms",
+ "swarm-mission-ir",
+ "swarm-types",
+ "thiserror",
+]
+
+[[package]]
 name = "swarm-comms"
 version = "0.1.0"
 dependencies = [
@@ -997,6 +1009,7 @@ dependencies = [
  "serde",
  "serde_json",
  "swarm-alloc",
+ "swarm-command-plane",
  "swarm-comms",
  "swarm-metrics",
  "swarm-mission-ir",

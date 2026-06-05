@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use swarm_command_plane::SWARM_COMMAND_PLANE_SCHEMA_VERSION;
 use swarm_comms::{
     MavlinkCapabilityProfileId, MavlinkCommandCompatibility, MavlinkCommonCommand,
     MavlinkCommonCommandName, MavlinkCommonPlan, MavlinkCompatibilityClass, MavlinkExpectedAckKind,
@@ -63,6 +64,12 @@ pub const RULE_URBAN_WGS84_GEO_MISSING: &str = "artifact.urban_wgs84_geo_missing
 pub const RULE_URBAN_MOCK_PERCEPTION_MISSING: &str = "artifact.urban_mock_perception_missing";
 pub const RULE_URBAN_DECONFLICTION_DUPLICATE_SEGMENT_OWNER: &str =
     "artifact.urban_deconfliction_duplicate_segment_owner";
+pub const RULE_SWARM_COMMAND_PLANE_MISSING: &str = "artifact.swarm_command_plane_missing";
+pub const RULE_SWARM_AGENT_PLAN_MISSING: &str = "artifact.swarm_agent_plan_missing";
+pub const RULE_SWARM_DUPLICATE_OWNERSHIP: &str = "artifact.swarm_duplicate_ownership";
+pub const RULE_SWARM_ACK_MISMATCH: &str = "artifact.swarm_ack_mismatch";
+pub const RULE_SWARM_HANDOFF_MISSING: &str = "artifact.swarm_handoff_missing";
+pub const RULE_SWARM_SYNC_PARTIAL_UNREPORTED: &str = "artifact.swarm_sync_partial_unreported";
 pub const RULE_PARSE_FAILED: &str = "artifact.parse_failed";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -213,6 +220,7 @@ impl<'a> Validator<'a> {
             return;
         };
         self.validate_manifest_metadata(&manifest);
+        self.validate_swarm_command_plane_manifest(&manifest);
 
         let event_log = self.load_event_log();
         let run_report = self.load_run_report();
@@ -818,6 +826,46 @@ impl<'a> Validator<'a> {
             severity,
             "manifest artifact_metadata.command_path should identify captured command.txt",
         );
+    }
+
+    fn validate_swarm_command_plane_manifest(&mut self, manifest: &MultiAgentSitlManifest) {
+        let Some(summary) = manifest.command_plane.as_ref() else {
+            if self.options.strict && !self.options.allow_historical {
+                self.push_warning(
+                    RULE_SWARM_COMMAND_PLANE_MISSING,
+                    Some(self.paths.manifest.clone()),
+                    "strict current supervisor artifacts may include optional M87 command_plane summary; historical artifacts are allowed without it",
+                );
+            }
+            return;
+        };
+        if summary.schema_version != SWARM_COMMAND_PLANE_SCHEMA_VERSION {
+            self.push_error(
+                RULE_SWARM_COMMAND_PLANE_MISSING,
+                Some(self.paths.manifest.clone()),
+                format!(
+                    "unsupported command_plane schema_version '{}' (expected {SWARM_COMMAND_PLANE_SCHEMA_VERSION})",
+                    summary.schema_version
+                ),
+            );
+        }
+        if summary.agent_plan_count == 0 {
+            self.push_error(
+                RULE_SWARM_AGENT_PLAN_MISSING,
+                Some(self.paths.manifest.clone()),
+                "command_plane.agent_plan_count must be positive when command_plane is present",
+            );
+        }
+        if summary.agent_plan_count != manifest.agents_count {
+            self.push_error(
+                RULE_SWARM_AGENT_PLAN_MISSING,
+                Some(self.paths.manifest.clone()),
+                format!(
+                    "command_plane.agent_plan_count {} does not match manifest agents_count {}",
+                    summary.agent_plan_count, manifest.agents_count
+                ),
+            );
+        }
     }
 
     fn validate_required_supervisor_files(&mut self) {

@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use swarm_command_plane::SwarmCommandArtifactSummary;
 
 use crate::sitl_multi_agent::TaskOwnershipSummary;
 use crate::sitl_observability::SitlEventLogSummary;
@@ -60,6 +61,8 @@ pub struct SitlMultiAgentRunReport {
     pub event_log_path: Option<PathBuf>,
     #[serde(default)]
     pub task_ownership: TaskOwnershipSummary,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command_plane: Option<SwarmCommandArtifactSummary>,
     #[serde(default)]
     pub events_summary: SitlEventLogSummary,
     #[serde(default)]
@@ -253,6 +256,7 @@ mod tests {
                 unassigned_pose_tasks: Vec::new(),
                 duplicate_task_ids: Vec::new(),
             },
+            command_plane: None,
             events_summary: SitlEventLogSummary {
                 run_id: "run-1".to_owned(),
                 scenario_name: "sitl_multi_agent".to_owned(),
@@ -302,6 +306,7 @@ mod tests {
                 unassigned_pose_tasks: Vec::new(),
                 duplicate_task_ids: Vec::new(),
             },
+            command_plane: None,
             events_summary: SitlEventLogSummary {
                 run_id: "run-reallocation".to_owned(),
                 scenario_name: "sitl_multi_agent".to_owned(),

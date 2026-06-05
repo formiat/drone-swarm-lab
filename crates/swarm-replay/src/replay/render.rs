@@ -289,7 +289,15 @@ fn event_category(event: &Event) -> ReplayEventCategory {
         | Event::HazardMapUpdated { .. }
         | Event::TaskPriorityUpdated { .. }
         | Event::WildfirePriorityReallocationRequested { .. }
-        | Event::WildfirePriorityTaskReleased { .. } => ReplayEventCategory::Generic,
+        | Event::WildfirePriorityTaskReleased { .. }
+        | Event::SwarmCommandPlanDispatched { .. }
+        | Event::SwarmAgentCommandDispatched { .. }
+        | Event::SwarmOwnershipAcquired { .. }
+        | Event::SwarmOwnershipReleased { .. }
+        | Event::SwarmOwnershipHandoff { .. }
+        | Event::SwarmSupervisorStateChanged { .. }
+        | Event::SwarmSyncCommandIssued { .. }
+        | Event::SwarmSyncCommandResult { .. } => ReplayEventCategory::Generic,
     }
 }
 
@@ -327,10 +335,14 @@ fn event_agent_id(event: &Event) -> Option<AgentId> {
         | Event::UrbanSegmentLockReleased { agent_id, .. }
         | Event::UrbanDeconflictWait { agent_id, .. }
         | Event::UrbanDeconflictReplan { agent_id, .. }
-        | Event::UrbanDeconflictAbort { agent_id, .. } => Some(agent_id.clone()),
+        | Event::UrbanDeconflictAbort { agent_id, .. }
+        | Event::SwarmAgentCommandDispatched { agent_id, .. }
+        | Event::SwarmOwnershipAcquired { agent_id, .. }
+        | Event::SwarmOwnershipReleased { agent_id, .. } => Some(agent_id.clone()),
         Event::UrbanSegmentConflict {
             requester_agent_id, ..
         } => Some(requester_agent_id.clone()),
+        Event::SwarmOwnershipHandoff { to_agent_id, .. } => Some(to_agent_id.clone()),
         Event::MessageSent { from, .. }
         | Event::MessageDropped { from, .. }
         | Event::PartitionAdded { agent_a: from, .. }
@@ -340,7 +352,11 @@ fn event_agent_id(event: &Event) -> Option<AgentId> {
         | Event::CbbaConverged { .. }
         | Event::HazardMapUpdated { .. }
         | Event::TaskPriorityUpdated { .. }
-        | Event::WildfirePriorityReallocationRequested { .. } => None,
+        | Event::WildfirePriorityReallocationRequested { .. }
+        | Event::SwarmCommandPlanDispatched { .. }
+        | Event::SwarmSupervisorStateChanged { .. }
+        | Event::SwarmSyncCommandIssued { .. }
+        | Event::SwarmSyncCommandResult { .. } => None,
         Event::WildfirePriorityTaskReleased {
             previous_agent_id, ..
         } => previous_agent_id.clone(),
@@ -393,7 +409,15 @@ fn event_tick(event: &Event) -> u64 {
         | Event::UrbanSegmentConflict { tick, .. }
         | Event::UrbanDeconflictWait { tick, .. }
         | Event::UrbanDeconflictReplan { tick, .. }
-        | Event::UrbanDeconflictAbort { tick, .. } => *tick,
+        | Event::UrbanDeconflictAbort { tick, .. }
+        | Event::SwarmCommandPlanDispatched { tick, .. }
+        | Event::SwarmAgentCommandDispatched { tick, .. }
+        | Event::SwarmOwnershipAcquired { tick, .. }
+        | Event::SwarmOwnershipReleased { tick, .. }
+        | Event::SwarmOwnershipHandoff { tick, .. }
+        | Event::SwarmSupervisorStateChanged { tick, .. }
+        | Event::SwarmSyncCommandIssued { tick, .. }
+        | Event::SwarmSyncCommandResult { tick, .. } => *tick,
     }
 }
 
@@ -446,6 +470,14 @@ fn event_name(event: &Event) -> &'static str {
         Event::UrbanDeconflictWait { .. } => "UrbanDeconflictWait",
         Event::UrbanDeconflictReplan { .. } => "UrbanDeconflictReplan",
         Event::UrbanDeconflictAbort { .. } => "UrbanDeconflictAbort",
+        Event::SwarmCommandPlanDispatched { .. } => "SwarmCommandPlanDispatched",
+        Event::SwarmAgentCommandDispatched { .. } => "SwarmAgentCommandDispatched",
+        Event::SwarmOwnershipAcquired { .. } => "SwarmOwnershipAcquired",
+        Event::SwarmOwnershipReleased { .. } => "SwarmOwnershipReleased",
+        Event::SwarmOwnershipHandoff { .. } => "SwarmOwnershipHandoff",
+        Event::SwarmSupervisorStateChanged { .. } => "SwarmSupervisorStateChanged",
+        Event::SwarmSyncCommandIssued { .. } => "SwarmSyncCommandIssued",
+        Event::SwarmSyncCommandResult { .. } => "SwarmSyncCommandResult",
     }
 }
 
@@ -667,6 +699,64 @@ fn event_details(event: &Event) -> String {
         Event::UrbanDeconflictAbort {
             edge_id, reason, ..
         } => format!("edge={edge_id} reason={reason}"),
+        Event::SwarmCommandPlanDispatched {
+            plan_id,
+            agent_count,
+            ..
+        } => format!("plan={plan_id} agent_count={agent_count}"),
+        Event::SwarmAgentCommandDispatched {
+            plan_id,
+            agent_id,
+            command_count,
+            ..
+        } => format!("plan={plan_id} agent={agent_id} command_count={command_count}"),
+        Event::SwarmOwnershipAcquired {
+            agent_id,
+            ownership_kind,
+            resource_id,
+            reason,
+            ..
+        } => format!(
+            "agent={agent_id} kind={ownership_kind} resource={resource_id} reason={reason}"
+        ),
+        Event::SwarmOwnershipReleased {
+            agent_id,
+            ownership_kind,
+            resource_id,
+            reason,
+            ..
+        } => format!(
+            "agent={agent_id} kind={ownership_kind} resource={resource_id} reason={reason}"
+        ),
+        Event::SwarmOwnershipHandoff {
+            from_agent_id,
+            to_agent_id,
+            ownership_kind,
+            resource_id,
+            reason,
+            ..
+        } => format!(
+            "from={from_agent_id} to={to_agent_id} kind={ownership_kind} resource={resource_id} reason={reason}"
+        ),
+        Event::SwarmSupervisorStateChanged {
+            from, to, reason, ..
+        } => format!("from={from} to={to} reason={reason}"),
+        Event::SwarmSyncCommandIssued {
+            kind, agent_ids, ..
+        } => format!("kind={kind} agents={}", agent_ids.len()),
+        Event::SwarmSyncCommandResult {
+            kind,
+            succeeded_agent_ids,
+            failed_agent_ids,
+            timed_out_agent_ids,
+            partial_success,
+            ..
+        } => format!(
+            "kind={kind} succeeded={} failed={} timed_out={} partial_success={partial_success}",
+            succeeded_agent_ids.len(),
+            failed_agent_ids.len(),
+            timed_out_agent_ids.len()
+        ),
     }
 }
 

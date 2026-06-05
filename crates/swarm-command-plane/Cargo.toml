@@ -1,0 +1,13 @@
+[package]
+name = "swarm-command-plane"
+version = "0.1.0"
+edition = "2021"
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+swarm-comms = { workspace = true }
+swarm-mission-ir = { workspace = true }
+swarm-types = { workspace = true }
+thiserror = { workspace = true }

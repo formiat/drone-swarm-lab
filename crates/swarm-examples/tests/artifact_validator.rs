@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use swarm_command_plane::{SwarmCommandArtifactSummary, SWARM_COMMAND_PLANE_SCHEMA_VERSION};
 use swarm_comms::{
     compile_mavlink_common_plan, MavlinkCommonCommand, MavlinkCommonCommandName,
     MavlinkCommonPlanOptions, MavlinkCompatibilityClass, MavlinkCoordinateOrigin,
@@ -16,8 +17,9 @@ use swarm_examples::artifact_validator::{
     RULE_MAVLINK_PROFILE_HARDWARE_BLOCKING, RULE_MAVLINK_PROFILE_MISSING,
     RULE_MAVLINK_PROFILE_RESULT_MISMATCH, RULE_MAVLINK_PROFILE_UNSUPPORTED,
     RULE_REPLACEMENT_SEQ_MISMATCH, RULE_REPLAY_SUMMARY_COUNT_MISMATCH, RULE_SAFETY_REPORT_MISSING,
-    RULE_URBAN_DECONFLICTION_DUPLICATE_SEGMENT_OWNER, RULE_URBAN_GEO_ROUTE_METADATA_MISSING,
-    RULE_URBAN_MOCK_PERCEPTION_MISSING, RULE_URBAN_WGS84_GEO_MISSING,
+    RULE_SWARM_AGENT_PLAN_MISSING, RULE_URBAN_DECONFLICTION_DUPLICATE_SEGMENT_OWNER,
+    RULE_URBAN_GEO_ROUTE_METADATA_MISSING, RULE_URBAN_MOCK_PERCEPTION_MISSING,
+    RULE_URBAN_WGS84_GEO_MISSING,
 };
 use swarm_examples::sitl_multi_agent::{
     MultiAgentLifecycle, MultiAgentSitlManifest, MultiAgentSitlManifestAgent, SitlArtifactMetadata,
@@ -86,6 +88,24 @@ fn missing_manifest_metadata_fails_in_strict_mode() {
     );
 
     assert_rule(&report, RULE_BUILD_PROFILE_MISSING);
+}
+
+#[test]
+fn command_plane_agent_count_mismatch_fails() {
+    let fixture = ArtifactFixture::new();
+    fixture.write_manifest(|manifest| {
+        manifest.command_plane.as_mut().unwrap().agent_plan_count = 1;
+    });
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&fixture.output_dir),
+        ArtifactValidationOptions {
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_SWARM_AGENT_PLAN_MISSING);
 }
 
 #[test]
@@ -1046,6 +1066,14 @@ impl ArtifactFixture {
                 unassigned_pose_tasks: Vec::new(),
                 duplicate_task_ids: Vec::new(),
             },
+            command_plane: Some(SwarmCommandArtifactSummary {
+                schema_version: SWARM_COMMAND_PLANE_SCHEMA_VERSION.to_owned(),
+                plan_id: "sitl_multi_agent:sitl:multi-agent".to_owned(),
+                agent_plan_count: 2,
+                active_ownership_count: 2,
+                handoff_count: 0,
+                sync_operation_count: 0,
+            }),
             artifact_metadata: SitlArtifactMetadata {
                 command: vec!["sitl_supervisor".to_owned(), "--mock".to_owned()],
                 git_commit: Some("0123456789abcdef".to_owned()),
@@ -1133,6 +1161,8 @@ fn manifest_agent(agent_id: &str, system_id: u8, task_ids: &[&str]) -> MultiAgen
             .iter()
             .map(|task_id| (*task_id).to_owned())
             .collect(),
+        command_role: None,
+        abort_policy: None,
         waypoint_count: task_ids.len(),
         waypoints: Vec::new(),
         standalone_command: Vec::new(),
@@ -1293,6 +1323,7 @@ fn base_report(
             unassigned_pose_tasks: Vec::new(),
             duplicate_task_ids: Vec::new(),
         },
+        command_plane: None,
         events_summary: summary,
         final_status: "completed".to_owned(),
         reallocation: SitlMultiAgentReallocationReport::default(),

@@ -35,6 +35,12 @@ pub struct ReplaySummary {
     pub urban_search_completions: usize,
     pub urban_search_time_to_detection_ticks: Vec<u64>,
     pub urban_search_no_detection_count: usize,
+    // M87 Swarm Command Plane
+    pub swarm_command_plan_dispatched_count: usize,
+    pub swarm_agent_command_dispatched_count: usize,
+    pub swarm_ownership_handoff_count: usize,
+    pub swarm_sync_partial_failure_count: usize,
+    pub swarm_supervisor_state_change_count: usize,
 }
 
 /// Summarize an event log into key metrics.
@@ -120,9 +126,90 @@ pub fn summarize(log: &EventLog) -> ReplaySummary {
                     summary.urban_search_no_detection_count += 1;
                 }
             }
+            Event::SwarmCommandPlanDispatched { .. } => {
+                summary.swarm_command_plan_dispatched_count += 1;
+            }
+            Event::SwarmAgentCommandDispatched { .. } => {
+                summary.swarm_agent_command_dispatched_count += 1;
+            }
+            Event::SwarmOwnershipHandoff { .. } => {
+                summary.swarm_ownership_handoff_count += 1;
+            }
+            Event::SwarmSyncCommandResult {
+                failed_agent_ids,
+                timed_out_agent_ids,
+                ..
+            } => {
+                if !failed_agent_ids.is_empty() || !timed_out_agent_ids.is_empty() {
+                    summary.swarm_sync_partial_failure_count += 1;
+                }
+            }
+            Event::SwarmSupervisorStateChanged { .. } => {
+                summary.swarm_supervisor_state_change_count += 1;
+            }
             _ => {}
         }
     }
 
     summary
+}
+
+#[cfg(test)]
+mod tests {
+    use swarm_types::AgentId;
+
+    use super::*;
+
+    #[test]
+    fn swarm_command_plane_events_update_summary() {
+        let log = EventLog {
+            schema_version: "0.2".to_owned(),
+            run_id: "m87".to_owned(),
+            seed: 1,
+            scenario_name: "swarm".to_owned(),
+            events: vec![
+                Event::SwarmCommandPlanDispatched {
+                    tick: 1,
+                    plan_id: "plan-1".to_owned(),
+                    agent_count: 2,
+                },
+                Event::SwarmAgentCommandDispatched {
+                    tick: 2,
+                    plan_id: "plan-1".to_owned(),
+                    agent_id: AgentId::from("agent-0".to_owned()),
+                    command_count: 3,
+                },
+                Event::SwarmOwnershipHandoff {
+                    tick: 3,
+                    from_agent_id: AgentId::from("agent-0".to_owned()),
+                    to_agent_id: AgentId::from("agent-1".to_owned()),
+                    ownership_kind: "task".to_owned(),
+                    resource_id: "wp-0".to_owned(),
+                    reason: "replacement".to_owned(),
+                },
+                Event::SwarmSupervisorStateChanged {
+                    tick: 4,
+                    from: "active".to_owned(),
+                    to: "degraded".to_owned(),
+                    reason: "agent_lost".to_owned(),
+                },
+                Event::SwarmSyncCommandResult {
+                    tick: 5,
+                    kind: "takeoff_all".to_owned(),
+                    succeeded_agent_ids: vec![AgentId::from("agent-0".to_owned())],
+                    failed_agent_ids: vec![AgentId::from("agent-1".to_owned())],
+                    timed_out_agent_ids: Vec::new(),
+                    partial_success: true,
+                },
+            ],
+        };
+
+        let summary = summarize(&log);
+
+        assert_eq!(summary.swarm_command_plan_dispatched_count, 1);
+        assert_eq!(summary.swarm_agent_command_dispatched_count, 1);
+        assert_eq!(summary.swarm_ownership_handoff_count, 1);
+        assert_eq!(summary.swarm_supervisor_state_change_count, 1);
+        assert_eq!(summary.swarm_sync_partial_failure_count, 1);
+    }
 }

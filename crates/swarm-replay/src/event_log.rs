@@ -308,6 +308,59 @@ pub enum Event {
         edge_id: UrbanEdgeId,
         reason: String,
     },
+    // M87: Swarm Command Plane
+    SwarmCommandPlanDispatched {
+        tick: u64,
+        plan_id: String,
+        agent_count: usize,
+    },
+    SwarmAgentCommandDispatched {
+        tick: u64,
+        plan_id: String,
+        agent_id: AgentId,
+        command_count: usize,
+    },
+    SwarmOwnershipAcquired {
+        tick: u64,
+        agent_id: AgentId,
+        ownership_kind: String,
+        resource_id: String,
+        reason: String,
+    },
+    SwarmOwnershipReleased {
+        tick: u64,
+        agent_id: AgentId,
+        ownership_kind: String,
+        resource_id: String,
+        reason: String,
+    },
+    SwarmOwnershipHandoff {
+        tick: u64,
+        from_agent_id: AgentId,
+        to_agent_id: AgentId,
+        ownership_kind: String,
+        resource_id: String,
+        reason: String,
+    },
+    SwarmSupervisorStateChanged {
+        tick: u64,
+        from: String,
+        to: String,
+        reason: String,
+    },
+    SwarmSyncCommandIssued {
+        tick: u64,
+        kind: String,
+        agent_ids: Vec<AgentId>,
+    },
+    SwarmSyncCommandResult {
+        tick: u64,
+        kind: String,
+        succeeded_agent_ids: Vec<AgentId>,
+        failed_agent_ids: Vec<AgentId>,
+        timed_out_agent_ids: Vec<AgentId>,
+        partial_success: bool,
+    },
 }
 
 /// Reason why a message was dropped.

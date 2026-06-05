@@ -241,7 +241,36 @@ Stop/abort conditions:
 - `artifact.replacement_seq_mismatch`;
 - `artifact.safety_report_missing`;
 - `artifact.limitations_missing`;
+- `artifact.swarm_agent_plan_missing` when validating an M87 command-plane artifact;
 - any new artifact rule id that is not understood by the operator.
+
+## Runbook 4b: M87 Swarm Command Plane Local Check
+
+Use this when the claim is about mission-level multi-agent command fanout,
+ownership, replacement policy, or synchronized GCS operation representation.
+
+```bash
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 /home/formi/.local/bin/runlim cargo test -p swarm-command-plane -- --nocapture
+PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 /home/formi/.local/bin/runlim cargo test -p swarm-replay swarm_command_plane_events_update_summary -- --nocapture
+```
+
+Expected evidence:
+
+- `swarm_command_plane.v1` structures serialize in stable snake-case form;
+- fanout creates one per-agent command plan per assignment;
+- duplicate ownership is rejected;
+- replacement/global abort decisions are deterministic;
+- synchronized command partial failures are represented;
+- replay summary counts M87 command-plane events.
+
+Stop/abort conditions:
+
+- tests fail or exceed the local timeout;
+- command-plane output is described as RF mesh, distributed consensus,
+  physical collision avoidance, simultaneous hardware takeoff, or hardware
+  readiness;
+- a long benchmark, PX4/SITL, Gazebo, HIL, or hardware run is required to
+  support the claim. M87 does not require those runs.
 
 ## Runbook 4a: M83 Primitive Command Dry-Run
 

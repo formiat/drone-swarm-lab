@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-05
 **HEAD commit:** see `git rev-parse HEAD`
-**Last audit:** M86 MAVLink Safety / FC Contract
+**Last audit:** M87 Swarm Command Plane
 
 This document is the current status summary for the repository. It supersedes
 the older M39b-only audit and should be read together with the README current
@@ -62,6 +62,7 @@ status table.
 | M84 Urban Geo Route Export + Mission Templates | Complete as portable Urban dry-run/testbed boundary | `UrbanNode` can now carry WGS84 `geo`, Urban map validation rejects mixed geo/local node sets, route export records `coordinate_mode` (`wgs84_node_geo` for all-geo maps) and emits direct WGS84 waypoint metadata while preserving local densified export for local maps, `sitl_agent --dry-run --dry-run-artifact` records Urban mission template / blocked-policy / mocked detector metadata, `urban-search` can use the same route-export path, `artifact_validator --mode dry-run` checks Urban coordinate/perception metadata and WGS84 MAVLink mission item coordinates, and the canonical pack includes `scenarios/urban.geo-block-loop.json`, `scenarios/urban.geo-search-bus.json`, `scenarios/urban.geo-inspection-corridor.json`, and GeoJSON fixture `scenarios/fixtures/urban_small_block.geojson`. This is not real perception, no full OSM parser, not certified collision avoidance, no PX4 execution evidence, no Gazebo/HIL, and no hardware readiness. |
 | M85 Urban Multi-Agent Deconfliction | Complete as simulation-only route ownership layer | `urban-patrol` can opt into mission-level segment ownership to avoid assigning the same road segment to multiple agents at the same time. Replay/analysis artifacts expose segment locks, conflicts, and separation diagnostics. This is not physical collision avoidance, not PX4 execution, not real perception, and not hardware readiness. |
 | M86 MAVLink Safety / FC Contract | Complete as transport-free FC contract layer | `swarm-comms` now exposes FC geofence types, fence compilation into `MavlinkCommonPlan.geofence_prelude`, `fence_summary`, `FcParamRequirement` / `FcParamSnapshot` validation, known PX4/ArduPilot parameter metadata, and `FcContractValidationResult`. Capability profiles include per-kind fence rules; PX4 polygon fences are modeled with caveats, PX4 circle fences and all ArduPilot fences remain blocked until evidence exists. `swarm-sim::safety_config_to_fence_plan` bridges simulation AABB safety config into FC fence plans. This is dry-run contract evidence only: no live fence upload, no parameter read/write transport, no hardware readiness, and no certified safety claim. See `docs/FC_CONTRACT.md`. |
+| M87 Swarm Command Plane | Complete as fake-tested mission-level command-plane foundation | New crate `swarm-command-plane` defines `swarm_command_plane.v1`, command-plane roles, per-agent fanout into M80 `MissionCommandPlan` and M81/M82/M86 `MavlinkCommonPlan`, ownership records/handoffs, failure policies, synchronized GCS command windows, compact manifest/report summaries, replay events, summary counters, and artifact-validator rule ids. This is mission-level coordination only: no RF mesh, no distributed consensus guarantee, no physical collision avoidance, no simultaneous hardware takeoff claim, and no PX4/ArduPilot equivalence guarantee. See `docs/SWARM_COMMAND_PLANE.md`. |
 
 ## Current Known Limitations
 

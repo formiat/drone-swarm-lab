@@ -2,6 +2,10 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use swarm_command_plane::{
+    SwarmAbortPolicy, SwarmCommandArtifactSummary, SwarmCommandRole,
+    SWARM_COMMAND_PLANE_SCHEMA_VERSION,
+};
 use swarm_sim::ScenarioSuite;
 
 use crate::sitl_plan::{
@@ -27,6 +31,10 @@ pub struct MultiAgentSitlAgentConfig {
     pub start_delay_ms: u64,
     pub lifecycle: MultiAgentLifecycle,
     pub task_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command_role: Option<SwarmCommandRole>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub abort_policy: Option<SwarmAbortPolicy>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -55,6 +63,8 @@ pub struct MultiAgentSitlManifest {
     pub agents_count: usize,
     pub agents: Vec<MultiAgentSitlManifestAgent>,
     pub ownership_summary: TaskOwnershipSummary,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command_plane: Option<SwarmCommandArtifactSummary>,
     #[serde(default)]
     pub artifact_metadata: SitlArtifactMetadata,
 }
@@ -79,6 +89,10 @@ pub struct MultiAgentSitlManifestAgent {
     pub start_delay_ms: u64,
     pub lifecycle: MultiAgentLifecycle,
     pub task_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command_role: Option<SwarmCommandRole>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub abort_policy: Option<SwarmAbortPolicy>,
     pub waypoint_count: usize,
     pub waypoints: Vec<SitlWaypointItem>,
     pub standalone_command: Vec<String>,
@@ -145,11 +159,26 @@ pub fn build_multi_agent_manifest(
             start_delay_ms: agent.start_delay_ms,
             lifecycle: agent.lifecycle,
             task_ids: agent.task_ids.clone(),
+            command_role: agent.command_role.clone(),
+            abort_policy: agent.abort_policy.clone(),
             waypoint_count: plan.waypoints.len(),
             waypoints: plan.waypoints,
             standalone_command,
         });
     }
+
+    let ownership_summary = ownership_summary(suite, config)?;
+    let command_plane = Some(SwarmCommandArtifactSummary {
+        schema_version: SWARM_COMMAND_PLANE_SCHEMA_VERSION.to_owned(),
+        plan_id: format!(
+            "{}:{}:{}",
+            entry.scenario.name, entry.mission, entry.profile
+        ),
+        agent_plan_count: agents.len(),
+        active_ownership_count: ownership_summary.assigned_task_count,
+        handoff_count: 0,
+        sync_operation_count: 0,
+    });
 
     Ok(MultiAgentSitlManifest {
         schema_version: MULTI_AGENT_SITL_MANIFEST_SCHEMA_VERSION.to_owned(),
@@ -159,7 +188,8 @@ pub fn build_multi_agent_manifest(
         profile: entry.profile.clone(),
         agents_count: agents.len(),
         agents,
-        ownership_summary: ownership_summary(suite, config)?,
+        ownership_summary,
+        command_plane,
         artifact_metadata: SitlArtifactMetadata::default(),
     })
 }
@@ -429,6 +459,8 @@ mod tests {
                     start_delay_ms: 0,
                     lifecycle: MultiAgentLifecycle::UploadOnly,
                     task_ids: vec!["wp-0".to_owned()],
+                    command_role: None,
+                    abort_policy: None,
                 },
                 MultiAgentSitlAgentConfig {
                     agent_id: "agent-1".to_owned(),
@@ -438,6 +470,8 @@ mod tests {
                     start_delay_ms: 10,
                     lifecycle: MultiAgentLifecycle::Execute,
                     task_ids: vec!["wp-1".to_owned()],
+                    command_role: None,
+                    abort_policy: None,
                 },
             ],
         }

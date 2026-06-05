@@ -94,7 +94,15 @@ pub fn replay(log: &EventLog) -> ReplayState {
             | Event::UrbanSegmentConflict { .. }
             | Event::UrbanDeconflictWait { .. }
             | Event::UrbanDeconflictReplan { .. }
-            | Event::UrbanDeconflictAbort { .. } => {}
+            | Event::UrbanDeconflictAbort { .. }
+            | Event::SwarmCommandPlanDispatched { .. }
+            | Event::SwarmAgentCommandDispatched { .. }
+            | Event::SwarmOwnershipAcquired { .. }
+            | Event::SwarmOwnershipReleased { .. }
+            | Event::SwarmOwnershipHandoff { .. }
+            | Event::SwarmSupervisorStateChanged { .. }
+            | Event::SwarmSyncCommandIssued { .. }
+            | Event::SwarmSyncCommandResult { .. } => {}
         }
     }
 

@@ -64,6 +64,7 @@ pub(super) fn live_run_report(input: LiveRunReportInput<'_>) -> SitlMultiAgentRu
         overall_status: input.overall_status.to_owned(),
         event_log_path: config.replay_log.as_ref().map(PathBuf::from),
         task_ownership: manifest.ownership_summary.clone(),
+        command_plane: manifest.command_plane.clone(),
         events_summary: input.events_summary,
         final_status: input.overall_status.to_owned(),
         reallocation: input.metrics.into(),

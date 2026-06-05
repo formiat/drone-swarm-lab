@@ -12,6 +12,7 @@ members = [
     "crates/swarm-examples",
     "crates/swarm-safety",
     "crates/swarm-mission-ir",
+    "crates/swarm-command-plane",
 ]
 
 [workspace.package]
@@ -28,6 +29,7 @@ swarm-replay    = { path = "crates/swarm-replay" }
 swarm-scenarios = { path = "crates/swarm-scenarios" }
 swarm-safety       = { path = "crates/swarm-safety" }
 swarm-mission-ir   = { path = "crates/swarm-mission-ir" }
+swarm-command-plane = { path = "crates/swarm-command-plane" }
 chrono             = { version = "0.4", features = ["serde"] }
 csv                = "1"
 derive_more        = { version = "2", features = ["as_ref", "deref", "deref_mut", "display", "from", "into"] }

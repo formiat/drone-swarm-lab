@@ -50,6 +50,14 @@ Each simulation run can optionally produce an `EventLog` — a JSON file contain
 | `UrbanDeconflictWait` | M85 losing agent waited before a locked segment | `agent_id`, `tick`, `edge_id`, `reason` |
 | `UrbanDeconflictReplan` | M85 losing agent accepted an alternate route around a locked segment | `agent_id`, `tick`, `edge_id`, `edge_ids`, `route_length_m`, `reason` |
 | `UrbanDeconflictAbort` | M85 losing agent aborted because locked-segment policy required it or no route existed | `agent_id`, `tick`, `edge_id`, `reason` |
+| `SwarmCommandPlanDispatched` | M87 supervisor command plan was dispatched | `tick`, `plan_id`, `agent_count` |
+| `SwarmAgentCommandDispatched` | M87 per-agent command plan was dispatched | `tick`, `plan_id`, `agent_id`, `command_count` |
+| `SwarmOwnershipAcquired` | M87 agent acquired ownership of a task, route segment, target, or replacement mission | `tick`, `agent_id`, `ownership_kind`, `resource_id`, `reason` |
+| `SwarmOwnershipReleased` | M87 agent released ownership of a task, route segment, target, or replacement mission | `tick`, `agent_id`, `ownership_kind`, `resource_id`, `reason` |
+| `SwarmOwnershipHandoff` | M87 ownership moved from one agent to another | `tick`, `from_agent_id`, `to_agent_id`, `ownership_kind`, `resource_id`, `reason` |
+| `SwarmSupervisorStateChanged` | M87 supervisor state changed | `tick`, `from`, `to`, `reason` |
+| `SwarmSyncCommandIssued` | M87 synchronized GCS operation was issued | `tick`, `kind`, `agent_ids` |
+| `SwarmSyncCommandResult` | M87 synchronized GCS operation completed, failed, timed out, or partially succeeded | `tick`, `kind`, `succeeded_agent_ids`, `failed_agent_ids`, `timed_out_agent_ids`, `partial_success` |
 | `BusObserved` | Urban Search mocked detector observed an in-range bus | `agent_id`, `tick`, `bus_id`, `pose`, `distance_m`, `detector_seed` |
 | `BusDetected` | Urban Search mocked detector confirmed a real bus detection | `agent_id`, `tick`, `bus_id`, `pose`, `distance_m`, `detector_seed` |
 | `BusFalsePositive` | Urban Search mocked detector produced a false positive | `agent_id`, `tick`, `pose`, `detector_seed` |
@@ -67,6 +75,12 @@ The M85 deconfliction events are mission-level Urban graph events: they prove
 segment ownership in the simulation runner, not lidar, real obstacle
 avoidance, PX4/SITL execution, hardware readiness, a physics engine, real
 perception, and not RF coordination.
+
+M87 adds generic swarm command-plane events. They explain command fanout,
+ownership transitions, supervisor states, and synchronized GCS operation
+outcomes at mission level. They do not imply distributed consensus, RF mesh,
+physical collision avoidance, simultaneous hardware takeoff, or identical
+flight-controller behavior.
 
 M67 adds diagnostic replay tooling for Urban work. `UrbanViolation.obstacle_id`
 is an additive optional field and old logs without it still deserialize.

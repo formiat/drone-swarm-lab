@@ -14,6 +14,7 @@ const OPERATIONAL_RUNBOOKS: &str = include_str!("../../../docs/OPERATIONAL_RUNBO
 const MAVLINK_COMMON_COMPILER: &str = include_str!("../../../docs/MAVLINK_COMMON_COMPILER.md");
 const MAVLINK_CAPABILITY_PROFILES: &str =
     include_str!("../../../docs/MAVLINK_CAPABILITY_PROFILES.md");
+const SWARM_COMMAND_PLANE: &str = include_str!("../../../docs/SWARM_COMMAND_PLANE.md");
 const M62_RESULT_README: &str =
     include_str!("../../../results/all_500_jobs14_m62_release/README.md");
 
@@ -115,6 +116,9 @@ fn sitl_docs_explain_portable_and_manual_boundaries() {
         "--dry-run-artifact",
         "sitl_dry_run_artifact.v1",
         "no hardware readiness is claimed",
+        "Swarm Command Plane",
+        "swarm-command-plane",
+        "swarm_command_plane.v1",
     ] {
         assert!(README.contains(required), "README missing {required}");
     }
@@ -139,6 +143,8 @@ fn sitl_docs_explain_portable_and_manual_boundaries() {
         "sitl_dry_run_artifact.v1",
         "Preflight safety contract",
         "SafetyValidationReport",
+        "Swarm command plane",
+        "simultaneous hardware takeoff",
     ] {
         assert!(
             HARDWARE_READINESS.contains(required),
@@ -171,8 +177,26 @@ fn sitl_docs_explain_portable_and_manual_boundaries() {
         "scenarios/sitl.px4-golden.json",
         "docs/EXTENSION_GUIDE.md",
         "sitl_dry_run_artifact.v1",
+        "SwarmCommandPlanDispatched",
+        "SwarmOwnershipHandoff",
+        "SwarmSyncCommandResult",
     ] {
         assert!(REPLAY.contains(required), "Replay doc missing {required}");
+    }
+
+    for required in [
+        "Swarm Command Plane",
+        "swarm_command_plane.v1",
+        "SwarmAgentCommandPlan",
+        "replace_from_reserve",
+        "arm_all",
+        "swarm_ownership_handoff",
+        "No PX4, ArduPilot, Gazebo, HIL, real",
+    ] {
+        assert!(
+            SWARM_COMMAND_PLANE.contains(required),
+            "Swarm command plane doc missing {required}"
+        );
     }
 
     for required in [
