@@ -3,6 +3,7 @@ pub mod mavlink;
 pub mod mavlink_capability_profile;
 pub mod mavlink_common_plan;
 pub mod mavlink_coords;
+pub mod mavlink_executor;
 pub mod mavlink_fc_contract;
 pub mod mavlink_geofence;
 pub mod mavlink_parameters;
@@ -31,6 +32,13 @@ pub use mavlink_common_plan::{
 pub use mavlink_coords::{
     local_to_mavlink_int, relative_altitude, scaled_coordinate, MavlinkCoordinateError,
     MavlinkCoordinateOrigin, MavlinkIntCoordinate,
+};
+pub use mavlink_executor::{
+    execute_geofence_upload, execute_param_snapshot, execute_param_write, AckProvider,
+    FcConfigError, FcConfigProvider, FcParamWriteOk, FcParamWriteResult, GeofenceUploadOk,
+    GeofenceUploadResult, MavlinkExecutionOutcome, MavlinkExecutionStepResult,
+    MavlinkPlanExecutionReport, MavlinkPlanExecutor, MissionExecuteLifecycleState, MockAckProvider,
+    MockFcConfigProvider, ScriptedAckProvider,
 };
 pub use mavlink_fc_contract::{
     validate_fc_contract, FcContract, FcContractValidationResult, FcContractViolation,
