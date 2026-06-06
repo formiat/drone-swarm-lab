@@ -14,7 +14,9 @@ mod tests {
                 .unwrap_or_default()
                 .to_str()
                 .unwrap_or_default();
-            if path.extension().is_some_and(|e| e == "json") && !file_name.ends_with(".config.json")
+            if path.extension().is_some_and(|e| e == "json")
+                && !file_name.ends_with(".config.json")
+                && !file_name.starts_with("sitl.multi-agent.topology.")
             {
                 let path_str = path.to_str().unwrap();
                 match swarm_sim::load_scenario_suite(path_str) {
