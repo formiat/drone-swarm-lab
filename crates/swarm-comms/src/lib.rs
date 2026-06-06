@@ -8,6 +8,7 @@ pub mod mavlink_fc_contract;
 pub mod mavlink_geofence;
 pub mod mavlink_parameters;
 pub mod network;
+pub mod swarm_protocol;
 pub mod transport;
 
 pub use connectivity::{ConnectivityModel, ConnectivitySnapshot};
@@ -54,6 +55,11 @@ pub use mavlink_parameters::{
     FC_KNOWN_PARAMS_ARDUPILOT, FC_KNOWN_PARAMS_PX4,
 };
 pub use network::{InMemAgentTransport, InMemNetwork, NetworkConfig};
+pub use swarm_protocol::{
+    AbortAction, AgentMissionState, CommandPosition, DegradedReason, DuplicateSuppressor, Lease,
+    LeaseId, MissionRejectReason, ProtocolRole, ReleaseReason, ReplanReason, SegmentDenyReason,
+    SwarmMessage, SwarmMessageEnvelope, SWARM_PROTOCOL_SCHEMA_VERSION,
+};
 pub use transport::{RawMessage, Transport};
 
 #[cfg(feature = "mavlink-transport")]

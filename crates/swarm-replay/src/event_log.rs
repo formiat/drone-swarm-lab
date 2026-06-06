@@ -395,6 +395,35 @@ pub enum Event {
         child_agent_id: AgentId,
         dependency_kind: String,
     },
+    // M91: Swarm Communication Protocol
+    SwarmProtocolMessage {
+        tick: u64,
+        from: AgentId,
+        to: AgentId,
+        /// Unique envelope id of the transported message.
+        envelope_id: String,
+        /// Value of the SwarmMessage `kind` discriminant (snake_case).
+        kind: String,
+    },
+    LeaseGranted {
+        tick: u64,
+        lease_id: String,
+        holder: AgentId,
+        resource_id: String,
+        /// Simulation tick at which the lease expires.
+        expires_at_tick: u64,
+    },
+    LeaseExpired {
+        tick: u64,
+        lease_id: String,
+        resource_id: String,
+    },
+    OwnershipConflict {
+        tick: u64,
+        resource_id: String,
+        claimant_a: AgentId,
+        claimant_b: AgentId,
+    },
 }
 
 /// Reason why a message was dropped.
@@ -646,6 +675,49 @@ mod tests {
         assert!(json.contains("building-center"));
         let restored: EventLog = serde_json::from_str(&json).unwrap();
         assert_eq!(restored, log);
+    }
+
+    // ── M91 replay events ─────────────────────────────────────────────────
+
+    #[test]
+    fn lease_granted_serde_roundtrip() {
+        roundtrip(Event::LeaseGranted {
+            tick: 10,
+            lease_id: "lease-1".to_owned(),
+            holder: agent_id(),
+            resource_id: "edge-0".to_owned(),
+            expires_at_tick: 110,
+        });
+    }
+
+    #[test]
+    fn lease_expired_serde_roundtrip() {
+        roundtrip(Event::LeaseExpired {
+            tick: 115,
+            lease_id: "lease-1".to_owned(),
+            resource_id: "edge-0".to_owned(),
+        });
+    }
+
+    #[test]
+    fn ownership_conflict_serde_roundtrip() {
+        roundtrip(Event::OwnershipConflict {
+            tick: 20,
+            resource_id: "edge-0".to_owned(),
+            claimant_a: agent_id(),
+            claimant_b: AgentId::from("agent-1".to_owned()),
+        });
+    }
+
+    #[test]
+    fn swarm_protocol_message_serde_roundtrip() {
+        roundtrip(Event::SwarmProtocolMessage {
+            tick: 5,
+            from: agent_id(),
+            to: AgentId::from("gcs".to_owned()),
+            envelope_id: "env-abc".to_owned(),
+            kind: "heartbeat".to_owned(),
+        });
     }
 
     #[test]

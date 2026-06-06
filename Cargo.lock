@@ -988,6 +988,7 @@ dependencies = [
 name = "swarm-comms"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "derive_more",
  "mavlink",
  "rand 0.8.6",

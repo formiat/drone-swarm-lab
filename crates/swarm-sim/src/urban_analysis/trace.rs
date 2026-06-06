@@ -136,7 +136,11 @@ pub fn build_urban_route_trace(log: &EventLog) -> UrbanRouteTrace {
             | Event::SwarmCommandRouteSelected { .. }
             | Event::SwarmCommandRouteBlocked { .. }
             | Event::SwarmTopologyDegraded { .. }
-            | Event::SwarmMothershipDependencyRecorded { .. } => {}
+            | Event::SwarmMothershipDependencyRecorded { .. }
+            | Event::SwarmProtocolMessage { .. }
+            | Event::LeaseGranted { .. }
+            | Event::LeaseExpired { .. }
+            | Event::OwnershipConflict { .. } => {}
         }
     }
 

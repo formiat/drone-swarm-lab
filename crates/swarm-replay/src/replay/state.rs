@@ -107,7 +107,11 @@ pub fn replay(log: &EventLog) -> ReplayState {
             | Event::SwarmCommandRouteSelected { .. }
             | Event::SwarmCommandRouteBlocked { .. }
             | Event::SwarmTopologyDegraded { .. }
-            | Event::SwarmMothershipDependencyRecorded { .. } => {}
+            | Event::SwarmMothershipDependencyRecorded { .. }
+            | Event::SwarmProtocolMessage { .. }
+            | Event::LeaseGranted { .. }
+            | Event::LeaseExpired { .. }
+            | Event::OwnershipConflict { .. } => {}
         }
     }
 

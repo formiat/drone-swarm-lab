@@ -302,7 +302,11 @@ fn event_category(event: &Event) -> ReplayEventCategory {
         | Event::SwarmCommandRouteSelected { .. }
         | Event::SwarmCommandRouteBlocked { .. }
         | Event::SwarmTopologyDegraded { .. }
-        | Event::SwarmMothershipDependencyRecorded { .. } => ReplayEventCategory::Generic,
+        | Event::SwarmMothershipDependencyRecorded { .. }
+        | Event::SwarmProtocolMessage { .. }
+        | Event::LeaseGranted { .. }
+        | Event::LeaseExpired { .. }
+        | Event::OwnershipConflict { .. } => ReplayEventCategory::Generic,
     }
 }
 
@@ -372,6 +376,10 @@ fn event_agent_id(event: &Event) -> Option<AgentId> {
         Event::WildfirePriorityTaskReleased {
             previous_agent_id, ..
         } => previous_agent_id.clone(),
+        Event::SwarmProtocolMessage { from, .. } => Some(from.clone()),
+        Event::LeaseGranted { holder, .. } => Some(holder.clone()),
+        Event::LeaseExpired { .. } => None,
+        Event::OwnershipConflict { claimant_a, .. } => Some(claimant_a.clone()),
     }
 }
 
@@ -434,7 +442,11 @@ fn event_tick(event: &Event) -> u64 {
         | Event::SwarmCommandRouteSelected { tick, .. }
         | Event::SwarmCommandRouteBlocked { tick, .. }
         | Event::SwarmTopologyDegraded { tick, .. }
-        | Event::SwarmMothershipDependencyRecorded { tick, .. } => *tick,
+        | Event::SwarmMothershipDependencyRecorded { tick, .. }
+        | Event::SwarmProtocolMessage { tick, .. }
+        | Event::LeaseGranted { tick, .. }
+        | Event::LeaseExpired { tick, .. }
+        | Event::OwnershipConflict { tick, .. } => *tick,
     }
 }
 
@@ -500,6 +512,10 @@ fn event_name(event: &Event) -> &'static str {
         Event::SwarmCommandRouteBlocked { .. } => "SwarmCommandRouteBlocked",
         Event::SwarmTopologyDegraded { .. } => "SwarmTopologyDegraded",
         Event::SwarmMothershipDependencyRecorded { .. } => "SwarmMothershipDependencyRecorded",
+        Event::SwarmProtocolMessage { .. } => "SwarmProtocolMessage",
+        Event::LeaseGranted { .. } => "LeaseGranted",
+        Event::LeaseExpired { .. } => "LeaseExpired",
+        Event::OwnershipConflict { .. } => "OwnershipConflict",
     }
 }
 
@@ -820,6 +836,33 @@ fn event_details(event: &Event) -> String {
         } => format!(
             "parent={parent_agent_id} child={child_agent_id} dependency={dependency_kind}"
         ),
+        Event::SwarmProtocolMessage {
+            from,
+            to,
+            envelope_id,
+            kind,
+            ..
+        } => format!("from={from} to={to} envelope={envelope_id} kind={kind}"),
+        Event::LeaseGranted {
+            lease_id,
+            holder,
+            resource_id,
+            expires_at_tick,
+            ..
+        } => format!(
+            "lease={lease_id} holder={holder} resource={resource_id} expires_at_tick={expires_at_tick}"
+        ),
+        Event::LeaseExpired {
+            lease_id,
+            resource_id,
+            ..
+        } => format!("lease={lease_id} resource={resource_id}"),
+        Event::OwnershipConflict {
+            resource_id,
+            claimant_a,
+            claimant_b,
+            ..
+        } => format!("resource={resource_id} claimant_a={claimant_a} claimant_b={claimant_b}"),
     }
 }
 
