@@ -1,4 +1,5 @@
 pub mod connectivity;
+pub mod drone_link;
 pub mod mavlink;
 pub mod mavlink_capability_profile;
 pub mod mavlink_common_plan;
@@ -12,6 +13,10 @@ pub mod swarm_protocol;
 pub mod transport;
 
 pub use connectivity::{ConnectivityModel, ConnectivitySnapshot};
+pub use drone_link::{
+    DroneLinkConfig, InternetLikeMock, InternetLikeMockProfile, NullDroneLink, SerialDroneLink,
+    SerialDroneLinkError, UdpDroneLink, UdpDroneLinkError, UDP_MAX_PAYLOAD,
+};
 pub use mavlink::{
     task_to_waypoint, waypoint_status_to_task_status, MavlinkError, MockMavlinkTransport, Waypoint,
 };

@@ -1,5 +1,6 @@
 use super::*;
 use swarm_alloc::{AllocationAgent, AllocationTask, Allocator};
+use swarm_comms::DroneLinkConfig;
 use swarm_types::{
     Aabb, Agent, Capability, CellState, EdgeId, Health, HiddenTarget, InspectionEdge, Pose, Role,
     SearchGrid, SensorModel, Task, TaskKind, TaskStatus, UrbanBlockedPolicy, UrbanBus, UrbanBusId,
@@ -1489,4 +1490,18 @@ fn semantic_task(id: &str, kind: TaskKind) -> Task {
         edge_id: None,
         kind: Some(kind),
     }
+}
+
+#[test]
+fn existing_scenarios_load_without_drone_link_field() {
+    // Verify that JSON without a "drone_link" key deserialises successfully
+    // and defaults to DroneLinkConfig::Simulated.
+    let json = r#"{"max_ticks": 100}"#;
+    let config: RunConfig = serde_json::from_str(json).unwrap();
+    assert_eq!(config.max_ticks, 100);
+    assert_eq!(
+        config.drone_link,
+        DroneLinkConfig::Simulated,
+        "drone_link must default to Simulated for backward compatibility"
+    );
 }

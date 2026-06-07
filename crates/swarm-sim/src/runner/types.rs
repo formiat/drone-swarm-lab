@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 use swarm_alloc::Allocator;
+use swarm_comms::DroneLinkConfig;
 use swarm_runtime::GridState;
 use swarm_safety::SafetyConfig;
 use swarm_types::{
@@ -262,6 +263,11 @@ pub struct RunConfig {
     /// types.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub primitive_mission: Option<PrimitiveMission>,
+    /// Transport backend used by standalone agent processes.
+    /// Defaults to `Simulated` (in-memory shared bus) so existing scenarios
+    /// that omit this field continue to work without modification.
+    #[serde(default)]
+    pub drone_link: DroneLinkConfig,
 }
 
 /// A minimal real-hardware mission expressed as a single parametric command

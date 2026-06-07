@@ -32,6 +32,10 @@ path = "src/bin/artifact_validator.rs"
 name = "sitl_dual_stack_evidence"
 path = "src/bin/sitl_dual_stack_evidence.rs"
 
+[[bin]]
+name = "drone_agent"
+path = "src/bin/drone_agent.rs"
+
 [dependencies]
 chrono             = { workspace = true }
 serde              = { workspace = true }
