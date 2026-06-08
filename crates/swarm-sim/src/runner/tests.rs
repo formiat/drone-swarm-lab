@@ -1505,3 +1505,13 @@ fn existing_scenarios_load_without_drone_link_field() {
         "drone_link must default to Simulated for backward compatibility"
     );
 }
+
+#[test]
+fn existing_scenarios_load_without_autonomy_field() {
+    // RunConfig without an "autonomy" key must deserialise and apply sane defaults.
+    let json = r#"{"max_ticks": 50}"#;
+    let config: RunConfig = serde_json::from_str(json).unwrap();
+    assert_eq!(config.max_ticks, 50);
+    assert_eq!(config.autonomy.gcs_heartbeat_timeout_ticks, 10);
+    assert_eq!(config.autonomy.peer_heartbeat_timeout_ticks, 15);
+}

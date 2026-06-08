@@ -4,9 +4,13 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use swarm_alloc::GreedyAllocator;
-use swarm_comms::{InMemAgentTransport, InMemNetwork, NetworkConfig, RawMessage, Transport};
+use swarm_comms::{
+    AgentMissionState, InMemAgentTransport, InMemNetwork, LeaseId, NetworkConfig, RawMessage,
+    Transport,
+};
 use swarm_types::{Agent, AgentId, Capability, Health, Pose, Role, Task, TaskId, TaskStatus};
 
+use crate::autonomy::{AgentAutonomyConfig, GcsLostPolicy};
 use crate::{Coordinator, RuntimeMessage};
 
 fn agent_entry(id: &str) -> Agent {
@@ -723,5 +727,455 @@ fn gossip_merge_preserves_unrelated_tasks() {
         t1.assigned_to,
         Some(AgentId::from("agent-1".to_owned())),
         "unrelated task-1 should remain assigned to agent-1"
+    );
+}
+
+// ── M93: Agent Autonomy FSM tests ────────────────────────────────────────────
+
+fn make_gcs_node(
+    own: &str,
+    gcs: &str,
+    bus: Rc<RefCell<InMemNetwork>>,
+    policy: GcsLostPolicy,
+    heartbeat_timeout: u64,
+    peers: Vec<&str>,
+) -> AgentNode<InMemAgentTransport> {
+    let own_id = AgentId::from(own.to_owned());
+    let peer_ids: Vec<AgentId> = peers
+        .iter()
+        .map(|p| AgentId::from((*p).to_owned()))
+        .collect();
+    let all_agents: Vec<_> = std::iter::once(own)
+        .chain(peers.iter().copied())
+        .map(agent_entry)
+        .collect();
+    let transport = InMemAgentTransport::new(bus, own_id.clone());
+    let mut node = AgentNode::new(
+        own_id,
+        peer_ids,
+        Coordinator::new(all_agents, vec![], 5),
+        transport,
+    );
+    node.gossip_interval_ticks = 999;
+    node.gcs_id = Some(AgentId::from(gcs.to_owned()));
+    node.autonomy = AgentAutonomyConfig {
+        gcs_lost_policy: policy,
+        gcs_heartbeat_timeout_ticks: heartbeat_timeout,
+        ..AgentAutonomyConfig::default()
+    };
+    node
+}
+
+fn inject_gcs_hb(bus: &Rc<RefCell<InMemNetwork>>, gcs: &str, agent: &str, tick: u64) {
+    bus.borrow_mut().advance_tick();
+    bus.borrow_mut()
+        .send(RawMessage {
+            from: AgentId::from(gcs.to_owned()),
+            to: AgentId::from(agent.to_owned()),
+            payload: RuntimeMessage::heartbeat(tick, 1),
+        })
+        .unwrap();
+}
+
+fn skip_tick(bus: &Rc<RefCell<InMemNetwork>>) {
+    bus.borrow_mut().advance_tick();
+}
+
+#[test]
+fn gcs_lost_rtl_engages_after_threshold() {
+    let bus = make_bus();
+    let mut node = make_gcs_node(
+        "agent-0",
+        "gcs",
+        bus.clone(),
+        GcsLostPolicy::ReturnToLaunch { after_ticks: 3 },
+        3,
+        vec![],
+    );
+    let mut allocator = GreedyAllocator::default();
+
+    // Ticks 1-2: GCS heartbeat present
+    for tick in 1u64..=2 {
+        inject_gcs_hb(&bus, "gcs", "agent-0", tick);
+        let out = node
+            .process_inbox_and_allocate(tick, &mut allocator, vec![])
+            .unwrap();
+        assert!(!out.gcs_lost_this_tick, "should not fire at tick {tick}");
+    }
+
+    // Ticks 3-4: no GCS HB — ticks_since = 1, 2 < 3
+    for tick in 3u64..=4 {
+        skip_tick(&bus);
+        let out = node
+            .process_inbox_and_allocate(tick, &mut allocator, vec![])
+            .unwrap();
+        assert!(
+            !out.gcs_lost_this_tick,
+            "should not fire before threshold at tick {tick}"
+        );
+    }
+
+    // Tick 5: ticks_since = 5 - 2 = 3 >= 3 → fires
+    skip_tick(&bus);
+    let out = node
+        .process_inbox_and_allocate(5, &mut allocator, vec![])
+        .unwrap();
+    assert!(out.gcs_lost_this_tick, "RTL should engage at tick 5");
+    assert_eq!(
+        out.gcs_lost_policy_name.as_deref(),
+        Some("return_to_launch")
+    );
+}
+
+#[test]
+fn gcs_lost_continue_does_not_abort_before_threshold() {
+    let bus = make_bus();
+    let mut node = make_gcs_node(
+        "agent-0",
+        "gcs",
+        bus.clone(),
+        GcsLostPolicy::HoverInPlace {
+            max_gcs_lost_ticks: 10,
+        },
+        10,
+        vec![],
+    );
+    let mut allocator = GreedyAllocator::default();
+
+    // Tick 1: GCS heartbeat
+    inject_gcs_hb(&bus, "gcs", "agent-0", 1);
+    node.process_inbox_and_allocate(1, &mut allocator, vec![])
+        .unwrap();
+
+    // Ticks 2-9: no GCS HB — ticks_since = 1..8 < 10
+    for tick in 2u64..=9 {
+        skip_tick(&bus);
+        let out = node
+            .process_inbox_and_allocate(tick, &mut allocator, vec![])
+            .unwrap();
+        assert!(!out.gcs_lost_this_tick, "should not fire at tick {tick}");
+    }
+}
+
+#[test]
+fn gcs_lost_abort_immediate_triggers_on_first_tick() {
+    let bus = make_bus();
+    let mut node = make_gcs_node(
+        "agent-0",
+        "gcs",
+        bus.clone(),
+        GcsLostPolicy::AbortImmediate,
+        1,
+        vec![],
+    );
+    let mut allocator = GreedyAllocator::default();
+
+    // Tick 1: GCS HB present → no loss
+    inject_gcs_hb(&bus, "gcs", "agent-0", 1);
+    let out = node
+        .process_inbox_and_allocate(1, &mut allocator, vec![])
+        .unwrap();
+    assert!(!out.gcs_lost_this_tick);
+
+    // Tick 2: no GCS HB → ticks_since = 1 >= 1 → fires
+    skip_tick(&bus);
+    let out = node
+        .process_inbox_and_allocate(2, &mut allocator, vec![])
+        .unwrap();
+    assert!(out.gcs_lost_this_tick);
+    assert_eq!(out.gcs_lost_policy_name.as_deref(), Some("abort_immediate"));
+}
+
+#[test]
+fn continuing_under_lease_stays_active_while_lease_valid() {
+    let bus = make_bus();
+    let mut node = make_gcs_node(
+        "agent-0",
+        "gcs",
+        bus.clone(),
+        GcsLostPolicy::ReturnToLaunch { after_ticks: 3 },
+        3,
+        vec![],
+    );
+    // Active lease that expires at tick 100
+    node.active_leases
+        .push((LeaseId::from("lease-1".to_owned()), 100));
+    let mut allocator = GreedyAllocator::default();
+
+    // Ticks 1-2: GCS HB
+    for tick in 1u64..=2 {
+        inject_gcs_hb(&bus, "gcs", "agent-0", tick);
+        node.process_inbox_and_allocate(tick, &mut allocator, vec![])
+            .unwrap();
+    }
+
+    // Ticks 3-4: no GCS HB, threshold not yet reached
+    for tick in 3u64..=4 {
+        skip_tick(&bus);
+        let out = node
+            .process_inbox_and_allocate(tick, &mut allocator, vec![])
+            .unwrap();
+        assert!(!out.gcs_lost_this_tick);
+        assert!(out.continuing_under_lease_this_tick.is_none());
+    }
+
+    // Tick 5: ticks_since = 3 >= 3, but lease is valid → ContinuingUnderLease
+    skip_tick(&bus);
+    let out = node
+        .process_inbox_and_allocate(5, &mut allocator, vec![])
+        .unwrap();
+    assert!(
+        !out.gcs_lost_this_tick,
+        "should NOT enter GcsLost while lease valid"
+    );
+    assert!(
+        out.continuing_under_lease_this_tick.is_some(),
+        "should emit ContinuingUnderLease event"
+    );
+    assert!(matches!(
+        node.mission_state,
+        AgentMissionState::ContinuingUnderLease { .. }
+    ));
+
+    // Ticks 6-9: still in ContinuingUnderLease, lease still valid
+    for tick in 6u64..=9 {
+        skip_tick(&bus);
+        let out = node
+            .process_inbox_and_allocate(tick, &mut allocator, vec![])
+            .unwrap();
+        assert!(
+            !out.gcs_lost_this_tick,
+            "should stay in ContinuingUnderLease at tick {tick}"
+        );
+        assert!(
+            matches!(
+                node.mission_state,
+                AgentMissionState::ContinuingUnderLease { .. }
+            ),
+            "mission state should remain ContinuingUnderLease at tick {tick}"
+        );
+    }
+}
+
+#[test]
+fn lease_expiry_during_gcs_loss_applies_policy() {
+    let bus = make_bus();
+    let mut node = make_gcs_node(
+        "agent-0",
+        "gcs",
+        bus.clone(),
+        GcsLostPolicy::ReturnToLaunch { after_ticks: 3 },
+        3,
+        vec![],
+    );
+    // Lease expires at tick 8
+    node.active_leases
+        .push((LeaseId::from("lease-short".to_owned()), 8));
+    let mut allocator = GreedyAllocator::default();
+
+    // Ticks 1-2: GCS HB
+    for tick in 1u64..=2 {
+        inject_gcs_hb(&bus, "gcs", "agent-0", tick);
+        node.process_inbox_and_allocate(tick, &mut allocator, vec![])
+            .unwrap();
+    }
+
+    // Tick 5: ContinuingUnderLease (lease valid, 5 < 8)
+    for tick in 3u64..=5 {
+        skip_tick(&bus);
+        node.process_inbox_and_allocate(tick, &mut allocator, vec![])
+            .unwrap();
+    }
+    assert!(matches!(
+        node.mission_state,
+        AgentMissionState::ContinuingUnderLease { .. }
+    ));
+
+    // Ticks 6-7: lease still valid (6 < 8, 7 < 8)
+    for tick in 6u64..=7 {
+        skip_tick(&bus);
+        let out = node
+            .process_inbox_and_allocate(tick, &mut allocator, vec![])
+            .unwrap();
+        assert!(
+            out.lease_expired_in_gcs_loss.is_none(),
+            "lease still valid at tick {tick}"
+        );
+    }
+
+    // Tick 8: lease expiry — 8 < 8 = false → triggers transition
+    skip_tick(&bus);
+    let out = node
+        .process_inbox_and_allocate(8, &mut allocator, vec![])
+        .unwrap();
+    assert!(
+        out.lease_expired_in_gcs_loss.is_some(),
+        "lease expiry event should fire at tick 8"
+    );
+    let (lid, policy) = out.lease_expired_in_gcs_loss.unwrap();
+    assert_eq!(lid, "lease-short");
+    assert_eq!(policy, "return_to_launch");
+    assert!(matches!(
+        node.mission_state,
+        AgentMissionState::GcsLost { .. }
+    ));
+}
+
+#[test]
+fn gcs_reconnect_emits_state_reconcile_report() {
+    let bus = make_bus();
+    let mut node = make_gcs_node(
+        "agent-0",
+        "gcs",
+        bus.clone(),
+        GcsLostPolicy::ReturnToLaunch { after_ticks: 3 },
+        3,
+        vec![],
+    );
+    let mut allocator = GreedyAllocator::default();
+
+    // Ticks 1-2: GCS HB
+    for tick in 1u64..=2 {
+        inject_gcs_hb(&bus, "gcs", "agent-0", tick);
+        node.process_inbox_and_allocate(tick, &mut allocator, vec![])
+            .unwrap();
+    }
+
+    // Tick 5: GCS lost (ticks_since = 3 >= 3)
+    for tick in 3u64..=5 {
+        skip_tick(&bus);
+        node.process_inbox_and_allocate(tick, &mut allocator, vec![])
+            .unwrap();
+    }
+    assert!(matches!(
+        node.mission_state,
+        AgentMissionState::GcsLost { .. }
+    ));
+
+    // Tick 6: GCS reconnects → should emit reconcile report
+    inject_gcs_hb(&bus, "gcs", "agent-0", 6);
+    let out = node
+        .process_inbox_and_allocate(6, &mut allocator, vec![])
+        .unwrap();
+    assert!(
+        out.gcs_reconnected_this_tick,
+        "GCS should be detected as reconnected"
+    );
+    assert!(
+        out.reconcile_report.is_some(),
+        "reconcile report must be present"
+    );
+    let report = out.reconcile_report.unwrap();
+    assert_eq!(*report.agent_id, "agent-0");
+    assert!(
+        report.gcs_lost_ticks > 0,
+        "gcs_lost_ticks should be non-zero"
+    );
+    assert_eq!(report.policy_applied, "return_to_launch");
+    assert!(matches!(node.mission_state, AgentMissionState::Idle));
+}
+
+#[test]
+fn state_reconcile_report_contains_active_leases() {
+    let bus = make_bus();
+    let mut node = make_gcs_node(
+        "agent-0",
+        "gcs",
+        bus.clone(),
+        GcsLostPolicy::ReturnToLaunch { after_ticks: 3 },
+        3,
+        vec![],
+    );
+    // Active lease that outlasts the GCS loss period
+    node.active_leases
+        .push((LeaseId::from("lease-active".to_owned()), 100));
+    let mut allocator = GreedyAllocator::default();
+
+    // Ticks 1-2: GCS HB
+    for tick in 1u64..=2 {
+        inject_gcs_hb(&bus, "gcs", "agent-0", tick);
+        node.process_inbox_and_allocate(tick, &mut allocator, vec![])
+            .unwrap();
+    }
+
+    // Ticks 3-5: GCS lost; lease still valid so enters ContinuingUnderLease
+    for tick in 3u64..=5 {
+        skip_tick(&bus);
+        node.process_inbox_and_allocate(tick, &mut allocator, vec![])
+            .unwrap();
+    }
+
+    // Tick 6: GCS reconnects
+    inject_gcs_hb(&bus, "gcs", "agent-0", 6);
+    let out = node
+        .process_inbox_and_allocate(6, &mut allocator, vec![])
+        .unwrap();
+    assert!(out.gcs_reconnected_this_tick);
+    let report = out.reconcile_report.expect("reconcile report must exist");
+    assert_eq!(
+        report.active_leases_at_reconnect.len(),
+        1,
+        "report should list the active lease"
+    );
+    assert_eq!(
+        *report.active_leases_at_reconnect[0].lease_id,
+        "lease-active"
+    );
+}
+
+#[test]
+fn neighbor_lost_detected_after_timeout() {
+    let bus = make_bus();
+    let own_id = AgentId::from("agent-0".to_owned());
+    let peer_id = AgentId::from("agent-1".to_owned());
+    let transport = InMemAgentTransport::new(bus.clone(), own_id.clone());
+    let mut node = AgentNode::new(
+        own_id,
+        vec![peer_id.clone()],
+        Coordinator::new(
+            vec![agent_entry("agent-0"), agent_entry("agent-1")],
+            vec![],
+            5,
+        ),
+        transport,
+    );
+    node.gossip_interval_ticks = 999;
+    node.autonomy = AgentAutonomyConfig {
+        peer_heartbeat_timeout_ticks: 3,
+        ..AgentAutonomyConfig::default()
+    };
+    let mut allocator = GreedyAllocator::default();
+
+    // Ticks 1-2: ticks_since_peer = current_tick (no HB ever) = 1, 2 < 3
+    for tick in 1u64..=2 {
+        skip_tick(&bus);
+        let out = node
+            .process_inbox_and_allocate(tick, &mut allocator, vec![])
+            .unwrap();
+        assert!(
+            out.neighbors_lost_this_tick.is_empty(),
+            "should not detect neighbor loss at tick {tick}"
+        );
+    }
+
+    // Tick 3: ticks_since_peer = 3 >= 3 → detection
+    skip_tick(&bus);
+    let out = node
+        .process_inbox_and_allocate(3, &mut allocator, vec![])
+        .unwrap();
+    assert_eq!(
+        out.neighbors_lost_this_tick,
+        vec![peer_id.clone()],
+        "neighbor loss should fire at tick 3"
+    );
+
+    // Tick 4: already in lost_peers_detected → no re-fire
+    skip_tick(&bus);
+    let out = node
+        .process_inbox_and_allocate(4, &mut allocator, vec![])
+        .unwrap();
+    assert!(
+        out.neighbors_lost_this_tick.is_empty(),
+        "neighbor loss should not fire twice"
     );
 }

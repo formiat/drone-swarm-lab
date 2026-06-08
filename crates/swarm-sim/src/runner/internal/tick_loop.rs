@@ -1,10 +1,12 @@
+use swarm_comms::AgentMissionState;
+
 use super::super::*;
 use super::{
     all_dynamic_tasks_injected, all_failure_ticks_passed, all_partitions_resolved,
     apply_environment_effects, apply_partition_events, connectivity_metrics_tick,
     process_alive_nodes, process_wildfire_mapping_tick, record_agent_failures,
     record_inspection_edge_visits, record_safety_violations, record_sar_scans, record_tick_start,
-    send_alive_heartbeats, should_stop_tick, tasks_injected_at_tick,
+    send_alive_heartbeats, send_gcs_heartbeats, should_stop_tick, tasks_injected_at_tick,
     teleport_assigned_tasks_when_movement_disabled, update_connectivity_snapshot,
     MissionStopSnapshot, TickLoopState,
 };
@@ -109,6 +111,14 @@ pub(in crate::runner) fn run_tick_loop<A: Allocator>(
             state.base_pose,
         );
 
+        // M93: inject GCS heartbeat from base_id; partition events will block it when needed
+        send_gcs_heartbeats(
+            &state.bus,
+            &state.nodes,
+            &state.crashed_agents,
+            &state.base_id.clone(),
+            current_tick,
+        );
         send_alive_heartbeats(&mut state.nodes, &state.crashed_agents, current_tick);
         let tick_outputs = process_alive_nodes(
             &mut state.nodes,
@@ -130,6 +140,91 @@ pub(in crate::runner) fn run_tick_loop<A: Allocator>(
                         });
                     }
                 }
+            }
+        }
+
+        // M93: process autonomy FSM events from all agents
+        for (agent_id, output) in &tick_outputs {
+            if output.gcs_lost_this_tick {
+                state.gcs_lost_count += 1;
+                if output
+                    .gcs_lost_policy_name
+                    .as_deref()
+                    .is_some_and(|p| p == "return_to_launch")
+                {
+                    state.failsafe_rtl_count += 1;
+                }
+                if let Some(ref mut builder) = state.log_builder {
+                    builder.push(swarm_replay::Event::AgentGcsLost {
+                        agent_id: agent_id.clone(),
+                        tick: current_tick,
+                        policy: output.gcs_lost_policy_name.clone().unwrap_or_default(),
+                    });
+                }
+            }
+            if output.gcs_reconnected_this_tick {
+                if let Some(ref mut builder) = state.log_builder {
+                    builder.push(swarm_replay::Event::AgentGcsReconnected {
+                        agent_id: agent_id.clone(),
+                        tick: current_tick,
+                        gcs_lost_ticks: output.gcs_recovered_lost_ticks,
+                    });
+                }
+                if let Some(ref report) = output.reconcile_report {
+                    if let Some(ref mut builder) = state.log_builder {
+                        builder.push(swarm_replay::Event::AgentStateReconciled {
+                            agent_id: agent_id.clone(),
+                            tick: current_tick,
+                            gcs_lost_ticks: report.gcs_lost_ticks,
+                            policy_applied: report.policy_applied.clone(),
+                            active_lease_count: report.active_leases_at_reconnect.len() as u64,
+                            mission_state_name: format!("{:?}", report.mission_state_at_reconnect),
+                        });
+                    }
+                }
+            }
+            if let Some(ref lease_id) = output.continuing_under_lease_this_tick {
+                if let Some(ref mut builder) = state.log_builder {
+                    builder.push(swarm_replay::Event::AgentContinuingUnderLease {
+                        agent_id: agent_id.clone(),
+                        lease_id: lease_id.clone(),
+                        tick: current_tick,
+                    });
+                }
+            }
+            if let Some((ref lease_id, ref policy)) = output.lease_expired_in_gcs_loss {
+                state.lease_expired_during_gcs_loss_count += 1;
+                if let Some(ref mut builder) = state.log_builder {
+                    builder.push(swarm_replay::Event::AgentLeaseExpiredDuringGcsLoss {
+                        agent_id: agent_id.clone(),
+                        lease_id: lease_id.clone(),
+                        policy_applied: policy.clone(),
+                        tick: current_tick,
+                    });
+                }
+            }
+            for lost_id in &output.neighbors_lost_this_tick {
+                state.neighbor_lost_count += 1;
+                if let Some(ref mut builder) = state.log_builder {
+                    builder.push(swarm_replay::Event::AgentNeighborLost {
+                        agent_id: agent_id.clone(),
+                        lost_neighbor_id: lost_id.clone(),
+                        tick: current_tick,
+                    });
+                }
+            }
+        }
+        // M93: accumulate ticks spent in GCS-degraded states
+        for (node, agent_id) in &state.nodes {
+            if state.crashed_agents.contains(agent_id) {
+                continue;
+            }
+            match &node.mission_state {
+                AgentMissionState::GcsLost { .. }
+                | AgentMissionState::ContinuingUnderLease { .. } => {
+                    state.gcs_lost_total_ticks += 1;
+                }
+                _ => {}
             }
         }
 

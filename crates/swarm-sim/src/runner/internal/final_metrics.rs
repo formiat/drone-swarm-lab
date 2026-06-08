@@ -73,6 +73,12 @@ pub(in crate::runner) struct MetricsInput {
     pub unsupported_reason: Option<String>,
     /// Event log builder consumed here to produce the final event log.
     pub log_builder: Option<swarm_replay::EventLogBuilder>,
+    // M93 autonomy metrics forwarded from TickLoopState
+    pub gcs_lost_count: u64,
+    pub gcs_lost_total_ticks: u64,
+    pub neighbor_lost_count: u64,
+    pub failsafe_rtl_count: u64,
+    pub lease_expired_during_gcs_loss_count: u64,
 }
 
 /// Assemble the final RunMetrics and EventLog from accumulated loop state.
@@ -453,11 +459,11 @@ pub(in crate::runner) fn assemble_final_metrics(
             time_to_complete_perimeter: None,
             perimeter_violations: 0,
             // M93 autonomy metrics
-            gcs_lost_count: 0,
-            gcs_lost_total_ticks: 0,
-            neighbor_lost_count: 0,
-            failsafe_rtl_count: 0,
-            lease_expired_during_gcs_loss_count: 0,
+            gcs_lost_count: input.gcs_lost_count,
+            gcs_lost_total_ticks: input.gcs_lost_total_ticks,
+            neighbor_lost_count: input.neighbor_lost_count,
+            failsafe_rtl_count: input.failsafe_rtl_count,
+            lease_expired_during_gcs_loss_count: input.lease_expired_during_gcs_loss_count,
         },
         event_log,
     )

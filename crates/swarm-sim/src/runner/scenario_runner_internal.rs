@@ -138,6 +138,11 @@ impl ScenarioRunner {
             urban_route_completed,
             unsupported_reason,
             log_builder: state.log_builder,
+            gcs_lost_count: state.gcs_lost_count,
+            gcs_lost_total_ticks: state.gcs_lost_total_ticks,
+            neighbor_lost_count: state.neighbor_lost_count,
+            failsafe_rtl_count: state.failsafe_rtl_count,
+            lease_expired_during_gcs_loss_count: state.lease_expired_during_gcs_loss_count,
         })
     }
 }

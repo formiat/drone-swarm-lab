@@ -58,6 +58,17 @@ pub(in crate::runner) struct TickLoopState<A: Allocator> {
     pub total_hop_count_ticks: u64,
     pub base_id: AgentId,
     pub base_pose: Pose,
+    // M93 autonomy metrics accumulators
+    /// Number of GCS-lost events across all agents.
+    pub gcs_lost_count: u64,
+    /// Total agent-ticks spent in GcsLost or ContinuingUnderLease.
+    pub gcs_lost_total_ticks: u64,
+    /// Number of neighbour-loss events across all agents.
+    pub neighbor_lost_count: u64,
+    /// Number of RTL failsafe actions triggered.
+    pub failsafe_rtl_count: u64,
+    /// Number of leases that expired while their holder was in GCS-lost state.
+    pub lease_expired_during_gcs_loss_count: u64,
 }
 
 impl<A: Allocator> TickLoopState<A> {
@@ -80,6 +91,11 @@ impl<A: Allocator> TickLoopState<A> {
             comms_jitter_ticks: config.comms_jitter_ticks,
         })));
 
+        let base_id = config
+            .base_id
+            .clone()
+            .unwrap_or_else(|| AgentId::from("base".to_owned()));
+
         let agent_ids: Vec<AgentId> = scenario.agents.iter().map(|a| a.id.clone()).collect();
         let nodes: Vec<(AgentNode<InMemAgentTransport>, AgentId)> = scenario
             .agents
@@ -100,6 +116,9 @@ impl<A: Allocator> TickLoopState<A> {
                 node.gossip_interval_ticks = config.gossip_interval_ticks;
                 node.config.enable_movement = config.enable_movement;
                 node.config.tick_duration_ms = config.tick_duration_ms;
+                // M93: apply autonomy config and GCS identity to every agent node
+                node.autonomy = config.autonomy.clone();
+                node.gcs_id = Some(base_id.clone());
                 if config.enable_cbba {
                     #[allow(clippy::field_reassign_with_default)]
                     {
@@ -117,10 +136,6 @@ impl<A: Allocator> TickLoopState<A> {
             .iter()
             .map(|failure| (failure.agent_id.clone(), failure.at_tick))
             .collect();
-        let base_id = config
-            .base_id
-            .clone()
-            .unwrap_or_else(|| AgentId::from("base".to_owned()));
         let base_pose = scenario.base_station.unwrap_or(Pose {
             x: 0.0,
             y: 0.0,
@@ -130,6 +145,12 @@ impl<A: Allocator> TickLoopState<A> {
         Self {
             nodes,
             bus,
+            // M93 autonomy metrics initialised to zero
+            gcs_lost_count: 0,
+            gcs_lost_total_ticks: 0,
+            neighbor_lost_count: 0,
+            failsafe_rtl_count: 0,
+            lease_expired_during_gcs_loss_count: 0,
             allocator,
             clock: Clock::new(1),
             log_builder,
