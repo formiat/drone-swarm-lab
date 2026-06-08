@@ -1311,3 +1311,71 @@ fn neighbor_lost_continue_policy_does_not_abort() {
         "mission state should remain Idle under ReleaseLocksAndContinue"
     );
 }
+
+#[test]
+fn neighbor_lost_releases_segment_locks() {
+    // Verifies that ReleaseLocksAndContinue emits the neighbor-lost event (which
+    // signals the planner layer to release segment locks held by the lost peer) and
+    // does not abort the local mission.
+    // NOTE (M93 Non-Goal): releasing segment locks held by a *different* agent
+    // requires a shared cross-agent lease registry, which is out of scope for M93.
+    // This test verifies the FSM-level observable: event fires, no abort.
+    let bus = make_bus();
+    let own_id = AgentId::from("agent-0".to_owned());
+    let peer_id = AgentId::from("agent-1".to_owned());
+    let transport = InMemAgentTransport::new(bus.clone(), own_id.clone());
+    let mut node = AgentNode::new(
+        own_id,
+        vec![peer_id.clone()],
+        Coordinator::new(
+            vec![agent_entry("agent-0"), agent_entry("agent-1")],
+            vec![],
+            5,
+        ),
+        transport,
+    );
+    node.gossip_interval_ticks = 999;
+    node.autonomy = AgentAutonomyConfig {
+        neighbor_lost_policy: NeighborLostPolicy::ReleaseLocksAndContinue,
+        peer_heartbeat_timeout_ticks: 3,
+        ..AgentAutonomyConfig::default()
+    };
+    let mut allocator = GreedyAllocator::default();
+
+    // Ticks 1-2: peer absent, ticks_since = 1, 2 < 3 → no event yet
+    for tick in 1u64..=2 {
+        skip_tick(&bus);
+        let out = node
+            .process_inbox_and_allocate(tick, &mut allocator, vec![])
+            .unwrap();
+        assert!(
+            out.neighbors_lost_this_tick.is_empty(),
+            "no event before timeout at tick {tick}"
+        );
+    }
+
+    // Tick 3: ticks_since = 3 >= 3 → event fires
+    skip_tick(&bus);
+    let out = node
+        .process_inbox_and_allocate(3, &mut allocator, vec![])
+        .unwrap();
+    assert_eq!(
+        out.neighbors_lost_this_tick,
+        vec![peer_id.clone()],
+        "neighbor-lost event must fire at threshold tick"
+    );
+    assert!(
+        !matches!(node.mission_state, AgentMissionState::Aborting { .. }),
+        "ReleaseLocksAndContinue must NOT abort the local mission"
+    );
+
+    // Tick 4: already detected — must not re-fire
+    skip_tick(&bus);
+    let out = node
+        .process_inbox_and_allocate(4, &mut allocator, vec![])
+        .unwrap();
+    assert!(
+        out.neighbors_lost_this_tick.is_empty(),
+        "neighbor-lost event must not fire twice for the same peer"
+    );
+}
