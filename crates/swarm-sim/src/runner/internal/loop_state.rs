@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use swarm_alloc::Allocator;
-use swarm_comms::{InMemAgentTransport, InMemNetwork, NetworkConfig};
+use swarm_comms::{InMemAgentTransport, InMemNetwork, LeaseId, NetworkConfig};
 use swarm_runtime::{AgentNode, Coordinator, GridState};
 use swarm_types::{AdapterRegistry, AgentId, Pose, TaskId};
 
@@ -119,6 +119,12 @@ impl<A: Allocator> TickLoopState<A> {
                 // M93: apply autonomy config and GCS identity to every agent node
                 node.autonomy = config.autonomy.clone();
                 node.gcs_id = Some(base_id.clone());
+                if let Some(leases) = config.initial_agent_leases.get(&agent.id) {
+                    for (lease_id, expiry_tick) in leases {
+                        node.active_leases
+                            .push((LeaseId::from(lease_id.clone()), *expiry_tick));
+                    }
+                }
                 if config.enable_cbba {
                     #[allow(clippy::field_reassign_with_default)]
                     {

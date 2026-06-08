@@ -47,6 +47,11 @@ impl Default for MothershipLostPolicy {
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum NeighborLostPolicy {
     /// Release any segment locks held by the lost agent and keep going.
+    ///
+    /// **Non-Goal (M93):** releasing segment locks held by a *different* agent requires a
+    /// shared cross-agent lease registry, which is out of scope for this milestone.
+    /// The FSM records the event and does not abort; the planner layer is responsible
+    /// for acting on stale lock state once such a registry exists.
     #[default]
     ReleaseLocksAndContinue,
     /// Suspend progress and wait for reconnect for up to `max_ticks`.

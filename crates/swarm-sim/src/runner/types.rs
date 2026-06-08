@@ -273,6 +273,10 @@ pub struct RunConfig {
     /// deserialize correctly.
     #[serde(default)]
     pub autonomy: AgentAutonomyConfig,
+    /// Pre-seeded leases injected into agent nodes at simulation start.
+    /// key: `AgentId` → `[(lease_id, expiry_tick)]`
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub initial_agent_leases: HashMap<AgentId, Vec<(String, u64)>>,
 }
 
 /// A minimal real-hardware mission expressed as a single parametric command

@@ -10,7 +10,9 @@ use swarm_comms::{
 };
 use swarm_types::{Agent, AgentId, Capability, Health, Pose, Role, Task, TaskId, TaskStatus};
 
-use crate::autonomy::{AgentAutonomyConfig, GcsLostPolicy};
+use crate::autonomy::{
+    AgentAutonomyConfig, GcsLostPolicy, MothershipLostPolicy, NeighborLostPolicy,
+};
 use crate::{Coordinator, RuntimeMessage};
 
 fn agent_entry(id: &str) -> Agent {
@@ -1177,5 +1179,135 @@ fn neighbor_lost_detected_after_timeout() {
     assert!(
         out.neighbors_lost_this_tick.is_empty(),
         "neighbor loss should not fire twice"
+    );
+}
+
+#[test]
+fn mothership_lost_wait_at_staging_holds() {
+    let bus = make_bus();
+    let own_id = AgentId::from("agent-0".to_owned());
+    let ms_id = AgentId::from("mothership".to_owned());
+    let transport = InMemAgentTransport::new(bus.clone(), own_id.clone());
+    let mut node = AgentNode::new(
+        own_id,
+        vec![],
+        Coordinator::new(vec![agent_entry("agent-0")], vec![], 5),
+        transport,
+    );
+    node.gossip_interval_ticks = 999;
+    node.mothership_id = Some(ms_id.clone());
+    node.autonomy = AgentAutonomyConfig {
+        mothership_lost_policy: MothershipLostPolicy::WaitAtStaging { max_ticks: 4 },
+        ..AgentAutonomyConfig::default()
+    };
+    let mut allocator = GreedyAllocator::default();
+
+    // Tick 1: mothership HB present → no loss
+    bus.borrow_mut().advance_tick();
+    bus.borrow_mut()
+        .send(RawMessage {
+            from: ms_id.clone(),
+            to: AgentId::from("agent-0".to_owned()),
+            payload: RuntimeMessage::heartbeat(1, 1),
+        })
+        .unwrap();
+    let out = node
+        .process_inbox_and_allocate(1, &mut allocator, vec![])
+        .unwrap();
+    assert!(!out.mothership_lost_this_tick, "no loss at tick 1");
+
+    // Ticks 2-4: no mothership HB, ticks_since = 1..3 < 4
+    for tick in 2u64..=4 {
+        skip_tick(&bus);
+        let out = node
+            .process_inbox_and_allocate(tick, &mut allocator, vec![])
+            .unwrap();
+        assert!(
+            !out.mothership_lost_this_tick,
+            "should not fire before max_ticks at tick {tick}"
+        );
+        assert!(
+            !matches!(node.mission_state, AgentMissionState::Aborting { .. }),
+            "mission state should not be Aborting at tick {tick}"
+        );
+    }
+
+    // Tick 5: ticks_since = 4 >= 4 → WaitAtStaging limit reached → Aborting
+    skip_tick(&bus);
+    let out = node
+        .process_inbox_and_allocate(5, &mut allocator, vec![])
+        .unwrap();
+    assert!(
+        out.mothership_lost_this_tick,
+        "mothership_lost should fire at tick 5"
+    );
+    assert!(
+        matches!(
+            node.mission_state,
+            AgentMissionState::Aborting { ref reason } if reason == "mothership_lost"
+        ),
+        "mission state should be Aborting(mothership_lost)"
+    );
+
+    // Tick 6: already Aborting → no re-fire
+    skip_tick(&bus);
+    let out = node
+        .process_inbox_and_allocate(6, &mut allocator, vec![])
+        .unwrap();
+    assert!(
+        !out.mothership_lost_this_tick,
+        "mothership_lost should not fire twice"
+    );
+}
+
+#[test]
+fn neighbor_lost_continue_policy_does_not_abort() {
+    let bus = make_bus();
+    let own_id = AgentId::from("agent-0".to_owned());
+    let peer_id = AgentId::from("agent-1".to_owned());
+    let transport = InMemAgentTransport::new(bus.clone(), own_id.clone());
+    let mut node = AgentNode::new(
+        own_id,
+        vec![peer_id.clone()],
+        Coordinator::new(
+            vec![agent_entry("agent-0"), agent_entry("agent-1")],
+            vec![],
+            5,
+        ),
+        transport,
+    );
+    node.gossip_interval_ticks = 999;
+    node.autonomy = AgentAutonomyConfig {
+        neighbor_lost_policy: NeighborLostPolicy::ReleaseLocksAndContinue,
+        peer_heartbeat_timeout_ticks: 2,
+        ..AgentAutonomyConfig::default()
+    };
+    let mut allocator = GreedyAllocator::default();
+
+    // Ticks 1: ticks_since_peer = 1 < 2 → no detection yet
+    skip_tick(&bus);
+    let out = node
+        .process_inbox_and_allocate(1, &mut allocator, vec![])
+        .unwrap();
+    assert!(out.neighbors_lost_this_tick.is_empty());
+
+    // Tick 2: ticks_since_peer = 2 >= 2 → peer declared lost
+    skip_tick(&bus);
+    let out = node
+        .process_inbox_and_allocate(2, &mut allocator, vec![])
+        .unwrap();
+    assert_eq!(
+        out.neighbors_lost_this_tick,
+        vec![peer_id],
+        "peer should be declared lost at tick 2"
+    );
+    // ReleaseLocksAndContinue must NOT transition the FSM to Aborting
+    assert!(
+        !matches!(node.mission_state, AgentMissionState::Aborting { .. }),
+        "ReleaseLocksAndContinue must NOT transition to Aborting"
+    );
+    assert!(
+        matches!(node.mission_state, AgentMissionState::Idle),
+        "mission state should remain Idle under ReleaseLocksAndContinue"
     );
 }

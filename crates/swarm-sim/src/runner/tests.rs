@@ -1,6 +1,7 @@
 use super::*;
 use swarm_alloc::{AllocationAgent, AllocationTask, Allocator};
 use swarm_comms::DroneLinkConfig;
+use swarm_runtime::autonomy::{AgentAutonomyConfig, GcsLostPolicy};
 use swarm_types::{
     Aabb, Agent, Capability, CellState, EdgeId, Health, HiddenTarget, InspectionEdge, Pose, Role,
     SearchGrid, SensorModel, Task, TaskKind, TaskStatus, UrbanBlockedPolicy, UrbanBus, UrbanBusId,
@@ -1514,4 +1515,101 @@ fn existing_scenarios_load_without_autonomy_field() {
     assert_eq!(config.max_ticks, 50);
     assert_eq!(config.autonomy.gcs_heartbeat_timeout_ticks, 10);
     assert_eq!(config.autonomy.peer_heartbeat_timeout_ticks, 15);
+}
+
+// ── M93 integration tests ─────────────────────────────────────────────────────
+
+/// Builds a minimal one-agent scenario suitable for autonomy FSM integration tests.
+fn autonomy_scenario() -> Scenario {
+    scenario(0, 1, 0)
+}
+
+/// Builds a RunConfig that partitions the default GCS ("base") from "agent-0"
+/// starting at tick 1 and running until the simulation ends.
+fn partition_config(extra_ticks: u64, autonomy: AgentAutonomyConfig) -> RunConfig {
+    RunConfig {
+        max_ticks: extra_ticks,
+        partition_events: vec![PartitionEvent {
+            at_tick: 1,
+            until_tick: None,
+            heal_at_tick: None,
+            agents: (
+                AgentId::from("base".to_owned()),
+                AgentId::from("agent-0".to_owned()),
+            ),
+        }],
+        autonomy,
+        ..config(vec![])
+    }
+}
+
+#[test]
+fn replay_contains_agent_gcs_lost() {
+    let autonomy = AgentAutonomyConfig {
+        gcs_lost_policy: GcsLostPolicy::ReturnToLaunch { after_ticks: 3 },
+        ..AgentAutonomyConfig::default()
+    };
+    let (_, event_log) = ScenarioRunner::run_with_log(
+        &autonomy_scenario(),
+        partition_config(10, autonomy),
+        swarm_alloc::GreedyAllocator::default(),
+    );
+    let event_log = event_log.expect("run_with_log should return an event log");
+    assert!(
+        event_log.events.iter().any(|event| matches!(
+            event,
+            swarm_replay::Event::AgentGcsLost { agent_id, .. }
+                if agent_id.as_ref() == "agent-0"
+        )),
+        "replay log must contain AgentGcsLost for agent-0"
+    );
+}
+
+#[test]
+fn gcs_lost_count_metric_is_nonzero_after_partition() {
+    let autonomy = AgentAutonomyConfig {
+        gcs_lost_policy: GcsLostPolicy::ReturnToLaunch { after_ticks: 3 },
+        ..AgentAutonomyConfig::default()
+    };
+    let (metrics, _) = ScenarioRunner::run_with_log(
+        &autonomy_scenario(),
+        partition_config(10, autonomy),
+        swarm_alloc::GreedyAllocator::default(),
+    );
+    assert!(
+        metrics.gcs_lost_count > 0,
+        "gcs_lost_count should be non-zero after partition isolates the GCS"
+    );
+}
+
+#[test]
+fn replay_contains_agent_continuing_under_lease() {
+    let autonomy = AgentAutonomyConfig {
+        gcs_lost_policy: GcsLostPolicy::ReturnToLaunch { after_ticks: 3 },
+        ..AgentAutonomyConfig::default()
+    };
+    let mut initial_leases = std::collections::HashMap::new();
+    // Lease expires at tick 100 — well after the GCS loss at tick 3.
+    initial_leases.insert(
+        AgentId::from("agent-0".to_owned()),
+        vec![("auto-lease-1".to_owned(), 100u64)],
+    );
+    let cfg = RunConfig {
+        initial_agent_leases: initial_leases,
+        ..partition_config(10, autonomy)
+    };
+    let (_, event_log) = ScenarioRunner::run_with_log(
+        &autonomy_scenario(),
+        cfg,
+        swarm_alloc::GreedyAllocator::default(),
+    );
+    let event_log = event_log.expect("run_with_log should return an event log");
+    assert!(
+        event_log.events.iter().any(|event| matches!(
+            event,
+            swarm_replay::Event::AgentContinuingUnderLease { agent_id, lease_id, .. }
+                if agent_id.as_ref() == "agent-0" && lease_id == "auto-lease-1"
+        )),
+        "replay log must contain AgentContinuingUnderLease for agent-0 with auto-lease-1"
+    );
 }

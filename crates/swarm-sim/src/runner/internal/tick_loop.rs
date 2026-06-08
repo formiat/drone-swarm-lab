@@ -116,7 +116,7 @@ pub(in crate::runner) fn run_tick_loop<A: Allocator>(
             &state.bus,
             &state.nodes,
             &state.crashed_agents,
-            &state.base_id.clone(),
+            &state.base_id,
             current_tick,
         );
         send_alive_heartbeats(&mut state.nodes, &state.crashed_agents, current_tick);
