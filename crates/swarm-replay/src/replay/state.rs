@@ -111,7 +111,13 @@ pub fn replay(log: &EventLog) -> ReplayState {
             | Event::SwarmProtocolMessage { .. }
             | Event::LeaseGranted { .. }
             | Event::LeaseExpired { .. }
-            | Event::OwnershipConflict { .. } => {}
+            | Event::OwnershipConflict { .. }
+            | Event::AgentGcsLost { .. }
+            | Event::AgentGcsReconnected { .. }
+            | Event::AgentContinuingUnderLease { .. }
+            | Event::AgentLeaseExpiredDuringGcsLoss { .. }
+            | Event::AgentNeighborLost { .. }
+            | Event::AgentStateReconciled { .. } => {}
         }
     }
 

@@ -306,7 +306,13 @@ fn event_category(event: &Event) -> ReplayEventCategory {
         | Event::SwarmProtocolMessage { .. }
         | Event::LeaseGranted { .. }
         | Event::LeaseExpired { .. }
-        | Event::OwnershipConflict { .. } => ReplayEventCategory::Generic,
+        | Event::OwnershipConflict { .. }
+        | Event::AgentGcsLost { .. }
+        | Event::AgentGcsReconnected { .. }
+        | Event::AgentContinuingUnderLease { .. }
+        | Event::AgentLeaseExpiredDuringGcsLoss { .. }
+        | Event::AgentNeighborLost { .. }
+        | Event::AgentStateReconciled { .. } => ReplayEventCategory::Generic,
     }
 }
 
@@ -380,6 +386,12 @@ fn event_agent_id(event: &Event) -> Option<AgentId> {
         Event::LeaseGranted { holder, .. } => Some(holder.clone()),
         Event::LeaseExpired { .. } => None,
         Event::OwnershipConflict { claimant_a, .. } => Some(claimant_a.clone()),
+        Event::AgentGcsLost { agent_id, .. }
+        | Event::AgentGcsReconnected { agent_id, .. }
+        | Event::AgentContinuingUnderLease { agent_id, .. }
+        | Event::AgentLeaseExpiredDuringGcsLoss { agent_id, .. }
+        | Event::AgentNeighborLost { agent_id, .. }
+        | Event::AgentStateReconciled { agent_id, .. } => Some(agent_id.clone()),
     }
 }
 
@@ -446,7 +458,13 @@ fn event_tick(event: &Event) -> u64 {
         | Event::SwarmProtocolMessage { tick, .. }
         | Event::LeaseGranted { tick, .. }
         | Event::LeaseExpired { tick, .. }
-        | Event::OwnershipConflict { tick, .. } => *tick,
+        | Event::OwnershipConflict { tick, .. }
+        | Event::AgentGcsLost { tick, .. }
+        | Event::AgentGcsReconnected { tick, .. }
+        | Event::AgentContinuingUnderLease { tick, .. }
+        | Event::AgentLeaseExpiredDuringGcsLoss { tick, .. }
+        | Event::AgentNeighborLost { tick, .. }
+        | Event::AgentStateReconciled { tick, .. } => *tick,
     }
 }
 
@@ -516,6 +534,12 @@ fn event_name(event: &Event) -> &'static str {
         Event::LeaseGranted { .. } => "LeaseGranted",
         Event::LeaseExpired { .. } => "LeaseExpired",
         Event::OwnershipConflict { .. } => "OwnershipConflict",
+        Event::AgentGcsLost { .. } => "AgentGcsLost",
+        Event::AgentGcsReconnected { .. } => "AgentGcsReconnected",
+        Event::AgentContinuingUnderLease { .. } => "AgentContinuingUnderLease",
+        Event::AgentLeaseExpiredDuringGcsLoss { .. } => "AgentLeaseExpiredDuringGcsLoss",
+        Event::AgentNeighborLost { .. } => "AgentNeighborLost",
+        Event::AgentStateReconciled { .. } => "AgentStateReconciled",
     }
 }
 
@@ -863,6 +887,34 @@ fn event_details(event: &Event) -> String {
             claimant_b,
             ..
         } => format!("resource={resource_id} claimant_a={claimant_a} claimant_b={claimant_b}"),
+        Event::AgentGcsLost {
+            agent_id, policy, ..
+        } => format!("agent={agent_id} policy={policy}"),
+        Event::AgentGcsReconnected {
+            agent_id,
+            gcs_lost_ticks,
+            ..
+        } => format!("agent={agent_id} gcs_lost_ticks={gcs_lost_ticks}"),
+        Event::AgentContinuingUnderLease {
+            agent_id, lease_id, ..
+        } => format!("agent={agent_id} lease={lease_id}"),
+        Event::AgentLeaseExpiredDuringGcsLoss {
+            agent_id,
+            lease_id,
+            policy_applied,
+            ..
+        } => format!("agent={agent_id} lease={lease_id} policy={policy_applied}"),
+        Event::AgentNeighborLost {
+            agent_id,
+            lost_neighbor_id,
+            ..
+        } => format!("agent={agent_id} lost_neighbor={lost_neighbor_id}"),
+        Event::AgentStateReconciled {
+            agent_id,
+            gcs_lost_ticks,
+            policy_applied,
+            ..
+        } => format!("agent={agent_id} gcs_lost_ticks={gcs_lost_ticks} policy={policy_applied}"),
     }
 }
 

@@ -199,4 +199,20 @@ pub struct RunMetrics {
     pub time_to_complete_perimeter: Option<u64>,
     #[serde(default)]
     pub perimeter_violations: u64,
+    // M93 Agent Autonomy FSM
+    /// Number of agents that entered GCS-lost state at least once.
+    #[serde(default)]
+    pub gcs_lost_count: u64,
+    /// Total ticks spent in GCS-lost or ContinuingUnderLease across all agents.
+    #[serde(default)]
+    pub gcs_lost_total_ticks: u64,
+    /// Number of neighbour-loss events detected across all agents.
+    #[serde(default)]
+    pub neighbor_lost_count: u64,
+    /// Number of RTL actions triggered by GCS-lost policy.
+    #[serde(default)]
+    pub failsafe_rtl_count: u64,
+    /// Number of leases that expired while their holder was in GCS-lost state.
+    #[serde(default)]
+    pub lease_expired_during_gcs_loss_count: u64,
 }

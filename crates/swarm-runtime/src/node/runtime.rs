@@ -1,9 +1,13 @@
 use std::collections::{HashMap, HashSet};
 
+use chrono::Utc;
 use swarm_alloc::{AllocationAgent, AllocationTask, Allocator, CbbaAllocator};
-use swarm_comms::{RawMessage, Transport};
+use swarm_comms::{AgentMissionState, Lease, LeaseId, RawMessage, Transport};
 use swarm_types::{AgentId, Task, TaskId};
 
+use crate::autonomy::{
+    AgentAutonomyConfig, GcsLostPolicy, NeighborLostPolicy, StateReconcileReport,
+};
 use crate::message::RuntimeMessage;
 use crate::Coordinator;
 
@@ -28,6 +32,23 @@ pub struct NodeTickOutput {
     pub conflicting_assignments: u64,
     pub discarded_messages: u64,
     pub distance_travelled: Vec<(AgentId, f64)>,
+    // M93: autonomy FSM events
+    /// True if GCS was declared lost this tick.
+    pub gcs_lost_this_tick: bool,
+    /// Policy name applied when entering GcsLost.
+    pub gcs_lost_policy_name: Option<String>,
+    /// True if GCS reconnected this tick.
+    pub gcs_reconnected_this_tick: bool,
+    /// Ticks GCS was unavailable before this reconnect.
+    pub gcs_recovered_lost_ticks: u64,
+    /// Report generated when GCS reconnects.
+    pub reconcile_report: Option<StateReconcileReport>,
+    /// Peers declared lost this tick.
+    pub neighbors_lost_this_tick: Vec<AgentId>,
+    /// `(lease_id, policy_applied)` when a lease expired during GCS loss.
+    pub lease_expired_in_gcs_loss: Option<(String, String)>,
+    /// Lease ID when transitioning to `ContinuingUnderLease`.
+    pub continuing_under_lease_this_tick: Option<String>,
 }
 
 pub struct NodeConfig {
@@ -55,6 +76,22 @@ pub struct AgentNode<T> {
     ticks_since_last_gossip: u64,
     discarded_this_tick: u64,
     pub cbba: Option<CbbaAllocator>,
+    // M93: autonomy FSM
+    pub autonomy: AgentAutonomyConfig,
+    /// Current mission FSM state tracked by the autonomy layer.
+    pub mission_state: AgentMissionState,
+    /// Agent ID treated as GCS; `None` disables GCS heartbeat monitoring.
+    pub gcs_id: Option<AgentId>,
+    last_gcs_heartbeat_tick: Option<u64>,
+    /// Tick at which the current `ContinuingUnderLease` entry expires.
+    continuing_lease_expiry_tick: Option<u64>,
+    /// key: `AgentId`
+    last_peer_heartbeat_ticks: HashMap<AgentId, u64>,
+    gcs_lost_since_tick: Option<u64>,
+    /// key: `AgentId` — peers already declared lost (reset when they reconnect).
+    lost_peers_detected: HashSet<AgentId>,
+    /// Active leases held by this agent: `(lease_id, expiry_tick)`.
+    pub active_leases: Vec<(LeaseId, u64)>,
 }
 
 impl<T: Transport> AgentNode<T> {
@@ -75,6 +112,15 @@ impl<T: Transport> AgentNode<T> {
             ticks_since_last_gossip: 0,
             discarded_this_tick: 0,
             cbba: None,
+            autonomy: AgentAutonomyConfig::default(),
+            mission_state: AgentMissionState::Idle,
+            gcs_id: None,
+            last_gcs_heartbeat_tick: None,
+            continuing_lease_expiry_tick: None,
+            last_peer_heartbeat_ticks: HashMap::new(),
+            gcs_lost_since_tick: None,
+            lost_peers_detected: HashSet::new(),
+            active_leases: Vec::new(),
         }
     }
 
@@ -284,6 +330,148 @@ impl<T: Transport> AgentNode<T> {
             distance_travelled = distances;
         }
 
+        // M93: update peer heartbeat tracker (exclude GCS and self)
+        for (from, _, _) in &hb_list {
+            if Some(from) != self.gcs_id.as_ref() && *from != self.own_id {
+                self.last_peer_heartbeat_ticks
+                    .insert(from.clone(), current_tick);
+                // Clear the "declared lost" flag when peer reconnects
+                self.lost_peers_detected.remove(from);
+            }
+        }
+
+        // M93: GCS heartbeat tracking and FSM transitions
+        let mut gcs_lost_this_tick = false;
+        let mut gcs_lost_policy_name: Option<String> = None;
+        let mut gcs_reconnected_this_tick = false;
+        let mut gcs_recovered_lost_ticks: u64 = 0;
+        let mut reconcile_report: Option<StateReconcileReport> = None;
+        let mut neighbors_lost_this_tick: Vec<AgentId> = Vec::new();
+        let mut lease_expired_in_gcs_loss: Option<(String, String)> = None;
+        let mut continuing_under_lease_this_tick: Option<String> = None;
+
+        if let Some(gcs_id) = self.gcs_id.clone() {
+            let gcs_sent_hb = hb_list.iter().any(|(id, _, _)| *id == gcs_id);
+
+            if gcs_sent_hb {
+                self.last_gcs_heartbeat_tick = Some(current_tick);
+                let was_autonomous = matches!(
+                    self.mission_state,
+                    AgentMissionState::GcsLost { .. }
+                        | AgentMissionState::ContinuingUnderLease { .. }
+                );
+                if was_autonomous {
+                    let since = self.gcs_lost_since_tick.unwrap_or(current_tick);
+                    let lost_ticks = current_tick.saturating_sub(since);
+                    let active: Vec<Lease> = self
+                        .active_leases
+                        .iter()
+                        .filter(|(_, expiry)| *expiry > current_tick)
+                        .map(|(lid, expiry)| {
+                            let now = Utc::now();
+                            Lease {
+                                lease_id: lid.clone(),
+                                holder: self.own_id.clone(),
+                                resource_id: lid.as_ref().to_owned(),
+                                resource_kind: "unknown".to_owned(),
+                                granted_at: now,
+                                expires_at: now + chrono::Duration::seconds(*expiry as i64),
+                            }
+                        })
+                        .collect();
+                    gcs_reconnected_this_tick = true;
+                    gcs_recovered_lost_ticks = lost_ticks;
+                    reconcile_report = Some(StateReconcileReport {
+                        agent_id: self.own_id.clone(),
+                        gcs_lost_ticks: lost_ticks,
+                        policy_applied: policy_name(&self.autonomy.gcs_lost_policy),
+                        completed_resources: Vec::new(),
+                        active_leases_at_reconnect: active,
+                        mission_state_at_reconnect: self.mission_state.clone(),
+                    });
+                    self.mission_state = AgentMissionState::Idle;
+                    self.gcs_lost_since_tick = None;
+                    self.continuing_lease_expiry_tick = None;
+                }
+            } else {
+                let ticks_since_gcs = match self.last_gcs_heartbeat_tick {
+                    Some(last) => current_tick.saturating_sub(last),
+                    None => current_tick,
+                };
+                let threshold = gcs_timeout(&self.autonomy);
+
+                if ticks_since_gcs >= threshold {
+                    match self.mission_state.clone() {
+                        AgentMissionState::GcsLost { .. } => {
+                            // Already declared lost — nothing new
+                        }
+                        AgentMissionState::ContinuingUnderLease { lease_id, .. } => {
+                            let still_valid = self
+                                .continuing_lease_expiry_tick
+                                .map(|exp| current_tick < exp)
+                                .unwrap_or(false);
+                            if !still_valid {
+                                let policy_str = policy_name(&self.autonomy.gcs_lost_policy);
+                                lease_expired_in_gcs_loss =
+                                    Some((lease_id.as_ref().to_owned(), policy_str.clone()));
+                                self.mission_state = AgentMissionState::GcsLost {
+                                    since_tick: self.gcs_lost_since_tick.unwrap_or(current_tick),
+                                    policy_engaged: policy_str,
+                                };
+                                self.continuing_lease_expiry_tick = None;
+                            }
+                        }
+                        _ => {
+                            let policy_str = policy_name(&self.autonomy.gcs_lost_policy);
+                            let active_lease = self
+                                .active_leases
+                                .iter()
+                                .find(|(_, expiry)| *expiry > current_tick)
+                                .cloned();
+
+                            if let Some((lease_id, expiry_tick)) = active_lease {
+                                continuing_under_lease_this_tick =
+                                    Some(lease_id.as_ref().to_owned());
+                                self.continuing_lease_expiry_tick = Some(expiry_tick);
+                                self.gcs_lost_since_tick = Some(current_tick);
+                                self.mission_state = AgentMissionState::ContinuingUnderLease {
+                                    lease_id,
+                                    lease_expires_at: Utc::now()
+                                        + chrono::Duration::seconds(expiry_tick as i64),
+                                };
+                            } else {
+                                gcs_lost_this_tick = true;
+                                gcs_lost_policy_name = Some(policy_str.clone());
+                                self.gcs_lost_since_tick = Some(current_tick);
+                                self.mission_state = AgentMissionState::GcsLost {
+                                    since_tick: current_tick,
+                                    policy_engaged: policy_str,
+                                };
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // M93: peer heartbeat timeout — detect neighbour loss
+        let peer_timeout = self.autonomy.peer_heartbeat_timeout_ticks;
+        for peer_id in self.peer_ids.clone() {
+            let ticks_since = match self.last_peer_heartbeat_ticks.get(&peer_id) {
+                Some(&last) => current_tick.saturating_sub(last),
+                None => current_tick,
+            };
+            if ticks_since >= peer_timeout && !self.lost_peers_detected.contains(&peer_id) {
+                self.lost_peers_detected.insert(peer_id.clone());
+                neighbors_lost_this_tick.push(peer_id.clone());
+                if let NeighborLostPolicy::AbortMission = &self.autonomy.neighbor_lost_policy {
+                    self.mission_state = AgentMissionState::Aborting {
+                        reason: format!("neighbor_lost:{}", peer_id.as_ref()),
+                    };
+                }
+            }
+        }
+
         Ok(NodeTickOutput {
             newly_failed: output.newly_failed,
             failure_releases: output.failure_releases,
@@ -296,6 +484,14 @@ impl<T: Transport> AgentNode<T> {
             conflicting_assignments,
             discarded_messages: self.discarded_this_tick,
             distance_travelled,
+            gcs_lost_this_tick,
+            gcs_lost_policy_name,
+            gcs_reconnected_this_tick,
+            gcs_recovered_lost_ticks,
+            reconcile_report,
+            neighbors_lost_this_tick,
+            lease_expired_in_gcs_loss,
+            continuing_under_lease_this_tick,
         })
     }
 
@@ -376,5 +572,24 @@ impl<T: Transport> AgentNode<T> {
 
     pub fn apply_gossip_buffer(&mut self, buffer: &[RuntimeMessage]) -> (u64, u64) {
         apply_gossip_messages(&mut self.coordinator, buffer)
+    }
+}
+
+/// Returns the human-readable name for a `GcsLostPolicy` variant.
+fn policy_name(policy: &GcsLostPolicy) -> String {
+    match policy {
+        GcsLostPolicy::ContinueMission { .. } => "continue_mission".to_owned(),
+        GcsLostPolicy::HoverInPlace { .. } => "hover_in_place".to_owned(),
+        GcsLostPolicy::ReturnToLaunch { .. } => "return_to_launch".to_owned(),
+        GcsLostPolicy::AbortImmediate => "abort_immediate".to_owned(),
+    }
+}
+
+/// Returns the tick threshold after which GCS is declared lost.
+fn gcs_timeout(autonomy: &AgentAutonomyConfig) -> u64 {
+    match &autonomy.gcs_lost_policy {
+        GcsLostPolicy::ReturnToLaunch { after_ticks } => *after_ticks,
+        GcsLostPolicy::AbortImmediate => 1,
+        _ => autonomy.gcs_heartbeat_timeout_ticks,
     }
 }

@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 use swarm_alloc::Allocator;
 use swarm_comms::DroneLinkConfig;
-use swarm_runtime::GridState;
+use swarm_runtime::{AgentAutonomyConfig, GridState};
 use swarm_safety::SafetyConfig;
 use swarm_types::{
     AgentId, EdgeId, InspectionGraph, Task, TaskId, UrbanBlockedPolicy, UrbanMap, UrbanNodeId,
@@ -268,6 +268,11 @@ pub struct RunConfig {
     /// that omit this field continue to work without modification.
     #[serde(default)]
     pub drone_link: DroneLinkConfig,
+    /// Per-agent failsafe and autonomous behaviour configuration.
+    /// Defaults to conservative settings; existing scenarios without this field
+    /// deserialize correctly.
+    #[serde(default)]
+    pub autonomy: AgentAutonomyConfig,
 }
 
 /// A minimal real-hardware mission expressed as a single parametric command

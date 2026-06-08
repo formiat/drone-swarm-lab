@@ -166,6 +166,12 @@ pub(super) fn urban_patrol_metrics(
         perimeter_length_m: 0.0,
         time_to_complete_perimeter: None,
         perimeter_violations: 0,
+        // M93 autonomy metrics
+        gcs_lost_count: 0,
+        gcs_lost_total_ticks: 0,
+        neighbor_lost_count: 0,
+        failsafe_rtl_count: 0,
+        lease_expired_during_gcs_loss_count: 0,
     }
 }
 

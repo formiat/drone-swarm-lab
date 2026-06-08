@@ -140,7 +140,13 @@ pub fn build_urban_route_trace(log: &EventLog) -> UrbanRouteTrace {
             | Event::SwarmProtocolMessage { .. }
             | Event::LeaseGranted { .. }
             | Event::LeaseExpired { .. }
-            | Event::OwnershipConflict { .. } => {}
+            | Event::OwnershipConflict { .. }
+            | Event::AgentGcsLost { .. }
+            | Event::AgentGcsReconnected { .. }
+            | Event::AgentContinuingUnderLease { .. }
+            | Event::AgentLeaseExpiredDuringGcsLoss { .. }
+            | Event::AgentNeighborLost { .. }
+            | Event::AgentStateReconciled { .. } => {}
         }
     }
 

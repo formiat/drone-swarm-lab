@@ -424,6 +424,43 @@ pub enum Event {
         claimant_a: AgentId,
         claimant_b: AgentId,
     },
+    // M93: Agent Autonomy FSM
+    AgentGcsLost {
+        agent_id: AgentId,
+        tick: u64,
+        /// Name of the policy that was engaged (snake_case).
+        policy: String,
+    },
+    AgentGcsReconnected {
+        agent_id: AgentId,
+        tick: u64,
+        gcs_lost_ticks: u64,
+    },
+    AgentContinuingUnderLease {
+        agent_id: AgentId,
+        lease_id: String,
+        tick: u64,
+    },
+    AgentLeaseExpiredDuringGcsLoss {
+        agent_id: AgentId,
+        lease_id: String,
+        /// Name of the GCS-lost policy applied upon lease expiry (snake_case).
+        policy_applied: String,
+        tick: u64,
+    },
+    AgentNeighborLost {
+        agent_id: AgentId,
+        lost_neighbor_id: AgentId,
+        tick: u64,
+    },
+    AgentStateReconciled {
+        agent_id: AgentId,
+        tick: u64,
+        gcs_lost_ticks: u64,
+        policy_applied: String,
+        active_lease_count: u64,
+        mission_state_name: String,
+    },
 }
 
 /// Reason why a message was dropped.
