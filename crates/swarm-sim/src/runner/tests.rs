@@ -1528,6 +1528,10 @@ fn two_agent_partition_scenario() -> Scenario {
     scenario(0, 2, 0)
 }
 
+fn three_agent_partition_scenario() -> Scenario {
+    scenario(0, 3, 0)
+}
+
 /// Builds a RunConfig that partitions the default GCS ("base") from "agent-0"
 /// starting at tick 1 and running until the simulation ends.
 fn partition_config(extra_ticks: u64, autonomy: AgentAutonomyConfig) -> RunConfig {
@@ -1560,6 +1564,24 @@ fn lease_record(
         granted_tick,
         expiry_tick,
     }
+}
+
+fn full_partition_events(agent_ids: &[&str], heal_at_tick: u64) -> Vec<PartitionEvent> {
+    let mut events = Vec::new();
+    for (index, agent_a) in agent_ids.iter().enumerate() {
+        for agent_b in &agent_ids[index + 1..] {
+            events.push(PartitionEvent {
+                at_tick: 1,
+                until_tick: None,
+                heal_at_tick: Some(heal_at_tick),
+                agents: (
+                    AgentId::from((*agent_a).to_owned()),
+                    AgentId::from((*agent_b).to_owned()),
+                ),
+            });
+        }
+    }
+    events
 }
 
 #[test]
@@ -1799,6 +1821,39 @@ fn older_lease_wins_conflict_resolution() {
 }
 
 #[test]
+fn older_lease_wins_conflict_resolution_with_three_contenders() {
+    let mut initial_lease_records = std::collections::HashMap::new();
+    initial_lease_records.insert(
+        AgentId::from("agent-0".to_owned()),
+        vec![lease_record("lease-middle", "resource-shared", 10, 100)],
+    );
+    initial_lease_records.insert(
+        AgentId::from("agent-1".to_owned()),
+        vec![lease_record("lease-oldest", "resource-shared", 0, 100)],
+    );
+    initial_lease_records.insert(
+        AgentId::from("agent-2".to_owned()),
+        vec![lease_record("lease-newest", "resource-shared", 20, 100)],
+    );
+    let cfg = RunConfig {
+        max_ticks: 6,
+        partition_events: full_partition_events(&["agent-0", "agent-1", "agent-2"], 5),
+        initial_agent_lease_records: initial_lease_records,
+        ..config(vec![])
+    };
+
+    let metrics = ScenarioRunner::run(&three_agent_partition_scenario(), cfg);
+    let report = metrics
+        .reconciliation_reports
+        .first()
+        .expect("reconciliation report should exist");
+    assert!(report.result.conflicts.iter().all(|conflict| matches!(
+        conflict.resolution,
+        ConflictResolution::OlderLeaseWins { ref winner } if winner.as_ref() == "agent-1"
+    )));
+}
+
+#[test]
 fn reconciliation_rejects_stale_lease_after_heal() {
     let mut initial_lease_records = std::collections::HashMap::new();
     initial_lease_records.insert(
@@ -1831,6 +1886,40 @@ fn reconciliation_rejects_stale_lease_after_heal() {
         .expect("reconciliation report should exist");
     assert_eq!(report.result.accepted, vec!["resource-shared".to_owned()]);
     assert_eq!(report.result.rejected, vec!["resource-shared".to_owned()]);
+}
+
+#[test]
+fn reconciliation_accepts_valid_lease_after_heal() {
+    let mut initial_lease_records = std::collections::HashMap::new();
+    initial_lease_records.insert(
+        AgentId::from("agent-0".to_owned()),
+        vec![lease_record("lease-valid", "resource-valid", 0, 100)],
+    );
+    initial_lease_records.insert(
+        AgentId::from("agent-1".to_owned()),
+        vec![lease_record("lease-stale", "resource-valid", 1, 4)],
+    );
+    let cfg = RunConfig {
+        max_ticks: 6,
+        partition_events: vec![PartitionEvent {
+            at_tick: 1,
+            until_tick: None,
+            heal_at_tick: Some(5),
+            agents: (
+                AgentId::from("agent-0".to_owned()),
+                AgentId::from("agent-1".to_owned()),
+            ),
+        }],
+        initial_agent_lease_records: initial_lease_records,
+        ..config(vec![])
+    };
+
+    let metrics = ScenarioRunner::run(&two_agent_partition_scenario(), cfg);
+    let report = metrics
+        .reconciliation_reports
+        .first()
+        .expect("reconciliation report should exist");
+    assert_eq!(report.result.accepted, vec!["resource-valid".to_owned()]);
 }
 
 #[test]
@@ -1870,6 +1959,118 @@ fn command_suppressed_on_ambiguous_authority() {
         swarm_replay::Event::CommandSuppressed { resource_id, .. }
             if resource_id == "resource-shared"
     )));
+}
+
+#[test]
+fn supervisor_reset_on_unresolvable_conflict() {
+    let mut initial_lease_records = std::collections::HashMap::new();
+    initial_lease_records.insert(
+        AgentId::from("agent-0".to_owned()),
+        vec![lease_record("lease-a", "resource-reset", 0, 100)],
+    );
+    initial_lease_records.insert(
+        AgentId::from("agent-1".to_owned()),
+        vec![lease_record("lease-b", "resource-reset", 0, 100)],
+    );
+    let cfg = RunConfig {
+        max_ticks: 6,
+        partition_events: vec![PartitionEvent {
+            at_tick: 1,
+            until_tick: None,
+            heal_at_tick: Some(5),
+            agents: (
+                AgentId::from("agent-0".to_owned()),
+                AgentId::from("agent-1".to_owned()),
+            ),
+        }],
+        initial_agent_lease_records: initial_lease_records,
+        ..config(vec![])
+    };
+
+    let metrics = ScenarioRunner::run(&two_agent_partition_scenario(), cfg);
+    let report = metrics
+        .reconciliation_reports
+        .first()
+        .expect("reconciliation report should exist");
+    assert!(report
+        .result
+        .conflicts
+        .iter()
+        .all(|conflict| matches!(conflict.resolution, ConflictResolution::SupervisorReset)));
+}
+
+#[test]
+fn partition_report_in_replay() {
+    let mut initial_lease_records = std::collections::HashMap::new();
+    initial_lease_records.insert(
+        AgentId::from("agent-0".to_owned()),
+        vec![lease_record("lease-a", "resource-a", 0, 100)],
+    );
+    initial_lease_records.insert(
+        AgentId::from("agent-1".to_owned()),
+        vec![lease_record("lease-b", "resource-b", 0, 100)],
+    );
+    let cfg = RunConfig {
+        max_ticks: 6,
+        partition_events: vec![PartitionEvent {
+            at_tick: 1,
+            until_tick: None,
+            heal_at_tick: Some(5),
+            agents: (
+                AgentId::from("agent-0".to_owned()),
+                AgentId::from("agent-1".to_owned()),
+            ),
+        }],
+        initial_agent_lease_records: initial_lease_records,
+        ..config(vec![])
+    };
+
+    let (_, event_log) = ScenarioRunner::run_with_log(
+        &two_agent_partition_scenario(),
+        cfg,
+        swarm_alloc::GreedyAllocator::default(),
+    );
+    let event_log = event_log.expect("event log should be present");
+    assert!(event_log.events.iter().any(|event| matches!(
+        event,
+        swarm_replay::Event::PartitionDetected { group_a, group_b, .. }
+            if !group_a.is_empty() && !group_b.is_empty()
+    )));
+    assert!(event_log
+        .events
+        .iter()
+        .any(|event| matches!(event, swarm_replay::Event::PartitionHealed { .. })));
+}
+
+#[test]
+fn reconciliation_report_in_artifact() {
+    let mut initial_lease_records = std::collections::HashMap::new();
+    initial_lease_records.insert(
+        AgentId::from("agent-0".to_owned()),
+        vec![lease_record("lease-old", "resource-artifact", 0, 100)],
+    );
+    initial_lease_records.insert(
+        AgentId::from("agent-1".to_owned()),
+        vec![lease_record("lease-new", "resource-artifact", 5, 100)],
+    );
+    let cfg = RunConfig {
+        max_ticks: 6,
+        partition_events: vec![PartitionEvent {
+            at_tick: 1,
+            until_tick: None,
+            heal_at_tick: Some(5),
+            agents: (
+                AgentId::from("agent-0".to_owned()),
+                AgentId::from("agent-1".to_owned()),
+            ),
+        }],
+        initial_agent_lease_records: initial_lease_records,
+        ..config(vec![])
+    };
+
+    let metrics = ScenarioRunner::run(&two_agent_partition_scenario(), cfg);
+    assert_eq!(metrics.reconciliation_reports.len(), 1);
+    assert_eq!(metrics.partition_reports.len(), 1);
 }
 
 #[test]

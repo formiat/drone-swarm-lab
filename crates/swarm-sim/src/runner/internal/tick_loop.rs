@@ -113,7 +113,6 @@ pub(in crate::runner) fn run_tick_loop<A: Allocator>(
                 &state.nodes,
                 &state.crashed_agents,
                 &state.active_partition_pairs,
-                &(agent_a.clone(), agent_b.clone()),
                 current_tick,
                 &mut state.degraded_decision_log,
                 &mut state.partition_reports,

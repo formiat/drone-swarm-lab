@@ -99,7 +99,6 @@ pub(in crate::runner) fn handle_partition_activation<T: Transport>(
     nodes: &[(AgentNode<T>, AgentId)],
     crashed_agents: &HashSet<AgentId>,
     active_partition_pairs: &HashSet<(AgentId, AgentId)>,
-    partition_pair: &(AgentId, AgentId),
     current_tick: u64,
     degraded_decision_log: &mut Vec<DegradedDecisionLog>,
     partition_reports: &mut Vec<PartitionReport>,
@@ -112,7 +111,12 @@ pub(in crate::runner) fn handle_partition_activation<T: Transport>(
         .collect();
     let components = connected_components(&agent_ids, active_partition_pairs);
     let group_sizes = components.iter().map(Vec::len).collect::<Vec<_>>();
-    let affected_agents = vec![partition_pair.0.clone(), partition_pair.1.clone()];
+    let mut affected_agents = components
+        .iter()
+        .flat_map(|component| component.iter().cloned())
+        .collect::<Vec<_>>();
+    affected_agents.sort_by(|left, right| left.as_ref().cmp(right.as_ref()));
+    affected_agents.dedup();
     let leases_at_partition = current_valid_leases(nodes, crashed_agents, current_tick)
         .into_iter()
         .filter(|(holder, _)| affected_agents.contains(holder))
@@ -183,23 +187,76 @@ pub(in crate::runner) fn handle_partition_activation<T: Transport>(
     }
 }
 
-fn resolve_conflict(
-    holder_a: &AgentId,
-    lease_a: &Lease,
-    holder_b: &AgentId,
-    lease_b: &Lease,
-) -> ConflictResolution {
-    if lease_a.granted_at < lease_b.granted_at {
-        ConflictResolution::OlderLeaseWins {
-            winner: holder_a.clone(),
-        }
-    } else if lease_b.granted_at < lease_a.granted_at {
-        ConflictResolution::OlderLeaseWins {
-            winner: holder_b.clone(),
-        }
-    } else {
-        ConflictResolution::SupervisorReset
+fn reconcile_valid_contenders(
+    resource_id: &str,
+    contenders: &[(usize, AgentId, ActiveLeaseRecord)],
+    tick_duration_ms: u64,
+) -> (ConflictResolution, AgentId, Lease, Vec<OwnershipConflict>) {
+    let mut contenders = contenders
+        .iter()
+        .map(|(_, holder, lease)| {
+            (
+                holder.clone(),
+                lease.clone(),
+                lease.as_lease(holder, tick_duration_ms),
+            )
+        })
+        .collect::<Vec<_>>();
+    contenders.sort_by(|left, right| {
+        left.1
+            .granted_tick
+            .cmp(&right.1.granted_tick)
+            .then_with(|| left.0.as_ref().cmp(right.0.as_ref()))
+    });
+
+    let (winner_holder, winner_record, winner_lease) = contenders[0].clone();
+    let tied_winners = contenders
+        .iter()
+        .take_while(|(_, lease, _)| lease.granted_tick == winner_record.granted_tick)
+        .count();
+    if tied_winners > 1 {
+        let conflicts = contenders
+            .iter()
+            .skip(1)
+            .map(|(holder, _, lease)| OwnershipConflict {
+                resource_id: resource_id.to_owned(),
+                holder_a: winner_holder.clone(),
+                lease_a: winner_lease.clone(),
+                holder_b: holder.clone(),
+                lease_b: lease.clone(),
+                resolution: ConflictResolution::SupervisorReset,
+            })
+            .collect::<Vec<_>>();
+        return (
+            ConflictResolution::SupervisorReset,
+            winner_holder,
+            winner_lease,
+            conflicts,
+        );
     }
+
+    let conflicts = contenders
+        .iter()
+        .skip(1)
+        .map(|(holder, _, lease)| OwnershipConflict {
+            resource_id: resource_id.to_owned(),
+            holder_a: winner_holder.clone(),
+            lease_a: winner_lease.clone(),
+            holder_b: holder.clone(),
+            lease_b: lease.clone(),
+            resolution: ConflictResolution::OlderLeaseWins {
+                winner: winner_holder.clone(),
+            },
+        })
+        .collect::<Vec<_>>();
+    (
+        ConflictResolution::OlderLeaseWins {
+            winner: winner_holder.clone(),
+        },
+        winner_holder,
+        winner_lease,
+        conflicts,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -257,27 +314,9 @@ pub(in crate::runner) fn handle_partition_heal<T: Transport>(
             accepted.insert(resource_id);
             continue;
         }
-        let leases = contenders
-            .iter()
-            .map(|(_, holder, lease)| {
-                (
-                    holder.clone(),
-                    lease.as_lease(holder, tick_duration_ms),
-                    lease.granted_tick,
-                )
-            })
-            .collect::<Vec<_>>();
-        let (holder_a, lease_a, _) = &leases[0];
-        let (holder_b, lease_b, _) = &leases[1];
-        let resolution = resolve_conflict(holder_a, lease_a, holder_b, lease_b);
-        conflicts.push(OwnershipConflict {
-            resource_id: resource_id.clone(),
-            holder_a: holder_a.clone(),
-            lease_a: lease_a.clone(),
-            holder_b: holder_b.clone(),
-            lease_b: lease_b.clone(),
-            resolution: resolution.clone(),
-        });
+        let (resolution, _winner, _winner_lease, resource_conflicts) =
+            reconcile_valid_contenders(&resource_id, &contenders, tick_duration_ms);
+        conflicts.extend(resource_conflicts.clone());
 
         match resolution {
             ConflictResolution::OlderLeaseWins { winner } => {
@@ -303,6 +342,10 @@ pub(in crate::runner) fn handle_partition_heal<T: Transport>(
                 }
             }
             ConflictResolution::SupervisorReset => {
+                let affected_agents = contenders
+                    .iter()
+                    .map(|(_, holder, _)| holder.clone())
+                    .collect::<Vec<_>>();
                 for (index, _, lease) in contenders {
                     let node = &mut nodes[index].0;
                     node.active_leases.retain(|candidate| {
@@ -314,11 +357,11 @@ pub(in crate::runner) fn handle_partition_heal<T: Transport>(
                 degraded_decision_log.push(DegradedDecisionLog {
                     tick: current_tick,
                     condition: ConnectivityLossKind::SwarmPartitioned {
-                        group_sizes: vec![1, 1],
+                        group_sizes: vec![affected_agents.len()],
                     },
                     decision: SupervisorDecision::ForbidReassignment,
                     affected_resources: vec![resource_id.clone()],
-                    affected_agents: vec![holder_a.clone(), holder_b.clone()],
+                    affected_agents,
                     absence_kind: None,
                 });
                 if let Some(builder) = log_builder {

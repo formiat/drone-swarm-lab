@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::regression_lib::{build_mission_scenario_builder, with_realism_if_needed};
 use serde::Serialize;
+use swarm_comms::{DegradedDecisionLog, PartitionReport, ReconciliationReport};
 use swarm_sim::{
     default_suites, Baseline, BenchmarkHarness, BenchmarkOptions, RegressionRunner, SuiteMode,
 };
@@ -14,6 +15,8 @@ use super::strategies::make_factories;
 use super::runs::write_benchmark_pack;
 #[cfg(test)]
 use swarm_sim::{ComparisonReport, RegressionReport};
+#[cfg(test)]
+use swarm_types::AgentId;
 
 #[derive(Serialize)]
 struct UrbanAnalysisManifest {
@@ -37,6 +40,13 @@ struct UrbanAnalysisManifestEntry {
     segment_ownership_csv: Option<String>,
     event_counts: swarm_sim::UrbanEventCounts,
     separation_summary: swarm_sim::UrbanSeparationSummary,
+}
+
+#[derive(Serialize)]
+struct PartitionSupervisorArtifact {
+    partition_reports: Vec<PartitionReport>,
+    reconciliation_reports: Vec<ReconciliationReport>,
+    degraded_decision_log: Vec<DegradedDecisionLog>,
 }
 
 pub(super) fn write_urban_analysis_artifacts(
@@ -128,6 +138,91 @@ pub(super) fn write_urban_analysis_artifacts(
         serde_json::to_string_pretty(&manifest)?,
     )?;
     println!("Urban analysis artifacts written to {analysis_dir}");
+    Ok(())
+}
+
+pub(super) fn write_partition_supervisor_artifacts(
+    output_dir: &str,
+    replay_logs: &[swarm_replay::EventLog],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut partition_reports = Vec::new();
+    let mut reconciliation_reports = Vec::new();
+    let mut degraded_decision_log = Vec::new();
+
+    for log in replay_logs {
+        let mut open_partition_indexes = Vec::new();
+        for event in &log.events {
+            match event {
+                swarm_replay::Event::PartitionDetected {
+                    tick,
+                    group_a,
+                    group_b,
+                } => {
+                    let mut affected_agents = group_a
+                        .iter()
+                        .chain(group_b.iter())
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    affected_agents.sort_by(|left, right| left.as_ref().cmp(right.as_ref()));
+                    affected_agents.dedup();
+                    open_partition_indexes.push(partition_reports.len());
+                    partition_reports.push(PartitionReport {
+                        partition_tick: *tick,
+                        heal_tick: None,
+                        affected_agents,
+                        leases_at_partition: Vec::new(),
+                    });
+                }
+                swarm_replay::Event::PartitionHealed { tick } => {
+                    if let Some(index) = open_partition_indexes.pop() {
+                        partition_reports[index].heal_tick = Some(*tick);
+                    }
+                }
+                swarm_replay::Event::SupervisorDegradedDecision {
+                    tick,
+                    condition,
+                    decision,
+                    resources,
+                } => {
+                    degraded_decision_log.push(DegradedDecisionLog {
+                        tick: *tick,
+                        condition: condition.clone(),
+                        decision: decision.clone(),
+                        affected_resources: resources.clone(),
+                        affected_agents: Vec::new(),
+                        absence_kind: None,
+                    });
+                }
+                swarm_replay::Event::SupervisorReconciled {
+                    tick,
+                    result_summary,
+                } => {
+                    reconciliation_reports.push(ReconciliationReport {
+                        reconnect_tick: *tick,
+                        result: result_summary.clone(),
+                    });
+                }
+                _ => {}
+            }
+        }
+    }
+
+    if partition_reports.is_empty()
+        && reconciliation_reports.is_empty()
+        && degraded_decision_log.is_empty()
+    {
+        return Ok(());
+    }
+
+    let artifact = PartitionSupervisorArtifact {
+        partition_reports,
+        reconciliation_reports,
+        degraded_decision_log,
+    };
+    std::fs::write(
+        format!("{output_dir}/partition_supervisor_reports.json"),
+        serde_json::to_string_pretty(&artifact)?,
+    )?;
     Ok(())
 }
 
@@ -394,6 +489,77 @@ mod tests {
         assert!(dir.path().join("results.json").exists());
         assert!(dir.path().join("results.csv").exists());
         assert!(dir.path().join("table.md").exists());
+    }
+
+    fn m94_replay_log() -> swarm_replay::EventLog {
+        swarm_replay::EventLog {
+            schema_version: swarm_replay::event_log::EVENT_LOG_SCHEMA_VERSION.to_owned(),
+            run_id: "m94-run".to_owned(),
+            seed: 0,
+            scenario_name: "coverage".to_owned(),
+            events: vec![
+                swarm_replay::Event::PartitionDetected {
+                    tick: 10,
+                    group_a: vec![AgentId::from("agent-0".to_owned())],
+                    group_b: vec![
+                        AgentId::from("agent-1".to_owned()),
+                        AgentId::from("agent-2".to_owned()),
+                    ],
+                },
+                swarm_replay::Event::SupervisorDegradedDecision {
+                    tick: 10,
+                    condition: swarm_comms::ConnectivityLossKind::SwarmPartitioned {
+                        group_sizes: vec![1, 2],
+                    },
+                    decision: swarm_comms::SupervisorDecision::ContinueUnderLease,
+                    resources: vec!["edge-0".to_owned()],
+                },
+                swarm_replay::Event::PartitionHealed { tick: 20 },
+                swarm_replay::Event::SupervisorReconciled {
+                    tick: 20,
+                    result_summary: swarm_comms::SupervisorReconcileResult {
+                        accepted: vec!["edge-0".to_owned()],
+                        rejected: vec![],
+                        conflicts: vec![],
+                    },
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn benchmark_pack_writes_partition_supervisor_reports() {
+        let dir = tempfile::tempdir().unwrap();
+        let report = benchmark_pack_report();
+
+        write_benchmark_pack(
+            dir.path().to_str().unwrap(),
+            &report,
+            None,
+            &[m94_replay_log()],
+            None,
+            Some(2),
+            "benchmark",
+        )
+        .unwrap();
+
+        let artifact_path = dir.path().join("partition_supervisor_reports.json");
+        assert!(artifact_path.exists());
+        let json: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(artifact_path).unwrap()).unwrap();
+        assert_eq!(
+            json["partition_reports"][0]["affected_agents"]
+                .as_array()
+                .unwrap()
+                .len(),
+            3
+        );
+        assert_eq!(
+            json["reconciliation_reports"][0]["result"]["accepted"][0]
+                .as_str()
+                .unwrap(),
+            "edge-0"
+        );
     }
 
     #[test]

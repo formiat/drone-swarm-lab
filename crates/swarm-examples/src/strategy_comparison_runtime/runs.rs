@@ -14,7 +14,8 @@ use super::cli::{parse_args, CliArgs, RunMode};
 use super::missions::mission_descriptor;
 use super::strategies::make_factories;
 use super::urban_artifacts::{
-    merge_reports, run_regression, sanitize_artifact_id, write_urban_analysis_artifacts,
+    merge_reports, run_regression, sanitize_artifact_id, write_partition_supervisor_artifacts,
+    write_urban_analysis_artifacts,
 };
 
 /// Wraps a ScenarioBuilder so that every produced pair passes through the realism preset.
@@ -470,6 +471,7 @@ pub(super) fn write_benchmark_pack(
             let json = serde_json::to_string_pretty(log)?;
             std::fs::write(path, json)?;
         }
+        write_partition_supervisor_artifacts(output_dir, replay_logs)?;
         write_urban_analysis_artifacts(output_dir, replay_logs)?;
     }
 
