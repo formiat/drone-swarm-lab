@@ -103,6 +103,13 @@ pub enum AgentMissionState {
         blocked_by: AgentId,
         since_tick: u64,
     },
+    /// Agent has suspended mission progress while waiting for a lost peer to
+    /// reconnect before a configured timeout.
+    WaitingForNeighborReconnect {
+        neighbor_id: AgentId,
+        since_tick: u64,
+        until_tick: u64,
+    },
     /// Agent continues mission autonomously while GCS is unreachable;
     /// valid only while the lease has not expired.
     ContinuingUnderLease {

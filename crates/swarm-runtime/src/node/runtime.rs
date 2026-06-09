@@ -88,6 +88,8 @@ pub struct AgentNode<T> {
     last_gcs_heartbeat_tick: Option<u64>,
     /// Tick at which the current `ContinuingUnderLease` entry expires.
     continuing_lease_expiry_tick: Option<u64>,
+    /// Mission state to restore when GCS reconnects after an autonomy override.
+    pre_gcs_loss_mission_state: Option<AgentMissionState>,
     /// key: `AgentId`
     last_peer_heartbeat_ticks: HashMap<AgentId, u64>,
     gcs_lost_since_tick: Option<u64>,
@@ -99,6 +101,9 @@ pub struct AgentNode<T> {
     /// Agent ID treated as mothership; `None` disables mothership monitoring.
     pub mothership_id: Option<AgentId>,
     last_mothership_heartbeat_tick: Option<u64>,
+    /// Mission state to restore if a waited-for peer reconnects in time.
+    pre_neighbor_wait_mission_state: Option<AgentMissionState>,
+    waiting_for_neighbor_reconnect: Option<(AgentId, u64)>,
 }
 
 impl<T: Transport> AgentNode<T> {
@@ -124,12 +129,15 @@ impl<T: Transport> AgentNode<T> {
             gcs_id: None,
             last_gcs_heartbeat_tick: None,
             continuing_lease_expiry_tick: None,
+            pre_gcs_loss_mission_state: None,
             last_peer_heartbeat_ticks: HashMap::new(),
             gcs_lost_since_tick: None,
             lost_peers_detected: HashSet::new(),
             active_leases: Vec::new(),
             mothership_id: None,
             last_mothership_heartbeat_tick: None,
+            pre_neighbor_wait_mission_state: None,
+            waiting_for_neighbor_reconnect: None,
         }
     }
 
@@ -348,6 +356,18 @@ impl<T: Transport> AgentNode<T> {
                     .insert(from.clone(), current_tick);
                 // Clear the "declared lost" flag when peer reconnects
                 self.lost_peers_detected.remove(from);
+                if self
+                    .waiting_for_neighbor_reconnect
+                    .as_ref()
+                    .is_some_and(|(peer_id, _)| peer_id == from)
+                {
+                    self.waiting_for_neighbor_reconnect = None;
+                    if let Some(state) = self.pre_neighbor_wait_mission_state.take() {
+                        self.mission_state = state;
+                    } else {
+                        self.mission_state = AgentMissionState::Idle;
+                    }
+                }
             }
         }
 
@@ -437,7 +457,10 @@ impl<T: Transport> AgentNode<T> {
                         active_leases_at_reconnect: active,
                         mission_state_at_reconnect: self.mission_state.clone(),
                     });
-                    self.mission_state = AgentMissionState::Idle;
+                    self.mission_state = self
+                        .pre_gcs_loss_mission_state
+                        .take()
+                        .unwrap_or(AgentMissionState::Idle);
                     self.gcs_lost_since_tick = None;
                     self.continuing_lease_expiry_tick = None;
                 }
@@ -482,6 +505,10 @@ impl<T: Transport> AgentNode<T> {
                                     Some(lease_id.as_ref().to_owned());
                                 self.continuing_lease_expiry_tick = Some(expiry_tick);
                                 self.gcs_lost_since_tick = Some(current_tick);
+                                if self.pre_gcs_loss_mission_state.is_none() {
+                                    self.pre_gcs_loss_mission_state =
+                                        Some(self.mission_state.clone());
+                                }
                                 // lease_expires_at is relative to now: remaining_ticks * tick_duration_ms
                                 let remaining_ms = expiry_tick.saturating_sub(current_tick)
                                     * self.config.tick_duration_ms;
@@ -494,6 +521,10 @@ impl<T: Transport> AgentNode<T> {
                                 gcs_lost_this_tick = true;
                                 gcs_lost_policy_name = Some(policy_str.clone());
                                 self.gcs_lost_since_tick = Some(current_tick);
+                                if self.pre_gcs_loss_mission_state.is_none() {
+                                    self.pre_gcs_loss_mission_state =
+                                        Some(self.mission_state.clone());
+                                }
                                 self.mission_state = AgentMissionState::GcsLost {
                                     since_tick: current_tick,
                                     policy_engaged: policy_str,
@@ -502,6 +533,16 @@ impl<T: Transport> AgentNode<T> {
                         }
                     }
                 }
+            }
+        }
+
+        if let Some((peer_id, until_tick)) = self.waiting_for_neighbor_reconnect.clone() {
+            if current_tick >= until_tick {
+                self.waiting_for_neighbor_reconnect = None;
+                self.pre_neighbor_wait_mission_state = None;
+                self.mission_state = AgentMissionState::Aborting {
+                    reason: format!("neighbor_reconnect_timeout:{}", peer_id.as_ref()),
+                };
             }
         }
 
@@ -527,10 +568,17 @@ impl<T: Transport> AgentNode<T> {
                         // The policy is correctly reflected in the FSM event (no abort).
                         // See Non-Goals in autonomy.rs.
                     }
-                    NeighborLostPolicy::WaitForReconnect { .. } => {
-                        // Suspension of local mission progress is a planner-level concern.
-                        // The autonomy FSM records the event; the planner layer may
-                        // consult mission_state to gate new task assignments.
+                    NeighborLostPolicy::WaitForReconnect { max_ticks } => {
+                        if self.waiting_for_neighbor_reconnect.is_none() {
+                            self.pre_neighbor_wait_mission_state = Some(self.mission_state.clone());
+                            self.waiting_for_neighbor_reconnect =
+                                Some((peer_id.clone(), current_tick.saturating_add(*max_ticks)));
+                            self.mission_state = AgentMissionState::WaitingForNeighborReconnect {
+                                neighbor_id: peer_id.clone(),
+                                since_tick: current_tick,
+                                until_tick: current_tick.saturating_add(*max_ticks),
+                            };
+                        }
                     }
                 }
             }

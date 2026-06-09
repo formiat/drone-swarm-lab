@@ -55,6 +55,8 @@ pub enum NeighborLostPolicy {
     #[default]
     ReleaseLocksAndContinue,
     /// Suspend progress and wait for reconnect for up to `max_ticks`.
+    /// If the peer does not return before the timeout, abort the mission
+    /// conservatively instead of continuing with ambiguous ownership.
     WaitForReconnect { max_ticks: u64 },
     /// Abort the current mission.
     AbortMission,

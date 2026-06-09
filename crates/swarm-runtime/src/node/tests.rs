@@ -1183,7 +1183,7 @@ fn neighbor_lost_detected_after_timeout() {
 }
 
 #[test]
-fn mothership_lost_wait_at_staging_holds() {
+fn mothership_lost_wait_at_staging_aborts_after_timeout() {
     let bus = make_bus();
     let own_id = AgentId::from("agent-0".to_owned());
     let ms_id = AgentId::from("mothership".to_owned());
@@ -1257,6 +1257,47 @@ fn mothership_lost_wait_at_staging_holds() {
     assert!(
         !out.mothership_lost_this_tick,
         "mothership_lost should not fire twice"
+    );
+}
+
+#[test]
+fn gcs_reconnect_restores_pre_loss_mission_state() {
+    let bus = make_bus();
+    let mut node = make_gcs_node(
+        "agent-0",
+        "gcs",
+        bus.clone(),
+        GcsLostPolicy::ReturnToLaunch { after_ticks: 3 },
+        3,
+        vec![],
+    );
+    node.mission_state = AgentMissionState::WaitingForMission;
+    let mut allocator = GreedyAllocator::default();
+
+    for tick in 1u64..=2 {
+        inject_gcs_hb(&bus, "gcs", "agent-0", tick);
+        node.process_inbox_and_allocate(tick, &mut allocator, vec![])
+            .unwrap();
+    }
+
+    for tick in 3u64..=5 {
+        skip_tick(&bus);
+        node.process_inbox_and_allocate(tick, &mut allocator, vec![])
+            .unwrap();
+    }
+    assert!(matches!(
+        node.mission_state,
+        AgentMissionState::GcsLost { .. }
+    ));
+
+    inject_gcs_hb(&bus, "gcs", "agent-0", 6);
+    let out = node
+        .process_inbox_and_allocate(6, &mut allocator, vec![])
+        .unwrap();
+    assert!(out.gcs_reconnected_this_tick);
+    assert!(
+        matches!(node.mission_state, AgentMissionState::WaitingForMission),
+        "agent should restore pre-loss state instead of resetting to Idle"
     );
 }
 
@@ -1378,4 +1419,127 @@ fn neighbor_lost_releases_segment_locks() {
         out.neighbors_lost_this_tick.is_empty(),
         "neighbor-lost event must not fire twice for the same peer"
     );
+}
+
+#[test]
+fn neighbor_lost_wait_for_reconnect_holds_then_aborts() {
+    let bus = make_bus();
+    let own_id = AgentId::from("agent-0".to_owned());
+    let peer_id = AgentId::from("agent-1".to_owned());
+    let transport = InMemAgentTransport::new(bus.clone(), own_id.clone());
+    let mut node = AgentNode::new(
+        own_id,
+        vec![peer_id.clone()],
+        Coordinator::new(
+            vec![agent_entry("agent-0"), agent_entry("agent-1")],
+            vec![],
+            5,
+        ),
+        transport,
+    );
+    node.gossip_interval_ticks = 999;
+    node.mission_state = AgentMissionState::WaitingForMission;
+    node.autonomy = AgentAutonomyConfig {
+        neighbor_lost_policy: NeighborLostPolicy::WaitForReconnect { max_ticks: 3 },
+        peer_heartbeat_timeout_ticks: 2,
+        ..AgentAutonomyConfig::default()
+    };
+    let mut allocator = GreedyAllocator::default();
+
+    skip_tick(&bus);
+    let out = node
+        .process_inbox_and_allocate(1, &mut allocator, vec![])
+        .unwrap();
+    assert!(out.neighbors_lost_this_tick.is_empty());
+
+    skip_tick(&bus);
+    let out = node
+        .process_inbox_and_allocate(2, &mut allocator, vec![])
+        .unwrap();
+    assert_eq!(out.neighbors_lost_this_tick, vec![peer_id.clone()]);
+    assert!(matches!(
+        node.mission_state,
+        AgentMissionState::WaitingForNeighborReconnect {
+            ref neighbor_id,
+            since_tick: 2,
+            until_tick: 5,
+        } if *neighbor_id == peer_id
+    ));
+
+    for tick in 3u64..=4 {
+        skip_tick(&bus);
+        let out = node
+            .process_inbox_and_allocate(tick, &mut allocator, vec![])
+            .unwrap();
+        assert!(out.neighbors_lost_this_tick.is_empty());
+        assert!(matches!(
+            node.mission_state,
+            AgentMissionState::WaitingForNeighborReconnect { .. }
+        ));
+    }
+
+    skip_tick(&bus);
+    let out = node
+        .process_inbox_and_allocate(5, &mut allocator, vec![])
+        .unwrap();
+    assert!(out.neighbors_lost_this_tick.is_empty());
+    assert!(matches!(
+        node.mission_state,
+        AgentMissionState::Aborting { ref reason }
+            if reason == "neighbor_reconnect_timeout:agent-1"
+    ));
+}
+
+#[test]
+fn neighbor_lost_wait_for_reconnect_restores_state_on_reconnect() {
+    let bus = make_bus();
+    let own_id = AgentId::from("agent-0".to_owned());
+    let peer_id = AgentId::from("agent-1".to_owned());
+    let transport = InMemAgentTransport::new(bus.clone(), own_id.clone());
+    let mut node = AgentNode::new(
+        own_id,
+        vec![peer_id.clone()],
+        Coordinator::new(
+            vec![agent_entry("agent-0"), agent_entry("agent-1")],
+            vec![],
+            5,
+        ),
+        transport,
+    );
+    node.gossip_interval_ticks = 999;
+    node.mission_state = AgentMissionState::WaitingForMission;
+    node.autonomy = AgentAutonomyConfig {
+        neighbor_lost_policy: NeighborLostPolicy::WaitForReconnect { max_ticks: 4 },
+        peer_heartbeat_timeout_ticks: 2,
+        ..AgentAutonomyConfig::default()
+    };
+    let mut allocator = GreedyAllocator::default();
+
+    skip_tick(&bus);
+    node.process_inbox_and_allocate(1, &mut allocator, vec![])
+        .unwrap();
+    skip_tick(&bus);
+    node.process_inbox_and_allocate(2, &mut allocator, vec![])
+        .unwrap();
+    assert!(matches!(
+        node.mission_state,
+        AgentMissionState::WaitingForNeighborReconnect { .. }
+    ));
+
+    bus.borrow_mut().advance_tick();
+    bus.borrow_mut()
+        .send(RawMessage {
+            from: peer_id.clone(),
+            to: AgentId::from("agent-0".to_owned()),
+            payload: RuntimeMessage::heartbeat(3, 1),
+        })
+        .unwrap();
+    let out = node
+        .process_inbox_and_allocate(3, &mut allocator, vec![])
+        .unwrap();
+    assert!(out.neighbors_lost_this_tick.is_empty());
+    assert!(matches!(
+        node.mission_state,
+        AgentMissionState::WaitingForMission
+    ));
 }
