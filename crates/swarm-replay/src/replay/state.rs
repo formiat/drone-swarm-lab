@@ -117,7 +117,12 @@ pub fn replay(log: &EventLog) -> ReplayState {
             | Event::AgentContinuingUnderLease { .. }
             | Event::AgentLeaseExpiredDuringGcsLoss { .. }
             | Event::AgentNeighborLost { .. }
-            | Event::AgentStateReconciled { .. } => {}
+            | Event::AgentStateReconciled { .. }
+            | Event::PartitionDetected { .. }
+            | Event::PartitionHealed { .. }
+            | Event::SupervisorDegradedDecision { .. }
+            | Event::SupervisorReconciled { .. }
+            | Event::CommandSuppressed { .. } => {}
         }
     }
 

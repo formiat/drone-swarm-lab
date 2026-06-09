@@ -18,5 +18,5 @@ pub use failure::FailureDetector;
 pub use grid_state::GridState;
 pub use membership::{AgentEntry, MembershipView};
 pub use message::{CbbaBid, RuntimeMessage};
-pub use node::{AgentNode, AssignmentChange, NodeConfig, NodeTickOutput};
+pub use node::{ActiveLeaseRecord, AgentNode, AssignmentChange, NodeConfig, NodeTickOutput};
 pub use task_registry::TaskRegistry;

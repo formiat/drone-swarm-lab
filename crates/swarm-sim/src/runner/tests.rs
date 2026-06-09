@@ -1,6 +1,6 @@
 use super::*;
 use swarm_alloc::{AllocationAgent, AllocationTask, Allocator};
-use swarm_comms::DroneLinkConfig;
+use swarm_comms::{AgentAbsenceKind, ConflictResolution, DroneLinkConfig, SupervisorDecision};
 use swarm_runtime::autonomy::{AgentAutonomyConfig, GcsLostPolicy};
 use swarm_types::{
     Aabb, Agent, Capability, CellState, EdgeId, Health, HiddenTarget, InspectionEdge, Pose, Role,
@@ -1524,6 +1524,10 @@ fn autonomy_scenario() -> Scenario {
     scenario(0, 1, 0)
 }
 
+fn two_agent_partition_scenario() -> Scenario {
+    scenario(0, 2, 0)
+}
+
 /// Builds a RunConfig that partitions the default GCS ("base") from "agent-0"
 /// starting at tick 1 and running until the simulation ends.
 fn partition_config(extra_ticks: u64, autonomy: AgentAutonomyConfig) -> RunConfig {
@@ -1540,6 +1544,21 @@ fn partition_config(extra_ticks: u64, autonomy: AgentAutonomyConfig) -> RunConfi
         }],
         autonomy,
         ..config(vec![])
+    }
+}
+
+fn lease_record(
+    lease_id: &str,
+    resource_id: &str,
+    granted_tick: u64,
+    expiry_tick: u64,
+) -> InitialAgentLeaseRecord {
+    InitialAgentLeaseRecord {
+        lease_id: lease_id.to_owned(),
+        resource_id: resource_id.to_owned(),
+        resource_kind: "task".to_owned(),
+        granted_tick,
+        expiry_tick,
     }
 }
 
@@ -1611,5 +1630,274 @@ fn replay_contains_agent_continuing_under_lease() {
                 if agent_id.as_ref() == "agent-0" && lease_id == "auto-lease-1"
         )),
         "replay log must contain AgentContinuingUnderLease for agent-0 with auto-lease-1"
+    );
+}
+
+// ── M94 integration tests ─────────────────────────────────────────────────────
+
+#[test]
+fn link_loss_does_not_mark_agent_dead_before_lease_expiry() {
+    let mut initial_lease_records = std::collections::HashMap::new();
+    initial_lease_records.insert(
+        AgentId::from("agent-0".to_owned()),
+        vec![lease_record("lease-link", "resource-link", 0, 100)],
+    );
+    let cfg = RunConfig {
+        max_ticks: 8,
+        initial_agent_lease_records: initial_lease_records,
+        ..partition_config(8, AgentAutonomyConfig::default())
+    };
+
+    let (metrics, event_log) = ScenarioRunner::run_with_log(
+        &autonomy_scenario(),
+        cfg,
+        swarm_alloc::GreedyAllocator::default(),
+    );
+    let event_log = event_log.expect("event log should be present");
+
+    assert!(
+        !event_log.events.iter().any(|event| matches!(
+            event,
+            swarm_replay::Event::AgentFailed { agent_id, .. } if agent_id.as_ref() == "agent-0"
+        )),
+        "partition-induced link loss must not mark the agent as failed"
+    );
+    assert!(
+        metrics
+            .degraded_decision_log
+            .iter()
+            .any(|entry| matches!(entry.absence_kind, Some(AgentAbsenceKind::LinkLoss { .. }))),
+        "degraded decision log must record link loss, not node death"
+    );
+}
+
+#[test]
+fn node_failure_releases_resources_immediately() {
+    let mut initial_lease_records = std::collections::HashMap::new();
+    initial_lease_records.insert(
+        AgentId::from("agent-0".to_owned()),
+        vec![lease_record("lease-fail", "resource-fail", 0, 100)],
+    );
+    let cfg = RunConfig {
+        max_ticks: 5,
+        failures: vec![FailureEvent {
+            agent_id: AgentId::from("agent-0".to_owned()),
+            at_tick: 2,
+        }],
+        initial_agent_lease_records: initial_lease_records,
+        ..config(vec![])
+    };
+
+    let metrics = ScenarioRunner::run(&autonomy_scenario(), cfg);
+    assert!(metrics.degraded_decision_log.iter().any(|entry| {
+        matches!(entry.absence_kind, Some(AgentAbsenceKind::NodeFailure))
+            && matches!(
+                entry.decision,
+                SupervisorDecision::ReleaseAfterTimeout { ticks: 0 }
+            )
+            && entry.affected_resources == vec!["resource-fail".to_owned()]
+    }));
+}
+
+#[test]
+fn partition_both_groups_continue_under_leases() {
+    let mut initial_lease_records = std::collections::HashMap::new();
+    initial_lease_records.insert(
+        AgentId::from("agent-0".to_owned()),
+        vec![lease_record("lease-a", "resource-a", 0, 100)],
+    );
+    initial_lease_records.insert(
+        AgentId::from("agent-1".to_owned()),
+        vec![lease_record("lease-b", "resource-b", 0, 100)],
+    );
+    let cfg = RunConfig {
+        max_ticks: 6,
+        partition_events: vec![PartitionEvent {
+            at_tick: 1,
+            until_tick: None,
+            heal_at_tick: Some(5),
+            agents: (
+                AgentId::from("agent-0".to_owned()),
+                AgentId::from("agent-1".to_owned()),
+            ),
+        }],
+        initial_agent_lease_records: initial_lease_records,
+        ..config(vec![])
+    };
+
+    let (metrics, event_log) = ScenarioRunner::run_with_log(
+        &two_agent_partition_scenario(),
+        cfg,
+        swarm_alloc::GreedyAllocator::default(),
+    );
+    let event_log = event_log.expect("event log should be present");
+
+    let continue_count = metrics
+        .degraded_decision_log
+        .iter()
+        .filter(|entry| matches!(entry.decision, SupervisorDecision::ContinueUnderLease))
+        .count();
+    assert_eq!(
+        continue_count, 2,
+        "both isolated groups must continue under lease"
+    );
+    assert!(event_log
+        .events
+        .iter()
+        .any(|event| matches!(event, swarm_replay::Event::PartitionDetected { .. })));
+}
+
+#[test]
+fn older_lease_wins_conflict_resolution() {
+    let mut initial_lease_records = std::collections::HashMap::new();
+    initial_lease_records.insert(
+        AgentId::from("agent-0".to_owned()),
+        vec![lease_record("lease-old", "resource-shared", 0, 100)],
+    );
+    initial_lease_records.insert(
+        AgentId::from("agent-1".to_owned()),
+        vec![lease_record("lease-new", "resource-shared", 10, 100)],
+    );
+    let cfg = RunConfig {
+        max_ticks: 6,
+        partition_events: vec![PartitionEvent {
+            at_tick: 1,
+            until_tick: None,
+            heal_at_tick: Some(5),
+            agents: (
+                AgentId::from("agent-0".to_owned()),
+                AgentId::from("agent-1".to_owned()),
+            ),
+        }],
+        initial_agent_lease_records: initial_lease_records,
+        ..config(vec![])
+    };
+
+    let (metrics, event_log) = ScenarioRunner::run_with_log(
+        &two_agent_partition_scenario(),
+        cfg,
+        swarm_alloc::GreedyAllocator::default(),
+    );
+    let report = metrics
+        .reconciliation_reports
+        .first()
+        .expect("reconciliation report should exist");
+    let conflict = report
+        .result
+        .conflicts
+        .first()
+        .expect("ownership conflict should be recorded");
+    assert!(matches!(
+        conflict.resolution,
+        ConflictResolution::OlderLeaseWins { ref winner } if winner.as_ref() == "agent-0"
+    ));
+    let event_log = event_log.expect("event log should be present");
+    assert!(event_log
+        .events
+        .iter()
+        .any(|event| matches!(event, swarm_replay::Event::SupervisorReconciled { .. })));
+}
+
+#[test]
+fn reconciliation_rejects_stale_lease_after_heal() {
+    let mut initial_lease_records = std::collections::HashMap::new();
+    initial_lease_records.insert(
+        AgentId::from("agent-0".to_owned()),
+        vec![lease_record("lease-stale", "resource-shared", 0, 4)],
+    );
+    initial_lease_records.insert(
+        AgentId::from("agent-1".to_owned()),
+        vec![lease_record("lease-valid", "resource-shared", 1, 100)],
+    );
+    let cfg = RunConfig {
+        max_ticks: 6,
+        partition_events: vec![PartitionEvent {
+            at_tick: 1,
+            until_tick: None,
+            heal_at_tick: Some(5),
+            agents: (
+                AgentId::from("agent-0".to_owned()),
+                AgentId::from("agent-1".to_owned()),
+            ),
+        }],
+        initial_agent_lease_records: initial_lease_records,
+        ..config(vec![])
+    };
+
+    let metrics = ScenarioRunner::run(&two_agent_partition_scenario(), cfg);
+    let report = metrics
+        .reconciliation_reports
+        .first()
+        .expect("reconciliation report should exist");
+    assert_eq!(report.result.accepted, vec!["resource-shared".to_owned()]);
+    assert_eq!(report.result.rejected, vec!["resource-shared".to_owned()]);
+}
+
+#[test]
+fn command_suppressed_on_ambiguous_authority() {
+    let mut initial_lease_records = std::collections::HashMap::new();
+    initial_lease_records.insert(
+        AgentId::from("agent-0".to_owned()),
+        vec![lease_record("lease-a", "resource-shared", 0, 100)],
+    );
+    initial_lease_records.insert(
+        AgentId::from("agent-1".to_owned()),
+        vec![lease_record("lease-b", "resource-shared", 0, 100)],
+    );
+    let cfg = RunConfig {
+        max_ticks: 6,
+        partition_events: vec![PartitionEvent {
+            at_tick: 1,
+            until_tick: None,
+            heal_at_tick: Some(5),
+            agents: (
+                AgentId::from("agent-0".to_owned()),
+                AgentId::from("agent-1".to_owned()),
+            ),
+        }],
+        initial_agent_lease_records: initial_lease_records,
+        ..config(vec![])
+    };
+
+    let (_, event_log) = ScenarioRunner::run_with_log(
+        &two_agent_partition_scenario(),
+        cfg,
+        swarm_alloc::GreedyAllocator::default(),
+    );
+    let event_log = event_log.expect("event log should be present");
+    assert!(event_log.events.iter().any(|event| matches!(
+        event,
+        swarm_replay::Event::CommandSuppressed { resource_id, .. }
+            if resource_id == "resource-shared"
+    )));
+}
+
+#[test]
+fn no_silent_task_disappearance_invariant() {
+    let mut initial_lease_records = std::collections::HashMap::new();
+    initial_lease_records.insert(
+        AgentId::from("agent-0".to_owned()),
+        vec![lease_record("lease-fail", "resource-visible", 0, 100)],
+    );
+    let cfg = RunConfig {
+        max_ticks: 5,
+        failures: vec![FailureEvent {
+            agent_id: AgentId::from("agent-0".to_owned()),
+            at_tick: 2,
+        }],
+        initial_agent_lease_records: initial_lease_records,
+        ..config(vec![])
+    };
+
+    let metrics = ScenarioRunner::run(&autonomy_scenario(), cfg);
+    let released_resources = metrics
+        .degraded_decision_log
+        .iter()
+        .flat_map(|entry| entry.affected_resources.iter())
+        .cloned()
+        .collect::<Vec<_>>();
+    assert!(
+        released_resources.contains(&"resource-visible".to_owned()),
+        "every released resource must be named in degraded_decision_log"
     );
 }

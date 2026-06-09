@@ -118,6 +118,21 @@ pub struct PartitionEvent {
     pub agents: (AgentId, AgentId),
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InitialAgentLeaseRecord {
+    pub lease_id: String,
+    pub resource_id: String,
+    #[serde(default = "default_resource_kind")]
+    pub resource_kind: String,
+    #[serde(default)]
+    pub granted_tick: u64,
+    pub expiry_tick: u64,
+}
+
+fn default_resource_kind() -> String {
+    "task".to_owned()
+}
+
 /// Runtime state for wildfire mapping missions.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct WildfireState {
@@ -277,6 +292,10 @@ pub struct RunConfig {
     /// key: `AgentId` → `[(lease_id, expiry_tick)]`
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub initial_agent_leases: HashMap<AgentId, Vec<(String, u64)>>,
+    /// Detailed pre-seeded leases used by partition supervisor reconciliation.
+    /// key: `AgentId`
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub initial_agent_lease_records: HashMap<AgentId, Vec<InitialAgentLeaseRecord>>,
 }
 
 /// A minimal real-hardware mission expressed as a single parametric command

@@ -59,6 +59,36 @@ pub struct NodeConfig {
     pub enable_movement: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ActiveLeaseRecord {
+    pub lease_id: LeaseId,
+    pub resource_id: String,
+    pub resource_kind: String,
+    pub granted_tick: u64,
+    pub expiry_tick: u64,
+}
+
+impl ActiveLeaseRecord {
+    pub fn is_valid_at_tick(&self, current_tick: u64) -> bool {
+        current_tick < self.expiry_tick
+    }
+
+    pub fn as_lease(&self, holder: &AgentId, tick_duration_ms: u64) -> Lease {
+        let epoch =
+            chrono::DateTime::<Utc>::from_timestamp_millis(0).expect("unix epoch must be valid");
+        let granted_ms = self.granted_tick.saturating_mul(tick_duration_ms);
+        let expiry_ms = self.expiry_tick.saturating_mul(tick_duration_ms);
+        Lease {
+            lease_id: self.lease_id.clone(),
+            holder: holder.clone(),
+            resource_id: self.resource_id.clone(),
+            resource_kind: self.resource_kind.clone(),
+            granted_at: epoch + chrono::Duration::milliseconds(granted_ms as i64),
+            expires_at: epoch + chrono::Duration::milliseconds(expiry_ms as i64),
+        }
+    }
+}
+
 impl Default for NodeConfig {
     fn default() -> Self {
         Self {
@@ -95,8 +125,8 @@ pub struct AgentNode<T> {
     gcs_lost_since_tick: Option<u64>,
     /// key: `AgentId` — peers already declared lost (reset when they reconnect).
     lost_peers_detected: HashSet<AgentId>,
-    /// Active leases held by this agent: `(lease_id, expiry_tick)`.
-    pub active_leases: Vec<(LeaseId, u64)>,
+    /// Active leases held by this agent.
+    pub active_leases: Vec<ActiveLeaseRecord>,
     // M93: mothership FSM
     /// Agent ID treated as mothership; `None` disables mothership monitoring.
     pub mothership_id: Option<AgentId>,
@@ -430,22 +460,8 @@ impl<T: Transport> AgentNode<T> {
                     let active: Vec<Lease> = self
                         .active_leases
                         .iter()
-                        .filter(|(_, expiry)| *expiry > current_tick)
-                        .map(|(lid, expiry)| {
-                            let now = Utc::now();
-                            // expires_at is relative to now: remaining_ticks * tick_duration_ms
-                            let remaining_ms =
-                                expiry.saturating_sub(current_tick) * self.config.tick_duration_ms;
-                            Lease {
-                                lease_id: lid.clone(),
-                                holder: self.own_id.clone(),
-                                resource_id: lid.as_ref().to_owned(),
-                                resource_kind: "unknown".to_owned(),
-                                granted_at: now,
-                                expires_at: now
-                                    + chrono::Duration::milliseconds(remaining_ms as i64),
-                            }
-                        })
+                        .filter(|lease| lease.is_valid_at_tick(current_tick))
+                        .map(|lease| lease.as_lease(&self.own_id, self.config.tick_duration_ms))
                         .collect();
                     gcs_reconnected_this_tick = true;
                     gcs_recovered_lost_ticks = lost_ticks;
@@ -497,25 +513,23 @@ impl<T: Transport> AgentNode<T> {
                             let active_lease = self
                                 .active_leases
                                 .iter()
-                                .find(|(_, expiry)| *expiry > current_tick)
+                                .find(|lease| lease.is_valid_at_tick(current_tick))
                                 .cloned();
 
-                            if let Some((lease_id, expiry_tick)) = active_lease {
+                            if let Some(active_lease) = active_lease {
                                 continuing_under_lease_this_tick =
-                                    Some(lease_id.as_ref().to_owned());
-                                self.continuing_lease_expiry_tick = Some(expiry_tick);
+                                    Some(active_lease.lease_id.as_ref().to_owned());
+                                self.continuing_lease_expiry_tick = Some(active_lease.expiry_tick);
                                 self.gcs_lost_since_tick = Some(current_tick);
                                 if self.pre_gcs_loss_mission_state.is_none() {
                                     self.pre_gcs_loss_mission_state =
                                         Some(self.mission_state.clone());
                                 }
-                                // lease_expires_at is relative to now: remaining_ticks * tick_duration_ms
-                                let remaining_ms = expiry_tick.saturating_sub(current_tick)
-                                    * self.config.tick_duration_ms;
                                 self.mission_state = AgentMissionState::ContinuingUnderLease {
-                                    lease_id,
-                                    lease_expires_at: Utc::now()
-                                        + chrono::Duration::milliseconds(remaining_ms as i64),
+                                    lease_id: active_lease.lease_id.clone(),
+                                    lease_expires_at: active_lease
+                                        .as_lease(&self.own_id, self.config.tick_duration_ms)
+                                        .expires_at,
                                 };
                             } else {
                                 gcs_lost_this_tick = true;

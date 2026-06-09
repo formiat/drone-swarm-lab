@@ -186,6 +186,112 @@ pub enum ReplanReason {
     LeaseExpired,
 }
 
+/// Distinguishes degraded connectivity conditions observed by the supervisor.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConnectivityLossKind {
+    /// GCS heartbeat gone, agents still mutually reachable.
+    GcsUnavailable,
+    /// Coordinator gone, agents still active.
+    CoordinatorUnavailable,
+    /// Mothership gone, children still running.
+    MothershipUnavailable,
+    /// One drone isolated from all peers.
+    DroneIsolated,
+    /// Network partition splits the swarm into separate groups.
+    SwarmPartitioned { group_sizes: Vec<usize> },
+}
+
+/// Distinguishes permanent agent failure from temporary link loss.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentAbsenceKind {
+    /// Agent missed enough heartbeats to declare it dead.
+    NodeFailure,
+    /// Agent was reachable before partition event.
+    LinkLoss { partition_tick: u64 },
+}
+
+/// Supervisor decision taken under degraded connectivity.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SupervisorDecision {
+    ContinueUnderLease,
+    HoldAndWaitRenew,
+    ReleaseAfterTimeout { ticks: u64 },
+    ReturnToLaunch,
+    ForbidReassignment,
+    ReconcileOnReconnect,
+}
+
+/// Deterministic lease conflict resolution policy.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConflictResolution {
+    /// Older lease retains authority.
+    OlderLeaseWins { winner: AgentId },
+    /// Supervisor resets both and reassigns.
+    SupervisorReset,
+}
+
+/// Conflict discovered while reconciling authority after reconnect.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OwnershipConflict {
+    pub resource_id: String,
+    pub holder_a: AgentId,
+    pub lease_a: Lease,
+    pub holder_b: AgentId,
+    pub lease_b: Lease,
+    pub resolution: ConflictResolution,
+}
+
+/// Summary of the accepted and rejected resources after reconciliation.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SupervisorReconcileResult {
+    pub accepted: Vec<String>,
+    pub rejected: Vec<String>,
+    pub conflicts: Vec<OwnershipConflict>,
+}
+
+/// Tick-based lease snapshot stored in simulation artifacts.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LeaseTickSnapshot {
+    pub lease_id: LeaseId,
+    pub holder: AgentId,
+    pub resource_id: String,
+    pub resource_kind: String,
+    pub granted_tick: u64,
+    pub expiry_tick: u64,
+}
+
+/// Partition lifecycle report exported by benchmark and replay artifacts.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PartitionReport {
+    pub partition_tick: u64,
+    pub heal_tick: Option<u64>,
+    pub affected_agents: Vec<AgentId>,
+    pub leases_at_partition: Vec<LeaseTickSnapshot>,
+}
+
+/// Reconciliation report exported after connectivity is restored.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReconciliationReport {
+    pub reconnect_tick: u64,
+    pub result: SupervisorReconcileResult,
+}
+
+/// Supervisor decision log for degraded conditions.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DegradedDecisionLog {
+    pub tick: u64,
+    pub condition: ConnectivityLossKind,
+    pub decision: SupervisorDecision,
+    pub affected_resources: Vec<String>,
+    pub affected_agents: Vec<AgentId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub absence_kind: Option<AgentAbsenceKind>,
+}
+
 // ─── SwarmMessage ─────────────────────────────────────────────────────────────
 
 /// All messages exchanged in the swarm coordination protocol.

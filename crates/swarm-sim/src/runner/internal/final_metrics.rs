@@ -79,6 +79,9 @@ pub(in crate::runner) struct MetricsInput {
     pub neighbor_lost_count: u64,
     pub failsafe_rtl_count: u64,
     pub lease_expired_during_gcs_loss_count: u64,
+    pub partition_reports: Vec<swarm_comms::PartitionReport>,
+    pub reconciliation_reports: Vec<swarm_comms::ReconciliationReport>,
+    pub degraded_decision_log: Vec<swarm_comms::DegradedDecisionLog>,
 }
 
 /// Assemble the final RunMetrics and EventLog from accumulated loop state.
@@ -464,6 +467,9 @@ pub(in crate::runner) fn assemble_final_metrics(
             neighbor_lost_count: input.neighbor_lost_count,
             failsafe_rtl_count: input.failsafe_rtl_count,
             lease_expired_during_gcs_loss_count: input.lease_expired_during_gcs_loss_count,
+            partition_reports: input.partition_reports,
+            reconciliation_reports: input.reconciliation_reports,
+            degraded_decision_log: input.degraded_decision_log,
         },
         event_log,
     )

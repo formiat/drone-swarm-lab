@@ -1032,6 +1032,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+ "swarm-comms",
 ]
 
 [[package]]
@@ -1050,6 +1051,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+ "swarm-comms",
  "swarm-types",
 ]
 

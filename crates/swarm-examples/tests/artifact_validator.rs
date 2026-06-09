@@ -25,6 +25,7 @@ use swarm_examples::artifact_validator::{
     RULE_MAVLINK_PLAN_ORDER_UNSAFE, RULE_MAVLINK_PLAN_TELEMETRY_MISSING,
     RULE_MAVLINK_PROFILE_HARDWARE_BLOCKING, RULE_MAVLINK_PROFILE_MISSING,
     RULE_MAVLINK_PROFILE_RESULT_MISMATCH, RULE_MAVLINK_PROFILE_UNSUPPORTED,
+    RULE_PARTITION_REPORT_INVALID, RULE_RECONCILIATION_REPORT_INVALID,
     RULE_REPLACEMENT_SEQ_MISMATCH, RULE_REPLAY_SUMMARY_COUNT_MISMATCH, RULE_SAFETY_REPORT_MISSING,
     RULE_SWARM_ACK_MISMATCH, RULE_SWARM_AGENT_PLAN_MISSING, RULE_SWARM_DUPLICATE_OWNERSHIP,
     RULE_SWARM_HANDOFF_MISSING, RULE_SWARM_SYNC_PARTIAL_UNREPORTED,
@@ -1289,6 +1290,141 @@ fn benchmark_pack_duplicate_urban_segment_owner_fails() {
     assert_rule(&report, RULE_URBAN_DECONFLICTION_DUPLICATE_SEGMENT_OWNER);
 }
 
+#[test]
+fn benchmark_pack_partition_supervisor_reports_pass() {
+    let fixture = tempfile::tempdir().unwrap();
+    let output_dir = fixture.path().join("benchmark-pack");
+    write_urban_ownership_pack(&output_dir, serde_json::json!([]));
+    write_partition_supervisor_reports(
+        &output_dir,
+        serde_json::json!({
+            "partition_reports": [
+                {
+                    "partition_tick": 10,
+                    "heal_tick": 15,
+                    "affected_agents": ["agent-0", "agent-1"],
+                    "leases_at_partition": []
+                }
+            ],
+            "reconciliation_reports": [
+                {
+                    "reconnect_tick": 15,
+                    "result": {
+                        "accepted": ["edge-0"],
+                        "rejected": [],
+                        "conflicts": []
+                    }
+                }
+            ],
+            "degraded_decision_log": []
+        }),
+    );
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&output_dir),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::BenchmarkPack,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert!(report.passed, "{:?}", report.violations);
+}
+
+#[test]
+fn benchmark_pack_partition_supervisor_invalid_heal_fails() {
+    let fixture = tempfile::tempdir().unwrap();
+    let output_dir = fixture.path().join("benchmark-pack");
+    write_urban_ownership_pack(&output_dir, serde_json::json!([]));
+    write_partition_supervisor_reports(
+        &output_dir,
+        serde_json::json!({
+            "partition_reports": [
+                {
+                    "partition_tick": 20,
+                    "heal_tick": 19,
+                    "affected_agents": ["agent-0"],
+                    "leases_at_partition": []
+                }
+            ],
+            "reconciliation_reports": [],
+            "degraded_decision_log": []
+        }),
+    );
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&output_dir),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::BenchmarkPack,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_PARTITION_REPORT_INVALID);
+}
+
+#[test]
+fn benchmark_pack_partition_supervisor_invalid_winner_fails() {
+    let fixture = tempfile::tempdir().unwrap();
+    let output_dir = fixture.path().join("benchmark-pack");
+    write_urban_ownership_pack(&output_dir, serde_json::json!([]));
+    write_partition_supervisor_reports(
+        &output_dir,
+        serde_json::json!({
+            "partition_reports": [],
+            "reconciliation_reports": [
+                {
+                    "reconnect_tick": 30,
+                    "result": {
+                        "accepted": [],
+                        "rejected": ["edge-0"],
+                        "conflicts": [
+                            {
+                                "resource_id": "edge-0",
+                                "holder_a": "agent-0",
+                                "lease_a": {
+                                    "lease_id": "lease-a",
+                                    "holder": "agent-0",
+                                    "resource_id": "edge-0",
+                                    "resource_kind": "task",
+                                    "granted_at": "1970-01-01T00:00:00+00:00",
+                                    "expires_at": "1970-01-01T00:00:10+00:00"
+                                },
+                                "holder_b": "agent-1",
+                                "lease_b": {
+                                    "lease_id": "lease-b",
+                                    "holder": "agent-1",
+                                    "resource_id": "edge-0",
+                                    "resource_kind": "task",
+                                    "granted_at": "1970-01-01T00:00:00+00:00",
+                                    "expires_at": "1970-01-01T00:00:10+00:00"
+                                },
+                                "resolution": {
+                                    "older_lease_wins": {
+                                        "winner": "agent-x"
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                }
+            ],
+            "degraded_decision_log": []
+        }),
+    );
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(&output_dir),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::BenchmarkPack,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_RECONCILIATION_REPORT_INVALID);
+}
+
 fn assert_rule(
     report: &swarm_examples::artifact_validator::ArtifactValidationReport,
     rule_id: &str,
@@ -1301,6 +1437,15 @@ fn assert_rule(
         "missing {rule_id}; violations={:?}",
         report.violations
     );
+}
+
+fn write_partition_supervisor_reports(output_dir: &Path, json: serde_json::Value) {
+    fs::create_dir_all(output_dir).unwrap();
+    fs::write(
+        output_dir.join("partition_supervisor_reports.json"),
+        serde_json::to_string_pretty(&json).unwrap(),
+    )
+    .unwrap();
 }
 
 fn public_scenario_path(path: &str) -> PathBuf {

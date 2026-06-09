@@ -8,9 +8,10 @@ use swarm_command_plane::{
     SwarmCommandPlaneError, SWARM_COMMAND_PLANE_SCHEMA_VERSION,
 };
 use swarm_comms::{
-    MavlinkCapabilityProfileId, MavlinkCommandCompatibility, MavlinkCommonCommand,
-    MavlinkCommonCommandName, MavlinkCommonPlan, MavlinkCompatibilityClass, MavlinkExpectedAckKind,
-    MavlinkPlanPhase, MAVLINK_COMMON_PLAN_SCHEMA_VERSION,
+    ConflictResolution, DegradedDecisionLog, MavlinkCapabilityProfileId,
+    MavlinkCommandCompatibility, MavlinkCommonCommand, MavlinkCommonCommandName, MavlinkCommonPlan,
+    MavlinkCompatibilityClass, MavlinkExpectedAckKind, MavlinkPlanPhase, PartitionReport,
+    ReconciliationReport, MAVLINK_COMMON_PLAN_SCHEMA_VERSION,
 };
 use swarm_safety::preflight::SafetyValidationReport;
 
@@ -100,6 +101,8 @@ pub const RULE_DUAL_STACK_FC_CONTRACT_HIDDEN_CAVEAT: &str =
     "artifact.dual_stack_fc_contract_hidden_caveat";
 pub const RULE_DUAL_STACK_FC_CONTRACT_CLAIM_UNSAFE: &str =
     "artifact.dual_stack_fc_contract_claim_unsafe";
+pub const RULE_PARTITION_REPORT_INVALID: &str = "artifact.partition_report_invalid";
+pub const RULE_RECONCILIATION_REPORT_INVALID: &str = "artifact.reconciliation_report_invalid";
 pub const RULE_PARSE_FAILED: &str = "artifact.parse_failed";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -142,6 +145,7 @@ pub struct ArtifactPackPaths {
     pub dry_run_artifact: Option<PathBuf>,
     pub dual_stack_evidence: Option<PathBuf>,
     pub urban_analysis_manifest: Option<PathBuf>,
+    pub partition_supervisor_reports: Option<PathBuf>,
 }
 
 impl ArtifactPackPaths {
@@ -162,9 +166,23 @@ impl ArtifactPackPaths {
             ),
             dual_stack_evidence: optional_path(&output_dir, SITL_DUAL_STACK_EVIDENCE_FILE),
             urban_analysis_manifest: optional_path(&output_dir, "urban_analysis/manifest.json"),
+            partition_supervisor_reports: optional_path(
+                &output_dir,
+                "partition_supervisor_reports.json",
+            ),
             output_dir,
         }
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+struct PartitionSupervisorArtifact {
+    #[serde(default)]
+    partition_reports: Vec<PartitionReport>,
+    #[serde(default)]
+    reconciliation_reports: Vec<ReconciliationReport>,
+    #[serde(default)]
+    degraded_decision_log: Vec<DegradedDecisionLog>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -297,6 +315,7 @@ impl<'a> Validator<'a> {
         }
         if matches!(self.options.mode, ArtifactValidationMode::BenchmarkPack) {
             self.validate_urban_analysis_ownership();
+            self.validate_partition_supervisor_reports();
             return;
         }
 
@@ -337,6 +356,7 @@ impl<'a> Validator<'a> {
         }
 
         self.validate_urban_analysis_ownership();
+        self.validate_partition_supervisor_reports();
     }
 
     fn into_report(self) -> ArtifactValidationReport {
@@ -752,6 +772,65 @@ impl<'a> Validator<'a> {
                         item.lon_e7,
                         item.relative_alt_m
                     ),
+                );
+            }
+        }
+    }
+
+    fn validate_partition_supervisor_reports(&mut self) {
+        let Some(path) = self.paths.partition_supervisor_reports.clone() else {
+            return;
+        };
+        let Some(artifact) = self.load_json::<PartitionSupervisorArtifact>(&path) else {
+            return;
+        };
+
+        for report in &artifact.partition_reports {
+            if report.affected_agents.is_empty() {
+                self.push_error(
+                    RULE_PARTITION_REPORT_INVALID,
+                    Some(path.clone()),
+                    "partition report must list affected_agents",
+                );
+            }
+            if report
+                .heal_tick
+                .is_some_and(|heal_tick| heal_tick < report.partition_tick)
+            {
+                self.push_error(
+                    RULE_PARTITION_REPORT_INVALID,
+                    Some(path.clone()),
+                    format!(
+                        "partition report heal_tick {:?} is earlier than partition_tick {}",
+                        report.heal_tick, report.partition_tick
+                    ),
+                );
+            }
+        }
+
+        for report in &artifact.reconciliation_reports {
+            for conflict in &report.result.conflicts {
+                if let ConflictResolution::OlderLeaseWins { winner } = &conflict.resolution {
+                    if winner != &conflict.holder_a && winner != &conflict.holder_b {
+                        self.push_error(
+                            RULE_RECONCILIATION_REPORT_INVALID,
+                            Some(path.clone()),
+                            format!(
+                                "older_lease_wins winner '{}' must match one of the conflict holders",
+                                winner
+                            ),
+                        );
+                    }
+                }
+            }
+            if report.result.conflicts.is_empty()
+                && report.result.accepted.is_empty()
+                && report.result.rejected.is_empty()
+            {
+                self.push_error(
+                    RULE_RECONCILIATION_REPORT_INVALID,
+                    Some(path.clone()),
+                    "reconciliation report must not be empty",
                 );
             }
         }

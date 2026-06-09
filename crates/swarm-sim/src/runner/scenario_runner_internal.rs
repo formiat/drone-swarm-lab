@@ -143,6 +143,9 @@ impl ScenarioRunner {
             neighbor_lost_count: state.neighbor_lost_count,
             failsafe_rtl_count: state.failsafe_rtl_count,
             lease_expired_during_gcs_loss_count: state.lease_expired_during_gcs_loss_count,
+            partition_reports: state.partition_reports,
+            reconciliation_reports: state.reconciliation_reports,
+            degraded_decision_log: state.degraded_decision_log,
         })
     }
 }

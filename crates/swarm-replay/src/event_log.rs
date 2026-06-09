@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use swarm_comms::{ConnectivityLossKind, SupervisorDecision, SupervisorReconcileResult};
 use swarm_types::{
     AgentId, Pose, TaskId, UrbanBusId, UrbanEdgeId, UrbanNodeId, UrbanObstacleId,
     UrbanRightOfWayPolicy,
@@ -461,6 +462,30 @@ pub enum Event {
         active_lease_count: u64,
         mission_state_name: String,
     },
+    // M94: Degraded / Partition Swarm Supervisor
+    PartitionDetected {
+        tick: u64,
+        group_a: Vec<AgentId>,
+        group_b: Vec<AgentId>,
+    },
+    PartitionHealed {
+        tick: u64,
+    },
+    SupervisorDegradedDecision {
+        tick: u64,
+        condition: ConnectivityLossKind,
+        decision: SupervisorDecision,
+        resources: Vec<String>,
+    },
+    SupervisorReconciled {
+        tick: u64,
+        result_summary: SupervisorReconcileResult,
+    },
+    CommandSuppressed {
+        tick: u64,
+        resource_id: String,
+        reason: String,
+    },
 }
 
 /// Reason why a message was dropped.
@@ -743,6 +768,29 @@ mod tests {
             resource_id: "edge-0".to_owned(),
             claimant_a: agent_id(),
             claimant_b: AgentId::from("agent-1".to_owned()),
+        });
+    }
+
+    #[test]
+    fn partition_supervisor_events_serde_roundtrip() {
+        roundtrip(Event::PartitionDetected {
+            tick: 21,
+            group_a: vec![agent_id()],
+            group_b: vec![AgentId::from("agent-1".to_owned())],
+        });
+        roundtrip(Event::PartitionHealed { tick: 22 });
+        roundtrip(Event::SupervisorDegradedDecision {
+            tick: 23,
+            condition: ConnectivityLossKind::SwarmPartitioned {
+                group_sizes: vec![1, 1],
+            },
+            decision: SupervisorDecision::ContinueUnderLease,
+            resources: vec!["edge-0".to_owned()],
+        });
+        roundtrip(Event::CommandSuppressed {
+            tick: 24,
+            resource_id: "edge-0".to_owned(),
+            reason: "ambiguous_authority".to_owned(),
         });
     }
 

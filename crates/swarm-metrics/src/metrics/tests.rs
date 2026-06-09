@@ -114,6 +114,9 @@ fn run(success: bool, detection_time_ticks: Option<u64>) -> RunMetrics {
         neighbor_lost_count: 0,
         failsafe_rtl_count: 0,
         lease_expired_during_gcs_loss_count: 0,
+        partition_reports: Vec::new(),
+        reconciliation_reports: Vec::new(),
+        degraded_decision_log: Vec::new(),
     }
 }
 

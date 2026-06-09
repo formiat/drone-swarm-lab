@@ -146,7 +146,12 @@ pub fn build_urban_route_trace(log: &EventLog) -> UrbanRouteTrace {
             | Event::AgentContinuingUnderLease { .. }
             | Event::AgentLeaseExpiredDuringGcsLoss { .. }
             | Event::AgentNeighborLost { .. }
-            | Event::AgentStateReconciled { .. } => {}
+            | Event::AgentStateReconciled { .. }
+            | Event::PartitionDetected { .. }
+            | Event::PartitionHealed { .. }
+            | Event::SupervisorDegradedDecision { .. }
+            | Event::SupervisorReconciled { .. }
+            | Event::CommandSuppressed { .. } => {}
         }
     }
 

@@ -3,8 +3,11 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use swarm_alloc::Allocator;
-use swarm_comms::{InMemAgentTransport, InMemNetwork, LeaseId, NetworkConfig};
-use swarm_runtime::{AgentNode, Coordinator, GridState};
+use swarm_comms::{
+    DegradedDecisionLog, InMemAgentTransport, InMemNetwork, NetworkConfig, PartitionReport,
+    ReconciliationReport,
+};
+use swarm_runtime::{ActiveLeaseRecord, AgentNode, Coordinator, GridState};
 use swarm_types::{AdapterRegistry, AgentId, Pose, TaskId};
 
 use super::super::{InspectionState, RunConfig, SafetyAllocator, WildfireState};
@@ -69,6 +72,10 @@ pub(in crate::runner) struct TickLoopState<A: Allocator> {
     pub failsafe_rtl_count: u64,
     /// Number of leases that expired while their holder was in GCS-lost state.
     pub lease_expired_during_gcs_loss_count: u64,
+    pub active_partition_pairs: HashSet<(AgentId, AgentId)>,
+    pub partition_reports: Vec<PartitionReport>,
+    pub reconciliation_reports: Vec<ReconciliationReport>,
+    pub degraded_decision_log: Vec<DegradedDecisionLog>,
 }
 
 impl<A: Allocator> TickLoopState<A> {
@@ -119,10 +126,25 @@ impl<A: Allocator> TickLoopState<A> {
                 // M93: apply autonomy config and GCS identity to every agent node
                 node.autonomy = config.autonomy.clone();
                 node.gcs_id = Some(base_id.clone());
-                if let Some(leases) = config.initial_agent_leases.get(&agent.id) {
+                if let Some(leases) = config.initial_agent_lease_records.get(&agent.id) {
+                    for lease in leases {
+                        node.active_leases.push(ActiveLeaseRecord {
+                            lease_id: lease.lease_id.clone().into(),
+                            resource_id: lease.resource_id.clone(),
+                            resource_kind: lease.resource_kind.clone(),
+                            granted_tick: lease.granted_tick,
+                            expiry_tick: lease.expiry_tick,
+                        });
+                    }
+                } else if let Some(leases) = config.initial_agent_leases.get(&agent.id) {
                     for (lease_id, expiry_tick) in leases {
-                        node.active_leases
-                            .push((LeaseId::from(lease_id.clone()), *expiry_tick));
+                        node.active_leases.push(ActiveLeaseRecord {
+                            lease_id: lease_id.clone().into(),
+                            resource_id: lease_id.clone(),
+                            resource_kind: "task".to_owned(),
+                            granted_tick: 0,
+                            expiry_tick: *expiry_tick,
+                        });
                     }
                 }
                 if config.enable_cbba {
@@ -157,6 +179,10 @@ impl<A: Allocator> TickLoopState<A> {
             neighbor_lost_count: 0,
             failsafe_rtl_count: 0,
             lease_expired_during_gcs_loss_count: 0,
+            active_partition_pairs: HashSet::new(),
+            partition_reports: Vec::new(),
+            reconciliation_reports: Vec::new(),
+            degraded_decision_log: Vec::new(),
             allocator,
             clock: Clock::new(1),
             log_builder,

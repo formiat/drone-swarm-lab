@@ -4,9 +4,10 @@ use super::super::*;
 use super::{
     all_dynamic_tasks_injected, all_failure_ticks_passed, all_partitions_resolved,
     apply_environment_effects, apply_partition_events, connectivity_metrics_tick,
-    process_alive_nodes, process_wildfire_mapping_tick, record_agent_failures,
-    record_inspection_edge_visits, record_safety_violations, record_sar_scans, record_tick_start,
-    send_alive_heartbeats, send_gcs_heartbeats, should_stop_tick, tasks_injected_at_tick,
+    handle_node_failures, handle_partition_activation, handle_partition_heal, process_alive_nodes,
+    process_wildfire_mapping_tick, record_agent_failures, record_inspection_edge_visits,
+    record_safety_violations, record_sar_scans, record_tick_start, send_alive_heartbeats,
+    send_gcs_heartbeats, should_stop_tick, tasks_injected_at_tick,
     teleport_assigned_tasks_when_movement_disabled, update_connectivity_snapshot,
     MissionStopSnapshot, TickLoopState,
 };
@@ -77,12 +78,18 @@ pub(in crate::runner) fn run_tick_loop<A: Allocator>(
 
         record_tick_start(&mut state.log_builder, current_tick);
 
+        let crashed_before_tick = state.crashed_agents.clone();
         record_agent_failures(
             &config.failures,
             current_tick,
             &mut state.crashed_agents,
             &mut state.log_builder,
         );
+        let newly_failed_agents = state
+            .crashed_agents
+            .difference(&crashed_before_tick)
+            .cloned()
+            .collect::<HashSet<_>>();
 
         state.bus.borrow_mut().advance_tick();
 
@@ -98,6 +105,43 @@ pub(in crate::runner) fn run_tick_loop<A: Allocator>(
         if partition_tick.heal_tick.is_some() {
             state.heal_tick = partition_tick.heal_tick;
         }
+        for (agent_a, agent_b) in &partition_tick.added_pairs {
+            state
+                .active_partition_pairs
+                .insert((agent_a.clone(), agent_b.clone()));
+            handle_partition_activation(
+                &state.nodes,
+                &state.crashed_agents,
+                &state.active_partition_pairs,
+                &(agent_a.clone(), agent_b.clone()),
+                current_tick,
+                &mut state.degraded_decision_log,
+                &mut state.partition_reports,
+                &mut state.log_builder,
+            );
+        }
+        for (agent_a, agent_b) in &partition_tick.healed_pairs {
+            state
+                .active_partition_pairs
+                .remove(&(agent_a.clone(), agent_b.clone()));
+            handle_partition_heal(
+                &mut state.nodes,
+                &state.crashed_agents,
+                current_tick,
+                &(agent_a.clone(), agent_b.clone()),
+                config.tick_duration_ms,
+                &mut state.degraded_decision_log,
+                &mut state.partition_reports,
+                &mut state.reconciliation_reports,
+                &mut state.log_builder,
+            );
+        }
+        handle_node_failures(
+            &mut state.nodes,
+            &newly_failed_agents,
+            current_tick,
+            &mut state.degraded_decision_log,
+        );
 
         let injected = tasks_injected_at_tick(&config.dynamic_tasks, current_tick);
         state.tasks_injected += injected.len() as u64;

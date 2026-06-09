@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use swarm_comms::{DegradedDecisionLog, PartitionReport, ReconciliationReport};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RunMetrics {
@@ -215,4 +216,11 @@ pub struct RunMetrics {
     /// Number of leases that expired while their holder was in GCS-lost state.
     #[serde(default)]
     pub lease_expired_during_gcs_loss_count: u64,
+    // M94 Partition supervisor evidence
+    #[serde(default)]
+    pub partition_reports: Vec<PartitionReport>,
+    #[serde(default)]
+    pub reconciliation_reports: Vec<ReconciliationReport>,
+    #[serde(default)]
+    pub degraded_decision_log: Vec<DegradedDecisionLog>,
 }

@@ -312,7 +312,12 @@ fn event_category(event: &Event) -> ReplayEventCategory {
         | Event::AgentContinuingUnderLease { .. }
         | Event::AgentLeaseExpiredDuringGcsLoss { .. }
         | Event::AgentNeighborLost { .. }
-        | Event::AgentStateReconciled { .. } => ReplayEventCategory::Generic,
+        | Event::AgentStateReconciled { .. }
+        | Event::PartitionDetected { .. }
+        | Event::PartitionHealed { .. }
+        | Event::SupervisorDegradedDecision { .. }
+        | Event::SupervisorReconciled { .. }
+        | Event::CommandSuppressed { .. } => ReplayEventCategory::Generic,
     }
 }
 
@@ -392,6 +397,14 @@ fn event_agent_id(event: &Event) -> Option<AgentId> {
         | Event::AgentLeaseExpiredDuringGcsLoss { agent_id, .. }
         | Event::AgentNeighborLost { agent_id, .. }
         | Event::AgentStateReconciled { agent_id, .. } => Some(agent_id.clone()),
+        Event::PartitionDetected { group_a, .. } => group_a.first().cloned(),
+        Event::PartitionHealed { .. }
+        | Event::SupervisorDegradedDecision { .. }
+        | Event::CommandSuppressed { .. } => None,
+        Event::SupervisorReconciled { result_summary, .. } => result_summary
+            .conflicts
+            .first()
+            .map(|conflict| conflict.holder_a.clone()),
     }
 }
 
@@ -464,7 +477,12 @@ fn event_tick(event: &Event) -> u64 {
         | Event::AgentContinuingUnderLease { tick, .. }
         | Event::AgentLeaseExpiredDuringGcsLoss { tick, .. }
         | Event::AgentNeighborLost { tick, .. }
-        | Event::AgentStateReconciled { tick, .. } => *tick,
+        | Event::AgentStateReconciled { tick, .. }
+        | Event::PartitionDetected { tick, .. }
+        | Event::PartitionHealed { tick, .. }
+        | Event::SupervisorDegradedDecision { tick, .. }
+        | Event::SupervisorReconciled { tick, .. }
+        | Event::CommandSuppressed { tick, .. } => *tick,
     }
 }
 
@@ -540,6 +558,11 @@ fn event_name(event: &Event) -> &'static str {
         Event::AgentLeaseExpiredDuringGcsLoss { .. } => "AgentLeaseExpiredDuringGcsLoss",
         Event::AgentNeighborLost { .. } => "AgentNeighborLost",
         Event::AgentStateReconciled { .. } => "AgentStateReconciled",
+        Event::PartitionDetected { .. } => "PartitionDetected",
+        Event::PartitionHealed { .. } => "PartitionHealed",
+        Event::SupervisorDegradedDecision { .. } => "SupervisorDegradedDecision",
+        Event::SupervisorReconciled { .. } => "SupervisorReconciled",
+        Event::CommandSuppressed { .. } => "CommandSuppressed",
     }
 }
 
@@ -915,6 +938,30 @@ fn event_details(event: &Event) -> String {
             policy_applied,
             ..
         } => format!("agent={agent_id} gcs_lost_ticks={gcs_lost_ticks} policy={policy_applied}"),
+        Event::PartitionDetected {
+            group_a, group_b, ..
+        } => format!("group_a={} group_b={}", group_a.len(), group_b.len()),
+        Event::PartitionHealed { .. } => "reconciled=true".to_owned(),
+        Event::SupervisorDegradedDecision {
+            condition,
+            decision,
+            resources,
+            ..
+        } => format!(
+            "condition={condition:?} decision={decision:?} resources={}",
+            resources.len()
+        ),
+        Event::SupervisorReconciled {
+            result_summary, ..
+        } => format!(
+            "accepted={} rejected={} conflicts={}",
+            result_summary.accepted.len(),
+            result_summary.rejected.len(),
+            result_summary.conflicts.len()
+        ),
+        Event::CommandSuppressed {
+            resource_id, reason, ..
+        } => format!("resource={resource_id} reason={reason}"),
     }
 }
 

@@ -901,7 +901,7 @@ fn continuing_under_lease_stays_active_while_lease_valid() {
     );
     // Active lease that expires at tick 100
     node.active_leases
-        .push((LeaseId::from("lease-1".to_owned()), 100));
+        .push(active_lease_record("lease-1", "lease-1", 0, 100));
     let mut allocator = GreedyAllocator::default();
 
     // Ticks 1-2: GCS HB
@@ -972,7 +972,7 @@ fn lease_expiry_during_gcs_loss_applies_policy() {
     );
     // Lease expires at tick 8
     node.active_leases
-        .push((LeaseId::from("lease-short".to_owned()), 8));
+        .push(active_lease_record("lease-short", "lease-short", 0, 8));
     let mut allocator = GreedyAllocator::default();
 
     // Ticks 1-2: GCS HB
@@ -1090,7 +1090,7 @@ fn state_reconcile_report_contains_active_leases() {
     );
     // Active lease that outlasts the GCS loss period
     node.active_leases
-        .push((LeaseId::from("lease-active".to_owned()), 100));
+        .push(active_lease_record("lease-active", "lease-active", 0, 100));
     let mut allocator = GreedyAllocator::default();
 
     // Ticks 1-2: GCS HB
@@ -1542,4 +1542,18 @@ fn neighbor_lost_wait_for_reconnect_restores_state_on_reconnect() {
         node.mission_state,
         AgentMissionState::WaitingForMission
     ));
+}
+fn active_lease_record(
+    lease_id: &str,
+    resource_id: &str,
+    granted_tick: u64,
+    expiry_tick: u64,
+) -> ActiveLeaseRecord {
+    ActiveLeaseRecord {
+        lease_id: LeaseId::from(lease_id.to_owned()),
+        resource_id: resource_id.to_owned(),
+        resource_kind: "task".to_owned(),
+        granted_tick,
+        expiry_tick,
+    }
 }
