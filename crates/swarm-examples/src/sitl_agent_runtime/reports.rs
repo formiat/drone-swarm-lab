@@ -100,6 +100,41 @@ pub(super) fn write_run_report_if_requested(
 }
 
 #[cfg(feature = "mavlink-transport")]
+pub(super) fn write_execution_artifact_if_requested(
+    run_report_path: Option<&str>,
+    artifact: &swarm_comms::MavlinkExecutionArtifact,
+) -> Result<(), SitlError> {
+    let Some(run_report_path) = run_report_path else {
+        return Ok(());
+    };
+    let run_report_path = Path::new(run_report_path);
+    let artifact_path = run_report_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("mavlink_execution_artifact.v1.json");
+    let content =
+        serde_json::to_string_pretty(artifact).map_err(|error| SitlError::RunReportWrite {
+            path: artifact_path.clone(),
+            message: error.to_string(),
+        })?;
+    if let Some(parent) = artifact_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| SitlError::RunReportWrite {
+            path: artifact_path.clone(),
+            message: error.to_string(),
+        })?;
+    }
+    std::fs::write(&artifact_path, content).map_err(|error| SitlError::RunReportWrite {
+        path: artifact_path.clone(),
+        message: error.to_string(),
+    })?;
+    eprintln!(
+        "MAVLink execution artifact written: {}",
+        artifact_path.display()
+    );
+    Ok(())
+}
+
+#[cfg(feature = "mavlink-transport")]
 pub(super) fn sitl_run_status_name(status: &SitlRunFinalStatus) -> &'static str {
     match status {
         SitlRunFinalStatus::Completed => "completed",

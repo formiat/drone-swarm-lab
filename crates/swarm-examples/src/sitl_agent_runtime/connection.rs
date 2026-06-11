@@ -10,8 +10,8 @@ use super::mock::{new_sitl_event_recorder, write_replay_log_if_requested};
 #[cfg(feature = "mavlink-transport")]
 use super::reports::{
     failure_run_report, progress_status_to_run_status, sitl_run_status_name, success_run_report,
-    write_run_report_if_requested, SitlExecutionFailure, SitlExecutionSuccess,
-    SitlMissionStartReport,
+    write_execution_artifact_if_requested, write_run_report_if_requested, SitlExecutionFailure,
+    SitlExecutionSuccess, SitlMissionStartReport,
 };
 #[cfg(feature = "mavlink-transport")]
 use super::telemetry::{
@@ -176,6 +176,8 @@ pub(super) fn run_connection(
                         recorder: event_recorder.as_mut(),
                         task_id_by_seq,
                         mavlink_common_plan,
+                        mavlink_profile,
+                        last_execution_report: None,
                     };
                     run_golden_path_with_driver(
                         &mut driver,
@@ -240,6 +242,14 @@ pub(super) trait SitlGoldenPathDriver {
     fn record_run_completed(&mut self, _status: &str) {}
 
     fn record_failure(&mut self, _status: &str, _error: &str) {}
+
+    fn take_execution_report(&mut self) -> Option<swarm_comms::MavlinkPlanExecutionReport> {
+        None
+    }
+
+    fn mavlink_profile(&self) -> Option<swarm_comms::MavlinkCapabilityProfileId> {
+        None
+    }
 }
 
 #[cfg(feature = "mavlink-transport")]
@@ -248,6 +258,8 @@ pub(super) struct MavlinkExecutorPathDriver<'a> {
     pub(super) recorder: Option<&'a mut SitlEventRecorder>,
     pub(super) task_id_by_seq: BTreeMap<u16, String>,
     pub(super) mavlink_common_plan: swarm_comms::MavlinkCommonPlan,
+    pub(super) mavlink_profile: swarm_comms::MavlinkCapabilityProfileId,
+    pub(super) last_execution_report: Option<swarm_comms::MavlinkPlanExecutionReport>,
 }
 
 #[cfg(feature = "mavlink-transport")]
@@ -327,6 +339,7 @@ impl SitlGoldenPathDriver for MavlinkExecutorPathDriver<'_> {
                 &mut observer,
             )
         };
+        self.last_execution_report = Some(report.clone());
         if !report.overall.is_success() {
             return Err(execution_report_to_failure(
                 self.mavlink_common_plan.mission_items.len(),
@@ -367,6 +380,14 @@ impl SitlGoldenPathDriver for MavlinkExecutorPathDriver<'_> {
             recorder.push_failure(status, error);
         }
     }
+
+    fn take_execution_report(&mut self) -> Option<swarm_comms::MavlinkPlanExecutionReport> {
+        self.last_execution_report.take()
+    }
+
+    fn mavlink_profile(&self) -> Option<swarm_comms::MavlinkCapabilityProfileId> {
+        Some(self.mavlink_profile)
+    }
 }
 
 #[cfg(feature = "mavlink-transport")]
@@ -399,7 +420,8 @@ fn execution_report_to_start_report(
         took_off: report_step_accepted(report, "MAV_CMD_NAV_TAKEOFF"),
         started: plan.mission_start.is_none()
             || report_step_accepted(report, "MAV_CMD_MISSION_START"),
-        post_start_heartbeat: false,
+        post_start_heartbeat: plan.mission_start.is_some()
+            && report_step_accepted(report, "MAV_CMD_MISSION_START"),
         abort_result: None,
     }
 }
@@ -458,8 +480,8 @@ pub(super) fn run_golden_path_with_driver<D: SitlGoldenPathDriver>(
     let execution = execute_sitl_golden_path_with_driver(
         driver,
         run.waypoints,
-        run.upload_options,
-        run.lifecycle_options,
+        run.upload_options.clone(),
+        run.lifecycle_options.clone(),
         run.plan,
         run.lifecycle,
     );
@@ -469,6 +491,7 @@ pub(super) fn run_golden_path_with_driver<D: SitlGoldenPathDriver>(
             let report =
                 success_run_report(run.plan, run.connection_string, &success.progress_report);
             write_run_report_if_requested(run.run_report, &report)?;
+            write_executor_artifact_from_driver_if_requested(driver, &run)?;
             eprintln!(
                 "Real MAVLink mode: mission complete; uploaded_count={} completed={} failed={} total={}",
                 success.uploaded_count,
@@ -482,11 +505,73 @@ pub(super) fn run_golden_path_with_driver<D: SitlGoldenPathDriver>(
             driver.record_failure(sitl_run_status_name(&failure.final_status), &failure.error);
             let report = failure_run_report(run.plan, run.connection_string, &failure);
             write_run_report_if_requested(run.run_report, &report)?;
+            write_executor_artifact_from_driver_if_requested(driver, &run)?;
             Err(SitlError::ConnectionFailed {
                 message: failure.error,
             })
         }
     }
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn write_executor_artifact_from_driver_if_requested<D: SitlGoldenPathDriver>(
+    driver: &mut D,
+    run: &SitlGoldenPathRun<'_>,
+) -> Result<(), SitlError> {
+    let Some(execution_report) = driver.take_execution_report() else {
+        return Ok(());
+    };
+    let artifact = swarm_comms::MavlinkExecutionArtifact::new(
+        swarm_comms::MavlinkExecutionEvidenceMode::TransportBacked,
+        driver
+            .mavlink_profile()
+            .unwrap_or_default()
+            .as_str()
+            .to_owned(),
+        current_git_commit(),
+        sitl_execute_command(run),
+        execution_report,
+        vec![
+            "transport-backed executor report from sitl_agent --execute".to_owned(),
+            "mission completion remains represented by sibling sitl_run_report.v1 telemetry progress"
+                .to_owned(),
+        ],
+    );
+    write_execution_artifact_if_requested(run.run_report, &artifact)
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn sitl_execute_command(run: &SitlGoldenPathRun<'_>) -> Vec<String> {
+    let mut command = vec![
+        "sitl_agent".to_owned(),
+        "--connection".to_owned(),
+        run.connection_string.to_owned(),
+        "--execute".to_owned(),
+        "--scenario".to_owned(),
+        run.plan.scenario_path.display().to_string(),
+        "--agent-id".to_owned(),
+        run.plan.agent_id.clone(),
+    ];
+    if run.lifecycle.no_arm {
+        command.push("--no-arm".to_owned());
+    }
+    command
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn current_git_commit() -> String {
+    std::process::Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .ok()
+        .and_then(|output| {
+            output
+                .status
+                .success()
+                .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+        })
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "unknown".to_owned())
 }
 
 #[cfg(feature = "mavlink-transport")]

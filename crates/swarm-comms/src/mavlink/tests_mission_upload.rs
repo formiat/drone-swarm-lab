@@ -2,6 +2,20 @@ use super::*;
 #[cfg(all(test, feature = "mavlink-transport"))]
 mod mission_upload_tests {
     use super::*;
+    use crate::mavlink::transport::{
+        MavlinkConnectionAckProvider, MavlinkConnectionFcConfigProvider,
+    };
+    use crate::mavlink_common_plan::{
+        MavlinkCommonCommand, MavlinkCommonCommandName, MavlinkCommonMissionItem,
+        MavlinkCommonPlan, MavlinkPlanPhase, MavlinkPlanValidationResult,
+        MAVLINK_COMMON_PLAN_SCHEMA_VERSION,
+    };
+    use crate::mavlink_executor::{
+        FcConfigProvider, MavlinkExecutionOutcome, MavlinkExecutionStepResult, MavlinkPlanExecutor,
+    };
+    use crate::mavlink_parameters::{
+        FcParamId, FcParamRequirement, FcParamValue, FcParamWritePlan,
+    };
     use std::collections::VecDeque;
 
     #[derive(Default)]
@@ -122,6 +136,16 @@ mod mission_upload_tests {
             .count()
     }
 
+    fn sent_command_ids(conn: &FakeMissionConnection) -> Vec<common::MavCmd> {
+        conn.sent()
+            .iter()
+            .filter_map(|message| match message {
+                CommonMessage::COMMAND_LONG(data) => Some(data.command),
+                _ => None,
+            })
+            .collect()
+    }
+
     #[derive(Default)]
     struct RecordingObserver {
         events: Vec<MavlinkMissionEvent>,
@@ -135,6 +159,117 @@ mod mission_upload_tests {
 
     fn mission_current(seq: u16) -> CommonMessage {
         CommonMessage::MISSION_CURRENT(common::MISSION_CURRENT_DATA { seq })
+    }
+
+    fn executor_command(
+        command_id: &str,
+        command: MavlinkCommonCommandName,
+        params: [Option<f64>; 7],
+    ) -> MavlinkCommonCommand {
+        MavlinkCommonCommand {
+            command_id: command_id.to_owned(),
+            command,
+            phase: if command == MavlinkCommonCommandName::MissionStart {
+                MavlinkPlanPhase::MissionStart
+            } else {
+                MavlinkPlanPhase::CommandPrelude
+            },
+            params,
+        }
+    }
+
+    fn executor_plan() -> MavlinkCommonPlan {
+        MavlinkCommonPlan {
+            schema_version: MAVLINK_COMMON_PLAN_SCHEMA_VERSION.to_owned(),
+            source_mission_id: "provider-test".to_owned(),
+            command_ir_hash: "hash".to_owned(),
+            backend_profile: "px4".to_owned(),
+            command_prelude: vec![
+                executor_command(
+                    "arm",
+                    MavlinkCommonCommandName::ComponentArmDisarm,
+                    [
+                        Some(1.0),
+                        Some(0.0),
+                        Some(0.0),
+                        Some(0.0),
+                        Some(0.0),
+                        Some(0.0),
+                        Some(0.0),
+                    ],
+                ),
+                executor_command(
+                    "takeoff",
+                    MavlinkCommonCommandName::NavTakeoff,
+                    [
+                        Some(0.0),
+                        Some(0.0),
+                        Some(0.0),
+                        None,
+                        Some(0.0),
+                        Some(0.0),
+                        Some(3.0),
+                    ],
+                ),
+            ],
+            geofence_prelude: None,
+            fence_summary: None,
+            fc_contract_result: None,
+            mission_items: vec![MavlinkCommonMissionItem {
+                seq: 0,
+                command_id: "wp-0".to_owned(),
+                command: MavlinkCommonCommandName::NavWaypoint,
+                frame: "MAV_FRAME_GLOBAL_RELATIVE_ALT_INT".to_owned(),
+                lat_e7: 473_977_420,
+                lon_e7: 85_455_940,
+                relative_alt_m: 3.0,
+                params: [Some(0.0), Some(0.0), Some(0.0), None],
+                current: true,
+                autocontinue: true,
+                source_task_id: Some("wp-0".to_owned()),
+                source_route_id: None,
+            }],
+            mission_start: Some(executor_command(
+                "start",
+                MavlinkCommonCommandName::MissionStart,
+                [
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                ],
+            )),
+            command_postlude: vec![],
+            expected_acks: vec![],
+            telemetry_milestones: vec![],
+            unsupported_features: vec![],
+            validation_result: MavlinkPlanValidationResult {
+                passed: true,
+                ir_validation_passed: true,
+                unsupported_required_count: 0,
+                notes: vec![],
+            },
+            compatibility: None,
+        }
+    }
+
+    fn param_value_message(param_id: &str, value: FcParamValue) -> CommonMessage {
+        let (param_value, param_type) = match value {
+            FcParamValue::Int32(value) => {
+                (value as f32, common::MavParamType::MAV_PARAM_TYPE_INT32)
+            }
+            FcParamValue::Float(value) => (value, common::MavParamType::MAV_PARAM_TYPE_REAL32),
+        };
+        CommonMessage::PARAM_VALUE(common::PARAM_VALUE_DATA {
+            param_value,
+            param_count: 1,
+            param_index: 0,
+            param_id: param_id.into(),
+            param_type,
+        })
     }
 
     fn waypoint_reached(seq: u16) -> CommonMessage {
@@ -611,6 +746,134 @@ mod mission_upload_tests {
         assert_eq!(command_long_count(&conn), 2);
         assert_command(&conn.sent()[0], common::MavCmd::MAV_CMD_NAV_TAKEOFF);
         assert_command(&conn.sent()[1], common::MavCmd::MAV_CMD_MISSION_START);
+    }
+
+    #[test]
+    fn executor_transport_provider_no_arm_skips_arm_but_keeps_takeoff_and_start() {
+        let plan = executor_plan();
+        let mut lifecycle_options = lifecycle_options();
+        lifecycle_options.no_arm = true;
+        let mut conn = FakeMissionConnection::with_incoming([
+            command_ack(
+                common::MavCmd::MAV_CMD_NAV_TAKEOFF,
+                common::MavResult::MAV_RESULT_ACCEPTED,
+            ),
+            heartbeat(),
+            request_int(0),
+            ack(common::MavMissionResult::MAV_MISSION_ACCEPTED),
+            command_ack(
+                common::MavCmd::MAV_CMD_MISSION_START,
+                common::MavResult::MAV_RESULT_ACCEPTED,
+            ),
+            heartbeat(),
+        ]);
+        let mut observer = RecordingObserver::default();
+        let provider = MavlinkConnectionAckProvider::new_for_connection(
+            &mut conn,
+            &plan,
+            options(),
+            lifecycle_options,
+            &mut observer,
+        );
+
+        let mut executor = MavlinkPlanExecutor::new(provider, 0);
+        let report = executor.execute(&plan);
+
+        assert!(report.overall.is_success());
+        let command_ids = sent_command_ids(&conn);
+        assert!(!command_ids.contains(&common::MavCmd::MAV_CMD_COMPONENT_ARM_DISARM));
+        assert!(command_ids.contains(&common::MavCmd::MAV_CMD_NAV_TAKEOFF));
+        assert!(command_ids.contains(&common::MavCmd::MAV_CMD_MISSION_START));
+        assert_eq!(command_long_count(&conn), 2);
+        assert!(report.steps.iter().any(|(_, label, result)| {
+            label == "MAV_CMD_COMPONENT_ARM_DISARM"
+                && matches!(result, MavlinkExecutionStepResult::Skipped { reason } if reason.contains("no_arm"))
+        }));
+    }
+
+    #[test]
+    fn executor_transport_provider_start_timeout_sends_abort() {
+        let plan = executor_plan();
+        let mut conn = FakeMissionConnection::with_incoming([
+            command_ack(
+                common::MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
+                common::MavResult::MAV_RESULT_ACCEPTED,
+            ),
+            command_ack(
+                common::MavCmd::MAV_CMD_NAV_TAKEOFF,
+                common::MavResult::MAV_RESULT_ACCEPTED,
+            ),
+            heartbeat(),
+            request_int(0),
+            ack(common::MavMissionResult::MAV_MISSION_ACCEPTED),
+            command_ack(
+                common::MavCmd::MAV_CMD_MISSION_START,
+                common::MavResult::MAV_RESULT_ACCEPTED,
+            ),
+        ]);
+        let mut observer = RecordingObserver::default();
+        let provider = MavlinkConnectionAckProvider::new_for_connection(
+            &mut conn,
+            &plan,
+            options(),
+            lifecycle_options(),
+            &mut observer,
+        );
+
+        let mut executor = MavlinkPlanExecutor::new(provider, 0);
+        let report = executor.execute(&plan);
+
+        assert!(matches!(
+            report.overall,
+            MavlinkExecutionOutcome::Aborted { .. }
+        ));
+        let command_ids = sent_command_ids(&conn);
+        assert!(command_ids.contains(&common::MavCmd::MAV_CMD_NAV_RETURN_TO_LAUNCH));
+    }
+
+    #[test]
+    fn transport_fc_config_provider_reads_and_writes_params() {
+        let param_id = FcParamId::from("GF_ACTION".to_owned());
+        let mut conn = FakeMissionConnection::with_incoming([
+            param_value_message("GF_ACTION", FcParamValue::Int32(1)),
+            param_value_message("GF_ACTION", FcParamValue::Int32(2)),
+        ]);
+        let mut provider = MavlinkConnectionFcConfigProvider::new_for_connection(
+            &mut conn,
+            crate::mavlink_capability_profile::MavlinkCapabilityProfileId::Px4,
+            options(),
+            lifecycle_options(),
+        );
+
+        let snapshot = provider
+            .read_params(&[FcParamRequirement {
+                param_id: param_id.clone(),
+                required_range: crate::mavlink_parameters::FcParamRange::IntBounds {
+                    min: 0,
+                    max: 5,
+                },
+                reason: "test".to_owned(),
+            }])
+            .unwrap();
+        assert_eq!(
+            snapshot.params.get(&param_id),
+            Some(&FcParamValue::Int32(1))
+        );
+        let write = provider
+            .write_params(&FcParamWritePlan {
+                writes: vec![(param_id, FcParamValue::Int32(2))],
+                rationale: "test write".to_owned(),
+            })
+            .unwrap();
+        assert_eq!(write.written_count, 1);
+        assert!(conn
+            .sent()
+            .iter()
+            .any(|message| matches!(message, CommonMessage::PARAM_REQUEST_READ(_))));
+        assert!(conn
+            .sent()
+            .iter()
+            .any(|message| matches!(message, CommonMessage::PARAM_SET(_))));
     }
 
     #[test]

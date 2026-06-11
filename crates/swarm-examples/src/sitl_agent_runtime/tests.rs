@@ -254,10 +254,12 @@ fn fake_execution_failure(final_status: SitlRunFinalStatus, error: &str) -> Sitl
 struct FakeGoldenPathDriver {
     start_result: Result<SitlMissionStartReport, SitlExecutionFailure>,
     telemetry_result: Result<crate::sitl_progress::SitlMissionProgressReport, SitlExecutionFailure>,
+    execution_report: Option<swarm_comms::MavlinkPlanExecutionReport>,
     upload_calls: usize,
     telemetry_calls: usize,
     last_upload_waypoint_count: Option<usize>,
     last_telemetry_mission_item_count: Option<usize>,
+    mavlink_profile: Option<swarm_comms::MavlinkCapabilityProfileId>,
 }
 
 #[cfg(feature = "mavlink-transport")]
@@ -272,11 +274,23 @@ impl FakeGoldenPathDriver {
         Self {
             start_result,
             telemetry_result,
+            execution_report: None,
             upload_calls: 0,
             telemetry_calls: 0,
             last_upload_waypoint_count: None,
             last_telemetry_mission_item_count: None,
+            mavlink_profile: None,
         }
+    }
+
+    fn with_execution_report(
+        mut self,
+        execution_report: swarm_comms::MavlinkPlanExecutionReport,
+        mavlink_profile: swarm_comms::MavlinkCapabilityProfileId,
+    ) -> Self {
+        self.execution_report = Some(execution_report);
+        self.mavlink_profile = Some(mavlink_profile);
+        self
     }
 }
 
@@ -303,6 +317,39 @@ impl SitlGoldenPathDriver for FakeGoldenPathDriver {
         self.telemetry_calls += 1;
         self.last_telemetry_mission_item_count = Some(mission_item_count);
         self.telemetry_result.clone()
+    }
+
+    fn take_execution_report(&mut self) -> Option<swarm_comms::MavlinkPlanExecutionReport> {
+        self.execution_report.take()
+    }
+
+    fn mavlink_profile(&self) -> Option<swarm_comms::MavlinkCapabilityProfileId> {
+        self.mavlink_profile
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn completed_execution_report(plan_id: &str) -> swarm_comms::MavlinkPlanExecutionReport {
+    swarm_comms::MavlinkPlanExecutionReport {
+        plan_id: plan_id.to_owned(),
+        steps: vec![
+            (
+                0,
+                "mission_upload".to_owned(),
+                swarm_comms::MavlinkExecutionStepResult::Accepted,
+            ),
+            (
+                1,
+                "MAV_CMD_MISSION_START".to_owned(),
+                swarm_comms::MavlinkExecutionStepResult::Accepted,
+            ),
+        ],
+        overall: swarm_comms::MavlinkExecutionOutcome::Completed,
+        lifecycle_state: swarm_comms::MissionExecuteLifecycleState::Completed,
+        telemetry_milestones_reached: vec![
+            swarm_comms::MavlinkTelemetryMilestoneKind::HeartbeatExpected,
+        ],
+        retry_count: 0,
     }
 }
 
@@ -350,6 +397,42 @@ fn fake_golden_path_driver_success_writes_completed_report() {
     assert_eq!(report.final_status, SitlRunFinalStatus::Completed);
     assert_eq!(report.completed_count, 2);
     assert_eq!(report.failed_count, 0);
+}
+
+#[test]
+#[cfg(feature = "mavlink-transport")]
+fn fake_golden_path_driver_writes_executor_artifact_next_to_run_report() {
+    let plan = test_plan();
+    let waypoints = test_waypoints();
+    let lifecycle = lifecycle_args(Duration::from_secs(30), Duration::from_secs(30));
+    let report_dir = tempfile::tempdir().unwrap();
+    let report_path = report_dir.path().join("report.json");
+    let artifact_path = report_dir.path().join("mavlink_execution_artifact.v1.json");
+    let mut driver =
+        FakeGoldenPathDriver::new(Ok(mission_start_success()), Ok(completed_progress_report()))
+            .with_execution_report(
+                completed_execution_report("sitl-executor-test"),
+                swarm_comms::MavlinkCapabilityProfileId::Px4,
+            );
+
+    run_golden_path_with_driver(
+        &mut driver,
+        test_golden_path_run(&plan, &waypoints, &lifecycle, report_path.to_str()),
+    )
+    .unwrap();
+
+    let json = std::fs::read_to_string(artifact_path).unwrap();
+    let artifact: swarm_comms::MavlinkExecutionArtifact = serde_json::from_str(&json).unwrap();
+    assert_eq!(
+        artifact.execution_mode,
+        swarm_comms::MavlinkExecutionEvidenceMode::TransportBacked
+    );
+    assert_eq!(artifact.profile_id, "px4");
+    assert_eq!(artifact.plan_id, "sitl-executor-test");
+    assert!(!artifact.command.is_empty());
+    assert!(!artifact.caveats.is_empty());
+    assert!(artifact.expected_upload_phase);
+    assert!(artifact.expected_start_phase);
 }
 
 #[test]

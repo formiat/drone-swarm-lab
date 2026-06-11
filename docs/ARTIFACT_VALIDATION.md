@@ -170,6 +170,12 @@ cargo run -p swarm-examples --bin artifact_validator -- \
   --strict
 ```
 
+When `sitl_agent --connection ... --execute --run-report <dir>/run-report.json`
+uses the transport-backed executor path, it writes the sibling
+`<dir>/mavlink_execution_artifact.v1.json`. That artifact contains the real
+`MavlinkPlanExecutionReport` produced before the telemetry progress loop; the
+SITL run report remains responsible for mission-completion telemetry counts.
+
 `execution_mode` is machine-readable. `local_mock_executor` and
 `scripted_profile_executor` are portable local executor evidence only.
 `transport_backed` is reserved for a path that actually used the MAVLink

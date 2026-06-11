@@ -8,8 +8,12 @@ use super::{MavlinkError, Waypoint};
 use std::{borrow::Cow, time::Duration};
 
 #[cfg(feature = "mavlink-transport")]
+use mavlink::{dialects::common, types::CharArray};
+
+#[cfg(feature = "mavlink-transport")]
 use super::commands::{
-    common_command_to_message, send_abort_command, send_command_and_wait_observed,
+    common_command_to_message, send_abort_command, send_abort_command_observed,
+    send_command_and_wait_observed, wait_for_post_start_heartbeat,
 };
 #[cfg(feature = "mavlink-transport")]
 use super::{
@@ -21,16 +25,25 @@ use super::{
     },
     telemetry::{poll_telemetry_event_with_connection, wait_next_telemetry_event_with_connection},
     AbortCommandResult, CommonMessage, MavlinkFlightError, MavlinkFlightReport,
-    MavlinkLifecycleError, MavlinkMissionError, MavlinkMissionObserver, MavlinkTelemetryError,
-    MavlinkTelemetryEvent, MissionItem, MissionLifecycleOptions, MissionLifecycleReport,
-    MissionUploadOptions, MissionUploadReport, NoopMavlinkMissionObserver,
+    MavlinkLifecycleError, MavlinkMissionError, MavlinkMissionEvent, MavlinkMissionObserver,
+    MavlinkTelemetryError, MavlinkTelemetryEvent, MissionItem, MissionLifecycleOptions,
+    MissionLifecycleReport, MissionUploadOptions, MissionUploadReport, NoopMavlinkMissionObserver,
 };
 #[cfg(feature = "mavlink-transport")]
 use crate::mavlink_common_plan::{
     MavlinkCommonCommand, MavlinkCommonCommandName, MavlinkCommonMissionItem, MavlinkCommonPlan,
 };
 #[cfg(feature = "mavlink-transport")]
-use crate::mavlink_executor::{AckProvider, MavlinkExecutionStepResult};
+use crate::mavlink_executor::{
+    AckProvider, FcConfigError, FcConfigProvider, FcParamWriteOk, FcParamWriteResult,
+    GeofenceUploadOk, GeofenceUploadResult, MavlinkExecutionStepResult,
+};
+#[cfg(feature = "mavlink-transport")]
+use crate::mavlink_geofence::{compile_fence_items, MavlinkFencePlan};
+#[cfg(feature = "mavlink-transport")]
+use crate::mavlink_parameters::{
+    FcParamId, FcParamRequirement, FcParamSnapshot, FcParamValue, FcParamWritePlan,
+};
 
 /// Mock MAVLink transport for unit tests and --mock mode.
 pub struct MockMavlinkTransport {
@@ -221,7 +234,16 @@ impl MavlinkTransport {
 /// MAVLink transport-backed ACK provider for `MavlinkPlanExecutor`.
 #[cfg(feature = "mavlink-transport")]
 pub struct MavlinkTransportAckProvider<'a, O: MavlinkMissionObserver> {
-    transport: &'a mut MavlinkTransport,
+    inner: MavlinkConnectionAckProvider<'a, mavlink::Connection<CommonMessage>, O>,
+}
+
+#[cfg(feature = "mavlink-transport")]
+pub(super) struct MavlinkConnectionAckProvider<
+    'a,
+    C: super::mission_upload::MavlinkVehicleConnection,
+    O,
+> {
+    conn: &'a mut C,
     mission_items: Vec<MavlinkCommonMissionItem>,
     mission_start: Option<MavlinkCommonCommand>,
     upload_options: MissionUploadOptions,
@@ -239,7 +261,34 @@ impl<'a, O: MavlinkMissionObserver> MavlinkTransportAckProvider<'a, O> {
         observer: &'a mut O,
     ) -> Self {
         Self {
-            transport,
+            inner: MavlinkConnectionAckProvider {
+                conn: &mut transport.conn,
+                mission_items: plan.mission_items.clone(),
+                mission_start: plan.mission_start.clone(),
+                upload_options,
+                lifecycle_options,
+                observer,
+            },
+        }
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
+impl<C, O> MavlinkConnectionAckProvider<'_, C, O>
+where
+    C: super::mission_upload::MavlinkVehicleConnection,
+    O: MavlinkMissionObserver,
+{
+    #[cfg(test)]
+    pub(super) fn new_for_connection<'a>(
+        conn: &'a mut C,
+        plan: &MavlinkCommonPlan,
+        upload_options: MissionUploadOptions,
+        lifecycle_options: MissionLifecycleOptions,
+        observer: &'a mut O,
+    ) -> MavlinkConnectionAckProvider<'a, C, O> {
+        MavlinkConnectionAckProvider {
+            conn,
             mission_items: plan.mission_items.clone(),
             mission_start: plan.mission_start.clone(),
             upload_options,
@@ -249,6 +298,12 @@ impl<'a, O: MavlinkMissionObserver> MavlinkTransportAckProvider<'a, O> {
     }
 
     fn ack_command(&mut self, command: &MavlinkCommonCommand) -> MavlinkExecutionStepResult {
+        if should_skip_arm_command(command, &self.lifecycle_options) {
+            return MavlinkExecutionStepResult::Skipped {
+                reason: "no_arm lifecycle option skips MAV_CMD_COMPONENT_ARM_DISARM arm command"
+                    .to_owned(),
+            };
+        }
         let msg = common_command_to_message(
             command,
             self.lifecycle_options.target_system,
@@ -256,7 +311,7 @@ impl<'a, O: MavlinkMissionObserver> MavlinkTransportAckProvider<'a, O> {
         );
         lifecycle_result_to_step(
             send_command_and_wait_observed(
-                &mut self.transport.conn,
+                self.conn,
                 msg,
                 self.lifecycle_options.timeout,
                 self.observer,
@@ -264,10 +319,64 @@ impl<'a, O: MavlinkMissionObserver> MavlinkTransportAckProvider<'a, O> {
             self.lifecycle_options.timeout,
         )
     }
+
+    fn ack_mission_start_with_heartbeat(&mut self) -> MavlinkExecutionStepResult {
+        let command = self
+            .mission_start
+            .clone()
+            .unwrap_or_else(default_mission_start_command);
+        let result = self.ack_command(&command);
+        if result != MavlinkExecutionStepResult::Accepted {
+            return result;
+        }
+        match wait_for_post_start_heartbeat(self.conn, self.lifecycle_options.timeout) {
+            Ok(()) => {
+                self.observer.on_event(MavlinkMissionEvent::HeartbeatSeen);
+                MavlinkExecutionStepResult::Accepted
+            }
+            Err(error) => {
+                let abort_result =
+                    send_abort_command_observed(self.conn, &self.lifecycle_options, self.observer);
+                lifecycle_result_to_step(
+                    Err(attach_abort_to_lifecycle_error(error, abort_result)),
+                    self.lifecycle_options.timeout,
+                )
+            }
+        }
+    }
 }
 
 #[cfg(feature = "mavlink-transport")]
 impl<O: MavlinkMissionObserver> AckProvider for MavlinkTransportAckProvider<'_, O> {
+    fn ack_prelude_command(
+        &mut self,
+        command: &MavlinkCommonCommand,
+    ) -> MavlinkExecutionStepResult {
+        self.inner.ack_command(command)
+    }
+
+    fn ack_mission_upload(&mut self) -> MavlinkExecutionStepResult {
+        self.inner.ack_mission_upload()
+    }
+
+    fn ack_mission_start(&mut self) -> MavlinkExecutionStepResult {
+        self.inner.ack_mission_start_with_heartbeat()
+    }
+
+    fn ack_postlude_command(
+        &mut self,
+        command: &MavlinkCommonCommand,
+    ) -> MavlinkExecutionStepResult {
+        self.inner.ack_command(command)
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
+impl<C, O> AckProvider for MavlinkConnectionAckProvider<'_, C, O>
+where
+    C: super::mission_upload::MavlinkVehicleConnection,
+    O: MavlinkMissionObserver,
+{
     fn ack_prelude_command(
         &mut self,
         command: &MavlinkCommonCommand,
@@ -283,7 +392,7 @@ impl<O: MavlinkMissionObserver> AckProvider for MavlinkTransportAckProvider<'_, 
         }
         mission_result_to_step(
             upload_precompiled_mission_items_with_connection_observed(
-                &mut self.transport.conn,
+                self.conn,
                 &self.mission_items,
                 &self.upload_options,
                 self.observer,
@@ -293,11 +402,7 @@ impl<O: MavlinkMissionObserver> AckProvider for MavlinkTransportAckProvider<'_, 
     }
 
     fn ack_mission_start(&mut self) -> MavlinkExecutionStepResult {
-        let command = self
-            .mission_start
-            .clone()
-            .unwrap_or_else(default_mission_start_command);
-        self.ack_command(&command)
+        self.ack_mission_start_with_heartbeat()
     }
 
     fn ack_postlude_command(
@@ -306,6 +411,16 @@ impl<O: MavlinkMissionObserver> AckProvider for MavlinkTransportAckProvider<'_, 
     ) -> MavlinkExecutionStepResult {
         self.ack_command(command)
     }
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn should_skip_arm_command(
+    command: &MavlinkCommonCommand,
+    options: &MissionLifecycleOptions,
+) -> bool {
+    options.no_arm
+        && command.command == MavlinkCommonCommandName::ComponentArmDisarm
+        && command.params[0].is_some_and(|param| (param - 1.0).abs() < f64::EPSILON)
 }
 
 #[cfg(feature = "mavlink-transport")]
@@ -323,6 +438,32 @@ fn default_mission_start_command() -> MavlinkCommonCommand {
             Some(0.0),
             Some(0.0),
         ],
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn attach_abort_to_lifecycle_error(
+    error: MavlinkLifecycleError,
+    abort_result: AbortCommandResult,
+) -> MavlinkLifecycleError {
+    match error {
+        MavlinkLifecycleError::PostStartHeartbeatTimeout { .. } => {
+            MavlinkLifecycleError::PostStartHeartbeatTimeout { abort_result }
+        }
+        MavlinkLifecycleError::CommandAckTimeout { command, .. } => {
+            MavlinkLifecycleError::CommandAckTimeout {
+                command,
+                abort_result: Some(abort_result),
+            }
+        }
+        MavlinkLifecycleError::CommandRejected {
+            command, result, ..
+        } => MavlinkLifecycleError::CommandRejected {
+            command,
+            result,
+            abort_result: Some(abort_result),
+        },
+        other => other,
     }
 }
 
@@ -348,6 +489,307 @@ fn mission_result_to_step(
         Err(error) => MavlinkExecutionStepResult::Rejected {
             reason: error.to_string(),
         },
+    }
+}
+
+/// MAVLink transport-backed provider for FC configuration operations.
+#[cfg(feature = "mavlink-transport")]
+pub struct MavlinkTransportFcConfigProvider<'a> {
+    inner: MavlinkConnectionFcConfigProvider<'a, mavlink::Connection<CommonMessage>>,
+}
+
+#[cfg(feature = "mavlink-transport")]
+impl<'a> MavlinkTransportFcConfigProvider<'a> {
+    pub fn new(
+        transport: &'a mut MavlinkTransport,
+        profile: crate::mavlink_capability_profile::MavlinkCapabilityProfileId,
+        upload_options: MissionUploadOptions,
+        lifecycle_options: MissionLifecycleOptions,
+    ) -> Self {
+        Self {
+            inner: MavlinkConnectionFcConfigProvider {
+                conn: &mut transport.conn,
+                profile,
+                upload_options,
+                lifecycle_options,
+            },
+        }
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
+impl FcConfigProvider for MavlinkTransportFcConfigProvider<'_> {
+    fn upload_fence(&mut self, plan: &MavlinkFencePlan) -> GeofenceUploadResult {
+        self.inner.upload_fence(plan)
+    }
+
+    fn read_params(
+        &mut self,
+        requirements: &[FcParamRequirement],
+    ) -> Result<FcParamSnapshot, FcConfigError> {
+        self.inner.read_params(requirements)
+    }
+
+    fn write_params(&mut self, plan: &FcParamWritePlan) -> FcParamWriteResult {
+        self.inner.write_params(plan)
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
+pub(super) struct MavlinkConnectionFcConfigProvider<
+    'a,
+    C: super::mission_upload::MavlinkVehicleConnection,
+> {
+    conn: &'a mut C,
+    profile: crate::mavlink_capability_profile::MavlinkCapabilityProfileId,
+    upload_options: MissionUploadOptions,
+    lifecycle_options: MissionLifecycleOptions,
+}
+
+#[cfg(feature = "mavlink-transport")]
+impl<C> FcConfigProvider for MavlinkConnectionFcConfigProvider<'_, C>
+where
+    C: super::mission_upload::MavlinkVehicleConnection,
+{
+    fn upload_fence(&mut self, plan: &MavlinkFencePlan) -> GeofenceUploadResult {
+        let (items, enable) =
+            compile_fence_items(plan, self.profile.profile()).map_err(|error| {
+                FcConfigError::GeofenceUploadRejected {
+                    reason: error.to_string(),
+                }
+            })?;
+        if !items.is_empty() {
+            let mut observer = NoopMavlinkMissionObserver;
+            upload_precompiled_mission_items_with_connection_observed(
+                self.conn,
+                &items,
+                &self.upload_options,
+                &mut observer,
+            )
+            .map_err(|error| FcConfigError::GeofenceUploadRejected {
+                reason: error.to_string(),
+            })?;
+        }
+        let mut fence_enable_sent = false;
+        if let Some(command) = enable {
+            let mut observer = NoopMavlinkMissionObserver;
+            send_command_and_wait_observed(
+                self.conn,
+                common_command_to_message(
+                    &command,
+                    self.lifecycle_options.target_system,
+                    self.lifecycle_options.target_component,
+                ),
+                self.lifecycle_options.timeout,
+                &mut observer,
+            )
+            .map_err(|error| FcConfigError::GeofenceUploadRejected {
+                reason: error.to_string(),
+            })?;
+            fence_enable_sent = true;
+        }
+        Ok(GeofenceUploadOk {
+            items_uploaded: items.len(),
+            fence_enable_sent,
+        })
+    }
+
+    fn read_params(
+        &mut self,
+        requirements: &[FcParamRequirement],
+    ) -> Result<FcParamSnapshot, FcConfigError> {
+        let mut params = std::collections::HashMap::new();
+        for requirement in requirements {
+            let value = request_param_value(
+                self.conn,
+                &requirement.param_id,
+                self.lifecycle_options.target_system,
+                self.lifecycle_options.target_component,
+                self.lifecycle_options.timeout,
+            )?;
+            params.insert(requirement.param_id.clone(), value);
+        }
+        Ok(FcParamSnapshot {
+            params,
+            description: "transport-backed MAVLink PARAM_VALUE snapshot".to_owned(),
+        })
+    }
+
+    fn write_params(&mut self, plan: &FcParamWritePlan) -> FcParamWriteResult {
+        for (param_id, value) in &plan.writes {
+            write_param_value(
+                self.conn,
+                param_id,
+                *value,
+                self.lifecycle_options.target_system,
+                self.lifecycle_options.target_component,
+                self.lifecycle_options.timeout,
+            )?;
+        }
+        Ok(FcParamWriteOk {
+            written_count: plan.writes.len(),
+        })
+    }
+}
+
+#[cfg(all(feature = "mavlink-transport", test))]
+impl<'a, C> MavlinkConnectionFcConfigProvider<'a, C>
+where
+    C: super::mission_upload::MavlinkVehicleConnection,
+{
+    pub(super) fn new_for_connection(
+        conn: &'a mut C,
+        profile: crate::mavlink_capability_profile::MavlinkCapabilityProfileId,
+        upload_options: MissionUploadOptions,
+        lifecycle_options: MissionLifecycleOptions,
+    ) -> Self {
+        Self {
+            conn,
+            profile,
+            upload_options,
+            lifecycle_options,
+        }
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn request_param_value<C>(
+    conn: &mut C,
+    param_id: &FcParamId,
+    target_system: u8,
+    target_component: u8,
+    timeout: Duration,
+) -> Result<FcParamValue, FcConfigError>
+where
+    C: super::mission_upload::MavlinkVehicleConnection,
+{
+    conn.send_message(CommonMessage::PARAM_REQUEST_READ(
+        common::PARAM_REQUEST_READ_DATA {
+            param_id: param_id_to_char_array(param_id),
+            target_system,
+            target_component,
+            param_index: -1,
+        },
+    ))
+    .map_err(|error| FcConfigError::ParamReadFailed {
+        param_id: param_id.as_ref().as_str().to_owned(),
+        reason: error.to_string(),
+    })?;
+    wait_param_value(conn, param_id, timeout).map_err(|reason| FcConfigError::ParamReadFailed {
+        param_id: param_id.as_ref().as_str().to_owned(),
+        reason,
+    })
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn write_param_value<C>(
+    conn: &mut C,
+    param_id: &FcParamId,
+    value: FcParamValue,
+    target_system: u8,
+    target_component: u8,
+    timeout: Duration,
+) -> FcParamWriteResult
+where
+    C: super::mission_upload::MavlinkVehicleConnection,
+{
+    conn.send_message(CommonMessage::PARAM_SET(common::PARAM_SET_DATA {
+        param_value: param_value_to_wire(value),
+        target_system,
+        target_component,
+        param_id: param_id_to_char_array(param_id),
+        param_type: param_value_type(value),
+    }))
+    .map_err(|error| FcConfigError::ParamWriteFailed {
+        param_id: param_id.as_ref().as_str().to_owned(),
+        reason: error.to_string(),
+    })?;
+    let confirmed = wait_param_value(conn, param_id, timeout).map_err(|reason| {
+        FcConfigError::ParamWriteFailed {
+            param_id: param_id.as_ref().as_str().to_owned(),
+            reason,
+        }
+    })?;
+    if confirmed == value {
+        Ok(FcParamWriteOk { written_count: 1 })
+    } else {
+        Err(FcConfigError::ParamWriteFailed {
+            param_id: param_id.as_ref().as_str().to_owned(),
+            reason: format!("confirmation mismatch: expected {value:?}, got {confirmed:?}"),
+        })
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn wait_param_value<C>(
+    conn: &mut C,
+    param_id: &FcParamId,
+    timeout: Duration,
+) -> Result<FcParamValue, String>
+where
+    C: super::mission_upload::MavlinkVehicleConnection,
+{
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        if let Some((_header, CommonMessage::PARAM_VALUE(value))) =
+            conn.try_recv_message().map_err(|error| error.to_string())?
+        {
+            if char_array_matches_param_id(&value.param_id, param_id) {
+                return param_value_from_wire(value.param_value, value.param_type);
+            }
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(format!(
+                "timeout waiting for PARAM_VALUE {}",
+                param_id.as_ref().as_str()
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn param_id_to_char_array(param_id: &FcParamId) -> CharArray<16> {
+    param_id.as_ref().as_str().into()
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn char_array_matches_param_id(actual: &CharArray<16>, expected: &FcParamId) -> bool {
+    actual
+        .to_str()
+        .is_ok_and(|actual| actual == expected.as_ref().as_str())
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn param_value_to_wire(value: FcParamValue) -> f32 {
+    match value {
+        FcParamValue::Int32(value) => value as f32,
+        FcParamValue::Float(value) => value,
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn param_value_type(value: FcParamValue) -> common::MavParamType {
+    match value {
+        FcParamValue::Int32(_) => common::MavParamType::MAV_PARAM_TYPE_INT32,
+        FcParamValue::Float(_) => common::MavParamType::MAV_PARAM_TYPE_REAL32,
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn param_value_from_wire(
+    value: f32,
+    param_type: common::MavParamType,
+) -> Result<FcParamValue, String> {
+    match param_type {
+        common::MavParamType::MAV_PARAM_TYPE_INT8
+        | common::MavParamType::MAV_PARAM_TYPE_UINT8
+        | common::MavParamType::MAV_PARAM_TYPE_INT16
+        | common::MavParamType::MAV_PARAM_TYPE_UINT16
+        | common::MavParamType::MAV_PARAM_TYPE_INT32
+        | common::MavParamType::MAV_PARAM_TYPE_UINT32 => Ok(FcParamValue::Int32(value as i32)),
+        common::MavParamType::MAV_PARAM_TYPE_REAL32 => Ok(FcParamValue::Float(value)),
+        other => Err(format!("unsupported PARAM_VALUE type {other:?}")),
     }
 }
 
