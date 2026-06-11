@@ -537,14 +537,31 @@ fn locked_edges_except(
         .unwrap_or_else(|| registry.locked_edges_except(agent_id))
 }
 
-fn process_deconflicted_failures(
+struct DeconflictedFailureContext<'a> {
     tick: u64,
-    failures: &[FailureEvent],
+    failures: &'a [FailureEvent],
+    registry: &'a mut crate::urban::UrbanSegmentLockRegistry,
+    map: &'a swarm_types::UrbanMap,
+    planner_mode: crate::urban::UrbanPlannerMode,
+    effective_blocked: &'a HashSet<UrbanEdgeId>,
+    network_runtime: Option<&'a mut NetworkSegmentRuntime>,
+    log_builder: Option<&'a mut swarm_replay::EventLogBuilder>,
+}
+
+fn process_deconflicted_failures(
     states: &mut [DeconflictedAgentState],
-    registry: &mut crate::urban::UrbanSegmentLockRegistry,
-    network_runtime: Option<&mut NetworkSegmentRuntime>,
-    log_builder: Option<&mut swarm_replay::EventLogBuilder>,
+    context: DeconflictedFailureContext<'_>,
 ) {
+    let DeconflictedFailureContext {
+        tick,
+        failures,
+        registry,
+        map,
+        planner_mode,
+        effective_blocked,
+        network_runtime,
+        log_builder,
+    } = context;
     let mut network_runtime = network_runtime;
     let mut log_builder = log_builder;
     let failed_indices = failures
@@ -571,6 +588,7 @@ fn process_deconflicted_failures(
             });
         }
 
+        let mut released_failure_resource_id = None;
         if let Some(edge_id) = held_edge_id {
             let released_lock = if let Some(runtime) = network_runtime.as_deref_mut() {
                 runtime.release(&edge_id, &failed_agent_id, tick, log_builder.as_deref_mut())
@@ -578,6 +596,7 @@ fn process_deconflicted_failures(
                 registry.release(&edge_id, &failed_agent_id, tick)
             };
             if let Some(lock) = released_lock {
+                released_failure_resource_id = Some(lock.edge_id.to_string());
                 if let Some(ref mut builder) = log_builder {
                     push_segment_lock_released(builder, &lock, tick);
                     builder.push(swarm_replay::Event::SwarmOwnershipReleased {
@@ -594,6 +613,19 @@ fn process_deconflicted_failures(
         if remaining_route.segments.is_empty() {
             continue;
         }
+        let Some(resource_id) = released_failure_resource_id else {
+            if let (Some(ref mut builder), Some(segment)) =
+                (log_builder.as_deref_mut(), remaining_route.segments.first())
+            {
+                builder.push(swarm_replay::Event::UrbanDeconflictAbort {
+                    agent_id: failed_agent_id.clone(),
+                    tick,
+                    edge_id: segment.edge_id.clone(),
+                    reason: "failure handoff requires agent_failed ownership release".to_owned(),
+                });
+            }
+            continue;
+        };
         let Some(target_index) = select_failure_handoff_target(states, failed_index) else {
             if let (Some(ref mut builder), Some(edge_id)) =
                 (log_builder.as_deref_mut(), remaining_route.segments.first())
@@ -609,12 +641,27 @@ fn process_deconflicted_failures(
         };
 
         let target_agent_id = states[target_index].agent_id.clone();
-        let resource_id = remaining_route
-            .segments
-            .first()
-            .map(|segment| segment.edge_id.to_string())
-            .unwrap_or_else(|| "urban_route".to_owned());
-        append_replacement_route(&mut states[target_index], remaining_route);
+        let replacement_route = match connected_replacement_route(
+            map,
+            &states[target_index],
+            remaining_route,
+            planner_mode,
+            effective_blocked,
+        ) {
+            Ok(route) => route,
+            Err((edge_id, reason)) => {
+                if let Some(ref mut builder) = log_builder {
+                    builder.push(swarm_replay::Event::UrbanDeconflictAbort {
+                        agent_id: target_agent_id,
+                        tick,
+                        edge_id,
+                        reason,
+                    });
+                }
+                continue;
+            }
+        };
+        append_replacement_route(&mut states[target_index], replacement_route);
         states[failed_index].handoff_target = Some(target_agent_id.clone());
 
         if let Some(ref mut builder) = log_builder {
@@ -649,6 +696,100 @@ fn remaining_route_from_state(state: &DeconflictedAgentState) -> UrbanPlannedRou
         .unwrap_or_default()
         .to_vec();
     route_from_segments(segments)
+}
+
+fn connected_replacement_route(
+    map: &swarm_types::UrbanMap,
+    target: &DeconflictedAgentState,
+    replacement: UrbanPlannedRoute,
+    planner: crate::urban::UrbanPlannerMode,
+    effective_blocked: &HashSet<UrbanEdgeId>,
+) -> Result<UrbanPlannedRoute, (UrbanEdgeId, String)> {
+    let Some(first_replacement) = replacement.segments.first() else {
+        return Ok(replacement);
+    };
+    let first_replacement_edge_id = first_replacement.edge_id.clone();
+    let first_replacement_from = first_replacement.from.clone();
+    let Some(target_end) = route_end_node(target) else {
+        return Err((
+            first_replacement_edge_id,
+            "failure handoff target has no route anchor".to_owned(),
+        ));
+    };
+    if target_end == first_replacement_from {
+        return Ok(replacement);
+    }
+
+    let bridge = crate::urban::plan_route_excluding(
+        map,
+        &target_end,
+        &first_replacement_from,
+        effective_blocked,
+        planner,
+    )
+    .map_err(|error| {
+        (
+            first_replacement_edge_id.clone(),
+            format!("no bridge route for failure handoff: {error}"),
+        )
+    })?;
+    let segments = bridge
+        .segments
+        .into_iter()
+        .chain(replacement.segments)
+        .collect::<Vec<_>>();
+    if let Some((left, right)) = first_disconnected_pair(&segments) {
+        return Err((
+            right.edge_id.clone(),
+            format!(
+                "failure handoff replacement route is disconnected: {} -> {}",
+                left.edge_id, right.edge_id
+            ),
+        ));
+    }
+    let route = route_from_segments(segments);
+    if let Some(blocked_edge) = route
+        .segments
+        .iter()
+        .find(|segment| effective_blocked.contains(&segment.edge_id))
+    {
+        return Err((
+            blocked_edge.edge_id.clone(),
+            "failure handoff bridge uses blocked edge".to_owned(),
+        ));
+    }
+    if let Some(violation) = crate::urban::judge_route(map, &route).first() {
+        return Err((
+            route
+                .segments
+                .first()
+                .map(|segment| segment.edge_id.clone())
+                .unwrap_or(first_replacement_edge_id),
+            format!("failure handoff bridge violates urban map: {violation:?}"),
+        ));
+    }
+    Ok(route)
+}
+
+fn route_end_node(state: &DeconflictedAgentState) -> Option<UrbanNodeId> {
+    state
+        .route
+        .segments
+        .last()
+        .map(|segment| segment.to.clone())
+}
+
+fn first_disconnected_pair(
+    segments: &[swarm_types::UrbanRouteSegment],
+) -> Option<(
+    &swarm_types::UrbanRouteSegment,
+    &swarm_types::UrbanRouteSegment,
+)> {
+    segments.windows(2).find_map(|pair| {
+        let left = &pair[0];
+        let right = &pair[1];
+        (left.to != right.from).then_some((left, right))
+    })
 }
 
 fn append_replacement_route(state: &mut DeconflictedAgentState, replacement: UrbanPlannedRoute) {
@@ -1609,19 +1750,24 @@ impl ScenarioRunner {
                 }
             }
 
-            process_deconflicted_failures(
-                tick,
-                &config.failures,
-                &mut states,
-                &mut registry,
-                network_runtime.as_mut(),
-                log_builder.as_mut(),
-            );
-
             let effective_blocked = crate::urban::effective_blocked_edges(
                 &urban_state.map,
                 &urban_state.temporary_obstacles,
                 tick,
+            );
+
+            process_deconflicted_failures(
+                &mut states,
+                DeconflictedFailureContext {
+                    tick,
+                    failures: &config.failures,
+                    registry: &mut registry,
+                    map: &urban_state.map,
+                    planner_mode,
+                    effective_blocked: &effective_blocked,
+                    network_runtime: network_runtime.as_mut(),
+                    log_builder: log_builder.as_mut(),
+                },
             );
 
             let mut requests = Vec::new();

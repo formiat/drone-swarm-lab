@@ -7,7 +7,7 @@ use swarm_runtime::autonomy::{AgentAutonomyConfig, GcsLostPolicy};
 use swarm_types::{
     Aabb, Agent, Capability, CellState, EdgeId, Health, HiddenTarget, InspectionEdge, Pose, Role,
     SearchGrid, SensorModel, Task, TaskKind, TaskStatus, UrbanBlockedPolicy, UrbanBus, UrbanBusId,
-    UrbanDetectorConfig, UrbanEdge, UrbanEdgeId, UrbanNode, UrbanNodeId, UrbanObstacleId,
+    UrbanDetectorConfig, UrbanEdge, UrbanEdgeId, UrbanMap, UrbanNode, UrbanNodeId, UrbanObstacleId,
     UrbanPerimeterPatrol, UrbanRightOfWayPolicy, UrbanRouteLoop, UrbanSearchState,
     UrbanStaticObstacle, UrbanTemporaryObstacle,
 };
@@ -1195,6 +1195,114 @@ fn agent_failure_handoff_runs_through_urban_network_runner() {
     )));
 }
 
+#[test]
+fn corridor_failure_handoff_builds_connected_replacement_route() {
+    let (scenario, mut run_config) = urban_corridor_deconfliction_test_run_config();
+    let map = run_config
+        .urban_state
+        .as_ref()
+        .expect("urban state should exist")
+        .map
+        .clone();
+    run_config.failures = vec![FailureEvent {
+        agent_id: AgentId::from("agent-0".to_owned()),
+        at_tick: 2,
+    }];
+
+    let (metrics, event_log) = ScenarioRunner::run_with_log(
+        &scenario,
+        run_config,
+        swarm_alloc::GreedyAllocator::default(),
+    );
+    let event_log = event_log.expect("corridor failure run should produce replay log");
+
+    assert!(metrics.success);
+    assert_no_duplicate_segment_ownership(&event_log);
+    assert!(event_log.events.iter().any(|event| matches!(
+        event,
+        swarm_replay::Event::SwarmOwnershipHandoff {
+            from_agent_id,
+            to_agent_id,
+            reason,
+            ..
+        } if from_agent_id.as_ref() == "agent-0"
+            && to_agent_id.as_ref() == "agent-1"
+            && reason == "agent_failed"
+    )));
+    let replacement_edge_ids = event_log
+        .events
+        .iter()
+        .rev()
+        .find_map(|event| match event {
+            swarm_replay::Event::UrbanRoutePlanned {
+                agent_id,
+                tick: 2,
+                edge_ids,
+                ..
+            } if agent_id.as_ref() == "agent-1" => Some(edge_ids.clone()),
+            _ => None,
+        })
+        .expect("failure handoff should replan agent-1 route");
+    assert!(
+        replacement_edge_ids
+            .iter()
+            .any(|edge_id| edge_id.as_ref() == "corridor-c2-c1"),
+        "replacement route should include bridge from survivor end to failed slice"
+    );
+    assert_route_edge_ids_connected(&map, &replacement_edge_ids);
+}
+
+#[test]
+fn failure_before_segment_lock_does_not_activate_segment_handoff() {
+    let (mut scenario, mut run_config) = urban_deconfliction_test_run_config(
+        UrbanRightOfWayPolicy::FirstCome,
+        UrbanBlockedPolicy::Wait,
+    );
+    scenario.agents[1].pose = Pose {
+        x: 20.0,
+        y: 20.0,
+        ..Default::default()
+    };
+    run_config.max_ticks = 40;
+    run_config.failures = vec![FailureEvent {
+        agent_id: AgentId::from("agent-0".to_owned()),
+        at_tick: 0,
+    }];
+    run_config.urban_state.as_mut().unwrap().deconfliction.mode =
+        DeconflictionMode::NetworkProtocol {
+            coordinator_id: AgentId::from("coordinator-0".to_owned()),
+        };
+
+    let (metrics, event_log) = ScenarioRunner::run_with_log(
+        &scenario,
+        run_config,
+        swarm_alloc::GreedyAllocator::default(),
+    );
+    let event_log = event_log.expect("failure-before-lock run should produce replay log");
+
+    assert!(!metrics.success);
+    assert!(event_log.events.iter().any(|event| matches!(
+        event,
+        swarm_replay::Event::AgentFailed { agent_id, tick } if agent_id.as_ref() == "agent-0" && *tick == 0
+    )));
+    assert!(!event_log.events.iter().any(|event| matches!(
+        event,
+        swarm_replay::Event::SwarmOwnershipReleased {
+            reason,
+            ..
+        } if reason == "agent_failed"
+    )));
+    assert!(!event_log
+        .events
+        .iter()
+        .any(|event| matches!(event, swarm_replay::Event::SwarmOwnershipHandoff { .. })));
+    assert!(event_log.events.iter().any(|event| matches!(
+        event,
+        swarm_replay::Event::UrbanDeconflictAbort { reason, .. }
+            if reason == "failure handoff requires agent_failed ownership release"
+    )));
+}
+
 fn assert_no_duplicate_segment_ownership(log: &swarm_replay::EventLog) {
     let mut active = std::collections::HashMap::<UrbanEdgeId, AgentId>::new();
     for event in &log.events {
@@ -1221,6 +1329,25 @@ fn assert_no_duplicate_segment_ownership(log: &swarm_replay::EventLog) {
         }
     }
     assert!(active.is_empty(), "all segment locks must be released");
+}
+
+fn assert_route_edge_ids_connected(map: &UrbanMap, edge_ids: &[UrbanEdgeId]) {
+    let edges = edge_ids
+        .iter()
+        .map(|edge_id| {
+            map.edges
+                .iter()
+                .find(|edge| &edge.id == edge_id)
+                .unwrap_or_else(|| panic!("missing edge {edge_id}"))
+        })
+        .collect::<Vec<_>>();
+    for pair in edges.windows(2) {
+        assert_eq!(
+            pair[0].to, pair[1].from,
+            "route jump between {} and {}",
+            pair[0].id, pair[1].id
+        );
+    }
 }
 
 fn urban_deconfliction_test_run_config(
@@ -1260,6 +1387,160 @@ fn urban_deconfliction_test_run_config(
         .deconfliction
         .agent_priorities
         .insert(AgentId::from("agent-1".to_owned()), 9);
+    (scenario, run_config)
+}
+
+fn urban_corridor_deconfliction_test_run_config() -> (Scenario, RunConfig) {
+    let c0 = UrbanNodeId::from("c0".to_owned());
+    let c1 = UrbanNodeId::from("c1".to_owned());
+    let c2 = UrbanNodeId::from("c2".to_owned());
+    let c3 = UrbanNodeId::from("c3".to_owned());
+    let mut scenario = scenario(0, 3, 0);
+    scenario.name = "urban_corridor_inspection_network_failure".to_owned();
+    scenario.agents[0].speed = 2.5;
+    scenario.agents[1].speed = 2.5;
+    scenario.agents[1].pose = Pose {
+        x: 50.0,
+        y: 0.0,
+        ..Default::default()
+    };
+    scenario.agents[2].speed = 2.5;
+    scenario.agents[2].pose = Pose {
+        x: 50.0,
+        y: 0.0,
+        ..Default::default()
+    };
+    let mut run_config = config(vec![]);
+    run_config.max_ticks = 220;
+    run_config.tick_duration_ms = 1000;
+    run_config.urban_state = Some(UrbanState {
+        map: UrbanMap {
+            nodes: vec![
+                UrbanNode {
+                    id: c0.clone(),
+                    pose: Pose {
+                        x: 0.0,
+                        y: 0.0,
+                        ..Default::default()
+                    },
+                    geo: None,
+                },
+                UrbanNode {
+                    id: c1.clone(),
+                    pose: Pose {
+                        x: 25.0,
+                        y: 0.0,
+                        ..Default::default()
+                    },
+                    geo: None,
+                },
+                UrbanNode {
+                    id: c2.clone(),
+                    pose: Pose {
+                        x: 50.0,
+                        y: 0.0,
+                        ..Default::default()
+                    },
+                    geo: None,
+                },
+                UrbanNode {
+                    id: c3.clone(),
+                    pose: Pose {
+                        x: 75.0,
+                        y: 0.0,
+                        ..Default::default()
+                    },
+                    geo: None,
+                },
+            ],
+            edges: vec![
+                UrbanEdge {
+                    id: UrbanEdgeId::from("corridor-c0-c1".to_owned()),
+                    from: c0.clone(),
+                    to: c1.clone(),
+                    cost: 25.0,
+                    length_m: 25.0,
+                    corridor_width_m: Some(5.0),
+                    blocked: false,
+                },
+                UrbanEdge {
+                    id: UrbanEdgeId::from("corridor-c1-c2".to_owned()),
+                    from: c1.clone(),
+                    to: c2.clone(),
+                    cost: 25.0,
+                    length_m: 25.0,
+                    corridor_width_m: Some(5.0),
+                    blocked: false,
+                },
+                UrbanEdge {
+                    id: UrbanEdgeId::from("corridor-c2-c3".to_owned()),
+                    from: c2.clone(),
+                    to: c3.clone(),
+                    cost: 25.0,
+                    length_m: 25.0,
+                    corridor_width_m: Some(5.0),
+                    blocked: false,
+                },
+                UrbanEdge {
+                    id: UrbanEdgeId::from("corridor-c3-c2".to_owned()),
+                    from: c3.clone(),
+                    to: c2.clone(),
+                    cost: 25.0,
+                    length_m: 25.0,
+                    corridor_width_m: Some(5.0),
+                    blocked: false,
+                },
+                UrbanEdge {
+                    id: UrbanEdgeId::from("corridor-c2-c1".to_owned()),
+                    from: c2.clone(),
+                    to: c1.clone(),
+                    cost: 25.0,
+                    length_m: 25.0,
+                    corridor_width_m: Some(5.0),
+                    blocked: false,
+                },
+                UrbanEdge {
+                    id: UrbanEdgeId::from("corridor-c1-c0".to_owned()),
+                    from: c1.clone(),
+                    to: c0.clone(),
+                    cost: 25.0,
+                    length_m: 25.0,
+                    corridor_width_m: Some(5.0),
+                    blocked: false,
+                },
+            ],
+            static_obstacles: vec![],
+        },
+        route_loop: UrbanRouteLoop {
+            nodes: vec![c0.clone(), c1.clone(), c2.clone(), c3, c2, c1, c0],
+        },
+        mission_template: None,
+        start_node: Some(UrbanNodeId::from("c0".to_owned())),
+        planner: "dijkstra".to_owned(),
+        temporary_obstacles: vec![],
+        blocked_route_policy: UrbanBlockedPolicy::Wait,
+        deconfliction: Default::default(),
+        perimeter_patrol: None,
+    });
+    let urban_state = run_config.urban_state.as_mut().unwrap();
+    urban_state.deconfliction.enabled = true;
+    urban_state.deconfliction.mode = DeconflictionMode::NetworkProtocol {
+        coordinator_id: AgentId::from("coordinator-0".to_owned()),
+    };
+    urban_state.deconfliction.right_of_way_policy = UrbanRightOfWayPolicy::Priority;
+    urban_state.deconfliction.locked_segment_policy = UrbanBlockedPolicy::Wait;
+    urban_state
+        .deconfliction
+        .agent_priorities
+        .insert(AgentId::from("agent-0".to_owned()), 3);
+    urban_state
+        .deconfliction
+        .agent_priorities
+        .insert(AgentId::from("agent-1".to_owned()), 2);
+    urban_state
+        .deconfliction
+        .agent_priorities
+        .insert(AgentId::from("agent-2".to_owned()), 1);
     (scenario, run_config)
 }
 
