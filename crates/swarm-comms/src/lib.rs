@@ -14,8 +14,9 @@ pub mod transport;
 
 pub use connectivity::{ConnectivityModel, ConnectivitySnapshot};
 pub use drone_link::{
-    DroneLinkConfig, InternetLikeMock, InternetLikeMockProfile, NullDroneLink, SerialDroneLink,
-    SerialDroneLinkError, UdpDroneLink, UdpDroneLinkError, UDP_MAX_PAYLOAD,
+    DroneLinkConfig, InternetLikeMock, InternetLikeMockProfile, InternetLikeMockProfileSummary,
+    NullDroneLink, SerialDroneLink, SerialDroneLinkError, UdpDroneLink, UdpDroneLinkError,
+    UDP_MAX_PAYLOAD,
 };
 pub use mavlink::{
     task_to_waypoint, waypoint_status_to_task_status, MavlinkError, MockMavlinkTransport, Waypoint,
@@ -42,9 +43,10 @@ pub use mavlink_coords::{
 pub use mavlink_executor::{
     execute_geofence_upload, execute_param_snapshot, execute_param_write, AckProvider,
     FcConfigError, FcConfigProvider, FcParamWriteOk, FcParamWriteResult, GeofenceUploadOk,
-    GeofenceUploadResult, MavlinkExecutionOutcome, MavlinkExecutionStepResult,
-    MavlinkPlanExecutionReport, MavlinkPlanExecutor, MissionExecuteLifecycleState, MockAckProvider,
-    MockFcConfigProvider, ScriptedAckProvider,
+    GeofenceUploadResult, MavlinkExecutionArtifact, MavlinkExecutionEvidenceMode,
+    MavlinkExecutionOutcome, MavlinkExecutionStepResult, MavlinkPlanExecutionReport,
+    MavlinkPlanExecutor, MissionExecuteLifecycleState, MockAckProvider, MockFcConfigProvider,
+    ScriptedAckProvider, MAVLINK_EXECUTION_ARTIFACT_SCHEMA_VERSION,
 };
 pub use mavlink_fc_contract::{
     validate_fc_contract, FcContract, FcContractValidationResult, FcContractViolation,

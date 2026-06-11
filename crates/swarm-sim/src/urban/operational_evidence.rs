@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use swarm_comms::{DeconflictionMode, MavlinkPlanExecutionReport};
+use swarm_comms::{DeconflictionMode, MavlinkExecutionEvidenceMode, MavlinkPlanExecutionReport};
 use swarm_replay::{Event, EventLog};
 use swarm_safety::preflight::SafetyValidationReport;
 use swarm_types::AgentId;
@@ -24,6 +24,9 @@ pub struct UrbanOperationalEvidence {
     pub handoff_events: Vec<(u64, AgentId, AgentId, String)>,
     pub coordination_delay_ticks: u64,
     pub degraded_outcomes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_mode: Option<MavlinkExecutionEvidenceMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution_report: Option<MavlinkPlanExecutionReport>,
     pub preflight_report: SafetyValidationReport,
     pub caveats: Vec<String>,
@@ -140,6 +143,7 @@ pub fn build_urban_operational_evidence_from_replay(
         handoff_events,
         coordination_delay_ticks,
         degraded_outcomes,
+        execution_mode: None,
         execution_report: None,
         preflight_report: SafetyValidationReport::ok(),
         caveats: vec![
@@ -148,6 +152,16 @@ pub fn build_urban_operational_evidence_from_replay(
             "transport_backend_may_be_in_memory".to_owned(),
         ],
     })
+}
+
+pub fn urban_evidence_with_execution_report(
+    mut evidence: UrbanOperationalEvidence,
+    execution_mode: MavlinkExecutionEvidenceMode,
+    execution_report: MavlinkPlanExecutionReport,
+) -> UrbanOperationalEvidence {
+    evidence.execution_mode = Some(execution_mode);
+    evidence.execution_report = Some(execution_report);
+    evidence
 }
 
 fn push_unique_agent(agents: &mut Vec<AgentId>, agent_id: &AgentId) {

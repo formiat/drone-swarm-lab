@@ -10,8 +10,10 @@ use swarm_command_plane::{
 use swarm_comms::{
     ConflictResolution, DegradedDecisionLog, MavlinkCapabilityProfileId,
     MavlinkCommandCompatibility, MavlinkCommonCommand, MavlinkCommonCommandName, MavlinkCommonPlan,
-    MavlinkCompatibilityClass, MavlinkExpectedAckKind, MavlinkPlanPhase, PartitionReport,
-    ReconciliationReport, MAVLINK_COMMON_PLAN_SCHEMA_VERSION,
+    MavlinkCompatibilityClass, MavlinkExecutionArtifact, MavlinkExecutionOutcome,
+    MavlinkExecutionStepResult, MavlinkExpectedAckKind, MavlinkPlanExecutionReport,
+    MavlinkPlanPhase, MissionExecuteLifecycleState, PartitionReport, ReconciliationReport,
+    MAVLINK_COMMON_PLAN_SCHEMA_VERSION, MAVLINK_EXECUTION_ARTIFACT_SCHEMA_VERSION,
 };
 use swarm_safety::preflight::SafetyValidationReport;
 use swarm_sim::{
@@ -122,6 +124,10 @@ pub const RULE_DUAL_STACK_EXECUTION_COMPARISON_MISMATCH: &str =
     "artifact.dual_stack_execution_comparison_mismatch";
 pub const RULE_DUAL_STACK_EXECUTION_REPORT_MISMATCH: &str =
     "artifact.dual_stack_execution_report_mismatch";
+pub const RULE_MAVLINK_EXECUTION_ARTIFACT_MISSING: &str =
+    "artifact.mavlink_execution_artifact_missing";
+pub const RULE_MAVLINK_EXECUTION_ARTIFACT_INVALID: &str =
+    "artifact.mavlink_execution_artifact_invalid";
 pub const RULE_PARTITION_REPORT_INVALID: &str = "artifact.partition_report_invalid";
 pub const RULE_RECONCILIATION_REPORT_INVALID: &str = "artifact.reconciliation_report_invalid";
 pub const RULE_URBAN_OPERATIONAL_EVIDENCE_MISSING: &str =
@@ -147,6 +153,7 @@ pub enum ArtifactValidationMode {
     DryRun,
     DualStackEvidence,
     DualStackExecution,
+    Execute,
     Historical,
     BenchmarkPack,
     UrbanOperational,
@@ -184,6 +191,7 @@ pub struct ArtifactPackPaths {
     pub dry_run_artifact: Option<PathBuf>,
     pub dual_stack_evidence: Option<PathBuf>,
     pub dual_stack_execution_evidence: Option<PathBuf>,
+    pub mavlink_execution_artifact: Option<PathBuf>,
     pub urban_operational_evidence: Option<PathBuf>,
     pub hardware_entry_pack: Option<PathBuf>,
     pub urban_analysis_manifest: Option<PathBuf>,
@@ -210,6 +218,10 @@ impl ArtifactPackPaths {
             dual_stack_execution_evidence: optional_path(
                 &output_dir,
                 DUAL_STACK_EXECUTION_EVIDENCE_FILE,
+            ),
+            mavlink_execution_artifact: optional_path(
+                &output_dir,
+                "mavlink_execution_artifact.v1.json",
             ),
             urban_operational_evidence: optional_path(
                 &output_dir,
@@ -350,6 +362,73 @@ fn dual_stack_execution_rule_for_key(key: &str) -> &'static str {
     }
 }
 
+fn sorted_unique(mut values: Vec<String>) -> Vec<String> {
+    values.sort();
+    values.dedup();
+    values
+}
+
+pub fn validate_mavlink_execution_report(report: &MavlinkPlanExecutionReport) -> Vec<String> {
+    let mut violations = Vec::new();
+    if report.plan_id.trim().is_empty() {
+        violations.push("plan_id".to_owned());
+    }
+    for (expected, (step_index, _, _)) in report.steps.iter().enumerate() {
+        if *step_index != expected {
+            violations.push("step_order".to_owned());
+            break;
+        }
+    }
+    let failed_steps = report
+        .steps
+        .iter()
+        .filter(|(_, _, result)| {
+            matches!(
+                result,
+                MavlinkExecutionStepResult::Rejected { .. }
+                    | MavlinkExecutionStepResult::Timeout { .. }
+            )
+        })
+        .count();
+    match (&report.overall, &report.lifecycle_state) {
+        (
+            MavlinkExecutionOutcome::Completed | MavlinkExecutionOutcome::Retried { .. },
+            MissionExecuteLifecycleState::Completed,
+        ) => {
+            if failed_steps > 0 {
+                violations.push("successful_outcome_has_failed_step".to_owned());
+            }
+        }
+        (
+            MavlinkExecutionOutcome::Aborted { at_step, .. }
+            | MavlinkExecutionOutcome::Failed { at_step, .. },
+            MissionExecuteLifecycleState::Aborted,
+        ) => {
+            let terminal_step_is_failed = report
+                .steps
+                .iter()
+                .find(|(step_index, _, _)| step_index == at_step)
+                .is_some_and(|(_, _, result)| {
+                    matches!(
+                        result,
+                        MavlinkExecutionStepResult::Rejected { .. }
+                            | MavlinkExecutionStepResult::Timeout { .. }
+                    )
+                });
+            if !terminal_step_is_failed && !report.steps.is_empty() {
+                violations.push("terminal_step".to_owned());
+            }
+        }
+        (_, _) => violations.push("lifecycle_outcome".to_owned()),
+    }
+    if let MavlinkExecutionOutcome::Retried { times } = &report.overall {
+        if *times != report.retry_count {
+            violations.push("retry_count".to_owned());
+        }
+    }
+    sorted_unique(violations)
+}
+
 struct Validator<'a> {
     paths: &'a ArtifactPackPaths,
     options: ArtifactValidationOptions,
@@ -388,6 +467,10 @@ impl<'a> Validator<'a> {
             ArtifactValidationMode::DualStackExecution
         ) {
             self.validate_dual_stack_execution_evidence();
+            return;
+        }
+        if matches!(self.options.mode, ArtifactValidationMode::Execute) {
+            self.validate_mavlink_execution_artifact();
             return;
         }
         if matches!(self.options.mode, ArtifactValidationMode::UrbanOperational) {
@@ -781,6 +864,62 @@ impl<'a> Validator<'a> {
         }
     }
 
+    fn validate_mavlink_execution_artifact(&mut self) {
+        let Some(path) = self.paths.mavlink_execution_artifact.clone() else {
+            self.push_error(
+                RULE_MAVLINK_EXECUTION_ARTIFACT_MISSING,
+                Some(
+                    self.paths
+                        .output_dir
+                        .join("mavlink_execution_artifact.v1.json"),
+                ),
+                "execute validation requires mavlink_execution_artifact.v1.json",
+            );
+            return;
+        };
+        let Some(artifact) = self.load_json::<MavlinkExecutionArtifact>(&path) else {
+            return;
+        };
+        if artifact.schema_version != MAVLINK_EXECUTION_ARTIFACT_SCHEMA_VERSION {
+            self.push_error(
+                RULE_MAVLINK_EXECUTION_ARTIFACT_INVALID,
+                Some(path.clone()),
+                format!(
+                    "unsupported execute artifact schema_version '{}' (expected {MAVLINK_EXECUTION_ARTIFACT_SCHEMA_VERSION})",
+                    artifact.schema_version
+                ),
+            );
+        }
+        if artifact.profile_id.trim().is_empty() {
+            self.push_error(
+                RULE_MAVLINK_EXECUTION_ARTIFACT_INVALID,
+                Some(path.clone()),
+                "execute artifact profile_id must not be empty",
+            );
+        }
+        if artifact.git_commit.trim().is_empty() {
+            self.push_error(
+                RULE_GIT_COMMIT_MISSING,
+                Some(path.clone()),
+                "execute artifact git_commit must not be empty",
+            );
+        }
+        if artifact.plan_id != artifact.execution_report.plan_id {
+            self.push_error(
+                RULE_MAVLINK_EXECUTION_ARTIFACT_INVALID,
+                Some(path.clone()),
+                "execute artifact plan_id must match execution_report.plan_id",
+            );
+        }
+        for key in validate_mavlink_execution_report(&artifact.execution_report) {
+            self.push_error(
+                RULE_MAVLINK_EXECUTION_ARTIFACT_INVALID,
+                Some(path.clone()),
+                format!("execute report validation failed: {key}"),
+            );
+        }
+    }
+
     fn validate_urban_dry_run_metadata(
         &mut self,
         artifact: &SitlDryRunArtifact,
@@ -1165,13 +1304,55 @@ impl<'a> Validator<'a> {
             pack.readiness_status,
             HardwareReadinessStatus::ExecuteValidatedLocally
                 | HardwareReadinessStatus::DegradedPartiallyEvidenced
-        ) && !pack.blockers.is_empty()
-        {
-            self.push_error(
-                RULE_HARDWARE_ENTRY_BLOCKERS_PRESENT,
-                Some(path.clone()),
-                "execute/degraded hardware-entry statuses must not contain blockers",
-            );
+        ) {
+            if !pack.blockers.is_empty() {
+                self.push_error(
+                    RULE_HARDWARE_ENTRY_BLOCKERS_PRESENT,
+                    Some(path.clone()),
+                    "execute/degraded hardware-entry statuses must not contain blockers",
+                );
+            }
+            let checklist = &pack.hardware_entry_checklist;
+            for (field, value) in [
+                ("selected_autopilot", &checklist.selected_autopilot),
+                ("selected_airframe", &checklist.selected_airframe),
+                ("selected_link_class", &checklist.selected_link_class),
+            ] {
+                if value.as_deref().is_none_or(str::is_empty) {
+                    self.push_error(
+                        RULE_HARDWARE_ENTRY_PACK_INVALID,
+                        Some(path.clone()),
+                        format!("strong hardware-entry status requires {field}"),
+                    );
+                }
+            }
+            if !checklist.fence_and_failsafe_verified {
+                self.push_error(
+                    RULE_HARDWARE_ENTRY_PACK_INVALID,
+                    Some(path.clone()),
+                    "strong hardware-entry status requires verified fence/failsafe",
+                );
+            }
+            if !checklist.manual_abort_procedure_rehearsed {
+                self.push_error(
+                    RULE_HARDWARE_ENTRY_PACK_INVALID,
+                    Some(path.clone()),
+                    "strong hardware-entry status requires rehearsed manual abort procedure",
+                );
+            }
+            let has_live_or_transport_ref = pack.evidence_refs.iter().any(|evidence_ref| {
+                evidence_ref
+                    .execution_mode
+                    .as_deref()
+                    .is_some_and(|mode| mode == "transport_backed" || mode == "live_sitl")
+            });
+            if !has_live_or_transport_ref {
+                self.push_error(
+                    RULE_HARDWARE_ENTRY_PACK_INVALID,
+                    Some(path.clone()),
+                    "strong hardware-entry status requires live SITL or transport-backed evidence reference",
+                );
+            }
         }
         if pack.caveats.is_empty() || pack.limitations.is_empty() {
             self.push_error(

@@ -148,6 +148,15 @@ pub struct InternetLikeMock {
     rng: SmallRng,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct InternetLikeMockProfileSummary {
+    pub base_latency_ticks: u64,
+    pub jitter_ticks: u64,
+    pub packet_loss_rate: f64,
+    pub reorder_probability: f64,
+    pub burst_drop_probability: f64,
+}
+
 impl InternetLikeMock {
     /// LTE profile: ~1 tick base latency with jitter, 3 % packet loss.
     pub fn with_lte_profile(seed: u64) -> Self {
@@ -171,7 +180,7 @@ impl InternetLikeMock {
             current_tick: 0,
             base_latency_ticks: 6,
             jitter_ticks: 4,
-            packet_loss_rate: 0.05,
+            packet_loss_rate: 0.08,
             reorder_probability: 0.08,
             burst_drop_probability: 0.03, // satellite links have bursty loss
             in_burst: false,
@@ -187,6 +196,16 @@ impl InternetLikeMock {
     /// Current simulation tick.
     pub fn current_tick(&self) -> u64 {
         self.current_tick
+    }
+
+    pub fn profile_summary(&self) -> InternetLikeMockProfileSummary {
+        InternetLikeMockProfileSummary {
+            base_latency_ticks: self.base_latency_ticks,
+            jitter_ticks: self.jitter_ticks,
+            packet_loss_rate: self.packet_loss_rate,
+            reorder_probability: self.reorder_probability,
+            burst_drop_probability: self.burst_drop_probability,
+        }
     }
 }
 
@@ -522,6 +541,18 @@ mod tests {
             dropped >= 5,
             "too few drops: {dropped}/1000 with 3% loss rate"
         );
+    }
+
+    #[test]
+    fn internet_like_mock_satcom_profile_summary_matches_docs() {
+        let mock = InternetLikeMock::with_satcom_profile(7);
+        let summary = mock.profile_summary();
+
+        assert_eq!(summary.base_latency_ticks, 6);
+        assert_eq!(summary.jitter_ticks, 4);
+        assert_eq!(summary.packet_loss_rate, 0.08);
+        assert_eq!(summary.reorder_probability, 0.08);
+        assert_eq!(summary.burst_drop_probability, 0.03);
     }
 
     // ── DroneLinkConfig serde ─────────────────────────────────────────────

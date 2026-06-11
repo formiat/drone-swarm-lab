@@ -10,7 +10,10 @@ use swarm_command_plane::{
 use swarm_comms::{
     compile_mavlink_common_plan, DeconflictionMode, MavlinkCommonCommand, MavlinkCommonCommandName,
     MavlinkCommonPlanOptions, MavlinkCompatibilityClass, MavlinkCoordinateOrigin,
-    MavlinkExpectedAck, MavlinkExpectedAckKind, MavlinkPlanPhase,
+    MavlinkExecutionArtifact, MavlinkExecutionEvidenceMode, MavlinkExecutionOutcome,
+    MavlinkExecutionStepResult, MavlinkExpectedAck, MavlinkExpectedAckKind,
+    MavlinkPlanExecutionReport, MavlinkPlanPhase, MissionExecuteLifecycleState,
+    MAVLINK_EXECUTION_ARTIFACT_SCHEMA_VERSION,
 };
 use swarm_examples::artifact_validator::{
     validate_artifact_pack, ArtifactPackPaths, ArtifactValidationMode, ArtifactValidationOptions,
@@ -23,9 +26,10 @@ use swarm_examples::artifact_validator::{
     RULE_DUAL_STACK_IR_HASH_MISMATCH, RULE_DUAL_STACK_PROFILE_MISMATCH,
     RULE_DUAL_STACK_PROFILE_MISSING, RULE_DUAL_STACK_REPLACEMENT_POLICY_MISMATCH,
     RULE_FINAL_STATUS_MISMATCH, RULE_HARDWARE_ENTRY_BLOCKED_STATUS,
-    RULE_HARDWARE_ENTRY_FIRST_MISSION_MISSING, RULE_HARDWARE_ENTRY_PREFLIGHT_FAILED,
-    RULE_HARDWARE_ENTRY_SINGLE_DRONE_GATE_MISSING, RULE_MANIFEST_MISSING,
-    RULE_MAVLINK_PLAN_MISSING, RULE_MAVLINK_PLAN_ORDER_UNSAFE, RULE_MAVLINK_PLAN_TELEMETRY_MISSING,
+    RULE_HARDWARE_ENTRY_FIRST_MISSION_MISSING, RULE_HARDWARE_ENTRY_PACK_INVALID,
+    RULE_HARDWARE_ENTRY_PREFLIGHT_FAILED, RULE_HARDWARE_ENTRY_SINGLE_DRONE_GATE_MISSING,
+    RULE_MANIFEST_MISSING, RULE_MAVLINK_EXECUTION_ARTIFACT_INVALID, RULE_MAVLINK_PLAN_MISSING,
+    RULE_MAVLINK_PLAN_ORDER_UNSAFE, RULE_MAVLINK_PLAN_TELEMETRY_MISSING,
     RULE_MAVLINK_PROFILE_HARDWARE_BLOCKING, RULE_MAVLINK_PROFILE_MISSING,
     RULE_MAVLINK_PROFILE_RESULT_MISMATCH, RULE_MAVLINK_PROFILE_UNSUPPORTED, RULE_PARSE_FAILED,
     RULE_PARTITION_REPORT_INVALID, RULE_RECONCILIATION_REPORT_INVALID,
@@ -1041,6 +1045,42 @@ fn artifact_validator_fails_on_mismatched_ir_hash() {
 }
 
 #[test]
+fn artifact_validator_execute_mode_passes_valid_artifact() {
+    let fixture = mavlink_execution_artifact_fixture();
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(fixture.path()),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::Execute,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert!(report.passed, "{:?}", report.violations);
+}
+
+#[test]
+fn artifact_validator_execute_mode_rejects_unordered_steps() {
+    let fixture = mavlink_execution_artifact_fixture();
+    let path = fixture.path().join("mavlink_execution_artifact.v1.json");
+    let mut json = read_json_value(&path);
+    json["execution_report"]["steps"][0][0] = serde_json::json!(2);
+    write_json(&path, &json);
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(fixture.path()),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::Execute,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_MAVLINK_EXECUTION_ARTIFACT_INVALID);
+}
+
+#[test]
 fn hardware_entry_pack_primitive_validates() {
     let fixture = hardware_entry_fixture("scenarios/primitive.takeoff-hold-land.json");
 
@@ -1054,6 +1094,21 @@ fn hardware_entry_pack_primitive_validates() {
     );
 
     assert!(report.passed, "{:?}", report.violations);
+}
+
+#[test]
+fn hardware_entry_primitive_uses_mock_execution_status() {
+    let fixture = hardware_entry_fixture("scenarios/primitive.takeoff-hold-land.json");
+    let path = fixture.path().join(HARDWARE_ENTRY_PACK_FILE);
+    let pack: HardwareEntryPack = serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+
+    assert_eq!(
+        pack.readiness_status,
+        HardwareReadinessStatus::MockExecutionValidated
+    );
+    assert!(pack.evidence_refs.iter().any(|evidence_ref| {
+        evidence_ref.execution_mode.as_deref() == Some("local_mock_executor")
+    }));
 }
 
 #[test]
@@ -1171,6 +1226,72 @@ fn multi_drone_pack_requires_single_drone_gate() {
 }
 
 #[test]
+fn strong_hardware_status_requires_live_or_transport_evidence_ref() {
+    let fixture = hardware_entry_fixture("scenarios/primitive.takeoff-hold-land.json");
+    mutate_hardware_entry_json(fixture.path(), |json| {
+        json["readiness_status"] = serde_json::json!("execute_validated_locally");
+        json["hardware_entry_checklist"]["selected_airframe"] = serde_json::json!("generic_quad");
+        json["hardware_entry_checklist"]["selected_link_class"] =
+            serde_json::json!("local_sitl_udp");
+        json["hardware_entry_checklist"]["fence_and_failsafe_verified"] = serde_json::json!(true);
+        json["hardware_entry_checklist"]["manual_abort_procedure_rehearsed"] =
+            serde_json::json!(true);
+        json["evidence_refs"] = serde_json::json!([
+            {
+                "kind": "primitive_execution_report",
+                "path": "hardware_entry_pack.v1.json#/primitive_evidence",
+                "profile_id": "px4",
+                "execution_mode": "local_mock_executor"
+            }
+        ]);
+    });
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(fixture.path()),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::HardwareEntryPack,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_HARDWARE_ENTRY_PACK_INVALID);
+}
+
+#[test]
+fn strong_hardware_status_accepts_transport_backed_evidence_ref() {
+    let fixture = hardware_entry_fixture("scenarios/primitive.takeoff-hold-land.json");
+    mutate_hardware_entry_json(fixture.path(), |json| {
+        json["readiness_status"] = serde_json::json!("execute_validated_locally");
+        json["hardware_entry_checklist"]["selected_airframe"] = serde_json::json!("generic_quad");
+        json["hardware_entry_checklist"]["selected_link_class"] =
+            serde_json::json!("local_sitl_udp");
+        json["hardware_entry_checklist"]["fence_and_failsafe_verified"] = serde_json::json!(true);
+        json["hardware_entry_checklist"]["manual_abort_procedure_rehearsed"] =
+            serde_json::json!(true);
+        json["evidence_refs"] = serde_json::json!([
+            {
+                "kind": "execute_artifact",
+                "path": "results/m90/mavlink_execution_artifact.v1.json",
+                "profile_id": "px4",
+                "execution_mode": "transport_backed"
+            }
+        ]);
+    });
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(fixture.path()),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::HardwareEntryPack,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert!(report.passed, "{:?}", report.violations);
+}
+
+#[test]
 fn hardware_entry_pack_serde_roundtrip() {
     let fixture = hardware_entry_fixture("scenarios/primitive.takeoff-hold-land.json");
     let path = fixture.path().join(HARDWARE_ENTRY_PACK_FILE);
@@ -1185,6 +1306,7 @@ fn hardware_entry_pack_serde_roundtrip() {
 fn hardware_readiness_status_serde_roundtrip_all_variants() {
     let variants = [
         HardwareReadinessStatus::DryRunOnly,
+        HardwareReadinessStatus::MockExecutionValidated,
         HardwareReadinessStatus::ExecuteValidatedLocally,
         HardwareReadinessStatus::DegradedPartiallyEvidenced,
         HardwareReadinessStatus::UnsupportedOrUnknown {
@@ -1758,6 +1880,37 @@ fn dual_stack_execution_fixture_json() -> tempfile::TempDir {
     fixture
 }
 
+fn mavlink_execution_artifact_fixture() -> tempfile::TempDir {
+    let fixture = tempfile::tempdir().unwrap();
+    let report = MavlinkPlanExecutionReport {
+        plan_id: "m90-test".to_owned(),
+        steps: vec![(
+            0,
+            "mission_upload".to_owned(),
+            MavlinkExecutionStepResult::Accepted,
+        )],
+        overall: MavlinkExecutionOutcome::Completed,
+        lifecycle_state: MissionExecuteLifecycleState::Completed,
+        telemetry_milestones_reached: vec![],
+        retry_count: 0,
+    };
+    let artifact = MavlinkExecutionArtifact {
+        schema_version: MAVLINK_EXECUTION_ARTIFACT_SCHEMA_VERSION.to_owned(),
+        execution_mode: MavlinkExecutionEvidenceMode::LocalMockExecutor,
+        profile_id: "px4".to_owned(),
+        plan_id: "m90-test".to_owned(),
+        git_commit: "0123456789abcdef".to_owned(),
+        command: vec!["sitl_agent".to_owned(), "--execute".to_owned()],
+        execution_report: report,
+        caveats: vec!["local_mock_executor".to_owned()],
+    };
+    write_json(
+        &fixture.path().join("mavlink_execution_artifact.v1.json"),
+        &artifact,
+    );
+    fixture
+}
+
 fn hardware_entry_fixture(scenario_path: &str) -> tempfile::TempDir {
     let fixture = tempfile::tempdir().unwrap();
     let scenario_path = public_scenario_path(scenario_path);
@@ -1871,6 +2024,7 @@ fn urban_operational_evidence_fixture() -> UrbanOperationalEvidencePack {
         )],
         coordination_delay_ticks: 1,
         degraded_outcomes: vec!["no_route_available:blocked edge".to_owned()],
+        execution_mode: None,
         execution_report: None,
         preflight_report: SafetyValidationReport::ok(),
         caveats: vec![

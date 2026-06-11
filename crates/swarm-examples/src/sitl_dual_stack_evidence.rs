@@ -8,8 +8,9 @@ use serde::{Deserialize, Serialize};
 use swarm_comms::{
     FcContractValidationResult, MavlinkCapabilityProfileId, MavlinkCommonCommand,
     MavlinkCommonCommandName, MavlinkCommonPlan, MavlinkCompatibilityClass,
-    MavlinkExecutionStepResult, MavlinkPlanExecutionReport, MavlinkPlanExecutor, MavlinkPlanPhase,
-    MavlinkUnsupportedFeature, MissionExecuteLifecycleState, MockAckProvider, ScriptedAckProvider,
+    MavlinkExecutionEvidenceMode, MavlinkExecutionStepResult, MavlinkPlanExecutionReport,
+    MavlinkPlanExecutor, MavlinkPlanPhase, MavlinkUnsupportedFeature, MissionExecuteLifecycleState,
+    MockAckProvider, ScriptedAckProvider,
 };
 use swarm_mission_ir::{TerminalState, TimeoutAction, TimeoutPolicy};
 
@@ -111,6 +112,7 @@ pub struct DualStackExecutionEvidence {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct StackExecutionRecord {
     pub profile_id: String,
+    pub execution_mode: MavlinkExecutionEvidenceMode,
     pub lifecycle_state: MissionExecuteLifecycleState,
     pub execution_report: MavlinkPlanExecutionReport,
     pub fc_contract_result: FcContractValidationResult,
@@ -378,6 +380,7 @@ fn build_px4_execution_record(plan: &MavlinkCommonPlan) -> StackExecutionRecord 
     );
     StackExecutionRecord {
         profile_id: MavlinkCapabilityProfileId::Px4.as_str().to_owned(),
+        execution_mode: MavlinkExecutionEvidenceMode::LocalMockExecutor,
         lifecycle_state: report.lifecycle_state.clone(),
         execution_report: report,
         fc_contract_result: fc_contract_result_or_not_requested(plan),
@@ -411,6 +414,7 @@ fn build_ardupilot_execution_record(plan: &MavlinkCommonPlan) -> StackExecutionR
     }
     StackExecutionRecord {
         profile_id: MavlinkCapabilityProfileId::ArduPilot.as_str().to_owned(),
+        execution_mode: MavlinkExecutionEvidenceMode::ScriptedProfileExecutor,
         lifecycle_state: report.lifecycle_state.clone(),
         execution_report: report,
         fc_contract_result: fc_contract_result_or_not_requested(plan),
@@ -884,6 +888,16 @@ fn validate_stack_execution_record(
     if record.profile_id != expected_profile.as_str() {
         violations.push(format!("{key}_profile"));
     }
+    if matches!(
+        record.execution_mode,
+        MavlinkExecutionEvidenceMode::TransportBacked
+    ) && record
+        .caveats
+        .iter()
+        .any(|caveat| caveat.contains("local") || caveat.contains("MockAckProvider"))
+    {
+        violations.push(format!("{key}_execution_mode"));
+    }
     if record.execution_report.plan_id.trim().is_empty() {
         violations.push(format!("{key}_execution_report"));
     }
@@ -1008,6 +1022,10 @@ mod tests {
         let evidence = execution_evidence();
 
         assert_eq!(
+            evidence.px4.execution_mode,
+            MavlinkExecutionEvidenceMode::LocalMockExecutor
+        );
+        assert_eq!(
             evidence.px4.lifecycle_state,
             MissionExecuteLifecycleState::Completed
         );
@@ -1018,6 +1036,10 @@ mod tests {
     fn ardupilot_lifecycle_skips_incompatible_steps() {
         let evidence = execution_evidence();
 
+        assert_eq!(
+            evidence.ardupilot.execution_mode,
+            MavlinkExecutionEvidenceMode::ScriptedProfileExecutor
+        );
         assert_eq!(
             evidence.ardupilot.lifecycle_state,
             MissionExecuteLifecycleState::Unsupported

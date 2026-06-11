@@ -7,7 +7,8 @@ use serde::{Deserialize, Serialize};
 use swarm_command_plane::SwarmCommandArtifactSummary;
 use swarm_comms::{
     DeconflictionMode, FcContractValidationResult, FcParamSnapshot, MavlinkCapabilityProfileId,
-    MavlinkFenceArtifact, MavlinkPlanExecutionReport, MavlinkPlanExecutor, MockAckProvider,
+    MavlinkExecutionEvidenceMode, MavlinkFenceArtifact, MavlinkPlanExecutionReport,
+    MavlinkPlanExecutor, MockAckProvider,
 };
 use swarm_safety::preflight::SafetyValidationReport;
 use swarm_sim::{UrbanOperationalEvidence, URBAN_OPERATIONAL_EVIDENCE_SCHEMA_VERSION};
@@ -40,6 +41,8 @@ pub struct HardwareEntryPack {
     pub degraded_policy_matrix: Vec<DegradedPolicyEntry>,
     pub preflight_report: SafetyValidationReport,
     pub hardware_entry_checklist: HardwareEntryChecklist,
+    #[serde(default)]
+    pub evidence_refs: Vec<HardwareEntryEvidenceRef>,
     pub run_command: String,
     pub readiness_status: HardwareReadinessStatus,
     pub caveats: Vec<String>,
@@ -58,10 +61,19 @@ pub struct DegradedPolicyEntry {
 #[serde(rename_all = "snake_case")]
 pub enum HardwareReadinessStatus {
     DryRunOnly,
+    MockExecutionValidated,
     ExecuteValidatedLocally,
     DegradedPartiallyEvidenced,
     UnsupportedOrUnknown { detail: String },
     Blocked { reason: String },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HardwareEntryEvidenceRef {
+    pub kind: String,
+    pub path: String,
+    pub profile_id: Option<String>,
+    pub execution_mode: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -132,10 +144,31 @@ pub fn build_hardware_entry_pack(plan: &SitlPlan, command: Vec<String>) -> Hardw
         .iter()
         .any(|family| family.contains("multi"));
     let readiness_status = if plan.primitive_mission.is_some() {
-        HardwareReadinessStatus::ExecuteValidatedLocally
+        HardwareReadinessStatus::MockExecutionValidated
     } else {
         HardwareReadinessStatus::DryRunOnly
     };
+    let mut evidence_refs = Vec::new();
+    if primitive_evidence.is_some() {
+        evidence_refs.push(HardwareEntryEvidenceRef {
+            kind: "primitive_execution_report".to_owned(),
+            path: "hardware_entry_pack.v1.json#/primitive_evidence".to_owned(),
+            profile_id: Some(MavlinkCapabilityProfileId::Px4.as_str().to_owned()),
+            execution_mode: Some("local_mock_executor".to_owned()),
+        });
+    }
+    if urban_evidence
+        .as_ref()
+        .and_then(|evidence| evidence.execution_report.as_ref())
+        .is_some()
+    {
+        evidence_refs.push(HardwareEntryEvidenceRef {
+            kind: "urban_execution_report".to_owned(),
+            path: "hardware_entry_pack.v1.json#/urban_evidence/execution_report".to_owned(),
+            profile_id: Some(MavlinkCapabilityProfileId::Px4.as_str().to_owned()),
+            execution_mode: Some("local_mock_executor".to_owned()),
+        });
+    }
 
     HardwareEntryPack {
         schema_version: HARDWARE_ENTRY_PACK_SCHEMA_VERSION.to_owned(),
@@ -174,6 +207,7 @@ pub fn build_hardware_entry_pack(plan: &SitlPlan, command: Vec<String>) -> Hardw
             single_drone_gate_passed: true,
             multi_drone_review_required,
         },
+        evidence_refs,
         run_command: command.join(" "),
         readiness_status,
         caveats: vec![
@@ -257,6 +291,9 @@ fn urban_evidence_for(
         handoff_events: Vec::new(),
         coordination_delay_ticks: 0,
         degraded_outcomes: Vec::new(),
+        execution_mode: execution_report
+            .as_ref()
+            .map(|_| MavlinkExecutionEvidenceMode::LocalMockExecutor),
         execution_report,
         preflight_report: plan.safety_report.clone(),
         caveats: vec![
@@ -334,6 +371,7 @@ mod tests {
     fn hardware_readiness_status_serde_roundtrip_all_variants() {
         let variants = [
             HardwareReadinessStatus::DryRunOnly,
+            HardwareReadinessStatus::MockExecutionValidated,
             HardwareReadinessStatus::ExecuteValidatedLocally,
             HardwareReadinessStatus::DegradedPartiallyEvidenced,
             HardwareReadinessStatus::UnsupportedOrUnknown {

@@ -149,12 +149,30 @@ cargo run -p swarm-examples --bin artifact_validator -- \
 ```
 
 M96 is execution evidence at the `MavlinkPlanExecutor` API boundary. PX4 uses
-the local accepting executor path and can reach `completed` for the primitive
-mission. ArduPilot incompatible or unevidenced steps are represented as
+the `local_mock_executor` execution mode and can reach `completed` for the
+primitive mission. ArduPilot uses a `scripted_profile_executor`; incompatible
+or unevidenced steps are represented as
 `Skipped { reason: "ardupilot_..." }`; when unsupported/unknown profile
 features remain, the ArduPilot lifecycle is `unsupported`, not `completed`.
-This is not live ArduPilot SITL proof, not PX4/ArduPilot equivalence, and not
-hardware readiness.
+This is not live ArduPilot SITL proof, not PX4/ArduPilot equivalence, not
+transport-backed SITL proof, and not hardware readiness.
+
+Validate a standalone M90 execution artifact. This validates
+`mavlink_execution_artifact.v1.json`, checks schema/profile/git metadata,
+ordered execution steps, lifecycle/outcome consistency, retry-count consistency,
+and terminal abort/failure step consistency:
+
+```bash
+cargo run -p swarm-examples --bin artifact_validator -- \
+  --output-dir target/m90-execute \
+  --mode execute \
+  --strict
+```
+
+`execution_mode` is machine-readable. `local_mock_executor` and
+`scripted_profile_executor` are portable local executor evidence only.
+`transport_backed` is reserved for a path that actually used the MAVLink
+transport-backed executor boundary.
 
 Additional M96 rule ids include:
 

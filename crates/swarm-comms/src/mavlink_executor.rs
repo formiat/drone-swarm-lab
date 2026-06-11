@@ -16,6 +16,8 @@ use crate::mavlink_parameters::{
     FcParamId, FcParamRequirement, FcParamSnapshot, FcParamValue, FcParamWritePlan,
 };
 
+pub const MAVLINK_EXECUTION_ARTIFACT_SCHEMA_VERSION: &str = "mavlink_execution_artifact.v1";
+
 // ─── Step result ─────────────────────────────────────────────────────────────
 
 /// Result of one execution step returned by an `AckProvider`.
@@ -56,7 +58,7 @@ pub enum MavlinkExecutionOutcome {
     Retried { times: u32 },
     /// Execution stopped early due to FC rejection or contract violation.
     Aborted { at_step: usize, reason: String },
-    /// Retry budget exhausted; FC still unresponsive.
+    /// Transport or adapter failed outside the logical ACK sequence.
     Failed { at_step: usize, reason: String },
 }
 
@@ -106,6 +108,54 @@ pub struct MavlinkPlanExecutionReport {
     pub telemetry_milestones_reached: Vec<MavlinkTelemetryMilestoneKind>,
     /// Total number of retries across all steps.
     pub retry_count: u32,
+}
+
+/// Execution backend used to produce a MAVLink execution report.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MavlinkExecutionEvidenceMode {
+    /// Deterministic local executor backed by [`MockAckProvider`].
+    LocalMockExecutor,
+    /// Deterministic local executor backed by [`ScriptedAckProvider`].
+    ScriptedProfileExecutor,
+    /// Real MAVLink transport-backed execution path.
+    TransportBacked,
+}
+
+/// Standalone machine-checkable artifact for one MAVLink execution attempt.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct MavlinkExecutionArtifact {
+    pub schema_version: String,
+    pub execution_mode: MavlinkExecutionEvidenceMode,
+    pub profile_id: String,
+    pub plan_id: String,
+    pub git_commit: String,
+    pub command: Vec<String>,
+    pub execution_report: MavlinkPlanExecutionReport,
+    pub caveats: Vec<String>,
+}
+
+impl MavlinkExecutionArtifact {
+    pub fn new(
+        execution_mode: MavlinkExecutionEvidenceMode,
+        profile_id: impl Into<String>,
+        git_commit: impl Into<String>,
+        command: Vec<String>,
+        execution_report: MavlinkPlanExecutionReport,
+        caveats: Vec<String>,
+    ) -> Self {
+        let plan_id = execution_report.plan_id.clone();
+        Self {
+            schema_version: MAVLINK_EXECUTION_ARTIFACT_SCHEMA_VERSION.to_owned(),
+            execution_mode,
+            profile_id: profile_id.into(),
+            plan_id,
+            git_commit: git_commit.into(),
+            command,
+            execution_report,
+            caveats,
+        }
+    }
 }
 
 // ─── AckProvider trait ───────────────────────────────────────────────────────
@@ -257,7 +307,7 @@ impl<A: AckProvider> MavlinkPlanExecutor<A> {
                     return MavlinkPlanExecutionReport {
                         plan_id: plan.source_mission_id.clone(),
                         steps,
-                        overall: MavlinkExecutionOutcome::Failed {
+                        overall: MavlinkExecutionOutcome::Aborted {
                             at_step: step_index,
                             reason: format!("timeout after {after_ms}ms for {label}"),
                         },
@@ -296,7 +346,7 @@ impl<A: AckProvider> MavlinkPlanExecutor<A> {
                     return MavlinkPlanExecutionReport {
                         plan_id: plan.source_mission_id.clone(),
                         steps,
-                        overall: MavlinkExecutionOutcome::Failed {
+                        overall: MavlinkExecutionOutcome::Aborted {
                             at_step: step_index,
                             reason: format!("upload timeout after {after_ms}ms"),
                         },
@@ -336,7 +386,7 @@ impl<A: AckProvider> MavlinkPlanExecutor<A> {
                     return MavlinkPlanExecutionReport {
                         plan_id: plan.source_mission_id.clone(),
                         steps,
-                        overall: MavlinkExecutionOutcome::Failed {
+                        overall: MavlinkExecutionOutcome::Aborted {
                             at_step: step_index,
                             reason: format!("mission start timeout after {after_ms}ms"),
                         },
@@ -376,7 +426,7 @@ impl<A: AckProvider> MavlinkPlanExecutor<A> {
                     return MavlinkPlanExecutionReport {
                         plan_id: plan.source_mission_id.clone(),
                         steps,
-                        overall: MavlinkExecutionOutcome::Failed {
+                        overall: MavlinkExecutionOutcome::Aborted {
                             at_step: step_index,
                             reason: format!("postlude timeout after {after_ms}ms for {label}"),
                         },
@@ -751,6 +801,11 @@ mod tests {
             report.lifecycle_state,
             MissionExecuteLifecycleState::Aborted
         );
+        assert!(
+            matches!(report.overall, MavlinkExecutionOutcome::Aborted { .. }),
+            "{:?}",
+            report.overall
+        );
     }
 
     #[test]
@@ -802,7 +857,7 @@ mod tests {
     }
 
     #[test]
-    fn executor_fails_when_retry_budget_exhausted() {
+    fn executor_aborts_when_retry_budget_exhausted() {
         let plan = arm_takeoff_land_plan();
         let mut executor = MavlinkPlanExecutor::new(
             ScriptedAckProvider::new([
@@ -816,10 +871,11 @@ mod tests {
 
         assert!(!report.overall.is_success());
         assert!(
-            matches!(report.overall, MavlinkExecutionOutcome::Failed { .. }),
+            matches!(report.overall, MavlinkExecutionOutcome::Aborted { .. }),
             "{:?}",
             report.overall
         );
+        assert_eq!(report.retry_count, 1);
     }
 
     #[test]
@@ -1146,6 +1202,30 @@ mod tests {
             let parsed: MissionExecuteLifecycleState = serde_json::from_str(&json).unwrap();
             assert_eq!(parsed, v);
         }
+    }
+
+    #[test]
+    fn mavlink_execution_artifact_serde_roundtrip() {
+        let plan = takeoff_hold_land_plan();
+        let mut executor = MavlinkPlanExecutor::new(MockAckProvider, 0);
+        let report = executor.execute(&plan);
+        let artifact = MavlinkExecutionArtifact::new(
+            MavlinkExecutionEvidenceMode::LocalMockExecutor,
+            "px4",
+            "test-commit",
+            vec!["sitl_agent".to_owned(), "--execute".to_owned()],
+            report,
+            vec!["local_mock_executor".to_owned()],
+        );
+
+        let json = serde_json::to_string_pretty(&artifact).unwrap();
+        let parsed: MavlinkExecutionArtifact = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed, artifact);
+        assert_eq!(
+            parsed.schema_version,
+            MAVLINK_EXECUTION_ARTIFACT_SCHEMA_VERSION
+        );
     }
 
     #[test]

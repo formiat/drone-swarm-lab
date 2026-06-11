@@ -2,7 +2,11 @@ use std::collections::HashMap;
 
 use crate::regression_lib::{build_mission_scenario_builder, with_realism_if_needed};
 use serde::Serialize;
-use swarm_comms::{DeconflictionMode, DegradedDecisionLog, PartitionReport, ReconciliationReport};
+use swarm_comms::{
+    DeconflictionMode, DegradedDecisionLog, MavlinkExecutionEvidenceMode, MavlinkExecutionOutcome,
+    MavlinkPlanExecutionReport, MissionExecuteLifecycleState, PartitionReport,
+    ReconciliationReport,
+};
 use swarm_sim::{
     default_suites, Baseline, BenchmarkHarness, BenchmarkOptions, RegressionRunner, SuiteMode,
 };
@@ -239,6 +243,13 @@ pub(super) fn write_urban_operational_evidence(
                 git_commit.clone(),
                 infer_deconfliction_mode(log),
             )
+            .map(|evidence| {
+                swarm_sim::urban_evidence_with_execution_report(
+                    evidence,
+                    MavlinkExecutionEvidenceMode::LocalMockExecutor,
+                    local_mock_execution_report_for_log(log),
+                )
+            })
         })
         .collect::<Vec<_>>();
     if evidence.is_empty() {
@@ -251,6 +262,17 @@ pub(super) fn write_urban_operational_evidence(
         serde_json::to_string_pretty(&pack)?,
     )?;
     Ok(())
+}
+
+fn local_mock_execution_report_for_log(log: &swarm_replay::EventLog) -> MavlinkPlanExecutionReport {
+    MavlinkPlanExecutionReport {
+        plan_id: log.run_id.clone(),
+        steps: vec![],
+        overall: MavlinkExecutionOutcome::Completed,
+        lifecycle_state: MissionExecuteLifecycleState::Completed,
+        telemetry_milestones_reached: vec![],
+        retry_count: 0,
+    }
 }
 
 fn infer_deconfliction_mode(log: &swarm_replay::EventLog) -> DeconflictionMode {
