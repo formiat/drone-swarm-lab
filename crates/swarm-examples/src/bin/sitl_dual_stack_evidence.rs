@@ -1,7 +1,9 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use swarm_examples::sitl_dual_stack_evidence::write_dual_stack_evidence_pack;
+use swarm_examples::sitl_dual_stack_evidence::{
+    write_dual_stack_evidence_pack, write_dual_stack_execution_evidence,
+};
 
 fn main() -> ExitCode {
     match run() {
@@ -24,6 +26,19 @@ fn run() -> Result<(), String> {
         pack.profiles.len(),
         pack.command_ir_hash
     );
+    if cli.execution {
+        let evidence = write_dual_stack_execution_evidence(
+            &cli.scenario,
+            &cli.agent_id,
+            &cli.output_dir,
+            true,
+        )
+        .map_err(|error| error.to_string())?;
+        println!(
+            "dual-stack execution evidence written: mission={} px4={:?} ardupilot={:?}",
+            evidence.mission_id, evidence.px4.lifecycle_state, evidence.ardupilot.lifecycle_state
+        );
+    }
     Ok(())
 }
 
@@ -33,6 +48,7 @@ struct CliArgs {
     agent_id: String,
     output_dir: PathBuf,
     force: bool,
+    execution: bool,
 }
 
 impl CliArgs {
@@ -42,6 +58,7 @@ impl CliArgs {
         let mut agent_id = None;
         let mut output_dir = None;
         let mut force = false;
+        let mut execution = false;
         let mut i = 1;
         while i < args.len() {
             match args[i].as_str() {
@@ -68,6 +85,7 @@ impl CliArgs {
                         })?));
                 }
                 "--force" => force = true,
+                "--execution" => execution = true,
                 "--help" | "-h" => return Err(usage()),
                 other => return Err(format!("unknown argument '{other}'\n{}", usage())),
             }
@@ -81,11 +99,12 @@ impl CliArgs {
             output_dir: output_dir
                 .ok_or_else(|| format!("missing required --output-dir <path>\n{}", usage()))?,
             force,
+            execution,
         })
     }
 }
 
 fn usage() -> String {
-    "usage: sitl_dual_stack_evidence --scenario <path> --agent-id <id> --output-dir <path> [--force]"
+    "usage: sitl_dual_stack_evidence --scenario <path> --agent-id <id> --output-dir <path> [--force] [--execution]"
         .to_owned()
 }

@@ -36,6 +36,37 @@ For primitive single-agent evidence, replacement is
 `not_applicable_single_agent_primitive`. That means timeout abort policy and
 terminal state are recorded, but live survivor replacement is not claimed.
 
+## M96 Dual-Stack Execution Evidence
+
+M96 extends the same primitive workflow with execution evidence at the
+`MavlinkPlanExecutor` API boundary:
+
+```bash
+cargo run -p swarm-examples --bin sitl_dual_stack_evidence -- \
+  --scenario scenarios/primitive.takeoff-hold-land.json \
+  --agent-id agent-0 \
+  --output-dir target/m96-dual-stack-execution \
+  --force \
+  --execution
+
+cargo run -p swarm-examples --bin artifact_validator -- \
+  --output-dir target/m96-dual-stack-execution \
+  --mode dual-stack-execution \
+  --strict
+```
+
+The generated `dual_stack_execution_evidence.v1.json` records one shared
+`command_ir_hash`, a PX4 `StackExecutionRecord`, an ArduPilot
+`StackExecutionRecord`, and a comparison summary. PX4 can be marked
+`completed` for the local primitive executor path. ArduPilot profile gaps are
+not treated as panic/abort: incompatible or unevidenced steps are emitted as
+`Skipped { reason: "ardupilot_..." }`, while the stack lifecycle remains
+`unsupported` when unsupported/unknown features are still present.
+
+This is local-only executor evidence. It does not prove live ArduPilot SITL
+acceptance, mode behavior, mission start behavior, failsafe behavior, PX4 parity,
+or hardware readiness.
+
 ## Optional Local ArduPilot SITL
 
 ArduPilot SITL evidence is optional/manual. Dry-run dual-stack evidence does not prove ArduPilot command acceptance, mode behavior, failsafe behavior, or hardware readiness.

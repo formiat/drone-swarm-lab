@@ -37,7 +37,8 @@ use swarm_examples::artifact_validator::{
     RULE_URBAN_WGS84_GEO_MISSING,
 };
 use swarm_examples::sitl_dual_stack_evidence::{
-    write_dual_stack_evidence_pack, SITL_DUAL_STACK_EVIDENCE_FILE,
+    write_dual_stack_evidence_pack, write_dual_stack_execution_evidence,
+    DUAL_STACK_EXECUTION_EVIDENCE_FILE, SITL_DUAL_STACK_EVIDENCE_FILE,
 };
 use swarm_examples::sitl_multi_agent::{
     MultiAgentLifecycle, MultiAgentSitlManifest, MultiAgentSitlManifestAgent,
@@ -997,6 +998,42 @@ fn dual_stack_evidence_mismatched_ir_hash_fails() {
 }
 
 #[test]
+fn artifact_validator_dual_stack_execution_passes() {
+    let fixture = dual_stack_execution_fixture_json();
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(fixture.path()),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::DualStackExecution,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert!(report.passed, "{:?}", report.violations);
+}
+
+#[test]
+fn artifact_validator_fails_on_mismatched_ir_hash() {
+    let fixture = dual_stack_execution_fixture_json();
+    let path = fixture.path().join(DUAL_STACK_EXECUTION_EVIDENCE_FILE);
+    let mut json = read_json_value(&path);
+    json["comparison"]["same_command_ir_hash"] = serde_json::json!(false);
+    write_json(&path, &json);
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(fixture.path()),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::DualStackExecution,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_DUAL_STACK_IR_HASH_MISMATCH);
+}
+
+#[test]
 fn dry_run_artifact_stale_m82_compatibility_frame_fails() {
     let fixture = tempfile::tempdir().unwrap();
     let output_dir = fixture.path().join("dry-run");
@@ -1512,6 +1549,18 @@ fn public_scenario_path(path: &str) -> PathBuf {
 fn dual_stack_fixture_json() -> tempfile::TempDir {
     let fixture = tempfile::tempdir().unwrap();
     write_dual_stack_evidence_pack(
+        public_scenario_path("scenarios/primitive.takeoff-hold-land.json"),
+        "agent-0",
+        fixture.path(),
+        true,
+    )
+    .unwrap();
+    fixture
+}
+
+fn dual_stack_execution_fixture_json() -> tempfile::TempDir {
+    let fixture = tempfile::tempdir().unwrap();
+    write_dual_stack_execution_evidence(
         public_scenario_path("scenarios/primitive.takeoff-hold-land.json"),
         "agent-0",
         fixture.path(),

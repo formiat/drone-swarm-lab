@@ -129,6 +129,42 @@ Additional M89 rule ids include:
 - `artifact.dual_stack_fc_contract_hidden_caveat`;
 - `artifact.dual_stack_fc_contract_claim_unsafe`.
 
+Validate an M96 dual-stack execution evidence pack. This validates
+`dual_stack_execution_evidence.v1.json`, checks that PX4 and ArduPilot records
+come from the same command IR hash, requires explicit caveats on both stack
+records, and rejects unsupported stack behavior that is marked as completed:
+
+```bash
+cargo run -p swarm-examples --bin sitl_dual_stack_evidence -- \
+  --scenario scenarios/primitive.takeoff-hold-land.json \
+  --agent-id agent-0 \
+  --output-dir target/m96-dual-stack-execution \
+  --force \
+  --execution
+
+cargo run -p swarm-examples --bin artifact_validator -- \
+  --output-dir target/m96-dual-stack-execution \
+  --mode dual-stack-execution \
+  --strict
+```
+
+M96 is execution evidence at the `MavlinkPlanExecutor` API boundary. PX4 uses
+the local accepting executor path and can reach `completed` for the primitive
+mission. ArduPilot incompatible or unevidenced steps are represented as
+`Skipped { reason: "ardupilot_..." }`; when unsupported/unknown profile
+features remain, the ArduPilot lifecycle is `unsupported`, not `completed`.
+This is not live ArduPilot SITL proof, not PX4/ArduPilot equivalence, and not
+hardware readiness.
+
+Additional M96 rule ids include:
+
+- `artifact.dual_stack_execution_evidence_missing`;
+- `artifact.dual_stack_execution_profile_mismatch`;
+- `artifact.dual_stack_execution_unsupported_completed`;
+- `artifact.dual_stack_execution_caveats_missing`;
+- `artifact.dual_stack_execution_comparison_mismatch`;
+- `artifact.dual_stack_execution_report_mismatch`.
+
 Validate a benchmark pack with optional Urban analysis ownership artifacts.
 This mode does not require SITL supervisor files; when
 `urban_analysis/manifest.json` exists it checks every referenced

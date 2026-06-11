@@ -20,8 +20,9 @@ use swarm_sim::{
 };
 
 use crate::sitl_dual_stack_evidence::{
-    validate_dual_stack_evidence_pack, validate_dual_stack_profile_evidence,
-    ReplacementEvidenceStatus, SitlDualStackEvidencePack, SITL_DUAL_STACK_EVIDENCE_FILE,
+    validate_dual_stack_evidence_pack, validate_dual_stack_execution_evidence,
+    validate_dual_stack_profile_evidence, DualStackExecutionEvidence, ReplacementEvidenceStatus,
+    SitlDualStackEvidencePack, DUAL_STACK_EXECUTION_EVIDENCE_FILE, SITL_DUAL_STACK_EVIDENCE_FILE,
 };
 use crate::sitl_multi_agent::{MultiAgentSitlManifest, MULTI_AGENT_SITL_MANIFEST_SCHEMA_VERSION};
 use crate::sitl_observability::{
@@ -105,6 +106,18 @@ pub const RULE_DUAL_STACK_FC_CONTRACT_HIDDEN_CAVEAT: &str =
     "artifact.dual_stack_fc_contract_hidden_caveat";
 pub const RULE_DUAL_STACK_FC_CONTRACT_CLAIM_UNSAFE: &str =
     "artifact.dual_stack_fc_contract_claim_unsafe";
+pub const RULE_DUAL_STACK_EXECUTION_EVIDENCE_MISSING: &str =
+    "artifact.dual_stack_execution_evidence_missing";
+pub const RULE_DUAL_STACK_EXECUTION_PROFILE_MISMATCH: &str =
+    "artifact.dual_stack_execution_profile_mismatch";
+pub const RULE_DUAL_STACK_EXECUTION_UNSUPPORTED_COMPLETED: &str =
+    "artifact.dual_stack_execution_unsupported_completed";
+pub const RULE_DUAL_STACK_EXECUTION_CAVEATS_MISSING: &str =
+    "artifact.dual_stack_execution_caveats_missing";
+pub const RULE_DUAL_STACK_EXECUTION_COMPARISON_MISMATCH: &str =
+    "artifact.dual_stack_execution_comparison_mismatch";
+pub const RULE_DUAL_STACK_EXECUTION_REPORT_MISMATCH: &str =
+    "artifact.dual_stack_execution_report_mismatch";
 pub const RULE_PARTITION_REPORT_INVALID: &str = "artifact.partition_report_invalid";
 pub const RULE_RECONCILIATION_REPORT_INVALID: &str = "artifact.reconciliation_report_invalid";
 pub const RULE_URBAN_OPERATIONAL_EVIDENCE_MISSING: &str =
@@ -118,6 +131,7 @@ pub enum ArtifactValidationMode {
     SupervisorRun,
     DryRun,
     DualStackEvidence,
+    DualStackExecution,
     Historical,
     BenchmarkPack,
     UrbanOperational,
@@ -153,6 +167,7 @@ pub struct ArtifactPackPaths {
     pub command_capture: Option<PathBuf>,
     pub dry_run_artifact: Option<PathBuf>,
     pub dual_stack_evidence: Option<PathBuf>,
+    pub dual_stack_execution_evidence: Option<PathBuf>,
     pub urban_operational_evidence: Option<PathBuf>,
     pub urban_analysis_manifest: Option<PathBuf>,
     pub partition_supervisor_reports: Option<PathBuf>,
@@ -175,6 +190,10 @@ impl ArtifactPackPaths {
                 &["sitl_dry_run_artifact.v1.json", "dry-run.json"],
             ),
             dual_stack_evidence: optional_path(&output_dir, SITL_DUAL_STACK_EVIDENCE_FILE),
+            dual_stack_execution_evidence: optional_path(
+                &output_dir,
+                DUAL_STACK_EXECUTION_EVIDENCE_FILE,
+            ),
             urban_operational_evidence: optional_path(
                 &output_dir,
                 "urban_operational_evidence.v1.json",
@@ -294,6 +313,25 @@ fn dual_stack_rule_for_key(key: &str) -> &'static str {
     }
 }
 
+fn dual_stack_execution_rule_for_key(key: &str) -> &'static str {
+    match key {
+        "schema_version" => RULE_DUAL_STACK_EXECUTION_EVIDENCE_MISSING,
+        "mission_id" | "git_commit" => RULE_DUAL_STACK_EXECUTION_REPORT_MISMATCH,
+        "command_ir_hash" => RULE_DUAL_STACK_IR_HASH_MISMATCH,
+        "comparison" => RULE_DUAL_STACK_EXECUTION_COMPARISON_MISMATCH,
+        key if key.ends_with("_profile") => RULE_DUAL_STACK_EXECUTION_PROFILE_MISMATCH,
+        key if key.ends_with("_unsupported_completed") => {
+            RULE_DUAL_STACK_EXECUTION_UNSUPPORTED_COMPLETED
+        }
+        key if key.ends_with("_caveats") => RULE_DUAL_STACK_EXECUTION_CAVEATS_MISSING,
+        key if key.ends_with("_execution_report") || key.ends_with("_lifecycle") => {
+            RULE_DUAL_STACK_EXECUTION_REPORT_MISMATCH
+        }
+        key if key.ends_with("_fc_contract") => RULE_DUAL_STACK_FC_CONTRACT_CLAIM_UNSAFE,
+        _ => RULE_DUAL_STACK_EXECUTION_REPORT_MISMATCH,
+    }
+}
+
 struct Validator<'a> {
     paths: &'a ArtifactPackPaths,
     options: ArtifactValidationOptions,
@@ -325,6 +363,13 @@ impl<'a> Validator<'a> {
         }
         if matches!(self.options.mode, ArtifactValidationMode::DualStackEvidence) {
             self.validate_dual_stack_evidence();
+            return;
+        }
+        if matches!(
+            self.options.mode,
+            ArtifactValidationMode::DualStackExecution
+        ) {
+            self.validate_dual_stack_execution_evidence();
             return;
         }
         if matches!(self.options.mode, ArtifactValidationMode::UrbanOperational) {
@@ -687,6 +732,30 @@ impl<'a> Validator<'a> {
                     ),
                 );
             }
+        }
+    }
+
+    fn validate_dual_stack_execution_evidence(&mut self) {
+        let Some(path) = self.paths.dual_stack_execution_evidence.clone() else {
+            self.push_error(
+                RULE_DUAL_STACK_EXECUTION_EVIDENCE_MISSING,
+                None,
+                format!(
+                    "dual-stack execution validation requires {DUAL_STACK_EXECUTION_EVIDENCE_FILE}"
+                ),
+            );
+            return;
+        };
+        let Some(evidence) = self.load_json::<DualStackExecutionEvidence>(&path) else {
+            return;
+        };
+        for key in validate_dual_stack_execution_evidence(&evidence) {
+            let rule_id = dual_stack_execution_rule_for_key(&key);
+            self.push_error(
+                rule_id,
+                Some(path.clone()),
+                format!("dual-stack execution evidence validation failed: {key}"),
+            );
         }
     }
 
