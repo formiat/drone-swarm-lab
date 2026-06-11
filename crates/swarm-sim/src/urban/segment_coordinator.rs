@@ -227,7 +227,7 @@ impl<T: Transport> SegmentCoordinator<T> {
         ) {
             let requester_priority = self.priorities.get(requester).copied().unwrap_or(0);
             let holder_priority = self.priorities.get(holder).copied().unwrap_or(0);
-            if requester_priority > holder_priority {
+            if requester_priority < holder_priority {
                 return SegmentDenyReason::PolicyDenied;
             }
         }

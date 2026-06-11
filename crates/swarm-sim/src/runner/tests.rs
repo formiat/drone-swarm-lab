@@ -1128,6 +1128,73 @@ fn perimeter_patrol_sector_ownership_is_disjoint() {
     )));
 }
 
+#[test]
+fn agent_failure_handoff_runs_through_urban_network_runner() {
+    let (mut scenario, mut run_config) = urban_deconfliction_test_run_config(
+        UrbanRightOfWayPolicy::FirstCome,
+        UrbanBlockedPolicy::Wait,
+    );
+    scenario.name = "urban_perimeter_patrol_network_failure".to_owned();
+    scenario.agents[1].pose = Pose {
+        x: 20.0,
+        y: 20.0,
+        ..Default::default()
+    };
+    run_config.max_ticks = 120;
+    run_config.failures = vec![FailureEvent {
+        agent_id: AgentId::from("agent-0".to_owned()),
+        at_tick: 2,
+    }];
+    run_config.urban_state.as_mut().unwrap().deconfliction.mode =
+        DeconflictionMode::NetworkProtocol {
+            coordinator_id: AgentId::from("coordinator-0".to_owned()),
+        };
+
+    let (metrics, event_log) = ScenarioRunner::run_with_log(
+        &scenario,
+        run_config,
+        swarm_alloc::GreedyAllocator::default(),
+    );
+    let event_log =
+        event_log.expect("urban network deconfliction failure run should produce replay log");
+
+    assert!(metrics.success);
+    assert_no_duplicate_segment_ownership(&event_log);
+    assert!(event_log.events.iter().any(|event| matches!(
+        event,
+        swarm_replay::Event::AgentFailed { agent_id, .. } if agent_id.as_ref() == "agent-0"
+    )));
+    assert!(event_log.events.iter().any(|event| matches!(
+        event,
+        swarm_replay::Event::SwarmOwnershipReleased {
+            agent_id,
+            resource_id,
+            reason,
+            ..
+        } if agent_id.as_ref() == "agent-0"
+            && resource_id == "road-n0-n1"
+            && reason == "agent_failed"
+    )));
+    assert!(event_log.events.iter().any(|event| matches!(
+        event,
+        swarm_replay::Event::SwarmOwnershipHandoff {
+            from_agent_id,
+            to_agent_id,
+            resource_id,
+            reason,
+            ..
+        } if from_agent_id.as_ref() == "agent-0"
+            && to_agent_id.as_ref() == "agent-1"
+            && resource_id == "road-n0-n1"
+            && reason == "agent_failed"
+    )));
+    assert!(event_log.events.iter().any(|event| matches!(
+        event,
+        swarm_replay::Event::UrbanPatrolCompleted { agent_id, .. }
+            if agent_id.as_ref() == "agent-1"
+    )));
+}
+
 fn assert_no_duplicate_segment_ownership(log: &swarm_replay::EventLog) {
     let mut active = std::collections::HashMap::<UrbanEdgeId, AgentId>::new();
     for event in &log.events {
