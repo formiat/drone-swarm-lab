@@ -11,7 +11,11 @@ mod mission_upload_tests {
         MAVLINK_COMMON_PLAN_SCHEMA_VERSION,
     };
     use crate::mavlink_executor::{
-        FcConfigProvider, MavlinkExecutionOutcome, MavlinkExecutionStepResult, MavlinkPlanExecutor,
+        FcConfigError, FcConfigProvider, MavlinkExecutionOutcome, MavlinkExecutionStepResult,
+        MavlinkPlanExecutor,
+    };
+    use crate::mavlink_geofence::{
+        FcGeofenceItem, FcGeofenceItemKind, FcGeofenceShape, MavlinkFencePlan,
     };
     use crate::mavlink_parameters::{
         FcParamId, FcParamRequirement, FcParamValue, FcParamWritePlan,
@@ -874,6 +878,47 @@ mod mission_upload_tests {
             .sent()
             .iter()
             .any(|message| matches!(message, CommonMessage::PARAM_SET(_))));
+    }
+
+    #[test]
+    fn transport_fc_config_provider_rejects_fence_without_ordinary_mission_count() {
+        let mut conn = FakeMissionConnection::with_incoming([]);
+        let mut provider = MavlinkConnectionFcConfigProvider::new_for_connection(
+            &mut conn,
+            crate::mavlink_capability_profile::MavlinkCapabilityProfileId::Px4,
+            options(),
+            lifecycle_options(),
+        );
+        let fence = MavlinkFencePlan {
+            items: vec![FcGeofenceItem {
+                id: "urban-block".to_owned(),
+                kind: FcGeofenceItemKind::PolygonInclusion,
+                shape: FcGeofenceShape::Polygon {
+                    vertices: vec![
+                        (473_977_420, 85_455_940),
+                        (473_977_430, 85_455_940),
+                        (473_977_430, 85_455_950),
+                    ],
+                },
+            }],
+            enable_fence: true,
+        };
+
+        let error = provider.upload_fence(&fence).unwrap_err();
+
+        assert!(matches!(
+            error,
+            FcConfigError::Unsupported { operation, ref reason }
+                if operation == "geofence_upload"
+                    && reason.contains("MAV_MISSION_TYPE_FENCE")
+        ));
+        assert!(
+            conn.sent()
+                .iter()
+                .all(|message| !matches!(message, CommonMessage::MISSION_COUNT(_))),
+            "{:?}",
+            conn.sent()
+        );
     }
 
     #[test]

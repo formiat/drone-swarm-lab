@@ -39,7 +39,7 @@ use crate::mavlink_executor::{
     GeofenceUploadOk, GeofenceUploadResult, MavlinkExecutionStepResult,
 };
 #[cfg(feature = "mavlink-transport")]
-use crate::mavlink_geofence::{compile_fence_items, MavlinkFencePlan};
+use crate::mavlink_geofence::MavlinkFencePlan;
 #[cfg(feature = "mavlink-transport")]
 use crate::mavlink_parameters::{
     FcParamId, FcParamRequirement, FcParamSnapshot, FcParamValue, FcParamWritePlan,
@@ -503,14 +503,13 @@ impl<'a> MavlinkTransportFcConfigProvider<'a> {
     pub fn new(
         transport: &'a mut MavlinkTransport,
         profile: crate::mavlink_capability_profile::MavlinkCapabilityProfileId,
-        upload_options: MissionUploadOptions,
+        _upload_options: MissionUploadOptions,
         lifecycle_options: MissionLifecycleOptions,
     ) -> Self {
         Self {
             inner: MavlinkConnectionFcConfigProvider {
                 conn: &mut transport.conn,
                 profile,
-                upload_options,
                 lifecycle_options,
             },
         }
@@ -542,7 +541,6 @@ pub(super) struct MavlinkConnectionFcConfigProvider<
 > {
     conn: &'a mut C,
     profile: crate::mavlink_capability_profile::MavlinkCapabilityProfileId,
-    upload_options: MissionUploadOptions,
     lifecycle_options: MissionLifecycleOptions,
 }
 
@@ -552,45 +550,19 @@ where
     C: super::mission_upload::MavlinkVehicleConnection,
 {
     fn upload_fence(&mut self, plan: &MavlinkFencePlan) -> GeofenceUploadResult {
-        let (items, enable) =
-            compile_fence_items(plan, self.profile.profile()).map_err(|error| {
-                FcConfigError::GeofenceUploadRejected {
-                    reason: error.to_string(),
-                }
-            })?;
-        if !items.is_empty() {
-            let mut observer = NoopMavlinkMissionObserver;
-            upload_precompiled_mission_items_with_connection_observed(
-                self.conn,
-                &items,
-                &self.upload_options,
-                &mut observer,
-            )
-            .map_err(|error| FcConfigError::GeofenceUploadRejected {
-                reason: error.to_string(),
-            })?;
+        if plan.items.is_empty() && !plan.enable_fence {
+            return Ok(GeofenceUploadOk {
+                items_uploaded: 0,
+                fence_enable_sent: false,
+            });
         }
-        let mut fence_enable_sent = false;
-        if let Some(command) = enable {
-            let mut observer = NoopMavlinkMissionObserver;
-            send_command_and_wait_observed(
-                self.conn,
-                common_command_to_message(
-                    &command,
-                    self.lifecycle_options.target_system,
-                    self.lifecycle_options.target_component,
-                ),
-                self.lifecycle_options.timeout,
-                &mut observer,
-            )
-            .map_err(|error| FcConfigError::GeofenceUploadRejected {
-                reason: error.to_string(),
-            })?;
-            fence_enable_sent = true;
-        }
-        Ok(GeofenceUploadOk {
-            items_uploaded: items.len(),
-            fence_enable_sent,
+
+        Err(FcConfigError::Unsupported {
+            operation: "geofence_upload".to_owned(),
+            reason: format!(
+                "profile {:?}: current mavlink Common generated MISSION_COUNT/MISSION_ITEM_INT messages do not expose mission_type=MAV_MISSION_TYPE_FENCE; refusing ordinary mission upload fallback",
+                self.profile
+            ),
         })
     }
 
@@ -640,13 +612,12 @@ where
     pub(super) fn new_for_connection(
         conn: &'a mut C,
         profile: crate::mavlink_capability_profile::MavlinkCapabilityProfileId,
-        upload_options: MissionUploadOptions,
+        _upload_options: MissionUploadOptions,
         lifecycle_options: MissionLifecycleOptions,
     ) -> Self {
         Self {
             conn,
             profile,
-            upload_options,
             lifecycle_options,
         }
     }
@@ -671,14 +642,11 @@ where
             param_index: -1,
         },
     ))
-    .map_err(|error| FcConfigError::ParamReadFailed {
-        param_id: param_id.as_ref().as_str().to_owned(),
-        reason: error.to_string(),
+    .map_err(|error| FcConfigError::TransportFailure {
+        operation: format!("param_read:{}", param_id.as_ref().as_str()),
+        message: error.to_string(),
     })?;
-    wait_param_value(conn, param_id, timeout).map_err(|reason| FcConfigError::ParamReadFailed {
-        param_id: param_id.as_ref().as_str().to_owned(),
-        reason,
-    })
+    wait_param_value(conn, param_id, timeout, "param_read")
 }
 
 #[cfg(feature = "mavlink-transport")]
@@ -700,22 +668,18 @@ where
         param_id: param_id_to_char_array(param_id),
         param_type: param_value_type(value),
     }))
-    .map_err(|error| FcConfigError::ParamWriteFailed {
-        param_id: param_id.as_ref().as_str().to_owned(),
-        reason: error.to_string(),
+    .map_err(|error| FcConfigError::TransportFailure {
+        operation: format!("param_write:{}", param_id.as_ref().as_str()),
+        message: error.to_string(),
     })?;
-    let confirmed = wait_param_value(conn, param_id, timeout).map_err(|reason| {
-        FcConfigError::ParamWriteFailed {
-            param_id: param_id.as_ref().as_str().to_owned(),
-            reason,
-        }
-    })?;
+    let confirmed = wait_param_value(conn, param_id, timeout, "param_write")?;
     if confirmed == value {
         Ok(FcParamWriteOk { written_count: 1 })
     } else {
-        Err(FcConfigError::ParamWriteFailed {
-            param_id: param_id.as_ref().as_str().to_owned(),
-            reason: format!("confirmation mismatch: expected {value:?}, got {confirmed:?}"),
+        Err(FcConfigError::Mismatch {
+            operation: format!("param_write:{}", param_id.as_ref().as_str()),
+            expected: format!("{value:?}"),
+            actual: format!("{confirmed:?}"),
         })
     }
 }
@@ -725,24 +689,34 @@ fn wait_param_value<C>(
     conn: &mut C,
     param_id: &FcParamId,
     timeout: Duration,
-) -> Result<FcParamValue, String>
+    operation: &str,
+) -> Result<FcParamValue, FcConfigError>
 where
     C: super::mission_upload::MavlinkVehicleConnection,
 {
     let deadline = std::time::Instant::now() + timeout;
     loop {
-        if let Some((_header, CommonMessage::PARAM_VALUE(value))) =
-            conn.try_recv_message().map_err(|error| error.to_string())?
+        if let Some((_header, CommonMessage::PARAM_VALUE(value))) = conn
+            .try_recv_message()
+            .map_err(|error| FcConfigError::TransportFailure {
+                operation: format!("{operation}:{}", param_id.as_ref().as_str()),
+                message: error.to_string(),
+            })?
         {
             if char_array_matches_param_id(&value.param_id, param_id) {
-                return param_value_from_wire(value.param_value, value.param_type);
+                return param_value_from_wire(value.param_value, value.param_type).map_err(
+                    |reason| FcConfigError::Unsupported {
+                        operation: format!("{operation}:{}", param_id.as_ref().as_str()),
+                        reason,
+                    },
+                );
             }
         }
         if std::time::Instant::now() >= deadline {
-            return Err(format!(
-                "timeout waiting for PARAM_VALUE {}",
-                param_id.as_ref().as_str()
-            ));
+            return Err(FcConfigError::Timeout {
+                operation: format!("{operation}:{}", param_id.as_ref().as_str()),
+                expected: format!("PARAM_VALUE {}", param_id.as_ref().as_str()),
+            });
         }
         std::thread::sleep(Duration::from_millis(1));
     }

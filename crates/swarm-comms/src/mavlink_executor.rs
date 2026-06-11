@@ -283,6 +283,26 @@ impl<A: AckProvider> MavlinkPlanExecutor<A> {
         let mut total_retries = 0u32;
         let mut step_index = 0usize;
 
+        // Guard: geofence prelude requires a real FC config phase before any
+        // fence-enable, arm, takeoff, upload, or start command can be sent.
+        if plan
+            .geofence_prelude
+            .as_ref()
+            .is_some_and(|items| !items.is_empty())
+        {
+            return MavlinkPlanExecutionReport {
+                plan_id: plan.source_mission_id.clone(),
+                steps,
+                overall: MavlinkExecutionOutcome::Aborted {
+                    at_step: 0,
+                    reason: "unsupported FC config phase: current MAVLink Common generated mission messages do not expose mission_type=MAV_MISSION_TYPE_FENCE; refusing to execute geofence prelude before fence upload support exists".to_owned(),
+                },
+                lifecycle_state: MissionExecuteLifecycleState::Aborted,
+                telemetry_milestones_reached: vec![],
+                retry_count: 0,
+            };
+        }
+
         // Guard: FC contract violation blocks execution before any commands are sent.
         if let Some(contract) = &plan.fc_contract_result {
             if contract.blocks_mission_start {
@@ -577,12 +597,20 @@ pub type FcParamWriteResult = Result<FcParamWriteOk, FcConfigError>;
 /// Errors from FC configuration operations.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error, Serialize, Deserialize)]
 pub enum FcConfigError {
-    #[error("geofence upload rejected: {reason}")]
-    GeofenceUploadRejected { reason: String },
-    #[error("param read failed for {param_id}: {reason}")]
-    ParamReadFailed { param_id: String, reason: String },
-    #[error("param write failed for {param_id}: {reason}")]
-    ParamWriteFailed { param_id: String, reason: String },
+    #[error("FC config operation unsupported for {operation}: {reason}")]
+    Unsupported { operation: String, reason: String },
+    #[error("FC config timeout during {operation}: expected {expected}")]
+    Timeout { operation: String, expected: String },
+    #[error("FC rejected {operation}: {reason}")]
+    Rejected { operation: String, reason: String },
+    #[error("FC config mismatch during {operation}: expected {expected}, actual {actual}")]
+    Mismatch {
+        operation: String,
+        expected: String,
+        actual: String,
+    },
+    #[error("FC config transport failure during {operation}: {message}")]
+    TransportFailure { operation: String, message: String },
     #[error("fc contract violation blocks config: {summary}")]
     ContractViolation { summary: String },
 }
@@ -632,7 +660,8 @@ impl MockFcConfigProvider {
 impl FcConfigProvider for MockFcConfigProvider {
     fn upload_fence(&mut self, plan: &MavlinkFencePlan) -> GeofenceUploadResult {
         if !self.accept_geofence {
-            return Err(FcConfigError::GeofenceUploadRejected {
+            return Err(FcConfigError::Rejected {
+                operation: "geofence_upload".to_owned(),
                 reason: "mock rejection".to_owned(),
             });
         }
@@ -852,6 +881,31 @@ mod tests {
         assert!(report
             .telemetry_milestones_reached
             .contains(&MavlinkTelemetryMilestoneKind::HeartbeatExpected));
+        assert_eq!(report.retry_count, 0);
+    }
+
+    #[test]
+    fn executor_aborts_geofence_prelude_before_any_command() {
+        let mut plan = takeoff_hold_land_plan();
+        plan.geofence_prelude = Some(vec![plan.mission_items[0].clone()]);
+        let mut executor = MavlinkPlanExecutor::new(
+            ScriptedAckProvider::new([MavlinkExecutionStepResult::Accepted]),
+            0,
+        );
+
+        let report = executor.execute(&plan);
+
+        assert!(report.steps.is_empty(), "{:?}", report.steps);
+        assert_eq!(
+            report.lifecycle_state,
+            MissionExecuteLifecycleState::Aborted
+        );
+        assert!(matches!(
+            report.overall,
+            MavlinkExecutionOutcome::Aborted { at_step: 0, ref reason }
+                if reason.contains("unsupported FC config phase")
+                    && reason.contains("MAV_MISSION_TYPE_FENCE")
+        ));
         assert_eq!(report.retry_count, 0);
     }
 
@@ -1159,7 +1213,11 @@ mod tests {
         let result = execute_geofence_upload(&fence_plan, &mut provider);
 
         assert!(
-            matches!(result, Err(FcConfigError::GeofenceUploadRejected { .. })),
+            matches!(
+                result,
+                Err(FcConfigError::Rejected { ref operation, .. })
+                    if operation == "geofence_upload"
+            ),
             "{result:?}"
         );
     }
@@ -1324,12 +1382,26 @@ mod tests {
     #[test]
     fn fc_config_error_serde_roundtrip() {
         let variants = vec![
-            FcConfigError::GeofenceUploadRejected {
+            FcConfigError::Unsupported {
+                operation: "geofence_upload".to_owned(),
                 reason: "r".to_owned(),
             },
-            FcConfigError::ParamReadFailed {
-                param_id: "p".to_owned(),
-                reason: "r".to_owned(),
+            FcConfigError::Timeout {
+                operation: "param_read:p".to_owned(),
+                expected: "PARAM_VALUE p".to_owned(),
+            },
+            FcConfigError::Rejected {
+                operation: "geofence_upload".to_owned(),
+                reason: "denied".to_owned(),
+            },
+            FcConfigError::Mismatch {
+                operation: "param_write:p".to_owned(),
+                expected: "Int32(1)".to_owned(),
+                actual: "Int32(2)".to_owned(),
+            },
+            FcConfigError::TransportFailure {
+                operation: "param_write:p".to_owned(),
+                message: "link closed".to_owned(),
             },
             FcConfigError::ContractViolation {
                 summary: "s".to_owned(),
