@@ -22,10 +22,12 @@ use swarm_examples::artifact_validator::{
     RULE_DUAL_STACK_FC_CONTRACT_MISSING, RULE_DUAL_STACK_HARDWARE_CLAIM_UNSAFE,
     RULE_DUAL_STACK_IR_HASH_MISMATCH, RULE_DUAL_STACK_PROFILE_MISMATCH,
     RULE_DUAL_STACK_PROFILE_MISSING, RULE_DUAL_STACK_REPLACEMENT_POLICY_MISMATCH,
-    RULE_FINAL_STATUS_MISMATCH, RULE_MANIFEST_MISSING, RULE_MAVLINK_PLAN_MISSING,
-    RULE_MAVLINK_PLAN_ORDER_UNSAFE, RULE_MAVLINK_PLAN_TELEMETRY_MISSING,
+    RULE_FINAL_STATUS_MISMATCH, RULE_HARDWARE_ENTRY_BLOCKED_STATUS,
+    RULE_HARDWARE_ENTRY_FIRST_MISSION_MISSING, RULE_HARDWARE_ENTRY_PREFLIGHT_FAILED,
+    RULE_HARDWARE_ENTRY_SINGLE_DRONE_GATE_MISSING, RULE_MANIFEST_MISSING,
+    RULE_MAVLINK_PLAN_MISSING, RULE_MAVLINK_PLAN_ORDER_UNSAFE, RULE_MAVLINK_PLAN_TELEMETRY_MISSING,
     RULE_MAVLINK_PROFILE_HARDWARE_BLOCKING, RULE_MAVLINK_PROFILE_MISSING,
-    RULE_MAVLINK_PROFILE_RESULT_MISMATCH, RULE_MAVLINK_PROFILE_UNSUPPORTED,
+    RULE_MAVLINK_PROFILE_RESULT_MISMATCH, RULE_MAVLINK_PROFILE_UNSUPPORTED, RULE_PARSE_FAILED,
     RULE_PARTITION_REPORT_INVALID, RULE_RECONCILIATION_REPORT_INVALID,
     RULE_REPLACEMENT_SEQ_MISMATCH, RULE_REPLAY_SUMMARY_COUNT_MISMATCH, RULE_SAFETY_REPORT_MISSING,
     RULE_SWARM_ACK_MISMATCH, RULE_SWARM_AGENT_PLAN_MISSING, RULE_SWARM_DUPLICATE_OWNERSHIP,
@@ -35,6 +37,10 @@ use swarm_examples::artifact_validator::{
     RULE_URBAN_GEO_ROUTE_METADATA_MISSING, RULE_URBAN_MOCK_PERCEPTION_MISSING,
     RULE_URBAN_OPERATIONAL_EVIDENCE_INVALID, RULE_URBAN_OPERATIONAL_EVIDENCE_MISSING,
     RULE_URBAN_WGS84_GEO_MISSING,
+};
+use swarm_examples::hardware_entry::{
+    write_hardware_entry_pack, HardwareEntryChecklist, HardwareEntryPack, HardwareReadinessStatus,
+    HARDWARE_ENTRY_PACK_FILE,
 };
 use swarm_examples::sitl_dual_stack_evidence::{
     write_dual_stack_evidence_pack, write_dual_stack_execution_evidence,
@@ -48,6 +54,7 @@ use swarm_examples::sitl_multi_agent::{
 use swarm_examples::sitl_observability::{
     format_sitl_summary, summarize_sitl_event_log, SitlEvent, SitlEventLog, SitlEventLogMode,
 };
+use swarm_examples::sitl_plan::{build_sitl_plan, load_sitl_suite};
 use swarm_examples::sitl_plan::{SitlDryRunArtifact, SitlGlobalWaypointSummary, SitlWaypointItem};
 use swarm_examples::sitl_report::{
     SitlMultiAgentAgentReport, SitlMultiAgentReallocationReport, SitlMultiAgentRunReport,
@@ -1034,6 +1041,187 @@ fn artifact_validator_fails_on_mismatched_ir_hash() {
 }
 
 #[test]
+fn hardware_entry_pack_primitive_validates() {
+    let fixture = hardware_entry_fixture("scenarios/primitive.takeoff-hold-land.json");
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(fixture.path()),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::HardwareEntryPack,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert!(report.passed, "{:?}", report.violations);
+}
+
+#[test]
+fn hardware_entry_pack_urban_single_drone_validates() {
+    let fixture = hardware_entry_fixture("scenarios/urban.geo-block-loop.json");
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(fixture.path()),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::HardwareEntryPack,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert!(report.passed, "{:?}", report.violations);
+}
+
+#[test]
+fn blocked_status_fails_validator() {
+    let fixture = hardware_entry_fixture("scenarios/primitive.takeoff-hold-land.json");
+    mutate_hardware_entry_json(fixture.path(), |json| {
+        json["readiness_status"] =
+            serde_json::json!({ "blocked": { "reason": "manual gate failed" } });
+    });
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(fixture.path()),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::HardwareEntryPack,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_HARDWARE_ENTRY_BLOCKED_STATUS);
+}
+
+#[test]
+fn missing_preflight_fails_validator() {
+    let fixture = hardware_entry_fixture("scenarios/primitive.takeoff-hold-land.json");
+    mutate_hardware_entry_json(fixture.path(), |json| {
+        json.as_object_mut().unwrap().remove("preflight_report");
+    });
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(fixture.path()),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::HardwareEntryPack,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_PARSE_FAILED);
+}
+
+#[test]
+fn failed_preflight_fails_validator() {
+    let fixture = hardware_entry_fixture("scenarios/primitive.takeoff-hold-land.json");
+    mutate_hardware_entry_json(fixture.path(), |json| {
+        json["preflight_report"]["passed"] = serde_json::json!(false);
+    });
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(fixture.path()),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::HardwareEntryPack,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_HARDWARE_ENTRY_PREFLIGHT_FAILED);
+}
+
+#[test]
+fn missing_first_allowed_mission_fails_validator() {
+    let fixture = hardware_entry_fixture("scenarios/primitive.takeoff-hold-land.json");
+    mutate_hardware_entry_json(fixture.path(), |json| {
+        json["hardware_entry_checklist"]["first_allowed_mission_type"] = serde_json::Value::Null;
+    });
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(fixture.path()),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::HardwareEntryPack,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_HARDWARE_ENTRY_FIRST_MISSION_MISSING);
+}
+
+#[test]
+fn multi_drone_pack_requires_single_drone_gate() {
+    let fixture = hardware_entry_fixture("scenarios/urban.geo-block-loop.json");
+    mutate_hardware_entry_json(fixture.path(), |json| {
+        json["mission_families_covered"] = serde_json::json!(["urban:multi-drone"]);
+        json["hardware_entry_checklist"]["multi_drone_review_required"] = serde_json::json!(true);
+        json["hardware_entry_checklist"]["single_drone_gate_passed"] = serde_json::json!(false);
+    });
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(fixture.path()),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::HardwareEntryPack,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_HARDWARE_ENTRY_SINGLE_DRONE_GATE_MISSING);
+}
+
+#[test]
+fn hardware_entry_pack_serde_roundtrip() {
+    let fixture = hardware_entry_fixture("scenarios/primitive.takeoff-hold-land.json");
+    let path = fixture.path().join(HARDWARE_ENTRY_PACK_FILE);
+    let pack: HardwareEntryPack = serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+    let json = serde_json::to_string(&pack).unwrap();
+    let roundtrip: HardwareEntryPack = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(roundtrip, pack);
+}
+
+#[test]
+fn hardware_readiness_status_serde_roundtrip_all_variants() {
+    let variants = [
+        HardwareReadinessStatus::DryRunOnly,
+        HardwareReadinessStatus::ExecuteValidatedLocally,
+        HardwareReadinessStatus::DegradedPartiallyEvidenced,
+        HardwareReadinessStatus::UnsupportedOrUnknown {
+            detail: "missing_stack_profile".to_owned(),
+        },
+        HardwareReadinessStatus::Blocked {
+            reason: "preflight_failed".to_owned(),
+        },
+    ];
+    for variant in variants {
+        let json = serde_json::to_string(&variant).unwrap();
+        let roundtrip: HardwareReadinessStatus = serde_json::from_str(&json).unwrap();
+        assert_eq!(roundtrip, variant);
+    }
+}
+
+#[test]
+fn hardware_entry_checklist_serde_roundtrip() {
+    let checklist = HardwareEntryChecklist {
+        selected_autopilot: Some("px4".to_owned()),
+        selected_airframe: Some("generic_quad".to_owned()),
+        selected_link_class: Some("local_sitl_udp".to_owned()),
+        coordinate_frame_policy: Some("local_simulation".to_owned()),
+        altitude_reference: Some("relative".to_owned()),
+        fence_and_failsafe_verified: false,
+        manual_abort_procedure_rehearsed: false,
+        first_allowed_mission_type: Some("primitive_takeoff_hold_land".to_owned()),
+        single_drone_gate_passed: true,
+        multi_drone_review_required: false,
+    };
+    let json = serde_json::to_string(&checklist).unwrap();
+    let roundtrip: HardwareEntryChecklist = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(roundtrip, checklist);
+}
+
+#[test]
 fn dry_run_artifact_stale_m82_compatibility_frame_fails() {
     let fixture = tempfile::tempdir().unwrap();
     let output_dir = fixture.path().join("dry-run");
@@ -1568,6 +1756,36 @@ fn dual_stack_execution_fixture_json() -> tempfile::TempDir {
     )
     .unwrap();
     fixture
+}
+
+fn hardware_entry_fixture(scenario_path: &str) -> tempfile::TempDir {
+    let fixture = tempfile::tempdir().unwrap();
+    let scenario_path = public_scenario_path(scenario_path);
+    let suite = load_sitl_suite(&scenario_path).unwrap();
+    let plan = build_sitl_plan(&suite, &scenario_path, "agent-0").unwrap();
+    write_hardware_entry_pack(
+        fixture.path(),
+        &plan,
+        vec![
+            "sitl_agent".to_owned(),
+            "--hardware-entry-pack".to_owned(),
+            "--scenario".to_owned(),
+            scenario_path.display().to_string(),
+            "--agent-id".to_owned(),
+            "agent-0".to_owned(),
+            "--output-dir".to_owned(),
+            fixture.path().display().to_string(),
+        ],
+    )
+    .unwrap();
+    fixture
+}
+
+fn mutate_hardware_entry_json(output_dir: &Path, mutate: impl FnOnce(&mut serde_json::Value)) {
+    let path = output_dir.join(HARDWARE_ENTRY_PACK_FILE);
+    let mut json = read_json_value(&path);
+    mutate(&mut json);
+    write_json(&path, &json);
 }
 
 fn read_json_value(path: &Path) -> serde_json::Value {

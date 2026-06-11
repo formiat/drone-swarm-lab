@@ -208,6 +208,8 @@ pub enum SitlError {
     DryRunArtifactUnsupported { option: &'static str },
     #[error("dry-run artifact write failed {path:?}: {message}")]
     DryRunArtifactWrite { path: PathBuf, message: String },
+    #[error("hardware-entry pack write failed {path:?}: {message}")]
+    HardwareEntryPackWrite { path: PathBuf, message: String },
     #[error("replay log option {option} is not supported for {mode}")]
     ReplayLogUnsupported {
         option: &'static str,

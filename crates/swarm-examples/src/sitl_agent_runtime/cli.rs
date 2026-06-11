@@ -13,6 +13,7 @@ pub(super) struct CliArgs {
     pub(super) run_report: Option<String>,
     pub(super) replay_log: Option<String>,
     pub(super) dry_run_artifact: Option<String>,
+    pub(super) hardware_entry_pack_output_dir: Option<String>,
     pub(super) mavlink_profile: MavlinkCapabilityProfileId,
     pub(super) allow_hardware_candidate: bool,
     pub(super) lifecycle: LifecycleArgs,
@@ -61,6 +62,8 @@ pub(super) fn parse_args() -> Result<CliArgs, SitlError> {
     let mut run_report: Option<String> = None;
     let mut replay_log: Option<String> = None;
     let mut dry_run_artifact: Option<String> = None;
+    let mut hardware_entry_pack = false;
+    let mut hardware_entry_pack_output_dir: Option<String> = None;
     let mut mavlink_profile = MavlinkCapabilityProfileId::default();
     let mut allow_hardware_candidate = false;
     let mut lifecycle_mode: Option<LifecycleMode> = None;
@@ -159,6 +162,19 @@ pub(super) fn parse_args() -> Result<CliArgs, SitlError> {
                         .clone(),
                 );
             }
+            "--hardware-entry-pack" => {
+                hardware_entry_pack = true;
+            }
+            "--output-dir" => {
+                i += 1;
+                hardware_entry_pack_output_dir = Some(
+                    args.get(i)
+                        .ok_or(SitlError::MissingArgument {
+                            name: "--output-dir <path>",
+                        })?
+                        .clone(),
+                );
+            }
             "--mavlink-profile" => {
                 i += 1;
                 let value = args.get(i).ok_or(SitlError::MissingArgument {
@@ -229,8 +245,18 @@ pub(super) fn parse_args() -> Result<CliArgs, SitlError> {
         i += 1;
     }
 
-    if mode.is_none() && multi_agent_config.is_none() {
+    if mode.is_none() && multi_agent_config.is_none() && !hardware_entry_pack {
         return Err(SitlError::MissingMode);
+    }
+    if hardware_entry_pack && hardware_entry_pack_output_dir.is_none() {
+        return Err(SitlError::MissingArgument {
+            name: "--output-dir <path>",
+        });
+    }
+    if !hardware_entry_pack && hardware_entry_pack_output_dir.is_some() {
+        return Err(SitlError::UnknownArgument {
+            arg: "--output-dir".to_owned(),
+        });
     }
     let lifecycle_from_cli = lifecycle_mode.is_some();
     let lifecycle_mode = lifecycle_mode.unwrap_or(LifecycleMode::UploadOnly);
@@ -292,6 +318,7 @@ pub(super) fn parse_args() -> Result<CliArgs, SitlError> {
         run_report,
         replay_log,
         dry_run_artifact,
+        hardware_entry_pack_output_dir,
         mavlink_profile,
         allow_hardware_candidate,
         lifecycle: LifecycleArgs {

@@ -1,5 +1,6 @@
 pub mod artifact_validator;
 pub mod benchmark_stress_profile;
+pub mod hardware_entry;
 pub mod regression_lib;
 pub mod sitl_agent_runtime;
 pub mod sitl_connection;

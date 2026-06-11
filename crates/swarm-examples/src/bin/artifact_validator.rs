@@ -126,12 +126,13 @@ fn parse_mode(value: &str) -> Result<ArtifactValidationMode, String> {
         "historical" => Ok(ArtifactValidationMode::Historical),
         "benchmark-pack" => Ok(ArtifactValidationMode::BenchmarkPack),
         "urban-operational" => Ok(ArtifactValidationMode::UrbanOperational),
+        "hardware-entry-pack" => Ok(ArtifactValidationMode::HardwareEntryPack),
         _ => Err(format!(
-            "unsupported --mode '{value}' (expected supervisor-run, dry-run, dual-stack-evidence, dual-stack-execution, historical, benchmark-pack, or urban-operational)"
+            "unsupported --mode '{value}' (expected supervisor-run, dry-run, dual-stack-evidence, dual-stack-execution, historical, benchmark-pack, urban-operational, or hardware-entry-pack)"
         )),
     }
 }
 
 fn usage() -> String {
-    "usage: artifact_validator --output-dir <path> [--mode supervisor-run|dry-run|dual-stack-evidence|dual-stack-execution|historical|benchmark-pack|urban-operational] [--allow-historical] [--strict] [--json]".to_owned()
+    "usage: artifact_validator --output-dir <path> [--mode supervisor-run|dry-run|dual-stack-evidence|dual-stack-execution|historical|benchmark-pack|urban-operational|hardware-entry-pack] [--allow-historical] [--strict] [--json]".to_owned()
 }

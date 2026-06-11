@@ -19,6 +19,10 @@ use swarm_sim::{
     URBAN_OPERATIONAL_EVIDENCE_SCHEMA_VERSION,
 };
 
+use crate::hardware_entry::{
+    HardwareEntryPack, HardwareReadinessStatus, HARDWARE_ENTRY_PACK_FILE,
+    HARDWARE_ENTRY_PACK_SCHEMA_VERSION,
+};
 use crate::sitl_dual_stack_evidence::{
     validate_dual_stack_evidence_pack, validate_dual_stack_execution_evidence,
     validate_dual_stack_profile_evidence, DualStackExecutionEvidence, ReplacementEvidenceStatus,
@@ -124,6 +128,17 @@ pub const RULE_URBAN_OPERATIONAL_EVIDENCE_MISSING: &str =
     "artifact.urban_operational_evidence_missing";
 pub const RULE_URBAN_OPERATIONAL_EVIDENCE_INVALID: &str =
     "artifact.urban_operational_evidence_invalid";
+pub const RULE_HARDWARE_ENTRY_PACK_MISSING: &str = "artifact.hardware_entry_pack_missing";
+pub const RULE_HARDWARE_ENTRY_PACK_INVALID: &str = "artifact.hardware_entry_pack_invalid";
+pub const RULE_HARDWARE_ENTRY_PREFLIGHT_FAILED: &str = "artifact.hardware_entry_preflight_failed";
+pub const RULE_HARDWARE_ENTRY_FC_CONTRACT_BLOCKING: &str =
+    "artifact.hardware_entry_fc_contract_blocking";
+pub const RULE_HARDWARE_ENTRY_BLOCKED_STATUS: &str = "artifact.hardware_entry_blocked_status";
+pub const RULE_HARDWARE_ENTRY_FIRST_MISSION_MISSING: &str =
+    "artifact.hardware_entry_first_mission_missing";
+pub const RULE_HARDWARE_ENTRY_SINGLE_DRONE_GATE_MISSING: &str =
+    "artifact.hardware_entry_single_drone_gate_missing";
+pub const RULE_HARDWARE_ENTRY_BLOCKERS_PRESENT: &str = "artifact.hardware_entry_blockers_present";
 pub const RULE_PARSE_FAILED: &str = "artifact.parse_failed";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -135,6 +150,7 @@ pub enum ArtifactValidationMode {
     Historical,
     BenchmarkPack,
     UrbanOperational,
+    HardwareEntryPack,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -169,6 +185,7 @@ pub struct ArtifactPackPaths {
     pub dual_stack_evidence: Option<PathBuf>,
     pub dual_stack_execution_evidence: Option<PathBuf>,
     pub urban_operational_evidence: Option<PathBuf>,
+    pub hardware_entry_pack: Option<PathBuf>,
     pub urban_analysis_manifest: Option<PathBuf>,
     pub partition_supervisor_reports: Option<PathBuf>,
 }
@@ -198,6 +215,7 @@ impl ArtifactPackPaths {
                 &output_dir,
                 "urban_operational_evidence.v1.json",
             ),
+            hardware_entry_pack: optional_path(&output_dir, HARDWARE_ENTRY_PACK_FILE),
             urban_analysis_manifest: optional_path(&output_dir, "urban_analysis/manifest.json"),
             partition_supervisor_reports: optional_path(
                 &output_dir,
@@ -374,6 +392,10 @@ impl<'a> Validator<'a> {
         }
         if matches!(self.options.mode, ArtifactValidationMode::UrbanOperational) {
             self.validate_urban_operational_evidence();
+            return;
+        }
+        if matches!(self.options.mode, ArtifactValidationMode::HardwareEntryPack) {
+            self.validate_hardware_entry_pack();
             return;
         }
         if matches!(self.options.mode, ArtifactValidationMode::BenchmarkPack) {
@@ -1029,6 +1051,134 @@ impl<'a> Validator<'a> {
                     );
                 }
             }
+        }
+    }
+
+    fn validate_hardware_entry_pack(&mut self) {
+        let Some(path) = self.paths.hardware_entry_pack.clone() else {
+            self.push_error(
+                RULE_HARDWARE_ENTRY_PACK_MISSING,
+                Some(self.paths.output_dir.join(HARDWARE_ENTRY_PACK_FILE)),
+                format!("hardware-entry validation requires {HARDWARE_ENTRY_PACK_FILE}"),
+            );
+            return;
+        };
+        let Some(pack) = self.load_json::<HardwareEntryPack>(&path) else {
+            return;
+        };
+        if pack.schema_version != HARDWARE_ENTRY_PACK_SCHEMA_VERSION {
+            self.push_error(
+                RULE_HARDWARE_ENTRY_PACK_INVALID,
+                Some(path.clone()),
+                format!(
+                    "unsupported hardware-entry pack schema_version '{}' (expected {HARDWARE_ENTRY_PACK_SCHEMA_VERSION})",
+                    pack.schema_version
+                ),
+            );
+        }
+        if pack.pack_id.trim().is_empty() {
+            self.push_error(
+                RULE_HARDWARE_ENTRY_PACK_INVALID,
+                Some(path.clone()),
+                "hardware-entry pack_id must not be empty",
+            );
+        }
+        if pack.git_commit.trim().is_empty() {
+            self.push_error(
+                RULE_GIT_COMMIT_MISSING,
+                Some(path.clone()),
+                "hardware-entry git_commit must not be empty",
+            );
+        }
+        if pack.mission_families_covered.is_empty() {
+            self.push_error(
+                RULE_HARDWARE_ENTRY_PACK_INVALID,
+                Some(path.clone()),
+                "hardware-entry pack must cover at least one mission family",
+            );
+        }
+        if !pack.preflight_report.passed {
+            self.push_error(
+                RULE_HARDWARE_ENTRY_PREFLIGHT_FAILED,
+                Some(path.clone()),
+                "hardware-entry preflight_report.passed must be true",
+            );
+        }
+        if pack.fc_contract_result.blocks_mission_start
+            || !pack.fc_contract_result.violations.is_empty()
+        {
+            self.push_error(
+                RULE_HARDWARE_ENTRY_FC_CONTRACT_BLOCKING,
+                Some(path.clone()),
+                "hardware-entry FC contract must not contain blocking violations",
+            );
+        }
+        if matches!(
+            pack.readiness_status,
+            HardwareReadinessStatus::Blocked { .. }
+        ) {
+            self.push_error(
+                RULE_HARDWARE_ENTRY_BLOCKED_STATUS,
+                Some(path.clone()),
+                "hardware-entry readiness_status must not be blocked",
+            );
+        }
+        if pack
+            .hardware_entry_checklist
+            .first_allowed_mission_type
+            .as_deref()
+            .is_none_or(str::is_empty)
+        {
+            self.push_error(
+                RULE_HARDWARE_ENTRY_FIRST_MISSION_MISSING,
+                Some(path.clone()),
+                "hardware-entry first_allowed_mission_type must be set",
+            );
+        }
+        let family_mentions_multi = pack
+            .mission_families_covered
+            .iter()
+            .any(|family| family.contains("multi"));
+        let urban_multi_evidence = pack
+            .urban_evidence
+            .as_ref()
+            .is_some_and(|evidence| evidence.agent_count > 1);
+        if (family_mentions_multi || urban_multi_evidence)
+            && !pack.hardware_entry_checklist.multi_drone_review_required
+        {
+            self.push_error(
+                RULE_HARDWARE_ENTRY_SINGLE_DRONE_GATE_MISSING,
+                Some(path.clone()),
+                "multi-drone mission families must set multi_drone_review_required=true",
+            );
+        }
+        if pack.hardware_entry_checklist.multi_drone_review_required
+            && !pack.hardware_entry_checklist.single_drone_gate_passed
+        {
+            self.push_error(
+                RULE_HARDWARE_ENTRY_SINGLE_DRONE_GATE_MISSING,
+                Some(path.clone()),
+                "multi-drone hardware entry requires single_drone_gate_passed=true",
+            );
+        }
+        if matches!(
+            pack.readiness_status,
+            HardwareReadinessStatus::ExecuteValidatedLocally
+                | HardwareReadinessStatus::DegradedPartiallyEvidenced
+        ) && !pack.blockers.is_empty()
+        {
+            self.push_error(
+                RULE_HARDWARE_ENTRY_BLOCKERS_PRESENT,
+                Some(path.clone()),
+                "execute/degraded hardware-entry statuses must not contain blockers",
+            );
+        }
+        if pack.caveats.is_empty() || pack.limitations.is_empty() {
+            self.push_error(
+                RULE_HARDWARE_ENTRY_PACK_INVALID,
+                Some(path),
+                "hardware-entry pack must document caveats and limitations",
+            );
         }
     }
 

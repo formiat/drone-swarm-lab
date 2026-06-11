@@ -3,6 +3,7 @@ use std::path::Path;
 use super::cli::{parse_args, AgentRuntimeOptions, LifecycleMode};
 use super::connection::run_connection;
 use super::mock::{apply_start_delay, run_mock};
+use crate::hardware_entry::write_hardware_entry_pack;
 use crate::sitl_multi_agent::{
     agent_config, build_multi_agent_manifest, load_multi_agent_config, MultiAgentLifecycle,
     MultiAgentSitlAgentConfig,
@@ -64,6 +65,12 @@ pub fn run() -> Result<(), SitlError> {
     } else {
         crate::sitl_plan::build_sitl_plan(&suite, &cli.scenario, cli.agent_id.clone())?
     };
+
+    if let Some(output_dir) = cli.hardware_entry_pack_output_dir.as_deref() {
+        write_hardware_entry_pack(output_dir, &plan, std::env::args().collect())?;
+        eprintln!("Hardware-entry pack written: {output_dir}");
+        return Ok(());
+    }
 
     let mode = mode.ok_or(SitlError::MissingMode)?;
     if cli.run_report.is_some() && lifecycle.mode != LifecycleMode::Execute {

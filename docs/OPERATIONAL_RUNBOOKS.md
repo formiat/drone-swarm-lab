@@ -55,6 +55,7 @@ These gates are explicit, not best effort:
 - no hardware if SITL dry-run/export fails;
 - no hardware if preflight safety fails;
 - no hardware if artifact validator fails;
+- no hardware without a valid M97 `hardware_entry_pack.v1.json`;
 - no hardware if mission has unclassified safety violations;
 - no hardware without external safety process;
 - no multi-drone hardware before separate single-drone review;
@@ -379,6 +380,70 @@ Stop/abort conditions:
 - the primitive single-agent replacement status is described as live failover;
 - FC/safety contract evidence is described as certified flight safety or
   hardware readiness.
+
+## Runbook 4d: M97 Hardware-Entry Evidence Pack
+
+Use this before any hardware-candidate experiment. The pack is a
+machine-checkable boundary record for the candidate mission. It does not
+authorize flight by itself.
+
+Primitive minimum:
+
+```bash
+cargo run -p swarm-examples --bin sitl_agent -- \
+  --hardware-entry-pack \
+  --scenario scenarios/primitive.takeoff-hold-land.json \
+  --agent-id agent-0 \
+  --output-dir target/m97-hardware-entry-primitive
+
+cargo run -p swarm-examples --bin artifact_validator -- \
+  --output-dir target/m97-hardware-entry-primitive \
+  --mode hardware-entry-pack \
+  --strict
+```
+
+Urban single-drone candidate:
+
+```bash
+cargo run -p swarm-examples --bin sitl_agent -- \
+  --hardware-entry-pack \
+  --scenario scenarios/urban.geo-block-loop.json \
+  --agent-id agent-0 \
+  --output-dir target/m97-hardware-entry-urban-single
+
+cargo run -p swarm-examples --bin artifact_validator -- \
+  --output-dir target/m97-hardware-entry-urban-single \
+  --mode hardware-entry-pack \
+  --strict
+```
+
+Expected evidence:
+
+- `hardware_entry_pack.v1.json`;
+- `preflight_report.passed=true`;
+- no blocking FC contract violations;
+- `readiness_status` is not `blocked`;
+- `first_allowed_mission_type` is set;
+- primitive packs include local `MavlinkPlanExecutor` evidence for the
+  takeoff-hold-land command lifecycle;
+- Urban single-drone packs include `UrbanOperationalEvidence` with explicit
+  simulation/perception caveats;
+- multi-drone families set `multi_drone_review_required=true` and require a
+  passed single-drone gate before hardware entry;
+- caveats, limitations, topology assumptions, degraded-policy assumptions, and
+  checklist state are recorded.
+
+Stop/abort conditions:
+
+- `artifact_validator --mode hardware-entry-pack --strict` fails;
+- `hardware_entry_pack.v1.json` is missing;
+- `preflight_report.passed=false`;
+- FC contract has blocking violations;
+- readiness status is `blocked`;
+- `first_allowed_mission_type` is empty;
+- multi-drone entry is attempted without `single_drone_gate_passed=true`;
+- the pack is described as hardware flight approval, certification, operator
+  training, or proof that SITL/local execution is safe on real hardware.
 
 ## Runbook 5: Local PX4/SIH
 
