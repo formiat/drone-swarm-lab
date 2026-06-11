@@ -1,0 +1,185 @@
+{
+  "schema_version": "dual_stack_execution_evidence.v1",
+  "mission_id": "primitive_takeoff_hold_land_3m_10s-agent-0-primitive_mission",
+  "command_ir_hash": "a4b1b5cff986223606cc2154e7d0976ccc63a1cb51943aa92b0970ed4778149c",
+  "created_at": "2026-06-11T01:51:15.281286546Z",
+  "git_commit": "e3034ac0a4c589885812611d95c666abb618f9d9",
+  "px4": {
+    "profile_id": "px4",
+    "lifecycle_state": "completed",
+    "execution_report": {
+      "plan_id": "primitive_takeoff_hold_land_3m_10s-agent-0-primitive_mission",
+      "steps": [
+        [
+          0,
+          "MAV_CMD_COMPONENT_ARM_DISARM",
+          {
+            "result": "accepted"
+          }
+        ],
+        [
+          1,
+          "MAV_CMD_NAV_TAKEOFF",
+          {
+            "result": "accepted"
+          }
+        ],
+        [
+          2,
+          "mission_upload",
+          {
+            "result": "accepted"
+          }
+        ],
+        [
+          3,
+          "MAV_CMD_MISSION_START",
+          {
+            "result": "accepted"
+          }
+        ],
+        [
+          4,
+          "MAV_CMD_NAV_LAND",
+          {
+            "result": "accepted"
+          }
+        ]
+      ],
+      "overall": {
+        "outcome": "completed"
+      },
+      "lifecycle_state": "completed",
+      "telemetry_milestones_reached": [
+        "heartbeat_expected"
+      ],
+      "retry_count": 0
+    },
+    "fc_contract_result": {
+      "violations": [],
+      "blocks_mission_start": false,
+      "summary": "FC contract not requested for this primitive execution evidence"
+    },
+    "caveats": [
+      "PX4 execution evidence is local executor evidence over the MavlinkPlanExecutor API; live FC/SIH artifacts remain separate.",
+      "PX4 support is based on local SIH evidence and still requires operator validation"
+    ],
+    "unsupported_features": []
+  },
+  "ardupilot": {
+    "profile_id": "ardupilot",
+    "lifecycle_state": "unsupported",
+    "execution_report": {
+      "plan_id": "primitive_takeoff_hold_land_3m_10s-agent-0-primitive_mission",
+      "steps": [
+        [
+          0,
+          "MAV_CMD_COMPONENT_ARM_DISARM",
+          {
+            "result": "skipped",
+            "reason": "ardupilot_mav_cmd_component_arm_disarm_unsupported_until_sitl"
+          }
+        ],
+        [
+          1,
+          "MAV_CMD_NAV_TAKEOFF",
+          {
+            "result": "skipped",
+            "reason": "ardupilot_mav_cmd_nav_takeoff_unsupported_until_sitl"
+          }
+        ],
+        [
+          2,
+          "mission_upload",
+          {
+            "result": "skipped",
+            "reason": "ardupilot_mission_upload_unsupported_until_sitl"
+          }
+        ],
+        [
+          3,
+          "MAV_CMD_MISSION_START",
+          {
+            "result": "skipped",
+            "reason": "ardupilot_mav_cmd_mission_start_unsupported_until_sitl"
+          }
+        ],
+        [
+          4,
+          "MAV_CMD_NAV_LAND",
+          {
+            "result": "skipped",
+            "reason": "ardupilot_mav_cmd_nav_land_unsupported_until_sitl"
+          }
+        ]
+      ],
+      "overall": {
+        "outcome": "completed"
+      },
+      "lifecycle_state": "unsupported",
+      "telemetry_milestones_reached": [
+        "heartbeat_expected"
+      ],
+      "retry_count": 0
+    },
+    "fc_contract_result": {
+      "violations": [],
+      "blocks_mission_start": false,
+      "summary": "FC contract not requested for this primitive execution evidence"
+    },
+    "caveats": [
+      "ArduPilot execution evidence is experimental and local-only; skipped steps mean unsupported/unevidenced profile behavior, not flight acceptance.",
+      "ArduPilot acceptance is unknown until ArduPilot SITL or hardware evidence is captured",
+      "ArduPilot incompatible or unevidenced steps are represented as skipped executor steps."
+    ],
+    "unsupported_features": [
+      {
+        "rule_id": "ardupilot_profile_unknown_until_sitl_or_hardware",
+        "command_id": "arm-0",
+        "command_kind": "MAV_CMD_COMPONENT_ARM_DISARM",
+        "required": true,
+        "reason": "ArduPilot profile classifies this execution step as unknown_until_sitl_or_hardware: command syntax is known, but stack acceptance is not evidenced"
+      },
+      {
+        "rule_id": "ardupilot_profile_unknown_until_sitl_or_hardware",
+        "command_id": "takeoff-0",
+        "command_kind": "MAV_CMD_NAV_TAKEOFF",
+        "required": true,
+        "reason": "ArduPilot profile classifies this execution step as unknown_until_sitl_or_hardware: command syntax is known, but stack acceptance is not evidenced"
+      },
+      {
+        "rule_id": "ardupilot_profile_unknown_until_sitl_or_hardware",
+        "command_id": "hold-0",
+        "command_kind": "MAV_CMD_NAV_LOITER_TIME",
+        "required": true,
+        "reason": "ArduPilot profile classifies this execution step as unknown_until_sitl_or_hardware: command syntax is known, but stack acceptance is not evidenced"
+      },
+      {
+        "rule_id": "ardupilot_profile_unknown_until_sitl_or_hardware",
+        "command_id": "mission-start-0",
+        "command_kind": "MAV_CMD_MISSION_START",
+        "required": true,
+        "reason": "ArduPilot profile classifies this execution step as unknown_until_sitl_or_hardware: command syntax is known, but stack acceptance is not evidenced"
+      },
+      {
+        "rule_id": "ardupilot_profile_unknown_until_sitl_or_hardware",
+        "command_id": "land-0",
+        "command_kind": "MAV_CMD_NAV_LAND",
+        "required": true,
+        "reason": "ArduPilot profile classifies this execution step as unknown_until_sitl_or_hardware: command syntax is known, but stack acceptance is not evidenced"
+      }
+    ]
+  },
+  "comparison": {
+    "same_command_ir_hash": true,
+    "lifecycle_states_match": false,
+    "step_count_delta": 0,
+    "caveat_count_delta": -1,
+    "unsupported_count_delta": -5,
+    "notable_differences": [
+      "lifecycle_state differs: px4=Completed, ardupilot=Unsupported",
+      "ardupilot skipped 5 incompatible or unevidenced executor step(s)",
+      "unsupported feature count differs: px4=0, ardupilot=5"
+    ]
+  }
+}

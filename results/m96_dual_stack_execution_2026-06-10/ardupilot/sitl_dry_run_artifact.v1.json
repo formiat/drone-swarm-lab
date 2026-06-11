@@ -1,0 +1,445 @@
+{
+  "schema_version": "sitl_dry_run_artifact.v1",
+  "source_scenario_path": "scenarios/primitive.takeoff-hold-land.json",
+  "suite_name": "Primitive Takeoff Hold Land",
+  "scenario_name": "primitive_takeoff_hold_land_3m_10s",
+  "mission": "takeoff-hold-land",
+  "profile": "takeoff-hold-land-3m-10s",
+  "agent_id": "agent-0",
+  "export_kind": "primitive_mission",
+  "planner_or_adapter": "primitive_takeoff-hold-land",
+  "route_length_m": null,
+  "segment_count": null,
+  "waypoint_count": 2,
+  "waypoints": [
+    {
+      "seq": 0,
+      "task_id": "primitive-loiter_time-0",
+      "x": 0.0,
+      "y": 0.0,
+      "z": 3.0,
+      "source": "primitive_loiter_time"
+    },
+    {
+      "seq": 1,
+      "task_id": "primitive-land-1",
+      "x": 0.0,
+      "y": 0.0,
+      "z": 0.0,
+      "source": "primitive_land"
+    }
+  ],
+  "start_waypoint": {
+    "seq": 0,
+    "task_id": "primitive-loiter_time-0",
+    "x": 0.0,
+    "y": 0.0,
+    "z": 3.0,
+    "source": "primitive_loiter_time"
+  },
+  "end_waypoint": {
+    "seq": 1,
+    "task_id": "primitive-land-1",
+    "x": 0.0,
+    "y": 0.0,
+    "z": 0.0,
+    "source": "primitive_land"
+  },
+  "start_global": {
+    "lat_deg": 47.397742,
+    "lon_deg": 8.545594,
+    "relative_alt_m": 3.0
+  },
+  "end_global": {
+    "lat_deg": 47.397742,
+    "lon_deg": 8.545594,
+    "relative_alt_m": 0.0
+  },
+  "altitude_source": "primitive_mission.altitude_m",
+  "geo_origin": {
+    "lat_deg": 47.397742,
+    "lon_deg": 8.545594,
+    "alt_m": 0.0
+  },
+  "effective_geo_origin": {
+    "lat_deg": 47.397742,
+    "lon_deg": 8.545594,
+    "alt_m": 0.0
+  },
+  "coordinate_frame": "local_simulation",
+  "coordinate_mode": "local_with_origin",
+  "safety_report": {
+    "passed": true,
+    "violations": []
+  },
+  "command": [
+    "sitl_agent",
+    "--dry-run",
+    "--scenario",
+    "scenarios/primitive.takeoff-hold-land.json",
+    "--agent-id",
+    "agent-0",
+    "--mavlink-profile",
+    "ardupilot"
+  ],
+  "git_commit": null,
+  "command_ir_summary": {
+    "mission_id": "primitive_takeoff_hold_land_3m_10s-agent-0-primitive_mission",
+    "command_count": 4,
+    "commands_by_kind": {
+      "arm": 1,
+      "hold": 1,
+      "land": 1,
+      "takeoff": 1
+    },
+    "coordinate_frame": "local_enu",
+    "altitude_reference": "relative_home",
+    "total_waypoints": 0,
+    "timeout_policy": {
+      "command_timeout_secs": 5.0,
+      "completion_timeout_secs": 120.0,
+      "on_timeout": "abort"
+    },
+    "expected_terminal_state": "landed",
+    "completion_tolerance": {
+      "position_m": 1.0,
+      "altitude_m": 0.5
+    }
+  },
+  "mavlink_common_plan": {
+    "schema_version": "mavlink_common_plan.v1",
+    "source_mission_id": "primitive_takeoff_hold_land_3m_10s-agent-0-primitive_mission",
+    "command_ir_hash": "a4b1b5cff986223606cc2154e7d0976ccc63a1cb51943aa92b0970ed4778149c",
+    "backend_profile": "ardupilot",
+    "command_prelude": [
+      {
+        "command_id": "arm-0",
+        "command": "MAV_CMD_COMPONENT_ARM_DISARM",
+        "phase": "command_prelude",
+        "params": [
+          1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "command_id": "takeoff-0",
+        "command": "MAV_CMD_NAV_TAKEOFF",
+        "phase": "command_prelude",
+        "params": [
+          0.0,
+          0.0,
+          0.0,
+          null,
+          0.0,
+          0.0,
+          3.0
+        ]
+      }
+    ],
+    "mission_items": [
+      {
+        "seq": 0,
+        "command_id": "hold-0",
+        "command": "MAV_CMD_NAV_LOITER_TIME",
+        "frame": "MAV_FRAME_GLOBAL_RELATIVE_ALT_INT",
+        "lat_e7": 473977420,
+        "lon_e7": 85455940,
+        "relative_alt_m": 3.0,
+        "params": [
+          10.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "current": true,
+        "autocontinue": true
+      }
+    ],
+    "mission_start": {
+      "command_id": "mission-start-0",
+      "command": "MAV_CMD_MISSION_START",
+      "phase": "mission_start",
+      "params": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "command_postlude": [
+      {
+        "command_id": "land-0",
+        "command": "MAV_CMD_NAV_LAND",
+        "phase": "command_postlude",
+        "params": [
+          0.0,
+          0.0,
+          0.0,
+          null,
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    ],
+    "expected_acks": [
+      {
+        "phase": "command_prelude",
+        "kind": "command_ack",
+        "command_id": "arm-0",
+        "command": "MAV_CMD_COMPONENT_ARM_DISARM"
+      },
+      {
+        "phase": "command_prelude",
+        "kind": "command_ack",
+        "command_id": "takeoff-0",
+        "command": "MAV_CMD_NAV_TAKEOFF"
+      },
+      {
+        "phase": "mission_upload",
+        "kind": "mission_ack",
+        "seq": 0
+      },
+      {
+        "phase": "mission_start",
+        "kind": "command_ack",
+        "command_id": "mission-start-0",
+        "command": "MAV_CMD_MISSION_START"
+      },
+      {
+        "phase": "command_postlude",
+        "kind": "command_ack",
+        "command_id": "land-0",
+        "command": "MAV_CMD_NAV_LAND"
+      }
+    ],
+    "telemetry_milestones": [
+      {
+        "phase": "telemetry",
+        "kind": "heartbeat_expected",
+        "description": "MAVLink HEARTBEAT expected before command/upload execution"
+      },
+      {
+        "phase": "telemetry",
+        "kind": "mission_item_reached_expected",
+        "command_id": "hold-0",
+        "seq": 0,
+        "description": "MISSION_ITEM_REACHED expected for seq=0"
+      },
+      {
+        "phase": "telemetry",
+        "kind": "terminal_state_expected",
+        "description": "terminal state expected: Landed"
+      }
+    ],
+    "unsupported_features": [],
+    "validation_result": {
+      "passed": true,
+      "ir_validation_passed": true,
+      "unsupported_required_count": 0,
+      "notes": [
+        "M81 compiler output is transport-free; no hardware upload is implied",
+        "PX4/ArduPilot semantics are not identical even for MAVLink Common commands"
+      ]
+    },
+    "compatibility": {
+      "profile": "ardupilot",
+      "overall_classification": "unknown_until_sitl_or_hardware",
+      "hardware_facing_allowed": false,
+      "command_results": [
+        {
+          "command_id": "arm-0",
+          "command": "MAV_CMD_COMPONENT_ARM_DISARM",
+          "phase": "command_prelude",
+          "classification": "unknown_until_sitl_or_hardware",
+          "required_execution_mode": "unspecified",
+          "required_mode_transitions": [
+            "heartbeat"
+          ],
+          "preconditions": [
+            "ArduPilot mode mapping is not validated by this repository yet"
+          ],
+          "mode_caveats": [
+            "ArduPilot acceptance is unknown until ArduPilot SITL or hardware evidence is captured"
+          ],
+          "caveats": [
+            "ArduPilot acceptance is unknown until ArduPilot SITL or hardware evidence is captured"
+          ],
+          "reason": "command syntax is known, but stack acceptance is not evidenced"
+        },
+        {
+          "command_id": "takeoff-0",
+          "command": "MAV_CMD_NAV_TAKEOFF",
+          "phase": "command_prelude",
+          "classification": "unknown_until_sitl_or_hardware",
+          "required_execution_mode": "unspecified",
+          "required_mode_transitions": [
+            "heartbeat"
+          ],
+          "preconditions": [
+            "ArduPilot mode mapping is not validated by this repository yet"
+          ],
+          "mode_caveats": [
+            "ArduPilot acceptance is unknown until ArduPilot SITL or hardware evidence is captured"
+          ],
+          "caveats": [
+            "ArduPilot acceptance is unknown until ArduPilot SITL or hardware evidence is captured"
+          ],
+          "reason": "command syntax is known, but stack acceptance is not evidenced"
+        },
+        {
+          "command_id": "hold-0",
+          "seq": 0,
+          "command": "MAV_CMD_NAV_LOITER_TIME",
+          "phase": "mission_upload",
+          "frame": "MAV_FRAME_GLOBAL_RELATIVE_ALT_INT",
+          "classification": "unknown_until_sitl_or_hardware",
+          "required_execution_mode": "unspecified",
+          "required_mode_transitions": [
+            "heartbeat"
+          ],
+          "preconditions": [
+            "ArduPilot mode mapping is not validated by this repository yet"
+          ],
+          "mode_caveats": [
+            "ArduPilot acceptance is unknown until ArduPilot SITL or hardware evidence is captured"
+          ],
+          "caveats": [
+            "ArduPilot acceptance is unknown until ArduPilot SITL or hardware evidence is captured"
+          ],
+          "reason": "command syntax is known, but stack acceptance is not evidenced"
+        },
+        {
+          "command_id": "mission-start-0",
+          "command": "MAV_CMD_MISSION_START",
+          "phase": "mission_start",
+          "classification": "unknown_until_sitl_or_hardware",
+          "required_execution_mode": "mission",
+          "required_mode_transitions": [
+            "mission_upload_accepted",
+            "mission_start_accepted"
+          ],
+          "preconditions": [
+            "ArduPilot mission mode/start behavior requires SITL evidence"
+          ],
+          "mode_caveats": [
+            "ArduPilot acceptance is unknown until ArduPilot SITL or hardware evidence is captured"
+          ],
+          "caveats": [
+            "ArduPilot acceptance is unknown until ArduPilot SITL or hardware evidence is captured"
+          ],
+          "reason": "command syntax is known, but stack acceptance is not evidenced"
+        },
+        {
+          "command_id": "land-0",
+          "command": "MAV_CMD_NAV_LAND",
+          "phase": "command_postlude",
+          "classification": "unknown_until_sitl_or_hardware",
+          "required_execution_mode": "unspecified",
+          "required_mode_transitions": [
+            "heartbeat"
+          ],
+          "preconditions": [
+            "ArduPilot mode mapping is not validated by this repository yet"
+          ],
+          "mode_caveats": [
+            "ArduPilot acceptance is unknown until ArduPilot SITL or hardware evidence is captured"
+          ],
+          "caveats": [
+            "ArduPilot acceptance is unknown until ArduPilot SITL or hardware evidence is captured"
+          ],
+          "reason": "command syntax is known, but stack acceptance is not evidenced"
+        }
+      ],
+      "aggregate_mode_requirements": [
+        {
+          "command_id": "arm-0",
+          "command": "MAV_CMD_COMPONENT_ARM_DISARM",
+          "phase": "command_prelude",
+          "required_execution_mode": "unspecified",
+          "required_mode_transitions": [
+            "heartbeat"
+          ],
+          "preconditions": [
+            "ArduPilot mode mapping is not validated by this repository yet"
+          ],
+          "mode_caveats": [
+            "ArduPilot acceptance is unknown until ArduPilot SITL or hardware evidence is captured"
+          ]
+        },
+        {
+          "command_id": "takeoff-0",
+          "command": "MAV_CMD_NAV_TAKEOFF",
+          "phase": "command_prelude",
+          "required_execution_mode": "unspecified",
+          "required_mode_transitions": [
+            "heartbeat"
+          ],
+          "preconditions": [
+            "ArduPilot mode mapping is not validated by this repository yet"
+          ],
+          "mode_caveats": [
+            "ArduPilot acceptance is unknown until ArduPilot SITL or hardware evidence is captured"
+          ]
+        },
+        {
+          "command_id": "hold-0",
+          "command": "MAV_CMD_NAV_LOITER_TIME",
+          "phase": "mission_upload",
+          "required_execution_mode": "unspecified",
+          "required_mode_transitions": [
+            "heartbeat"
+          ],
+          "preconditions": [
+            "ArduPilot mode mapping is not validated by this repository yet"
+          ],
+          "mode_caveats": [
+            "ArduPilot acceptance is unknown until ArduPilot SITL or hardware evidence is captured"
+          ]
+        },
+        {
+          "command_id": "mission-start-0",
+          "command": "MAV_CMD_MISSION_START",
+          "phase": "mission_start",
+          "required_execution_mode": "mission",
+          "required_mode_transitions": [
+            "mission_upload_accepted",
+            "mission_start_accepted"
+          ],
+          "preconditions": [
+            "ArduPilot mission mode/start behavior requires SITL evidence"
+          ],
+          "mode_caveats": [
+            "ArduPilot acceptance is unknown until ArduPilot SITL or hardware evidence is captured"
+          ]
+        },
+        {
+          "command_id": "land-0",
+          "command": "MAV_CMD_NAV_LAND",
+          "phase": "command_postlude",
+          "required_execution_mode": "unspecified",
+          "required_mode_transitions": [
+            "heartbeat"
+          ],
+          "preconditions": [
+            "ArduPilot mode mapping is not validated by this repository yet"
+          ],
+          "mode_caveats": [
+            "ArduPilot acceptance is unknown until ArduPilot SITL or hardware evidence is captured"
+          ]
+        }
+      ],
+      "caveats": [
+        "ArduPilot acceptance is unknown until ArduPilot SITL or hardware evidence is captured"
+      ]
+    }
+  }
+}
