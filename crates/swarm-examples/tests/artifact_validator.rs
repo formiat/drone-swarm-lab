@@ -8,11 +8,12 @@ use swarm_command_plane::{
     SwarmOwnershipRef, SwarmOwnershipStatus, SynchronizedCommandKind, SynchronizedCommandResult,
 };
 use swarm_comms::{
-    compile_mavlink_common_plan, DeconflictionMode, MavlinkCommonCommand, MavlinkCommonCommandName,
-    MavlinkCommonPlanOptions, MavlinkCompatibilityClass, MavlinkCoordinateOrigin,
-    MavlinkExecutionArtifact, MavlinkExecutionEvidenceMode, MavlinkExecutionOutcome,
-    MavlinkExecutionStepResult, MavlinkExpectedAck, MavlinkExpectedAckKind,
-    MavlinkPlanExecutionReport, MavlinkPlanPhase, MissionExecuteLifecycleState,
+    compile_mavlink_common_plan, DeconflictionMode, FcGeofenceItem, FcGeofenceItemKind,
+    FcGeofenceShape, MavlinkCommonCommand, MavlinkCommonCommandName, MavlinkCommonPlanOptions,
+    MavlinkCompatibilityClass, MavlinkCoordinateOrigin, MavlinkExecutionArtifact,
+    MavlinkExecutionEvidenceMode, MavlinkExecutionOutcome, MavlinkExecutionStepResult,
+    MavlinkExpectedAck, MavlinkExpectedAckKind, MavlinkFencePlan, MavlinkPlanExecutionReport,
+    MavlinkPlanExecutor, MavlinkPlanPhase, MissionExecuteLifecycleState, MockAckProvider,
     MAVLINK_EXECUTION_ARTIFACT_SCHEMA_VERSION,
 };
 use swarm_examples::artifact_validator::{
@@ -1061,6 +1062,22 @@ fn artifact_validator_execute_mode_passes_valid_artifact() {
 }
 
 #[test]
+fn artifact_validator_execute_mode_accepts_geofence_preflight_abort_artifact() {
+    let fixture = geofence_preflight_abort_execution_artifact_fixture();
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(fixture.path()),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::Execute,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert!(report.passed, "{:?}", report.violations);
+}
+
+#[test]
 fn artifact_validator_execute_mode_rejects_unordered_steps() {
     let fixture = mavlink_execution_artifact_fixture();
     let path = fixture.path().join("mavlink_execution_artifact.v1.json");
@@ -1926,6 +1943,95 @@ fn mavlink_execution_artifact_fixture() -> tempfile::TempDir {
         execution_report: report,
         caveats: vec!["local_mock_executor".to_owned()],
     };
+    write_json(
+        &fixture.path().join("mavlink_execution_artifact.v1.json"),
+        &artifact,
+    );
+    fixture
+}
+
+fn geofence_preflight_abort_execution_artifact_fixture() -> tempfile::TempDir {
+    let fixture = tempfile::tempdir().unwrap();
+    let ir_plan = MissionCommandPlan {
+        schema_version: MissionCommandPlan::SCHEMA_VERSION.to_owned(),
+        mission_id: MissionId::from("m90-geofence-guard".to_owned()),
+        coordinate_frame: CoordinateFrame::LocalEnu,
+        altitude_reference: AltitudeReference::RelativeHome,
+        timeout_policy: TimeoutPolicy {
+            command_timeout_secs: 5.0,
+            completion_timeout_secs: 30.0,
+            on_timeout: TimeoutAction::Abort,
+        },
+        expected_terminal_state: TerminalState::Landed,
+        completion_tolerance: CompletionTolerance {
+            position_m: 1.0,
+            altitude_m: 0.5,
+        },
+        commands: vec![
+            MissionCommandEntry {
+                command_id: CommandId::from("arm".to_owned()),
+                command: MissionCommand::Arm,
+                source_task_id: None,
+                source_route_id: None,
+                source_agent_id: Some("agent-0".to_owned()),
+            },
+            MissionCommandEntry {
+                command_id: CommandId::from("takeoff".to_owned()),
+                command: MissionCommand::Takeoff { altitude_m: 3.0 },
+                source_task_id: None,
+                source_route_id: None,
+                source_agent_id: Some("agent-0".to_owned()),
+            },
+        ],
+    };
+    let mavlink_plan = compile_mavlink_common_plan(
+        &ir_plan,
+        &MavlinkCommonPlanOptions {
+            home_origin: Some(MavlinkCoordinateOrigin {
+                lat_deg: 47.397_742,
+                lon_deg: 8.545_594,
+                alt_m: 0.0,
+            }),
+            fence_plan: Some(MavlinkFencePlan {
+                items: vec![FcGeofenceItem {
+                    id: "urban-block".to_owned(),
+                    kind: FcGeofenceItemKind::PolygonInclusion,
+                    shape: FcGeofenceShape::Polygon {
+                        vertices: vec![
+                            (473_977_420, 85_455_940),
+                            (473_977_430, 85_455_940),
+                            (473_977_430, 85_455_950),
+                        ],
+                    },
+                }],
+                enable_fence: true,
+            }),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert!(mavlink_plan
+        .geofence_prelude
+        .as_ref()
+        .is_some_and(|items| !items.is_empty()));
+    let mut executor = MavlinkPlanExecutor::new(MockAckProvider, 0);
+    let report = executor.execute(&mavlink_plan);
+    assert!(matches!(
+        report.overall,
+        MavlinkExecutionOutcome::Aborted { at_step: 0, .. }
+    ));
+    assert_eq!(report.steps[0].1, "fc_config_geofence_upload");
+    let artifact = MavlinkExecutionArtifact::new(
+        MavlinkExecutionEvidenceMode::LocalMockExecutor,
+        "px4",
+        "0123456789abcdef",
+        vec!["sitl_agent".to_owned(), "--execute".to_owned()],
+        report,
+        vec![
+            "local_mock_executor".to_owned(),
+            "geofence_preflight_abort".to_owned(),
+        ],
+    );
     write_json(
         &fixture.path().join("mavlink_execution_artifact.v1.json"),
         &artifact,

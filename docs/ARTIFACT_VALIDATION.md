@@ -175,6 +175,11 @@ uses the transport-backed executor path, it writes the sibling
 `<dir>/mavlink_execution_artifact.v1.json`. That artifact contains the real
 `MavlinkPlanExecutionReport` produced before the telemetry progress loop; the
 SITL run report remains responsible for mission-completion telemetry counts.
+Pre-command guards, including the current unsupported FC geofence upload guard,
+are still represented as an explicit synthetic step 0 (for example
+`fc_config_geofence_upload` with a terminal rejected result). Execute artifacts
+therefore keep the non-empty ordered-step contract even when no MAVLink command
+was sent to the vehicle.
 
 `execution_mode` is machine-readable. `local_mock_executor` and
 `scripted_profile_executor` are portable local executor evidence only.

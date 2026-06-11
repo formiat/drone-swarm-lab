@@ -290,13 +290,18 @@ impl<A: AckProvider> MavlinkPlanExecutor<A> {
             .as_ref()
             .is_some_and(|items| !items.is_empty())
         {
+            let reason = "unsupported FC config phase: current MAVLink Common generated mission messages do not expose mission_type=MAV_MISSION_TYPE_FENCE; refusing to execute geofence prelude before fence upload support exists".to_owned();
+            steps.push((
+                0,
+                "fc_config_geofence_upload".to_owned(),
+                MavlinkExecutionStepResult::Rejected {
+                    reason: reason.clone(),
+                },
+            ));
             return MavlinkPlanExecutionReport {
                 plan_id: plan.source_mission_id.clone(),
                 steps,
-                overall: MavlinkExecutionOutcome::Aborted {
-                    at_step: 0,
-                    reason: "unsupported FC config phase: current MAVLink Common generated mission messages do not expose mission_type=MAV_MISSION_TYPE_FENCE; refusing to execute geofence prelude before fence upload support exists".to_owned(),
-                },
+                overall: MavlinkExecutionOutcome::Aborted { at_step: 0, reason },
                 lifecycle_state: MissionExecuteLifecycleState::Aborted,
                 telemetry_milestones_reached: vec![],
                 retry_count: 0,
@@ -895,7 +900,15 @@ mod tests {
 
         let report = executor.execute(&plan);
 
-        assert!(report.steps.is_empty(), "{:?}", report.steps);
+        assert_eq!(report.steps.len(), 1, "{:?}", report.steps);
+        assert_eq!(report.steps[0].0, 0);
+        assert_eq!(report.steps[0].1, "fc_config_geofence_upload");
+        assert!(matches!(
+            report.steps[0].2,
+            MavlinkExecutionStepResult::Rejected { ref reason }
+                if reason.contains("unsupported FC config phase")
+                    && reason.contains("MAV_MISSION_TYPE_FENCE")
+        ));
         assert_eq!(
             report.lifecycle_state,
             MissionExecuteLifecycleState::Aborted
