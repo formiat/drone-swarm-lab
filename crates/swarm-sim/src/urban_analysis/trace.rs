@@ -124,6 +124,7 @@ pub fn build_urban_route_trace(log: &EventLog) -> UrbanRouteTrace {
             | Event::UrbanDeconflictWait { .. }
             | Event::UrbanDeconflictReplan { .. }
             | Event::UrbanDeconflictAbort { .. }
+            | Event::UrbanSegmentCoordinatorEvent { .. }
             | Event::SwarmCommandPlanDispatched { .. }
             | Event::SwarmAgentCommandDispatched { .. }
             | Event::SwarmOwnershipAcquired { .. }

@@ -62,10 +62,11 @@ pub use mavlink_parameters::{
 pub use network::{InMemAgentTransport, InMemNetwork, NetworkConfig};
 pub use swarm_protocol::{
     AbortAction, AgentAbsenceKind, AgentMissionState, CommandPosition, ConflictResolution,
-    ConnectivityLossKind, DegradedDecisionLog, DegradedReason, DuplicateSuppressor, Lease, LeaseId,
-    LeaseTickSnapshot, MissionRejectReason, OwnershipConflict, PartitionReport, ProtocolRole,
-    ReconciliationReport, ReleaseReason, ReplanReason, SegmentDenyReason, SupervisorDecision,
-    SupervisorReconcileResult, SwarmMessage, SwarmMessageEnvelope, SWARM_PROTOCOL_SCHEMA_VERSION,
+    ConnectivityLossKind, DeconflictionMode, DegradedDecisionLog, DegradedReason,
+    DuplicateSuppressor, Lease, LeaseId, LeaseTickSnapshot, MissionRejectReason, OwnershipConflict,
+    PartitionReport, ProtocolRole, ReconciliationReport, ReleaseReason, ReplanReason,
+    SegmentDenyReason, SupervisorDecision, SupervisorReconcileResult, SwarmMessage,
+    SwarmMessageEnvelope, SWARM_PROTOCOL_SCHEMA_VERSION,
 };
 pub use transport::{RawMessage, Transport};
 

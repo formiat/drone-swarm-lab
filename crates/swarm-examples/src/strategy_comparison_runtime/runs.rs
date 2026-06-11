@@ -15,7 +15,7 @@ use super::missions::mission_descriptor;
 use super::strategies::make_factories;
 use super::urban_artifacts::{
     merge_reports, run_regression, sanitize_artifact_id, write_partition_supervisor_artifacts,
-    write_urban_analysis_artifacts,
+    write_urban_analysis_artifacts, write_urban_operational_evidence,
 };
 
 /// Wraps a ScenarioBuilder so that every produced pair passes through the realism preset.
@@ -36,7 +36,7 @@ pub(super) fn ensure_parent_dir(path: impl AsRef<Path>) -> std::io::Result<()> {
     Ok(())
 }
 
-fn current_commit() -> String {
+pub(super) fn current_commit() -> String {
     std::process::Command::new("git")
         .args(["rev-parse", "--short", "HEAD"])
         .output()
@@ -473,6 +473,7 @@ pub(super) fn write_benchmark_pack(
         }
         write_partition_supervisor_artifacts(output_dir, replay_logs)?;
         write_urban_analysis_artifacts(output_dir, replay_logs)?;
+        write_urban_operational_evidence(output_dir, replay_logs)?;
     }
 
     println!("Benchmark pack written to {}", output_dir);

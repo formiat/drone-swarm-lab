@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use swarm_command_plane::{
     build_swarm_command_plan, AgentCommandAssignment, SwarmAbortPolicy, SwarmCommandFanoutInput,
@@ -7,7 +8,7 @@ use swarm_command_plane::{
     SwarmOwnershipRef, SwarmOwnershipStatus, SynchronizedCommandKind, SynchronizedCommandResult,
 };
 use swarm_comms::{
-    compile_mavlink_common_plan, MavlinkCommonCommand, MavlinkCommonCommandName,
+    compile_mavlink_common_plan, DeconflictionMode, MavlinkCommonCommand, MavlinkCommonCommandName,
     MavlinkCommonPlanOptions, MavlinkCompatibilityClass, MavlinkCoordinateOrigin,
     MavlinkExpectedAck, MavlinkExpectedAckKind, MavlinkPlanPhase,
 };
@@ -32,6 +33,7 @@ use swarm_examples::artifact_validator::{
     RULE_SWARM_TOPOLOGY_BLOCKED_UNREPORTED, RULE_SWARM_TOPOLOGY_ROUTE_MISSING,
     RULE_SWARM_TRANSPORT_ASSUMPTION_MISSING, RULE_URBAN_DECONFLICTION_DUPLICATE_SEGMENT_OWNER,
     RULE_URBAN_GEO_ROUTE_METADATA_MISSING, RULE_URBAN_MOCK_PERCEPTION_MISSING,
+    RULE_URBAN_OPERATIONAL_EVIDENCE_INVALID, RULE_URBAN_OPERATIONAL_EVIDENCE_MISSING,
     RULE_URBAN_WGS84_GEO_MISSING,
 };
 use swarm_examples::sitl_dual_stack_evidence::{
@@ -58,8 +60,11 @@ use swarm_mission_ir::{
     Position, TerminalState, TimeoutAction, TimeoutPolicy,
 };
 use swarm_safety::preflight::SafetyValidationReport;
-use swarm_sim::GeoOrigin;
-use swarm_types::UrbanGeoPoint;
+use swarm_sim::{
+    GeoOrigin, UrbanOperationalEvidence, UrbanOperationalEvidencePack,
+    URBAN_OPERATIONAL_EVIDENCE_SCHEMA_VERSION,
+};
+use swarm_types::{AgentId, UrbanGeoPoint};
 
 #[test]
 fn valid_tiny_supervisor_pack_passes() {
@@ -1425,6 +1430,56 @@ fn benchmark_pack_partition_supervisor_invalid_winner_fails() {
     assert_rule(&report, RULE_RECONCILIATION_REPORT_INVALID);
 }
 
+#[test]
+fn urban_operational_evidence_mode_passes_via_cli() {
+    let output_dir = tempfile::tempdir().unwrap();
+    write_urban_operational_evidence_pack(output_dir.path(), urban_operational_evidence_fixture());
+
+    let status = Command::new(env!("CARGO_BIN_EXE_artifact_validator"))
+        .arg("--output-dir")
+        .arg(output_dir.path())
+        .arg("--mode")
+        .arg("urban-operational")
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+}
+
+#[test]
+fn urban_operational_evidence_mode_requires_file() {
+    let output_dir = tempfile::tempdir().unwrap();
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(output_dir.path()),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::UrbanOperational,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_URBAN_OPERATIONAL_EVIDENCE_MISSING);
+}
+
+#[test]
+fn urban_operational_evidence_empty_pack_fails() {
+    let output_dir = tempfile::tempdir().unwrap();
+    write_urban_operational_evidence_pack(
+        output_dir.path(),
+        UrbanOperationalEvidencePack::new(vec![]),
+    );
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(output_dir.path()),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::UrbanOperational,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_URBAN_OPERATIONAL_EVIDENCE_INVALID);
+}
+
 fn assert_rule(
     report: &swarm_examples::artifact_validator::ArtifactValidationReport,
     rule_id: &str,
@@ -1508,6 +1563,54 @@ fn write_urban_ownership_pack(output_dir: &Path, records: serde_json::Value) {
             "records": records
         }),
     );
+}
+
+fn write_urban_operational_evidence_pack(output_dir: &Path, pack: UrbanOperationalEvidencePack) {
+    fs::create_dir_all(output_dir).unwrap();
+    write_json(
+        &output_dir.join("urban_operational_evidence.v1.json"),
+        &pack,
+    );
+}
+
+fn urban_operational_evidence_fixture() -> UrbanOperationalEvidencePack {
+    UrbanOperationalEvidencePack::new(vec![UrbanOperationalEvidence {
+        schema_version: URBAN_OPERATIONAL_EVIDENCE_SCHEMA_VERSION.to_owned(),
+        mission_id: "urban-network-test".to_owned(),
+        mission_family: "urban-perimeter-patrol".to_owned(),
+        created_at: chrono::Utc::now(),
+        git_commit: "0123456789abcdef".to_owned(),
+        deconfliction_mode: DeconflictionMode::NetworkProtocol {
+            coordinator_id: AgentId::from("coordinator-0".to_owned()),
+        },
+        agent_count: 2,
+        sector_assignments: vec![
+            (
+                AgentId::from("agent-0".to_owned()),
+                "road-n0-n1..road-n1-n2".to_owned(),
+                true,
+            ),
+            (
+                AgentId::from("agent-1".to_owned()),
+                "road-n2-n3..road-n3-n0".to_owned(),
+                true,
+            ),
+        ],
+        handoff_events: vec![(
+            12,
+            AgentId::from("agent-0".to_owned()),
+            AgentId::from("agent-1".to_owned()),
+            "road-n0-n1".to_owned(),
+        )],
+        coordination_delay_ticks: 1,
+        degraded_outcomes: vec!["no_route_available:blocked edge".to_owned()],
+        execution_report: None,
+        preflight_report: SafetyValidationReport::ok(),
+        caveats: vec![
+            "simulation_only".to_owned(),
+            "no_physical_collision_avoidance".to_owned(),
+        ],
+    }])
 }
 
 fn dry_run_artifact_fixture(include_m81_plan: bool) -> SitlDryRunArtifact {

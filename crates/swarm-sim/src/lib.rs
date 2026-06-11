@@ -40,14 +40,17 @@ pub use runner::{
 pub use scenario::{GeoOrigin, Scenario};
 pub use support_matrix::{classify_support, SupportMatrixEntry, SupportReason, SupportStatus};
 pub use urban::{
-    detect_blocked_ahead, detect_buses, effective_blocked_edges, expand_route_loop,
-    expand_route_loop_with_planner, expand_route_loop_with_planner_name,
-    export_route_loop_to_waypoints, import_urban_map_from_geojson_str, judge_route, plan_route,
-    plan_route_excluding, plan_route_with_mode, pose_along_segment, route_risk_score,
-    urban_route_to_follow_route, UrbanBusObservation, UrbanCoordinateMode, UrbanDetectionOutcome,
-    UrbanGeoJsonImportError, UrbanGeoJsonImportOptions, UrbanPlannerMode, UrbanRouteError,
+    build_urban_operational_evidence_from_replay, detect_blocked_ahead, detect_buses,
+    effective_blocked_edges, expand_route_loop, expand_route_loop_with_planner,
+    expand_route_loop_with_planner_name, export_route_loop_to_waypoints,
+    import_urban_map_from_geojson_str, judge_route, plan_route, plan_route_excluding,
+    plan_route_with_mode, pose_along_segment, route_risk_score, urban_route_to_follow_route,
+    CoordinatorEvent, SegmentCoordinator, SegmentCoordinatorError, UrbanBusObservation,
+    UrbanCoordinateMode, UrbanDetectionOutcome, UrbanGeoJsonImportError, UrbanGeoJsonImportOptions,
+    UrbanOperationalEvidence, UrbanOperationalEvidencePack, UrbanPlannerMode, UrbanRouteError,
     UrbanRouteExport, UrbanRouteExportError, UrbanRouteExportMetadata, UrbanRouteExportOptions,
     UrbanRouteWaypoint, URBAN_BLOCKED_LOOKAHEAD_SEGMENTS,
+    URBAN_OPERATIONAL_EVIDENCE_PACK_SCHEMA_VERSION, URBAN_OPERATIONAL_EVIDENCE_SCHEMA_VERSION,
 };
 pub use urban_analysis::{
     build_urban_judge_report, build_urban_route_trace, build_urban_segment_ownership_report,

@@ -309,6 +309,16 @@ pub enum Event {
         edge_id: UrbanEdgeId,
         reason: String,
     },
+    // M95: Urban operational network deconfliction
+    UrbanSegmentCoordinatorEvent {
+        tick: u64,
+        edge_id: UrbanEdgeId,
+        agent_id: AgentId,
+        /// "grant_sent" | "deny_sent" | "released" | "lease_expired"
+        event: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+    },
     // M87: Swarm Command Plane
     SwarmCommandPlanDispatched {
         tick: u64,
@@ -1079,6 +1089,17 @@ mod tests {
             tick: 10,
             edge_id: edge_id(),
             reason: "no alternate route".to_owned(),
+        });
+    }
+
+    #[test]
+    fn urban_segment_coordinator_event_serde_roundtrip() {
+        roundtrip(Event::UrbanSegmentCoordinatorEvent {
+            tick: 11,
+            edge_id: edge_id(),
+            agent_id: agent_id(),
+            event: "grant_sent".to_owned(),
+            reason: None,
         });
     }
 }

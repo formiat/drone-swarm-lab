@@ -1,6 +1,12 @@
-use std::collections::HashSet;
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 use super::*;
+use swarm_comms::{
+    InMemAgentTransport, InMemNetwork, NetworkConfig, SegmentDenyReason, SwarmMessage,
+    SwarmMessageEnvelope, Transport, SWARM_PROTOCOL_SCHEMA_VERSION,
+};
 use swarm_types::{
     Aabb, Pose, UrbanBus, UrbanBusId, UrbanBusRoute, UrbanBusStop, UrbanDetectorConfig, UrbanEdge,
     UrbanEdgeId, UrbanGeoPoint, UrbanMap, UrbanNode, UrbanNodeId, UrbanPlannedRoute,
@@ -113,6 +119,445 @@ fn search_state(
             false_positive_rate: false_positive,
             seed: 11,
         },
+    }
+}
+
+fn agent_id(id: &str) -> swarm_types::AgentId {
+    swarm_types::AgentId::from(id.to_owned())
+}
+
+fn coordinator_network(
+    agent_ids: &[&str],
+    lease_ticks: u64,
+) -> (
+    SegmentCoordinator<InMemAgentTransport>,
+    HashMap<swarm_types::AgentId, InMemAgentTransport>,
+) {
+    let bus = Rc::new(RefCell::new(InMemNetwork::new(NetworkConfig {
+        packet_loss_rate: 0.0,
+        latency_ticks: 0,
+        latency_per_hop: 0,
+        seed: 95,
+        partitions: HashSet::new(),
+        comms_jitter_ticks: 0,
+    })));
+    let coordinator_id = agent_id("coordinator-0");
+    let coordinator = SegmentCoordinator::new(
+        coordinator_id.clone(),
+        InMemAgentTransport::new(bus.clone(), coordinator_id),
+        swarm_types::UrbanRightOfWayPolicy::FirstCome,
+        HashMap::new(),
+    )
+    .with_default_lease_ticks(lease_ticks);
+    let transports = agent_ids
+        .iter()
+        .map(|id| {
+            let agent_id = agent_id(id);
+            (
+                agent_id.clone(),
+                InMemAgentTransport::new(bus.clone(), agent_id),
+            )
+        })
+        .collect();
+    (coordinator, transports)
+}
+
+fn envelope(
+    from: &swarm_types::AgentId,
+    to: &swarm_types::AgentId,
+    tick: u64,
+    message: SwarmMessage,
+) -> SwarmMessageEnvelope {
+    SwarmMessageEnvelope {
+        schema_version: SWARM_PROTOCOL_SCHEMA_VERSION.to_owned(),
+        envelope_id: format!("env-{}-{tick}", from.as_ref()),
+        correlation_id: None,
+        from: from.clone(),
+        to: to.clone(),
+        sent_at: chrono::Utc::now(),
+        ttl_ticks: 10,
+        message,
+    }
+}
+
+fn send_reserve(
+    transports: &mut HashMap<swarm_types::AgentId, InMemAgentTransport>,
+    from: &swarm_types::AgentId,
+    tick: u64,
+    edge_id: UrbanEdgeId,
+) {
+    let coordinator_id = agent_id("coordinator-0");
+    transports
+        .get_mut(from)
+        .expect("agent transport should exist")
+        .send(
+            envelope(
+                from,
+                &coordinator_id,
+                tick,
+                SwarmMessage::SegmentReserve {
+                    edge_id,
+                    segment_index: 0,
+                    requester: from.clone(),
+                    request_tick: tick,
+                },
+            )
+            .into_raw_message(),
+        )
+        .unwrap();
+}
+
+fn poll_segment_message(
+    transports: &mut HashMap<swarm_types::AgentId, InMemAgentTransport>,
+    agent_id: &swarm_types::AgentId,
+) -> SwarmMessage {
+    let raw = transports
+        .get_mut(agent_id)
+        .expect("agent transport should exist")
+        .poll()
+        .unwrap()
+        .expect("response should be delivered");
+    SwarmMessageEnvelope::from_raw_message(&raw)
+        .expect("valid swarm envelope")
+        .message
+}
+
+#[test]
+fn segment_coordinator_grants_first_request() {
+    let edge_id = UrbanEdgeId::from("road-n0-n1".to_owned());
+    let agent_0 = agent_id("agent-0");
+    let (mut coordinator, mut transports) = coordinator_network(&["agent-0"], 30);
+
+    send_reserve(&mut transports, &agent_0, 1, edge_id.clone());
+    let events = coordinator.handle_incoming(1).unwrap();
+
+    assert_eq!(
+        events,
+        vec![CoordinatorEvent::GrantSent {
+            edge_id: edge_id.clone(),
+            to: agent_0.clone(),
+        }]
+    );
+    assert!(matches!(
+        poll_segment_message(&mut transports, &agent_0),
+        SwarmMessage::SegmentGrant { edge_id: granted, to, .. }
+            if granted == edge_id && to == agent_0
+    ));
+}
+
+#[test]
+fn segment_coordinator_denies_concurrent_to_held_segment() {
+    let edge_id = UrbanEdgeId::from("road-n0-n1".to_owned());
+    let agent_0 = agent_id("agent-0");
+    let agent_1 = agent_id("agent-1");
+    let (mut coordinator, mut transports) = coordinator_network(&["agent-0", "agent-1"], 30);
+
+    send_reserve(&mut transports, &agent_0, 1, edge_id.clone());
+    coordinator.handle_incoming(1).unwrap();
+    let _ = poll_segment_message(&mut transports, &agent_0);
+    send_reserve(&mut transports, &agent_1, 2, edge_id.clone());
+    let events = coordinator.handle_incoming(2).unwrap();
+
+    assert_eq!(
+        events,
+        vec![CoordinatorEvent::DenySent {
+            edge_id: edge_id.clone(),
+            to: agent_1.clone(),
+            reason: SegmentDenyReason::AlreadyHeld,
+        }]
+    );
+    assert!(matches!(
+        poll_segment_message(&mut transports, &agent_1),
+        SwarmMessage::SegmentDeny { edge_id: denied, to, holder, reason }
+            if denied == edge_id
+                && to == agent_1
+                && holder == agent_0
+                && reason == SegmentDenyReason::AlreadyHeld
+    ));
+}
+
+#[test]
+fn segment_coordinator_grants_after_release() {
+    let edge_id = UrbanEdgeId::from("road-n0-n1".to_owned());
+    let agent_0 = agent_id("agent-0");
+    let agent_1 = agent_id("agent-1");
+    let (mut coordinator, mut transports) = coordinator_network(&["agent-0", "agent-1"], 30);
+
+    send_reserve(&mut transports, &agent_0, 1, edge_id.clone());
+    coordinator.handle_incoming(1).unwrap();
+    let lease = match poll_segment_message(&mut transports, &agent_0) {
+        SwarmMessage::SegmentGrant { lease, .. } => lease,
+        message => panic!("expected segment grant, got {message:?}"),
+    };
+    transports
+        .get_mut(&agent_0)
+        .unwrap()
+        .send(
+            envelope(
+                &agent_0,
+                &agent_id("coordinator-0"),
+                2,
+                SwarmMessage::SegmentRelease {
+                    edge_id: edge_id.clone(),
+                    lease_id: lease.lease_id,
+                },
+            )
+            .into_raw_message(),
+        )
+        .unwrap();
+    assert_eq!(
+        coordinator.handle_incoming(2).unwrap(),
+        vec![CoordinatorEvent::Released {
+            edge_id: edge_id.clone(),
+            agent_id: agent_0,
+        }]
+    );
+
+    send_reserve(&mut transports, &agent_1, 3, edge_id.clone());
+    assert_eq!(
+        coordinator.handle_incoming(3).unwrap(),
+        vec![CoordinatorEvent::GrantSent {
+            edge_id: edge_id.clone(),
+            to: agent_1.clone(),
+        }]
+    );
+}
+
+#[test]
+fn segment_lease_expiry_frees_segment() {
+    let edge_id = UrbanEdgeId::from("road-n0-n1".to_owned());
+    let agent_0 = agent_id("agent-0");
+    let agent_1 = agent_id("agent-1");
+    let (mut coordinator, mut transports) = coordinator_network(&["agent-0", "agent-1"], 1);
+
+    send_reserve(&mut transports, &agent_0, 1, edge_id.clone());
+    coordinator.handle_incoming(1).unwrap();
+    let _ = poll_segment_message(&mut transports, &agent_0);
+
+    send_reserve(&mut transports, &agent_1, 3, edge_id.clone());
+    let events = coordinator.handle_incoming(3).unwrap();
+
+    assert_eq!(
+        events,
+        vec![
+            CoordinatorEvent::LeaseExpired {
+                edge_id: edge_id.clone(),
+                agent_id: agent_0,
+            },
+            CoordinatorEvent::GrantSent {
+                edge_id,
+                to: agent_1,
+            },
+        ]
+    );
+}
+
+#[test]
+fn urban_operational_evidence_serde_roundtrip() {
+    let log = swarm_replay::EventLog {
+        schema_version: swarm_replay::event_log::EVENT_LOG_SCHEMA_VERSION.to_owned(),
+        run_id: "urban-network-run".to_owned(),
+        seed: 95,
+        scenario_name: "urban_perimeter_patrol.network".to_owned(),
+        events: vec![
+            swarm_replay::Event::UrbanRoutePlanned {
+                agent_id: agent_id("agent-0"),
+                tick: 0,
+                edge_ids: vec![UrbanEdgeId::from("road-n0-n1".to_owned())],
+                route_length_m: 20.0,
+            },
+            swarm_replay::Event::UrbanSegmentCompleted {
+                agent_id: agent_id("agent-0"),
+                tick: 10,
+                segment_index: 0,
+                edge_id: UrbanEdgeId::from("road-n0-n1".to_owned()),
+            },
+            swarm_replay::Event::SwarmProtocolMessage {
+                tick: 0,
+                from: agent_id("agent-0"),
+                to: agent_id("coordinator-0"),
+                envelope_id: "env-0".to_owned(),
+                kind: "segment_reserve".to_owned(),
+            },
+        ],
+    };
+
+    let evidence = build_urban_operational_evidence_from_replay(
+        &log,
+        "abc123",
+        swarm_comms::DeconflictionMode::NetworkProtocol {
+            coordinator_id: agent_id("coordinator-0"),
+        },
+    )
+    .expect("urban replay should produce evidence");
+    let pack = UrbanOperationalEvidencePack::new(vec![evidence]);
+    let json = serde_json::to_string(&pack).unwrap();
+    let decoded: UrbanOperationalEvidencePack = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(decoded, pack);
+    assert_eq!(
+        decoded.evidence[0].schema_version,
+        URBAN_OPERATIONAL_EVIDENCE_SCHEMA_VERSION
+    );
+    assert_eq!(decoded.evidence[0].sector_assignments.len(), 1);
+}
+
+#[test]
+fn agent_failure_triggers_handoff_to_reserve() {
+    let log = urban_evidence_log(
+        "urban_perimeter_patrol_network_failure",
+        vec![
+            route_planned_event("agent-0", "road-n0-n1"),
+            swarm_replay::Event::AgentFailed {
+                agent_id: agent_id("agent-0"),
+                tick: 4,
+            },
+            swarm_replay::Event::SwarmOwnershipHandoff {
+                tick: 5,
+                from_agent_id: agent_id("agent-0"),
+                to_agent_id: agent_id("agent-1"),
+                ownership_kind: "urban_segment".to_owned(),
+                resource_id: "road-n0-n1".to_owned(),
+                reason: "agent_failed".to_owned(),
+            },
+        ],
+    );
+
+    let evidence = build_urban_operational_evidence_from_replay(
+        &log,
+        "abc123",
+        swarm_comms::DeconflictionMode::NetworkProtocol {
+            coordinator_id: agent_id("coordinator-0"),
+        },
+    )
+    .expect("handoff replay should produce evidence");
+
+    assert_eq!(evidence.handoff_events.len(), 1);
+    assert_eq!(evidence.handoff_events[0].1, agent_id("agent-0"));
+    assert_eq!(evidence.handoff_events[0].2, agent_id("agent-1"));
+    assert_eq!(evidence.handoff_events[0].3, "road-n0-n1");
+}
+
+#[test]
+fn search_detection_triggers_sector_handoff() {
+    let log = urban_evidence_log(
+        "urban_search_until_detection_network",
+        vec![
+            route_planned_event("agent-0", "search-sector-0"),
+            swarm_replay::Event::BusDetected {
+                agent_id: agent_id("agent-0"),
+                tick: 8,
+                bus_id: UrbanBusId::from("bus-0".to_owned()),
+                pose: Pose {
+                    x: 10.0,
+                    y: 0.0,
+                    ..Default::default()
+                },
+                distance_m: 1.0,
+                detector_seed: 11,
+            },
+            swarm_replay::Event::SwarmOwnershipHandoff {
+                tick: 9,
+                from_agent_id: agent_id("agent-0"),
+                to_agent_id: agent_id("agent-1"),
+                ownership_kind: "search_sector".to_owned(),
+                resource_id: "search-sector-0".to_owned(),
+                reason: "mocked_detection".to_owned(),
+            },
+        ],
+    );
+
+    let evidence = build_urban_operational_evidence_from_replay(
+        &log,
+        "abc123",
+        swarm_comms::DeconflictionMode::NetworkProtocol {
+            coordinator_id: agent_id("coordinator-0"),
+        },
+    )
+    .expect("search replay should produce evidence");
+
+    assert_eq!(evidence.mission_family, "urban-search-until-detection");
+    assert_eq!(evidence.handoff_events[0].3, "search-sector-0");
+}
+
+#[test]
+fn checkpoint_wait_on_coordinator_unavailable() {
+    let log = urban_evidence_log(
+        "urban_perimeter_patrol_network_partition",
+        vec![
+            route_planned_event("agent-0", "road-n0-n1"),
+            swarm_replay::Event::CommandSuppressed {
+                tick: 7,
+                resource_id: "checkpoint-n1".to_owned(),
+                reason: "ambiguous authority: coordinator unavailable".to_owned(),
+            },
+        ],
+    );
+
+    let evidence = build_urban_operational_evidence_from_replay(
+        &log,
+        "abc123",
+        swarm_comms::DeconflictionMode::NetworkProtocol {
+            coordinator_id: agent_id("coordinator-0"),
+        },
+    )
+    .expect("checkpoint replay should produce evidence");
+
+    assert!(evidence.degraded_outcomes.iter().any(|outcome| {
+        outcome == "command_suppressed:checkpoint-n1:ambiguous authority: coordinator unavailable"
+    }));
+}
+
+#[test]
+fn no_safe_route_produces_explicit_degraded_outcome() {
+    let log = urban_evidence_log(
+        "urban_blocked_route_recovery_network",
+        vec![
+            route_planned_event("agent-0", "road-n0-n1"),
+            swarm_replay::Event::UrbanNoRouteAvailable {
+                agent_id: agent_id("agent-0"),
+                tick: 6,
+                from: UrbanNodeId::from("n0".to_owned()),
+                to: UrbanNodeId::from("n2".to_owned()),
+                reason: "all paths blocked".to_owned(),
+            },
+        ],
+    );
+
+    let evidence = build_urban_operational_evidence_from_replay(
+        &log,
+        "abc123",
+        swarm_comms::DeconflictionMode::NetworkProtocol {
+            coordinator_id: agent_id("coordinator-0"),
+        },
+    )
+    .expect("blocked-route replay should produce evidence");
+
+    assert_eq!(evidence.mission_family, "urban-blocked-route-recovery");
+    assert!(evidence
+        .degraded_outcomes
+        .contains(&"no_route_available:all paths blocked".to_owned()));
+}
+
+fn urban_evidence_log(
+    scenario_name: &str,
+    events: Vec<swarm_replay::Event>,
+) -> swarm_replay::EventLog {
+    swarm_replay::EventLog {
+        schema_version: swarm_replay::event_log::EVENT_LOG_SCHEMA_VERSION.to_owned(),
+        run_id: format!("{scenario_name}-run"),
+        seed: 95,
+        scenario_name: scenario_name.to_owned(),
+        events,
+    }
+}
+
+fn route_planned_event(agent_id: &str, edge_id: &str) -> swarm_replay::Event {
+    swarm_replay::Event::UrbanRoutePlanned {
+        agent_id: self::agent_id(agent_id),
+        tick: 0,
+        edge_ids: vec![UrbanEdgeId::from(edge_id.to_owned())],
+        route_length_m: 20.0,
     }
 }
 

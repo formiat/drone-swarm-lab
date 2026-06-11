@@ -146,6 +146,8 @@ pub struct UrbanEventCounts {
     pub deconflict_replan: u64,
     #[serde(default)]
     pub deconflict_abort: u64,
+    #[serde(default)]
+    pub segment_coordinator_event: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

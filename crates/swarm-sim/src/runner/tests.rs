@@ -1,6 +1,8 @@
 use super::*;
 use swarm_alloc::{AllocationAgent, AllocationTask, Allocator};
-use swarm_comms::{AgentAbsenceKind, ConflictResolution, DroneLinkConfig, SupervisorDecision};
+use swarm_comms::{
+    AgentAbsenceKind, ConflictResolution, DeconflictionMode, DroneLinkConfig, SupervisorDecision,
+};
 use swarm_runtime::autonomy::{AgentAutonomyConfig, GcsLostPolicy};
 use swarm_types::{
     Aabb, Agent, Capability, CellState, EdgeId, Health, HiddenTarget, InspectionEdge, Pose, Role,
@@ -1069,6 +1071,63 @@ fn urban_deconfliction_priority_uses_agent_priorities() {
     assert_eq!(first_lock.as_deref(), Some("agent-1"));
 }
 
+#[test]
+fn shared_memory_deconfliction_backward_compat() {
+    let (scenario, run_config) = urban_deconfliction_test_run_config(
+        UrbanRightOfWayPolicy::FirstCome,
+        UrbanBlockedPolicy::Wait,
+    );
+
+    let (metrics, event_log) = ScenarioRunner::run_with_log(
+        &scenario,
+        run_config,
+        swarm_alloc::GreedyAllocator::default(),
+    );
+    let event_log = event_log.expect("urban deconfliction run should produce replay log");
+
+    assert!(metrics.success);
+    assert_no_duplicate_segment_ownership(&event_log);
+    assert!(!event_log.events.iter().any(|event| matches!(
+        event,
+        swarm_replay::Event::UrbanSegmentCoordinatorEvent { .. }
+    )));
+}
+
+#[test]
+fn perimeter_patrol_sector_ownership_is_disjoint() {
+    let (mut scenario, mut run_config) = urban_deconfliction_test_run_config(
+        UrbanRightOfWayPolicy::FirstCome,
+        UrbanBlockedPolicy::Wait,
+    );
+    scenario.agents[1].pose = Pose {
+        x: 20.0,
+        y: 20.0,
+        ..Default::default()
+    };
+    run_config.urban_state.as_mut().unwrap().deconfliction.mode =
+        DeconflictionMode::NetworkProtocol {
+            coordinator_id: AgentId::from("coordinator-0".to_owned()),
+        };
+
+    let (metrics, event_log) = ScenarioRunner::run_with_log(
+        &scenario,
+        run_config,
+        swarm_alloc::GreedyAllocator::default(),
+    );
+    let event_log = event_log.expect("urban network deconfliction run should produce replay log");
+
+    assert!(metrics.success);
+    assert_no_duplicate_segment_ownership(&event_log);
+    assert!(event_log.events.iter().any(|event| matches!(
+        event,
+        swarm_replay::Event::SwarmProtocolMessage { kind, .. } if kind == "segment_reserve"
+    )));
+    assert!(event_log.events.iter().any(|event| matches!(
+        event,
+        swarm_replay::Event::UrbanSegmentCoordinatorEvent { event, .. } if event == "grant_sent"
+    )));
+}
+
 fn assert_no_duplicate_segment_ownership(log: &swarm_replay::EventLog) {
     let mut active = std::collections::HashMap::<UrbanEdgeId, AgentId>::new();
     for event in &log.events {
@@ -1239,6 +1298,65 @@ fn urban_blocked_policy_replan_uses_alternate_route() {
         event,
         swarm_replay::Event::UrbanRouteReplanned { edge_ids, .. }
             if edge_ids.iter().any(|edge_id| edge_id.as_ref() == "detour-n0-n3")
+                && !edge_ids.iter().any(|edge_id| edge_id.as_ref() == "road-n0-n1")
+    )));
+}
+
+#[test]
+fn blocked_route_recovery_produces_replacement_mission() {
+    let (scenario, mut run_config) = urban_test_run_config(80, vec![]);
+    let urban_state = run_config.urban_state.as_mut().unwrap();
+    urban_state.blocked_route_policy = UrbanBlockedPolicy::Replan;
+    urban_state.temporary_obstacles = vec![UrbanTemporaryObstacle {
+        edge_id: UrbanEdgeId::from("road-n0-n1".to_owned()),
+        appears_at_tick: 0,
+        disappears_at_tick: None,
+        reason: Some("primary road blocked".to_owned()),
+        severity: None,
+    }];
+    urban_state.map.edges.extend([
+        UrbanEdge {
+            id: UrbanEdgeId::from("replacement-n0-n3".to_owned()),
+            from: UrbanNodeId::from("n0".to_owned()),
+            to: UrbanNodeId::from("n3".to_owned()),
+            cost: 20.0,
+            length_m: 20.0,
+            corridor_width_m: Some(4.0),
+            blocked: false,
+        },
+        UrbanEdge {
+            id: UrbanEdgeId::from("replacement-n3-n2".to_owned()),
+            from: UrbanNodeId::from("n3".to_owned()),
+            to: UrbanNodeId::from("n2".to_owned()),
+            cost: 20.0,
+            length_m: 20.0,
+            corridor_width_m: Some(4.0),
+            blocked: false,
+        },
+        UrbanEdge {
+            id: UrbanEdgeId::from("replacement-n2-n1".to_owned()),
+            from: UrbanNodeId::from("n2".to_owned()),
+            to: UrbanNodeId::from("n1".to_owned()),
+            cost: 20.0,
+            length_m: 20.0,
+            corridor_width_m: Some(4.0),
+            blocked: false,
+        },
+    ]);
+
+    let (metrics, event_log) = ScenarioRunner::run_with_log(
+        &scenario,
+        run_config,
+        swarm_alloc::GreedyAllocator::default(),
+    );
+    let event_log = event_log.expect("urban run should produce replay log");
+
+    assert!(metrics.success);
+    assert!(metrics.urban_replan_count > 0);
+    assert!(event_log.events.iter().any(|event| matches!(
+        event,
+        swarm_replay::Event::UrbanRouteReplanned { edge_ids, .. }
+            if edge_ids.iter().any(|edge_id| edge_id.as_ref() == "replacement-n0-n3")
                 && !edge_ids.iter().any(|edge_id| edge_id.as_ref() == "road-n0-n1")
     )));
 }
@@ -1691,6 +1809,37 @@ fn link_loss_does_not_mark_agent_dead_before_lease_expiry() {
             .any(|entry| matches!(entry.absence_kind, Some(AgentAbsenceKind::LinkLoss { .. }))),
         "degraded decision log must record link loss, not node death"
     );
+}
+
+#[test]
+fn isolated_agent_continues_under_valid_lease() {
+    let autonomy = AgentAutonomyConfig {
+        gcs_lost_policy: GcsLostPolicy::ReturnToLaunch { after_ticks: 3 },
+        ..AgentAutonomyConfig::default()
+    };
+    let mut initial_agent_leases = std::collections::HashMap::new();
+    initial_agent_leases.insert(
+        AgentId::from("agent-0".to_owned()),
+        vec![("lease-isolated".to_owned(), 100u64)],
+    );
+    let cfg = RunConfig {
+        max_ticks: 8,
+        initial_agent_leases,
+        ..partition_config(8, autonomy)
+    };
+
+    let (_metrics, event_log) = ScenarioRunner::run_with_log(
+        &autonomy_scenario(),
+        cfg,
+        swarm_alloc::GreedyAllocator::default(),
+    );
+    let event_log = event_log.expect("event log should be present");
+
+    assert!(event_log.events.iter().any(|event| matches!(
+        event,
+        swarm_replay::Event::AgentContinuingUnderLease { agent_id, lease_id, .. }
+            if agent_id.as_ref() == "agent-0" && lease_id == "lease-isolated"
+    )));
 }
 
 #[test]

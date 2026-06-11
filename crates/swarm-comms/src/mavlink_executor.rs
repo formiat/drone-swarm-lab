@@ -90,7 +90,7 @@ pub enum MissionExecuteLifecycleState {
 // ─── Execution report ────────────────────────────────────────────────────────
 
 /// Full report produced by `MavlinkPlanExecutor::execute`.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MavlinkPlanExecutionReport {
     /// Source mission id from the compiled plan.
     pub plan_id: String,

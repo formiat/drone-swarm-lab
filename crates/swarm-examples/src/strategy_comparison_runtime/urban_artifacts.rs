@@ -2,13 +2,13 @@ use std::collections::HashMap;
 
 use crate::regression_lib::{build_mission_scenario_builder, with_realism_if_needed};
 use serde::Serialize;
-use swarm_comms::{DegradedDecisionLog, PartitionReport, ReconciliationReport};
+use swarm_comms::{DeconflictionMode, DegradedDecisionLog, PartitionReport, ReconciliationReport};
 use swarm_sim::{
     default_suites, Baseline, BenchmarkHarness, BenchmarkOptions, RegressionRunner, SuiteMode,
 };
 
 use super::cli::CliArgs;
-use super::runs::{baseline_from_green_report, ensure_parent_dir};
+use super::runs::{baseline_from_green_report, current_commit, ensure_parent_dir};
 use super::strategies::make_factories;
 
 #[cfg(test)]
@@ -224,6 +224,53 @@ pub(super) fn write_partition_supervisor_artifacts(
         serde_json::to_string_pretty(&artifact)?,
     )?;
     Ok(())
+}
+
+pub(super) fn write_urban_operational_evidence(
+    output_dir: &str,
+    replay_logs: &[swarm_replay::EventLog],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let git_commit = current_commit();
+    let evidence = replay_logs
+        .iter()
+        .filter_map(|log| {
+            swarm_sim::build_urban_operational_evidence_from_replay(
+                log,
+                git_commit.clone(),
+                infer_deconfliction_mode(log),
+            )
+        })
+        .collect::<Vec<_>>();
+    if evidence.is_empty() {
+        return Ok(());
+    }
+
+    let pack = swarm_sim::UrbanOperationalEvidencePack::new(evidence);
+    std::fs::write(
+        format!("{output_dir}/urban_operational_evidence.v1.json"),
+        serde_json::to_string_pretty(&pack)?,
+    )?;
+    Ok(())
+}
+
+fn infer_deconfliction_mode(log: &swarm_replay::EventLog) -> DeconflictionMode {
+    let uses_segment_protocol = log.events.iter().any(|event| {
+        matches!(
+            event,
+            swarm_replay::Event::SwarmProtocolMessage { kind, .. }
+                if matches!(
+                    kind.as_str(),
+                    "segment_reserve" | "segment_grant" | "segment_deny" | "segment_release"
+                )
+        )
+    });
+    if uses_segment_protocol || log.scenario_name.contains(".network") {
+        DeconflictionMode::NetworkProtocol {
+            coordinator_id: swarm_types::AgentId::from("coordinator-0".to_owned()),
+        }
+    } else {
+        DeconflictionMode::SharedMemory
+    }
 }
 
 pub(super) fn sanitize_artifact_id(value: &str) -> String {

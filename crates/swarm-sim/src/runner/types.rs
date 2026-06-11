@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 use swarm_alloc::Allocator;
-use swarm_comms::DroneLinkConfig;
+use swarm_comms::{DeconflictionMode, DroneLinkConfig};
 use swarm_runtime::{AgentAutonomyConfig, GridState};
 use swarm_safety::SafetyConfig;
 use swarm_types::{
@@ -169,6 +169,8 @@ pub enum UrbanMissionTemplate {
 pub struct UrbanDeconflictionConfig {
     #[serde(default)]
     pub enabled: bool,
+    #[serde(default)]
+    pub mode: DeconflictionMode,
     #[serde(default)]
     pub right_of_way_policy: UrbanRightOfWayPolicy,
     #[serde(default)]

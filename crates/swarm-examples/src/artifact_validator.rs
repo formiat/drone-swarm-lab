@@ -14,6 +14,10 @@ use swarm_comms::{
     ReconciliationReport, MAVLINK_COMMON_PLAN_SCHEMA_VERSION,
 };
 use swarm_safety::preflight::SafetyValidationReport;
+use swarm_sim::{
+    UrbanOperationalEvidencePack, URBAN_OPERATIONAL_EVIDENCE_PACK_SCHEMA_VERSION,
+    URBAN_OPERATIONAL_EVIDENCE_SCHEMA_VERSION,
+};
 
 use crate::sitl_dual_stack_evidence::{
     validate_dual_stack_evidence_pack, validate_dual_stack_profile_evidence,
@@ -103,6 +107,10 @@ pub const RULE_DUAL_STACK_FC_CONTRACT_CLAIM_UNSAFE: &str =
     "artifact.dual_stack_fc_contract_claim_unsafe";
 pub const RULE_PARTITION_REPORT_INVALID: &str = "artifact.partition_report_invalid";
 pub const RULE_RECONCILIATION_REPORT_INVALID: &str = "artifact.reconciliation_report_invalid";
+pub const RULE_URBAN_OPERATIONAL_EVIDENCE_MISSING: &str =
+    "artifact.urban_operational_evidence_missing";
+pub const RULE_URBAN_OPERATIONAL_EVIDENCE_INVALID: &str =
+    "artifact.urban_operational_evidence_invalid";
 pub const RULE_PARSE_FAILED: &str = "artifact.parse_failed";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -112,6 +120,7 @@ pub enum ArtifactValidationMode {
     DualStackEvidence,
     Historical,
     BenchmarkPack,
+    UrbanOperational,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -144,6 +153,7 @@ pub struct ArtifactPackPaths {
     pub command_capture: Option<PathBuf>,
     pub dry_run_artifact: Option<PathBuf>,
     pub dual_stack_evidence: Option<PathBuf>,
+    pub urban_operational_evidence: Option<PathBuf>,
     pub urban_analysis_manifest: Option<PathBuf>,
     pub partition_supervisor_reports: Option<PathBuf>,
 }
@@ -165,6 +175,10 @@ impl ArtifactPackPaths {
                 &["sitl_dry_run_artifact.v1.json", "dry-run.json"],
             ),
             dual_stack_evidence: optional_path(&output_dir, SITL_DUAL_STACK_EVIDENCE_FILE),
+            urban_operational_evidence: optional_path(
+                &output_dir,
+                "urban_operational_evidence.v1.json",
+            ),
             urban_analysis_manifest: optional_path(&output_dir, "urban_analysis/manifest.json"),
             partition_supervisor_reports: optional_path(
                 &output_dir,
@@ -313,9 +327,14 @@ impl<'a> Validator<'a> {
             self.validate_dual_stack_evidence();
             return;
         }
+        if matches!(self.options.mode, ArtifactValidationMode::UrbanOperational) {
+            self.validate_urban_operational_evidence();
+            return;
+        }
         if matches!(self.options.mode, ArtifactValidationMode::BenchmarkPack) {
             self.validate_urban_analysis_ownership();
             self.validate_partition_supervisor_reports();
+            self.validate_urban_operational_evidence_if_present();
             return;
         }
 
@@ -357,6 +376,7 @@ impl<'a> Validator<'a> {
 
         self.validate_urban_analysis_ownership();
         self.validate_partition_supervisor_reports();
+        self.validate_urban_operational_evidence_if_present();
     }
 
     fn into_report(self) -> ArtifactValidationReport {
@@ -832,6 +852,113 @@ impl<'a> Validator<'a> {
                     Some(path.clone()),
                     "reconciliation report must not be empty",
                 );
+            }
+        }
+    }
+
+    fn validate_urban_operational_evidence_if_present(&mut self) {
+        if self.paths.urban_operational_evidence.is_some() {
+            self.validate_urban_operational_evidence();
+        }
+    }
+
+    fn validate_urban_operational_evidence(&mut self) {
+        let Some(path) = self.paths.urban_operational_evidence.clone() else {
+            self.push_error(
+                RULE_URBAN_OPERATIONAL_EVIDENCE_MISSING,
+                Some(
+                    self.paths
+                        .output_dir
+                        .join("urban_operational_evidence.v1.json"),
+                ),
+                "urban operational evidence file is required",
+            );
+            return;
+        };
+        let Some(pack) = self.load_json::<UrbanOperationalEvidencePack>(&path) else {
+            return;
+        };
+        if pack.schema_version != URBAN_OPERATIONAL_EVIDENCE_PACK_SCHEMA_VERSION {
+            self.push_error(
+                RULE_URBAN_OPERATIONAL_EVIDENCE_INVALID,
+                Some(path.clone()),
+                format!(
+                    "unsupported urban operational evidence pack schema_version '{}' (expected {URBAN_OPERATIONAL_EVIDENCE_PACK_SCHEMA_VERSION})",
+                    pack.schema_version
+                ),
+            );
+        }
+        if pack.evidence.is_empty() {
+            self.push_error(
+                RULE_URBAN_OPERATIONAL_EVIDENCE_INVALID,
+                Some(path.clone()),
+                "urban operational evidence pack must contain at least one evidence entry",
+            );
+        }
+        for (index, evidence) in pack.evidence.iter().enumerate() {
+            let path = Some(path.clone());
+            if evidence.schema_version != URBAN_OPERATIONAL_EVIDENCE_SCHEMA_VERSION {
+                self.push_error(
+                    RULE_URBAN_OPERATIONAL_EVIDENCE_INVALID,
+                    path.clone(),
+                    format!(
+                        "evidence[{index}] has unsupported schema_version '{}' (expected {URBAN_OPERATIONAL_EVIDENCE_SCHEMA_VERSION})",
+                        evidence.schema_version
+                    ),
+                );
+            }
+            if evidence.mission_id.trim().is_empty() {
+                self.push_error(
+                    RULE_URBAN_OPERATIONAL_EVIDENCE_INVALID,
+                    path.clone(),
+                    format!("evidence[{index}] mission_id must not be empty"),
+                );
+            }
+            if evidence.mission_family.trim().is_empty() {
+                self.push_error(
+                    RULE_URBAN_OPERATIONAL_EVIDENCE_INVALID,
+                    path.clone(),
+                    format!("evidence[{index}] mission_family must not be empty"),
+                );
+            }
+            if evidence.agent_count == 0 {
+                self.push_error(
+                    RULE_URBAN_OPERATIONAL_EVIDENCE_INVALID,
+                    path.clone(),
+                    format!("evidence[{index}] agent_count must be greater than zero"),
+                );
+            }
+            if evidence.sector_assignments.is_empty() {
+                self.push_error(
+                    RULE_URBAN_OPERATIONAL_EVIDENCE_INVALID,
+                    path.clone(),
+                    format!("evidence[{index}] sector_assignments must not be empty"),
+                );
+            }
+            if !evidence.preflight_report.passed {
+                self.push_error(
+                    RULE_URBAN_OPERATIONAL_EVIDENCE_INVALID,
+                    path.clone(),
+                    format!("evidence[{index}] preflight_report must pass"),
+                );
+            }
+            if evidence.caveats.is_empty() {
+                self.push_error(
+                    RULE_URBAN_OPERATIONAL_EVIDENCE_INVALID,
+                    path.clone(),
+                    format!("evidence[{index}] caveats must document simulation boundaries"),
+                );
+            }
+            if let swarm_comms::DeconflictionMode::NetworkProtocol { coordinator_id } =
+                &evidence.deconfliction_mode
+            {
+                if coordinator_id.as_ref().trim().is_empty() {
+                    self.push_error(
+                        RULE_URBAN_OPERATIONAL_EVIDENCE_INVALID,
+                        path,
+                        format!("evidence[{index}] network protocol mode requires coordinator_id"),
+                    );
+                }
             }
         }
     }

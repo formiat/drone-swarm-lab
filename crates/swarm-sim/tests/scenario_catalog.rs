@@ -205,6 +205,70 @@ mod tests {
     }
 
     #[test]
+    fn urban_network_operational_scenarios_load_validate_and_run() {
+        for (path, suite_name, agent_count) in [
+            (
+                concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/../../scenarios/urban.perimeter-patrol.network.json"
+                ),
+                "Urban Network Perimeter Patrol",
+                2,
+            ),
+            (
+                concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/../../scenarios/urban.corridor-inspection.network.json"
+                ),
+                "Urban Network Corridor Inspection",
+                3,
+            ),
+        ] {
+            let suite = swarm_sim::load_scenario_suite(path).expect("urban network scenario loads");
+            assert_eq!(suite.name, suite_name);
+            assert_eq!(suite.scenarios.len(), 1);
+            let entry = &suite.scenarios[0];
+            assert_eq!(entry.mission, "urban-patrol");
+            assert_eq!(entry.scenario.agents.len(), agent_count);
+            let errors = swarm_sim::validate_entry(entry);
+            assert!(
+                errors.is_empty(),
+                "urban network scenario must validate: {errors:?}"
+            );
+            assert!(matches!(
+                entry
+                    .run_config
+                    .urban_state
+                    .as_ref()
+                    .expect("urban_state exists")
+                    .deconfliction
+                    .mode,
+                swarm_comms::DeconflictionMode::NetworkProtocol { .. }
+            ));
+
+            let (metrics, log) = swarm_sim::ScenarioRunner::run_with_log(
+                &entry.scenario,
+                entry.run_config.clone(),
+                swarm_alloc::GreedyAllocator::default(),
+            );
+            let log = log.expect("urban network run should produce replay log");
+
+            assert!(metrics.success, "metrics={metrics:?}");
+            assert!(log.events.iter().any(|event| matches!(
+                event,
+                swarm_replay::Event::SwarmProtocolMessage { kind, .. }
+                    if kind == "segment_reserve"
+            )));
+            assert!(log.events.iter().any(|event| matches!(
+                event,
+                swarm_replay::Event::UrbanSegmentCoordinatorEvent { event, .. }
+                    if event == "grant_sent"
+            )));
+            assert_no_duplicate_segment_ownership(&log);
+        }
+    }
+
+    #[test]
     fn urban_corridor_delta_scenario_loads_and_improves_risk() {
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -276,5 +340,34 @@ mod tests {
             errors.is_empty(),
             "generated urban scenario must validate: {errors:?}"
         );
+    }
+
+    fn assert_no_duplicate_segment_ownership(log: &swarm_replay::EventLog) {
+        let mut active =
+            std::collections::HashMap::<swarm_types::UrbanEdgeId, swarm_types::AgentId>::new();
+        for event in &log.events {
+            match event {
+                swarm_replay::Event::UrbanSegmentLockAcquired {
+                    agent_id, edge_id, ..
+                } => {
+                    if let Some(holder) = active.get(edge_id) {
+                        assert_eq!(holder, agent_id, "duplicate holder for edge {edge_id}");
+                    } else {
+                        active.insert(edge_id.clone(), agent_id.clone());
+                    }
+                }
+                swarm_replay::Event::UrbanSegmentLockReleased {
+                    agent_id, edge_id, ..
+                } => {
+                    assert_eq!(
+                        active.remove(edge_id).as_ref(),
+                        Some(agent_id),
+                        "release must match active holder for edge {edge_id}"
+                    );
+                }
+                _ => {}
+            }
+        }
+        assert!(active.is_empty(), "all segment locks must be released");
     }
 }

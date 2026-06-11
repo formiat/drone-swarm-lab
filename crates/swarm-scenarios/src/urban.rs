@@ -318,6 +318,7 @@ pub fn build_urban_deconfliction_scenario(
         agent_priorities.insert(agent_1_id, 9);
         urban_state.deconfliction = UrbanDeconflictionConfig {
             enabled: true,
+            mode: Default::default(),
             right_of_way_policy,
             locked_segment_policy,
             agent_priorities,

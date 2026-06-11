@@ -29,6 +29,7 @@ pub fn count_urban_events(log: &EventLog) -> UrbanEventCounts {
             Event::UrbanDeconflictWait { .. } => counts.deconflict_wait += 1,
             Event::UrbanDeconflictReplan { .. } => counts.deconflict_replan += 1,
             Event::UrbanDeconflictAbort { .. } => counts.deconflict_abort += 1,
+            Event::UrbanSegmentCoordinatorEvent { .. } => counts.segment_coordinator_event += 1,
             _ => {}
         }
     }

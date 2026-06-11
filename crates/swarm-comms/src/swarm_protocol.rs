@@ -165,6 +165,17 @@ pub enum SegmentDenyReason {
     CoordinatorUnavailable,
 }
 
+/// Urban segment deconfliction backend selected by scenario/runtime config.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum DeconflictionMode {
+    /// Single-process shared memory. Backward compatible.
+    #[default]
+    SharedMemory,
+    /// Network protocol via `SwarmMessage`. Requires a coordinator agent id.
+    NetworkProtocol { coordinator_id: AgentId },
+}
+
 /// Reason an agent enters degraded mode.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

@@ -1,0 +1,112 @@
+{
+  "schema_version": "0.1",
+  "name": "Urban Network Perimeter Patrol",
+  "description": "M95 fixture: two agents patrol a city-block perimeter through network-level SegmentCoordinator deconfliction over SwarmMessage.",
+  "scenarios": [
+    {
+      "mission": "urban-patrol",
+      "profile": "network-perimeter-patrol",
+      "scenario": {
+        "name": "urban_perimeter_patrol_network",
+        "seed": 9501,
+        "agents": [
+          {
+            "id": "agent-0",
+            "role": "scout",
+            "health": "alive",
+            "pose": { "x": 0.0, "y": 0.0 },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 1000.0,
+            "generation": 1,
+            "speed": 2.0,
+            "max_range": 1000.0,
+            "battery_drain_rate": 0.0
+          },
+          {
+            "id": "agent-1",
+            "role": "scout",
+            "health": "alive",
+            "pose": { "x": 20.0, "y": 20.0 },
+            "capabilities": [],
+            "current_task": null,
+            "battery": 100.0,
+            "comms_range": 1000.0,
+            "generation": 1,
+            "speed": 2.0,
+            "max_range": 1000.0,
+            "battery_drain_rate": 0.0
+          }
+        ],
+        "tasks": [
+          { "id": "urban-waypoint-n1", "status": "unassigned", "assigned_to": null, "priority": 1, "required_capabilities": [], "required_role": null, "preferred_role": "scout", "expires_at": null, "pose": { "x": 20.0, "y": 0.0 }, "grid_cell": null, "kind": "waypoint" },
+          { "id": "urban-waypoint-n2", "status": "unassigned", "assigned_to": null, "priority": 1, "required_capabilities": [], "required_role": null, "preferred_role": "scout", "expires_at": null, "pose": { "x": 20.0, "y": 20.0 }, "grid_cell": null, "kind": "waypoint" },
+          { "id": "urban-waypoint-n3", "status": "unassigned", "assigned_to": null, "priority": 1, "required_capabilities": [], "required_role": null, "preferred_role": "scout", "expires_at": null, "pose": { "x": 0.0, "y": 20.0 }, "grid_cell": null, "kind": "waypoint" },
+          { "id": "urban-waypoint-n0", "status": "unassigned", "assigned_to": null, "priority": 1, "required_capabilities": [], "required_role": null, "preferred_role": "scout", "expires_at": null, "pose": { "x": 0.0, "y": 0.0 }, "grid_cell": null, "kind": "waypoint" }
+        ],
+        "ground_nodes": [],
+        "base_station": { "x": 0.0, "y": 0.0 },
+        "geo_origin": { "lat_deg": 47.397742, "lon_deg": 8.545594, "alt_m": 0.0 }
+      },
+      "run_config": {
+        "max_ticks": 160,
+        "timeout_ticks": 3,
+        "max_unassigned_ticks": 160,
+        "packet_loss_rate": 0.0,
+        "latency_ticks": 0,
+        "latency_per_hop": 0,
+        "failures": [],
+        "dynamic_tasks": [],
+        "partition_events": [],
+        "gossip_interval_ticks": 999,
+        "base_id": null,
+        "enable_movement": true,
+        "tick_duration_ms": 1000,
+        "grid_state": null,
+        "enable_cbba": false,
+        "urban_state": {
+          "map": {
+            "nodes": [
+              { "id": "n0", "pose": { "x": 0.0, "y": 0.0 } },
+              { "id": "n1", "pose": { "x": 20.0, "y": 0.0 } },
+              { "id": "n2", "pose": { "x": 20.0, "y": 20.0 } },
+              { "id": "n3", "pose": { "x": 0.0, "y": 20.0 } }
+            ],
+            "edges": [
+              { "id": "road-n0-n1", "from": "n0", "to": "n1", "cost": 20.0, "length_m": 20.0, "corridor_width_m": 6.0, "blocked": false },
+              { "id": "road-n1-n2", "from": "n1", "to": "n2", "cost": 20.0, "length_m": 20.0, "corridor_width_m": 6.0, "blocked": false },
+              { "id": "road-n2-n3", "from": "n2", "to": "n3", "cost": 20.0, "length_m": 20.0, "corridor_width_m": 6.0, "blocked": false },
+              { "id": "road-n3-n0", "from": "n3", "to": "n0", "cost": 20.0, "length_m": 20.0, "corridor_width_m": 6.0, "blocked": false }
+            ],
+            "static_obstacles": []
+          },
+          "route_loop": { "nodes": ["n0", "n1", "n2", "n3", "n0"] },
+          "mission_template": "perimeter_patrol",
+          "start_node": "n0",
+          "planner": "dijkstra",
+          "blocked_route_policy": "wait",
+          "deconfliction": {
+            "enabled": true,
+            "mode": { "kind": "network_protocol", "coordinator_id": "coordinator-0" },
+            "right_of_way_policy": "first_come",
+            "locked_segment_policy": "wait",
+            "agent_priorities": {
+              "agent-0": 1,
+              "agent-1": 1
+            }
+          },
+          "perimeter_patrol": {
+            "polygon": [
+              { "x": 0.0, "y": 0.0 },
+              { "x": 20.0, "y": 0.0 },
+              { "x": 20.0, "y": 20.0 },
+              { "x": 0.0, "y": 20.0 }
+            ],
+            "spacing_m": 10.0
+          }
+        }
+      }
+    }
+  ]
+}

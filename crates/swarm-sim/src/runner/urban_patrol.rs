@@ -1,7 +1,15 @@
-use std::collections::HashSet;
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
+use swarm_comms::{
+    DeconflictionMode, InMemAgentTransport, InMemNetwork, NetworkConfig, RawMessage,
+    SegmentDenyReason, SwarmMessage, SwarmMessageEnvelope, Transport,
+    SWARM_PROTOCOL_SCHEMA_VERSION,
+};
 use swarm_types::{
-    AgentId, UrbanBlockedPolicy, UrbanEdgeId, UrbanNodeId, UrbanPlannedRoute, UrbanRightOfWayPolicy,
+    AgentId, Pose, UrbanBlockedPolicy, UrbanEdgeId, UrbanNodeId, UrbanPlannedRoute,
+    UrbanRightOfWayPolicy,
 };
 
 use super::{
@@ -100,6 +108,379 @@ impl DeconflictedAgentState {
             .get(self.segment_index)
             .map(|segment| &segment.edge_id)
     }
+}
+
+struct NetworkSegmentRuntime {
+    coordinator: crate::urban::SegmentCoordinator<InMemAgentTransport>,
+    /// key: `agent_id`
+    agent_transports: HashMap<AgentId, InMemAgentTransport>,
+    coordinator_id: AgentId,
+    conflict_history: Vec<crate::urban::UrbanSegmentConflictRecord>,
+}
+
+impl NetworkSegmentRuntime {
+    fn new(
+        agent_ids: Vec<AgentId>,
+        coordinator_id: AgentId,
+        policy: UrbanRightOfWayPolicy,
+        priorities: HashMap<AgentId, u8>,
+    ) -> Self {
+        let bus = Rc::new(RefCell::new(InMemNetwork::new(NetworkConfig {
+            packet_loss_rate: 0.0,
+            latency_ticks: 0,
+            latency_per_hop: 0,
+            seed: 95,
+            partitions: HashSet::new(),
+            comms_jitter_ticks: 0,
+        })));
+        let coordinator_transport = InMemAgentTransport::new(bus.clone(), coordinator_id.clone());
+        let coordinator = crate::urban::SegmentCoordinator::new(
+            coordinator_id.clone(),
+            coordinator_transport,
+            policy,
+            priorities,
+        );
+        let agent_transports = agent_ids
+            .into_iter()
+            .map(|agent_id| {
+                (
+                    agent_id.clone(),
+                    InMemAgentTransport::new(bus.clone(), agent_id),
+                )
+            })
+            .collect();
+        Self {
+            coordinator,
+            agent_transports,
+            coordinator_id,
+            conflict_history: Vec::new(),
+        }
+    }
+
+    fn request_batch(
+        &mut self,
+        requests: Vec<crate::urban::SegmentLockRequest>,
+        tick: u64,
+        log_builder: Option<&mut swarm_replay::EventLogBuilder>,
+    ) -> Vec<(AgentId, crate::urban::SegmentLockDecision)> {
+        let mut log_builder = log_builder;
+        let mut request_segments = HashMap::<(AgentId, UrbanEdgeId), usize>::new();
+        for request in requests {
+            request_segments.insert(
+                (request.agent_id.clone(), request.edge_id.clone()),
+                request.segment_index,
+            );
+            self.send_agent_message(
+                &request.agent_id,
+                tick,
+                SwarmMessage::SegmentReserve {
+                    edge_id: request.edge_id,
+                    segment_index: request.segment_index,
+                    requester: request.agent_id.clone(),
+                    request_tick: tick,
+                },
+                "segment_reserve",
+                log_builder.as_deref_mut(),
+            );
+        }
+
+        let events = self
+            .coordinator
+            .handle_incoming(tick)
+            .unwrap_or_else(|error| match error {
+                crate::urban::SegmentCoordinatorError::Transport(error) => match error {},
+            });
+        for event in events {
+            self.push_coordinator_event(tick, &event, log_builder.as_deref_mut());
+        }
+
+        let mut decisions = Vec::new();
+        let agent_ids = self
+            .agent_transports
+            .keys()
+            .cloned()
+            .collect::<Vec<AgentId>>();
+        for agent_id in agent_ids {
+            while let Some(raw) = self.poll_agent(&agent_id) {
+                let Some(envelope) = SwarmMessageEnvelope::from_raw_message(&raw) else {
+                    continue;
+                };
+                match envelope.message {
+                    SwarmMessage::SegmentGrant {
+                        edge_id,
+                        to,
+                        lease: _,
+                    } => {
+                        self.push_protocol_event(
+                            tick,
+                            &raw,
+                            "segment_grant",
+                            log_builder.as_deref_mut(),
+                        );
+                        let segment_index = request_segments
+                            .get(&(to.clone(), edge_id.clone()))
+                            .copied()
+                            .unwrap_or(0);
+                        let lock = crate::urban::UrbanSegmentLock {
+                            edge_id,
+                            holder_agent_id: to.clone(),
+                            acquired_at_tick: tick,
+                            segment_index,
+                        };
+                        decisions.push((to, crate::urban::SegmentLockDecision::Acquired(lock)));
+                    }
+                    SwarmMessage::SegmentDeny {
+                        edge_id,
+                        to,
+                        holder,
+                        reason,
+                    } => {
+                        self.push_protocol_event(
+                            tick,
+                            &raw,
+                            "segment_deny",
+                            log_builder.as_deref_mut(),
+                        );
+                        let conflict = crate::urban::UrbanSegmentConflictRecord {
+                            tick,
+                            edge_id,
+                            holder_agent_id: holder,
+                            requester_agent_id: to.clone(),
+                            policy: UrbanRightOfWayPolicy::FirstCome,
+                            reason: segment_deny_reason(reason),
+                        };
+                        self.conflict_history.push(conflict.clone());
+                        decisions.push((to, crate::urban::SegmentLockDecision::Conflict(conflict)));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        decisions.sort_by(|left, right| left.0.as_ref().cmp(right.0.as_ref()));
+        decisions
+    }
+
+    fn release(
+        &mut self,
+        edge_id: &UrbanEdgeId,
+        agent_id: &AgentId,
+        tick: u64,
+        log_builder: Option<&mut swarm_replay::EventLogBuilder>,
+    ) -> Option<crate::urban::UrbanSegmentLock> {
+        let mut log_builder = log_builder;
+        let (lock, lease) = self
+            .coordinator
+            .active_locks()
+            .find(|(lock, _)| &lock.edge_id == edge_id && &lock.holder_agent_id == agent_id)
+            .cloned()?;
+        self.send_agent_message(
+            agent_id,
+            tick,
+            SwarmMessage::SegmentRelease {
+                edge_id: edge_id.clone(),
+                lease_id: lease.lease_id,
+            },
+            "segment_release",
+            log_builder.as_deref_mut(),
+        );
+        let released = self
+            .coordinator
+            .handle_incoming(tick)
+            .ok()
+            .into_iter()
+            .flatten()
+            .any(|event| {
+                self.push_coordinator_event(tick, &event, log_builder.as_deref_mut());
+                matches!(
+                    event,
+                    crate::urban::CoordinatorEvent::Released {
+                        ref edge_id,
+                        ref agent_id
+                    } if edge_id == &lock.edge_id && agent_id == &lock.holder_agent_id
+                )
+            });
+        released.then_some(lock)
+    }
+
+    fn is_locked_by_other(&self, edge_id: &UrbanEdgeId, agent_id: &AgentId) -> bool {
+        self.coordinator
+            .active_locks()
+            .any(|(lock, _)| &lock.edge_id == edge_id && &lock.holder_agent_id != agent_id)
+    }
+
+    fn locked_edges_except(&self, agent_id: &AgentId) -> Vec<UrbanEdgeId> {
+        self.coordinator
+            .active_locks()
+            .filter(|(lock, _)| &lock.holder_agent_id != agent_id)
+            .map(|(lock, _)| lock.edge_id.clone())
+            .collect()
+    }
+
+    fn conflict_count(&self) -> u64 {
+        self.conflict_history.len() as u64
+    }
+
+    fn send_agent_message(
+        &mut self,
+        agent_id: &AgentId,
+        tick: u64,
+        message: SwarmMessage,
+        kind: &str,
+        log_builder: Option<&mut swarm_replay::EventLogBuilder>,
+    ) {
+        let envelope = SwarmMessageEnvelope {
+            schema_version: SWARM_PROTOCOL_SCHEMA_VERSION.to_owned(),
+            envelope_id: format!("urban-{kind}-{}-{tick}", agent_id.as_ref()),
+            correlation_id: None,
+            from: agent_id.clone(),
+            to: self.coordinator_id.clone(),
+            sent_at: chrono::Utc::now(),
+            ttl_ticks: 10,
+            message,
+        };
+        let raw = envelope.into_raw_message();
+        if let Some(transport) = self.agent_transports.get_mut(agent_id) {
+            let _ = transport.send(raw.clone());
+        }
+        self.push_protocol_event(tick, &raw, kind, log_builder);
+    }
+
+    fn poll_agent(&mut self, agent_id: &AgentId) -> Option<RawMessage> {
+        self.agent_transports
+            .get_mut(agent_id)
+            .and_then(|transport| transport.poll().ok())
+            .flatten()
+    }
+
+    fn push_protocol_event(
+        &self,
+        tick: u64,
+        raw: &RawMessage,
+        kind: &str,
+        log_builder: Option<&mut swarm_replay::EventLogBuilder>,
+    ) {
+        if let Some(builder) = log_builder {
+            builder.push(swarm_replay::Event::SwarmProtocolMessage {
+                tick,
+                from: raw.from.clone(),
+                to: raw.to.clone(),
+                envelope_id: format!("urban-{kind}-{}-{}", raw.from.as_ref(), tick),
+                kind: kind.to_owned(),
+            });
+        }
+    }
+
+    fn push_coordinator_event(
+        &self,
+        tick: u64,
+        event: &crate::urban::CoordinatorEvent,
+        log_builder: Option<&mut swarm_replay::EventLogBuilder>,
+    ) {
+        let Some(builder) = log_builder else {
+            return;
+        };
+        let (edge_id, agent_id, event, reason) = match event {
+            crate::urban::CoordinatorEvent::GrantSent { edge_id, to } => {
+                (edge_id.clone(), to.clone(), "grant_sent".to_owned(), None)
+            }
+            crate::urban::CoordinatorEvent::DenySent {
+                edge_id,
+                to,
+                reason,
+            } => (
+                edge_id.clone(),
+                to.clone(),
+                "deny_sent".to_owned(),
+                Some(segment_deny_reason(reason.clone())),
+            ),
+            crate::urban::CoordinatorEvent::Released { edge_id, agent_id } => (
+                edge_id.clone(),
+                agent_id.clone(),
+                "released".to_owned(),
+                None,
+            ),
+            crate::urban::CoordinatorEvent::LeaseExpired { edge_id, agent_id } => (
+                edge_id.clone(),
+                agent_id.clone(),
+                "lease_expired".to_owned(),
+                None,
+            ),
+        };
+        builder.push(swarm_replay::Event::UrbanSegmentCoordinatorEvent {
+            tick,
+            edge_id,
+            agent_id,
+            event,
+            reason,
+        });
+    }
+}
+
+fn segment_deny_reason(reason: SegmentDenyReason) -> String {
+    match reason {
+        SegmentDenyReason::AlreadyHeld => "segment already locked".to_owned(),
+        SegmentDenyReason::PolicyDenied => "right-of-way policy denied request".to_owned(),
+        SegmentDenyReason::CoordinatorUnavailable => "coordinator unavailable".to_owned(),
+    }
+}
+
+fn is_segment_locked_by_other(
+    network: Option<&NetworkSegmentRuntime>,
+    registry: &crate::urban::UrbanSegmentLockRegistry,
+    edge_id: &UrbanEdgeId,
+    agent_id: &AgentId,
+) -> bool {
+    network
+        .map(|network| network.is_locked_by_other(edge_id, agent_id))
+        .unwrap_or_else(|| registry.is_locked_by_other(edge_id, agent_id))
+}
+
+fn locked_edges_except(
+    network: Option<&NetworkSegmentRuntime>,
+    registry: &crate::urban::UrbanSegmentLockRegistry,
+    agent_id: &AgentId,
+) -> Vec<UrbanEdgeId> {
+    network
+        .map(|network| network.locked_edges_except(agent_id))
+        .unwrap_or_else(|| registry.locked_edges_except(agent_id))
+}
+
+fn split_route_for_agent(
+    route: &UrbanPlannedRoute,
+    agent_index: usize,
+    agent_count: usize,
+) -> UrbanPlannedRoute {
+    if agent_count <= 1 || route.segments.is_empty() {
+        return route.clone();
+    }
+    let base_len = route.segments.len() / agent_count;
+    let extra = route.segments.len() % agent_count;
+    let start = agent_index * base_len + agent_index.min(extra);
+    let len = base_len + usize::from(agent_index < extra);
+    let end = start.saturating_add(len).min(route.segments.len());
+    let segments = if start < end {
+        route.segments[start..end].to_vec()
+    } else {
+        Vec::new()
+    };
+    let total_length_m = segments.iter().map(|segment| segment.length_m).sum();
+    let total_cost = segments.iter().map(|segment| segment.cost).sum();
+    UrbanPlannedRoute {
+        segments,
+        total_length_m,
+        total_cost,
+    }
+}
+
+fn first_route_node_pose<'a>(
+    map: &'a swarm_types::UrbanMap,
+    route: &UrbanPlannedRoute,
+) -> Option<&'a Pose> {
+    let first_node = &route.segments.first()?.from;
+    map.nodes
+        .iter()
+        .find(|node| &node.id == first_node)
+        .map(|node| &node.pose)
 }
 
 impl ScenarioRunner {
@@ -783,11 +1164,12 @@ impl ScenarioRunner {
             }
         };
 
-        let alive_agents: Vec<_> = scenario
+        let mut alive_agents: Vec<_> = scenario
             .agents
             .iter()
             .filter(|agent| agent.health == Health::Alive)
             .collect();
+        alive_agents.sort_by(|left, right| left.id.as_ref().cmp(right.id.as_ref()));
         if alive_agents.is_empty() {
             let metrics = urban_patrol_metrics(
                 scenario,
@@ -811,9 +1193,39 @@ impl ScenarioRunner {
             return finish_urban_run_metrics(metrics, log_builder);
         }
 
+        let network_deconfliction = matches!(
+            urban_state.deconfliction.mode,
+            DeconflictionMode::NetworkProtocol { .. }
+        );
+        let agent_routes = alive_agents
+            .iter()
+            .enumerate()
+            .map(|(index, agent)| {
+                let route = if network_deconfliction {
+                    split_route_for_agent(&initial_route, index, alive_agents.len())
+                } else {
+                    initial_route.clone()
+                };
+                (agent.id.clone(), route)
+            })
+            .collect::<HashMap<_, _>>();
+
         for agent in &alive_agents {
+            let assigned_route = agent_routes
+                .get(&agent.id)
+                .expect("route generated for every alive agent");
             let start_pose_distance = agent.pose.distance_to(&start_node.pose);
-            if start_pose_distance > crate::urban::URBAN_START_POSE_TOLERANCE_M {
+            let slice_start_pose_distance = if network_deconfliction {
+                first_route_node_pose(&urban_state.map, assigned_route)
+                    .map(|pose| agent.pose.distance_to(pose))
+            } else {
+                None
+            };
+            let starts_at_global_or_slice = start_pose_distance
+                <= crate::urban::URBAN_START_POSE_TOLERANCE_M
+                || slice_start_pose_distance
+                    .is_some_and(|distance| distance <= crate::urban::URBAN_START_POSE_TOLERANCE_M);
+            if !starts_at_global_or_slice {
                 let metrics = urban_patrol_metrics(
                     scenario,
                     0,
@@ -827,7 +1239,7 @@ impl ScenarioRunner {
                     0.0,
                     0.0,
                     Some(format!(
-                        "urban_patrol_invalid_start: agent '{}' starts {:.3}m from start_node '{}'",
+                        "urban_patrol_invalid_start: agent '{}' starts {:.3}m from start_node '{}' and not at assigned route slice start",
                         agent.id, start_pose_distance, start_node.id
                     )),
                     0,
@@ -884,7 +1296,10 @@ impl ScenarioRunner {
         let mut states: Vec<_> = alive_agents
             .iter()
             .map(|agent| {
-                DeconflictedAgentState::new(agent, &initial_route, config.tick_duration_ms)
+                let route = agent_routes
+                    .get(&agent.id)
+                    .expect("route generated for every alive agent");
+                DeconflictedAgentState::new(agent, route, config.tick_duration_ms)
             })
             .collect();
         states.sort_by(|left, right| left.agent_id.to_string().cmp(&right.agent_id.to_string()));
@@ -911,6 +1326,17 @@ impl ScenarioRunner {
         }
 
         let mut registry = crate::urban::UrbanSegmentLockRegistry::new();
+        let mut network_runtime = match &urban_state.deconfliction.mode {
+            DeconflictionMode::SharedMemory => None,
+            DeconflictionMode::NetworkProtocol { coordinator_id } => {
+                Some(NetworkSegmentRuntime::new(
+                    states.iter().map(|state| state.agent_id.clone()).collect(),
+                    coordinator_id.clone(),
+                    urban_state.deconfliction.right_of_way_policy.clone(),
+                    urban_state.deconfliction.agent_priorities.clone(),
+                ))
+            }
+        };
         let mut total_ticks = 0;
         let mut violation_count = 0u64;
         let mut deconflict_wait_events = 0u64;
@@ -938,7 +1364,12 @@ impl ScenarioRunner {
                     continue;
                 };
                 if let Some(waiting_for) = state.waiting_for.clone() {
-                    if registry.is_locked_by_other(&waiting_for, &state.agent_id) {
+                    if is_segment_locked_by_other(
+                        network_runtime.as_ref(),
+                        &registry,
+                        &waiting_for,
+                        &state.agent_id,
+                    ) {
                         deconflict_wait_events += 1;
                         if let Some(ref mut builder) = log_builder {
                             builder.push(swarm_replay::Event::UrbanDeconflictWait {
@@ -961,12 +1392,16 @@ impl ScenarioRunner {
                 });
             }
 
-            let decisions = registry.request_batch(
-                requests,
-                tick,
-                &urban_state.deconfliction.right_of_way_policy,
-                &urban_state.deconfliction.agent_priorities,
-            );
+            let decisions = if let Some(network_runtime) = network_runtime.as_mut() {
+                network_runtime.request_batch(requests, tick, log_builder.as_mut())
+            } else {
+                registry.request_batch(
+                    requests,
+                    tick,
+                    &urban_state.deconfliction.right_of_way_policy,
+                    &urban_state.deconfliction.agent_priorities,
+                )
+            };
             for (agent_id, decision) in decisions {
                 let Some(state) = states.iter_mut().find(|state| state.agent_id == agent_id) else {
                     continue;
@@ -1017,7 +1452,11 @@ impl ScenarioRunner {
                                 let current_from =
                                     state.route.segments[state.segment_index].from.clone();
                                 let mut excluded_edges = effective_blocked.clone();
-                                for locked_edge in registry.locked_edges_except(&state.agent_id) {
+                                for locked_edge in locked_edges_except(
+                                    network_runtime.as_ref(),
+                                    &registry,
+                                    &state.agent_id,
+                                ) {
                                     excluded_edges.insert(locked_edge);
                                 }
                                 match try_replan(
@@ -1095,7 +1534,12 @@ impl ScenarioRunner {
                 let Some(edge_id) = state.current_edge_id().cloned() else {
                     continue;
                 };
-                if registry.is_locked_by_other(&edge_id, &state.agent_id) {
+                if is_segment_locked_by_other(
+                    network_runtime.as_ref(),
+                    &registry,
+                    &edge_id,
+                    &state.agent_id,
+                ) {
                     continue;
                 }
                 if effective_blocked.contains(&edge_id) && state.distance_on_segment == 0.0 {
@@ -1129,7 +1573,17 @@ impl ScenarioRunner {
                             edge_id: segment.edge_id.clone(),
                         });
                     }
-                    if let Some(lock) = registry.release(&segment.edge_id, &state.agent_id, tick) {
+                    let released_lock = if let Some(network_runtime) = network_runtime.as_mut() {
+                        network_runtime.release(
+                            &segment.edge_id,
+                            &state.agent_id,
+                            tick,
+                            log_builder.as_mut(),
+                        )
+                    } else {
+                        registry.release(&segment.edge_id, &state.agent_id, tick)
+                    };
+                    if let Some(lock) = released_lock {
                         if let Some(ref mut builder) = log_builder {
                             push_segment_lock_released(builder, &lock, tick);
                         }
@@ -1183,7 +1637,7 @@ impl ScenarioRunner {
             .iter()
             .map(|state| state.total_distance_travelled_m)
             .sum();
-        let total_route_length_m = initial_route_length_m * states.len() as f64;
+        let total_route_length_m: f64 = states.iter().map(|state| state.route.total_length_m).sum();
         let route_eff = route_efficiency(total_route_length_m, total_distance_travelled);
         let completion_tick = states
             .iter()
@@ -1192,7 +1646,10 @@ impl ScenarioRunner {
         let replan_count: u64 = states.iter().map(|state| state.replan_count).sum();
         let wait_ticks: u64 = states.iter().map(|state| state.wait_ticks).sum();
         let unresolved_blockages: u64 = states.iter().map(|state| state.unresolved_blockages).sum();
-        let conflict_count = registry.conflict_history().len() as u64;
+        let conflict_count = network_runtime
+            .as_ref()
+            .map(NetworkSegmentRuntime::conflict_count)
+            .unwrap_or_else(|| registry.conflict_history().len() as u64);
         let mut metrics = urban_patrol_metrics(
             scenario,
             total_ticks,

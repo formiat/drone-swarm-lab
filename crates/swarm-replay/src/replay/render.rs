@@ -267,7 +267,8 @@ fn event_category(event: &Event) -> ReplayEventCategory {
         | Event::UrbanSegmentConflict { .. }
         | Event::UrbanDeconflictWait { .. }
         | Event::UrbanDeconflictReplan { .. }
-        | Event::UrbanDeconflictAbort { .. } => ReplayEventCategory::Urban,
+        | Event::UrbanDeconflictAbort { .. }
+        | Event::UrbanSegmentCoordinatorEvent { .. } => ReplayEventCategory::Urban,
         Event::TickStart { .. }
         | Event::AgentFailed { .. }
         | Event::TaskAssigned { .. }
@@ -356,6 +357,7 @@ fn event_agent_id(event: &Event) -> Option<AgentId> {
         | Event::UrbanDeconflictWait { agent_id, .. }
         | Event::UrbanDeconflictReplan { agent_id, .. }
         | Event::UrbanDeconflictAbort { agent_id, .. }
+        | Event::UrbanSegmentCoordinatorEvent { agent_id, .. }
         | Event::SwarmAgentCommandDispatched { agent_id, .. }
         | Event::SwarmOwnershipAcquired { agent_id, .. }
         | Event::SwarmOwnershipReleased { agent_id, .. } => Some(agent_id.clone()),
@@ -455,6 +457,7 @@ fn event_tick(event: &Event) -> u64 {
         | Event::UrbanDeconflictWait { tick, .. }
         | Event::UrbanDeconflictReplan { tick, .. }
         | Event::UrbanDeconflictAbort { tick, .. }
+        | Event::UrbanSegmentCoordinatorEvent { tick, .. }
         | Event::SwarmCommandPlanDispatched { tick, .. }
         | Event::SwarmAgentCommandDispatched { tick, .. }
         | Event::SwarmOwnershipAcquired { tick, .. }
@@ -535,6 +538,7 @@ fn event_name(event: &Event) -> &'static str {
         Event::UrbanDeconflictWait { .. } => "UrbanDeconflictWait",
         Event::UrbanDeconflictReplan { .. } => "UrbanDeconflictReplan",
         Event::UrbanDeconflictAbort { .. } => "UrbanDeconflictAbort",
+        Event::UrbanSegmentCoordinatorEvent { .. } => "UrbanSegmentCoordinatorEvent",
         Event::SwarmCommandPlanDispatched { .. } => "SwarmCommandPlanDispatched",
         Event::SwarmAgentCommandDispatched { .. } => "SwarmAgentCommandDispatched",
         Event::SwarmOwnershipAcquired { .. } => "SwarmOwnershipAcquired",
@@ -784,6 +788,15 @@ fn event_details(event: &Event) -> String {
         Event::UrbanDeconflictAbort {
             edge_id, reason, ..
         } => format!("edge={edge_id} reason={reason}"),
+        Event::UrbanSegmentCoordinatorEvent {
+            edge_id,
+            event,
+            reason,
+            ..
+        } => format!(
+            "edge={edge_id} event={event} reason={}",
+            optional_display(reason.as_ref())
+        ),
         Event::SwarmCommandPlanDispatched {
             plan_id,
             agent_count,
