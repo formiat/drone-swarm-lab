@@ -373,6 +373,9 @@ pub fn validate_mavlink_execution_report(report: &MavlinkPlanExecutionReport) ->
     if report.plan_id.trim().is_empty() {
         violations.push("plan_id".to_owned());
     }
+    if report.steps.is_empty() {
+        violations.push("steps".to_owned());
+    }
     for (expected, (step_index, _, _)) in report.steps.iter().enumerate() {
         if *step_index != expected {
             violations.push("step_order".to_owned());
@@ -387,6 +390,7 @@ pub fn validate_mavlink_execution_report(report: &MavlinkPlanExecutionReport) ->
                 result,
                 MavlinkExecutionStepResult::Rejected { .. }
                     | MavlinkExecutionStepResult::Timeout { .. }
+                    | MavlinkExecutionStepResult::TransportFailure { .. }
             )
         })
         .count();
@@ -413,6 +417,7 @@ pub fn validate_mavlink_execution_report(report: &MavlinkPlanExecutionReport) ->
                         result,
                         MavlinkExecutionStepResult::Rejected { .. }
                             | MavlinkExecutionStepResult::Timeout { .. }
+                            | MavlinkExecutionStepResult::TransportFailure { .. }
                     )
                 });
             if !terminal_step_is_failed && !report.steps.is_empty() {
@@ -904,11 +909,49 @@ impl<'a> Validator<'a> {
                 "execute artifact git_commit must not be empty",
             );
         }
+        if artifact.command.is_empty() {
+            self.push_error(
+                RULE_MAVLINK_EXECUTION_ARTIFACT_INVALID,
+                Some(path.clone()),
+                "execute artifact command must not be empty",
+            );
+        }
+        if artifact.caveats.is_empty() {
+            self.push_error(
+                RULE_MAVLINK_EXECUTION_ARTIFACT_INVALID,
+                Some(path.clone()),
+                "execute artifact caveats must not be empty",
+            );
+        }
         if artifact.plan_id != artifact.execution_report.plan_id {
             self.push_error(
                 RULE_MAVLINK_EXECUTION_ARTIFACT_INVALID,
                 Some(path.clone()),
                 "execute artifact plan_id must match execution_report.plan_id",
+            );
+        }
+        let has_upload_step = artifact
+            .execution_report
+            .steps
+            .iter()
+            .any(|(_, label, _)| label == "mission_upload");
+        if artifact.expected_upload_phase && !has_upload_step {
+            self.push_error(
+                RULE_MAVLINK_EXECUTION_ARTIFACT_INVALID,
+                Some(path.clone()),
+                "execute artifact expected_upload_phase=true but report has no mission_upload step",
+            );
+        }
+        let has_start_step = artifact
+            .execution_report
+            .steps
+            .iter()
+            .any(|(_, label, _)| label == MavlinkCommonCommandName::MissionStart.as_str());
+        if artifact.expected_start_phase && !has_start_step {
+            self.push_error(
+                RULE_MAVLINK_EXECUTION_ARTIFACT_INVALID,
+                Some(path.clone()),
+                "execute artifact expected_start_phase=true but report has no mission start step",
             );
         }
         for key in validate_mavlink_execution_report(&artifact.execution_report) {

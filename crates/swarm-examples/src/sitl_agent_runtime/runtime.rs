@@ -118,6 +118,7 @@ pub fn run() -> Result<(), SitlError> {
             &addr,
             &lifecycle,
             runtime_options,
+            cli.mavlink_profile,
             cli.run_report.as_deref(),
             cli.replay_log.as_deref(),
         ),

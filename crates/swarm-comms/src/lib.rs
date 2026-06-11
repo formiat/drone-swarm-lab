@@ -79,6 +79,6 @@ pub use mavlink::{
     task_to_mavlink_waypoint, waypoint_to_mission_item_int, AbortCommandResult, MavlinkFlightError,
     MavlinkFlightReport, MavlinkLifecycleError, MavlinkMissionError, MavlinkMissionEvent,
     MavlinkMissionObserver, MavlinkTelemetryError, MavlinkTelemetryEvent, MavlinkTransport,
-    MissionFrame, MissionHomeOrigin, MissionItem, MissionLifecycleOptions, MissionLifecycleReport,
-    MissionUploadOptions, MissionUploadReport,
+    MavlinkTransportAckProvider, MissionFrame, MissionHomeOrigin, MissionItem,
+    MissionLifecycleOptions, MissionLifecycleReport, MissionUploadOptions, MissionUploadReport,
 };

@@ -17,6 +17,8 @@ use super::{
     MissionUploadOptions, MissionUploadReport, Waypoint,
 };
 #[cfg(feature = "mavlink-transport")]
+use crate::mavlink_common_plan::{MavlinkCommonCommandName, MavlinkCommonMissionItem};
+#[cfg(feature = "mavlink-transport")]
 pub(super) trait MavlinkVehicleConnection {
     fn send_message(&mut self, msg: CommonMessage) -> Result<(), MavlinkMissionError>;
     fn try_recv_message(
@@ -139,6 +141,153 @@ where
     }
 
     Err(last_error.unwrap_or(MavlinkMissionError::MissionAckTimeout))
+}
+
+#[cfg(feature = "mavlink-transport")]
+pub(super) fn upload_precompiled_mission_items_with_connection_observed<C, O>(
+    conn: &mut C,
+    items: &[MavlinkCommonMissionItem],
+    options: &MissionUploadOptions,
+    observer: &mut O,
+) -> Result<MissionUploadReport, MavlinkMissionError>
+where
+    C: MavlinkVehicleConnection,
+    O: MavlinkMissionObserver,
+{
+    if items.is_empty() {
+        return Err(MavlinkMissionError::EmptyMission);
+    }
+    if items.len() > u16::MAX as usize {
+        return Err(MavlinkMissionError::TooManyWaypoints { count: items.len() });
+    }
+
+    let mut last_error = None;
+    for _attempt in 0..=options.retry_count {
+        match upload_precompiled_mission_items_attempt(conn, items, options, observer) {
+            Ok(report) => return Ok(report),
+            Err(error) if error.is_retryable() => {
+                last_error = Some(error);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+
+    Err(last_error.unwrap_or(MavlinkMissionError::MissionAckTimeout))
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn upload_precompiled_mission_items_attempt<C: MavlinkVehicleConnection>(
+    conn: &mut C,
+    items: &[MavlinkCommonMissionItem],
+    options: &MissionUploadOptions,
+    observer: &mut impl MavlinkMissionObserver,
+) -> Result<MissionUploadReport, MavlinkMissionError> {
+    wait_for_heartbeat(conn, options.timeout)?;
+    observer.on_event(MavlinkMissionEvent::HeartbeatSeen);
+
+    if options.clear_existing {
+        conn.send_message(CommonMessage::MISSION_CLEAR_ALL(
+            common::MISSION_CLEAR_ALL_DATA {
+                target_system: options.target_system,
+                target_component: options.target_component,
+            },
+        ))?;
+        observer.on_event(MavlinkMissionEvent::MissionClearSent);
+    }
+
+    conn.send_message(CommonMessage::MISSION_COUNT(common::MISSION_COUNT_DATA {
+        count: items.len() as u16,
+        target_system: options.target_system,
+        target_component: options.target_component,
+    }))?;
+    observer.on_event(MavlinkMissionEvent::MissionCountSent { count: items.len() });
+
+    for (expected_seq, item) in items.iter().enumerate() {
+        let expected_seq = expected_seq as u16;
+        wait_for_mission_request(conn, expected_seq, options.timeout)?;
+        observer.on_event(MavlinkMissionEvent::MissionItemRequested { seq: expected_seq });
+        conn.send_message(precompiled_mission_item_to_int(
+            item,
+            expected_seq,
+            options,
+        )?)?;
+        observer.on_event(MavlinkMissionEvent::MissionItemSent { seq: expected_seq });
+    }
+
+    let ack = wait_for_mission_ack(conn, options.timeout)?;
+    observer.on_event(MavlinkMissionEvent::MissionAckReceived {
+        result: format!("{ack:?}"),
+        accepted: ack == common::MavMissionResult::MAV_MISSION_ACCEPTED,
+    });
+    if ack != common::MavMissionResult::MAV_MISSION_ACCEPTED {
+        return Err(MavlinkMissionError::MissionRejected(ack));
+    }
+
+    Ok(MissionUploadReport {
+        uploaded_count: items.len(),
+        target_system: options.target_system,
+        target_component: options.target_component,
+        ack,
+        cleared_existing: options.clear_existing,
+    })
+}
+
+#[cfg(feature = "mavlink-transport")]
+#[allow(deprecated)]
+fn precompiled_mission_item_to_int(
+    item: &MavlinkCommonMissionItem,
+    seq: u16,
+    options: &MissionUploadOptions,
+) -> Result<CommonMessage, MavlinkMissionError> {
+    if item.frame != "MAV_FRAME_GLOBAL_RELATIVE_ALT_INT" {
+        return Err(MavlinkMissionError::UnsupportedFrame);
+    }
+    Ok(CommonMessage::MISSION_ITEM_INT(
+        common::MISSION_ITEM_INT_DATA {
+            param1: item.params[0].unwrap_or(0.0) as f32,
+            param2: item.params[1].unwrap_or(0.0) as f32,
+            param3: item.params[2].unwrap_or(0.0) as f32,
+            param4: item.params[3].unwrap_or(f64::NAN) as f32,
+            x: item.lat_e7,
+            y: item.lon_e7,
+            z: item.relative_alt_m,
+            seq,
+            command: common_mission_command_to_mavcmd(item.command)?,
+            target_system: options.target_system,
+            target_component: options.target_component,
+            frame: common::MavFrame::MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
+            current: if seq == 0 { 1 } else { 0 },
+            autocontinue: if item.autocontinue { 1 } else { 0 },
+        },
+    ))
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn common_mission_command_to_mavcmd(
+    command: MavlinkCommonCommandName,
+) -> Result<common::MavCmd, MavlinkMissionError> {
+    match command {
+        MavlinkCommonCommandName::NavWaypoint => Ok(common::MavCmd::MAV_CMD_NAV_WAYPOINT),
+        MavlinkCommonCommandName::NavLoiterTime => Ok(common::MavCmd::MAV_CMD_NAV_LOITER_TIME),
+        MavlinkCommonCommandName::NavLand => Ok(common::MavCmd::MAV_CMD_NAV_LAND),
+        MavlinkCommonCommandName::FenceCircleInclusion => {
+            Ok(common::MavCmd::MAV_CMD_NAV_FENCE_CIRCLE_INCLUSION)
+        }
+        MavlinkCommonCommandName::FenceCircleExclusion => {
+            Ok(common::MavCmd::MAV_CMD_NAV_FENCE_CIRCLE_EXCLUSION)
+        }
+        MavlinkCommonCommandName::FencePolygonVertexInclusion => {
+            Ok(common::MavCmd::MAV_CMD_NAV_FENCE_POLYGON_VERTEX_INCLUSION)
+        }
+        MavlinkCommonCommandName::FencePolygonVertexExclusion => {
+            Ok(common::MavCmd::MAV_CMD_NAV_FENCE_POLYGON_VERTEX_EXCLUSION)
+        }
+        MavlinkCommonCommandName::ComponentArmDisarm
+        | MavlinkCommonCommandName::NavTakeoff
+        | MavlinkCommonCommandName::NavReturnToLaunch
+        | MavlinkCommonCommandName::MissionStart
+        | MavlinkCommonCommandName::DoFenceEnable => Err(MavlinkMissionError::UnsupportedFrame),
+    }
 }
 
 #[cfg(feature = "mavlink-transport")]

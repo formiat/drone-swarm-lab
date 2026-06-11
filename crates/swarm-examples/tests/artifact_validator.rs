@@ -1081,6 +1081,26 @@ fn artifact_validator_execute_mode_rejects_unordered_steps() {
 }
 
 #[test]
+fn artifact_validator_execute_mode_rejects_missing_expected_start_phase() {
+    let fixture = mavlink_execution_artifact_fixture();
+    let path = fixture.path().join("mavlink_execution_artifact.v1.json");
+    let mut json = read_json_value(&path);
+    json["expected_start_phase"] = serde_json::json!(true);
+    write_json(&path, &json);
+
+    let report = validate_artifact_pack(
+        &ArtifactPackPaths::from_output_dir(fixture.path()),
+        ArtifactValidationOptions {
+            mode: ArtifactValidationMode::Execute,
+            strict: true,
+            ..Default::default()
+        },
+    );
+
+    assert_rule(&report, RULE_MAVLINK_EXECUTION_ARTIFACT_INVALID);
+}
+
+#[test]
 fn hardware_entry_pack_primitive_validates() {
     let fixture = hardware_entry_fixture("scenarios/primitive.takeoff-hold-land.json");
 
@@ -1901,6 +1921,8 @@ fn mavlink_execution_artifact_fixture() -> tempfile::TempDir {
         plan_id: "m90-test".to_owned(),
         git_commit: "0123456789abcdef".to_owned(),
         command: vec!["sitl_agent".to_owned(), "--execute".to_owned()],
+        expected_upload_phase: true,
+        expected_start_phase: false,
         execution_report: report,
         caveats: vec!["local_mock_executor".to_owned()],
     };

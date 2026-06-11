@@ -9,7 +9,8 @@ use std::collections::{HashMap, VecDeque};
 use serde::{Deserialize, Serialize};
 
 use crate::mavlink_common_plan::{
-    MavlinkCommonCommand, MavlinkCommonPlan, MavlinkTelemetryMilestoneKind,
+    MavlinkCommonCommand, MavlinkCommonCommandName, MavlinkCommonPlan,
+    MavlinkTelemetryMilestoneKind,
 };
 use crate::mavlink_geofence::MavlinkFencePlan;
 use crate::mavlink_parameters::{
@@ -30,6 +31,8 @@ pub enum MavlinkExecutionStepResult {
     Rejected { reason: String },
     /// No response received within the expected window.
     Timeout { after_ms: u64 },
+    /// Transport or adapter failed outside the logical ACK sequence.
+    TransportFailure { reason: String },
     /// Step skipped; execution continues. Used for incompatible profile steps.
     Skipped { reason: String },
 }
@@ -42,7 +45,10 @@ impl MavlinkExecutionStepResult {
 
     /// Returns true if this result causes a terminal failure.
     pub fn is_terminal_failure(&self) -> bool {
-        matches!(self, Self::Rejected { .. } | Self::Timeout { .. })
+        matches!(
+            self,
+            Self::Rejected { .. } | Self::Timeout { .. } | Self::TransportFailure { .. }
+        )
     }
 }
 
@@ -131,6 +137,10 @@ pub struct MavlinkExecutionArtifact {
     pub plan_id: String,
     pub git_commit: String,
     pub command: Vec<String>,
+    #[serde(default)]
+    pub expected_upload_phase: bool,
+    #[serde(default)]
+    pub expected_start_phase: bool,
     pub execution_report: MavlinkPlanExecutionReport,
     pub caveats: Vec<String>,
 }
@@ -152,6 +162,14 @@ impl MavlinkExecutionArtifact {
             plan_id,
             git_commit: git_commit.into(),
             command,
+            expected_upload_phase: execution_report
+                .steps
+                .iter()
+                .any(|(_, label, _)| label == "mission_upload"),
+            expected_start_phase: execution_report
+                .steps
+                .iter()
+                .any(|(_, label, _)| label == MavlinkCommonCommandName::MissionStart.as_str()),
             execution_report,
             caveats,
         }
@@ -316,6 +334,19 @@ impl<A: AckProvider> MavlinkPlanExecutor<A> {
                         retry_count: total_retries,
                     };
                 }
+                MavlinkExecutionStepResult::TransportFailure { reason } => {
+                    return MavlinkPlanExecutionReport {
+                        plan_id: plan.source_mission_id.clone(),
+                        steps,
+                        overall: MavlinkExecutionOutcome::Failed {
+                            at_step: step_index,
+                            reason,
+                        },
+                        lifecycle_state: MissionExecuteLifecycleState::Aborted,
+                        telemetry_milestones_reached: vec![],
+                        retry_count: total_retries,
+                    };
+                }
                 MavlinkExecutionStepResult::Accepted
                 | MavlinkExecutionStepResult::Skipped { .. } => {}
             }
@@ -349,6 +380,19 @@ impl<A: AckProvider> MavlinkPlanExecutor<A> {
                         overall: MavlinkExecutionOutcome::Aborted {
                             at_step: step_index,
                             reason: format!("upload timeout after {after_ms}ms"),
+                        },
+                        lifecycle_state: MissionExecuteLifecycleState::Aborted,
+                        telemetry_milestones_reached: vec![],
+                        retry_count: total_retries,
+                    };
+                }
+                MavlinkExecutionStepResult::TransportFailure { reason } => {
+                    return MavlinkPlanExecutionReport {
+                        plan_id: plan.source_mission_id.clone(),
+                        steps,
+                        overall: MavlinkExecutionOutcome::Failed {
+                            at_step: step_index,
+                            reason,
                         },
                         lifecycle_state: MissionExecuteLifecycleState::Aborted,
                         telemetry_milestones_reached: vec![],
@@ -395,6 +439,19 @@ impl<A: AckProvider> MavlinkPlanExecutor<A> {
                         retry_count: total_retries,
                     };
                 }
+                MavlinkExecutionStepResult::TransportFailure { reason } => {
+                    return MavlinkPlanExecutionReport {
+                        plan_id: plan.source_mission_id.clone(),
+                        steps,
+                        overall: MavlinkExecutionOutcome::Failed {
+                            at_step: step_index,
+                            reason,
+                        },
+                        lifecycle_state: MissionExecuteLifecycleState::Aborted,
+                        telemetry_milestones_reached: vec![],
+                        retry_count: total_retries,
+                    };
+                }
                 MavlinkExecutionStepResult::Accepted
                 | MavlinkExecutionStepResult::Skipped { .. } => {}
             }
@@ -429,6 +486,19 @@ impl<A: AckProvider> MavlinkPlanExecutor<A> {
                         overall: MavlinkExecutionOutcome::Aborted {
                             at_step: step_index,
                             reason: format!("postlude timeout after {after_ms}ms for {label}"),
+                        },
+                        lifecycle_state: MissionExecuteLifecycleState::Aborted,
+                        telemetry_milestones_reached: vec![],
+                        retry_count: total_retries,
+                    };
+                }
+                MavlinkExecutionStepResult::TransportFailure { reason } => {
+                    return MavlinkPlanExecutionReport {
+                        plan_id: plan.source_mission_id.clone(),
+                        steps,
+                        overall: MavlinkExecutionOutcome::Failed {
+                            at_step: step_index,
+                            reason,
                         },
                         lifecycle_state: MissionExecuteLifecycleState::Aborted,
                         telemetry_milestones_reached: vec![],
@@ -876,6 +946,29 @@ mod tests {
             report.overall
         );
         assert_eq!(report.retry_count, 1);
+    }
+
+    #[test]
+    fn executor_fails_on_transport_failure() {
+        let plan = arm_takeoff_land_plan();
+        let mut executor = MavlinkPlanExecutor::new(
+            ScriptedAckProvider::new([MavlinkExecutionStepResult::TransportFailure {
+                reason: "connection closed".to_owned(),
+            }]),
+            1,
+        );
+
+        let report = executor.execute(&plan);
+
+        assert!(matches!(
+            report.overall,
+            MavlinkExecutionOutcome::Failed { .. }
+        ));
+        assert_eq!(
+            report.lifecycle_state,
+            MissionExecuteLifecycleState::Aborted
+        );
+        assert_eq!(report.retry_count, 0);
     }
 
     #[test]

@@ -20,6 +20,8 @@ use super::telemetry::{
 };
 #[cfg(feature = "mavlink-transport")]
 use crate::sitl_observability::{SitlEventLogMode, SitlEventRecorder};
+#[cfg(feature = "mavlink-transport")]
+use crate::sitl_plan::compile_sitl_plan_to_mavlink_common_plan;
 use crate::sitl_plan::{validate_connection_string, SitlError, SitlPlan};
 #[cfg(feature = "mavlink-transport")]
 use crate::sitl_report::SitlRunFinalStatus;
@@ -33,6 +35,7 @@ pub(super) fn run_connection(
     connection_string: &str,
     lifecycle: &LifecycleArgs,
     runtime_options: AgentRuntimeOptions,
+    mavlink_profile: swarm_comms::MavlinkCapabilityProfileId,
     run_report: Option<&str>,
     replay_log: Option<&str>,
 ) -> Result<(), SitlError> {
@@ -161,11 +164,18 @@ pub(super) fn run_connection(
                     abort_after: lifecycle.abort_after,
                     takeoff_altitude_m: default_takeoff_altitude(&waypoints),
                 };
+                let mavlink_common_plan =
+                    compile_sitl_plan_to_mavlink_common_plan(plan, mavlink_profile).map_err(
+                        |message| SitlError::ConnectionFailed {
+                            message: format!("failed to compile SITL plan for executor: {message}"),
+                        },
+                    )?;
                 let result = {
-                    let mut driver = MavlinkGoldenPathDriver {
+                    let mut driver = MavlinkExecutorPathDriver {
                         transport: &mut transport,
                         recorder: event_recorder.as_mut(),
                         task_id_by_seq,
+                        mavlink_common_plan,
                     };
                     run_golden_path_with_driver(
                         &mut driver,
@@ -195,6 +205,7 @@ pub(super) fn run_connection(
         let _ = run_report;
         let _ = replay_log;
         let _ = runtime_options;
+        let _ = mavlink_profile;
         let _ = (
             lifecycle.mode,
             lifecycle.no_arm,
@@ -232,10 +243,11 @@ pub(super) trait SitlGoldenPathDriver {
 }
 
 #[cfg(feature = "mavlink-transport")]
-pub(super) struct MavlinkGoldenPathDriver<'a> {
+pub(super) struct MavlinkExecutorPathDriver<'a> {
     pub(super) transport: &'a mut swarm_comms::MavlinkTransport,
     pub(super) recorder: Option<&'a mut SitlEventRecorder>,
     pub(super) task_id_by_seq: BTreeMap<u16, String>,
+    pub(super) mavlink_common_plan: swarm_comms::MavlinkCommonPlan,
 }
 
 #[cfg(feature = "mavlink-transport")]
@@ -286,10 +298,10 @@ impl swarm_comms::MavlinkMissionObserver for SitlMavlinkObserver<'_> {
 }
 
 #[cfg(feature = "mavlink-transport")]
-impl SitlGoldenPathDriver for MavlinkGoldenPathDriver<'_> {
+impl SitlGoldenPathDriver for MavlinkExecutorPathDriver<'_> {
     fn upload_and_start_mission(
         &mut self,
-        waypoints: &[Waypoint],
+        _waypoints: &[Waypoint],
         upload_options: swarm_comms::MissionUploadOptions,
         lifecycle_options: swarm_comms::MissionLifecycleOptions,
     ) -> Result<SitlMissionStartReport, SitlExecutionFailure> {
@@ -298,25 +310,33 @@ impl SitlGoldenPathDriver for MavlinkGoldenPathDriver<'_> {
                 recorder,
                 task_id_by_seq: &self.task_id_by_seq,
             };
-            self.transport.upload_and_execute_mission_observed(
-                waypoints,
+            run_executor_with_transport_observer(
+                self.transport,
+                &self.mavlink_common_plan,
                 upload_options,
                 lifecycle_options,
                 &mut observer,
             )
         } else {
-            self.transport
-                .upload_and_execute_mission(waypoints, upload_options, lifecycle_options)
+            let mut observer = swarm_comms::mavlink::NoopMavlinkMissionObserver;
+            run_executor_with_transport_observer(
+                self.transport,
+                &self.mavlink_common_plan,
+                upload_options,
+                lifecycle_options,
+                &mut observer,
+            )
+        };
+        if !report.overall.is_success() {
+            return Err(execution_report_to_failure(
+                self.mavlink_common_plan.mission_items.len(),
+                report,
+            ));
         }
-        .map_err(|error| flight_error_to_execution_failure(waypoints.len(), error))?;
-        Ok(SitlMissionStartReport {
-            uploaded_count: report.upload.uploaded_count,
-            armed: report.lifecycle.armed,
-            took_off: report.lifecycle.took_off,
-            started: report.lifecycle.started,
-            post_start_heartbeat: report.lifecycle.post_start_heartbeat,
-            abort_result: report.lifecycle.abort_result,
-        })
+        Ok(execution_report_to_start_report(
+            &self.mavlink_common_plan,
+            &report,
+        ))
     }
 
     fn run_telemetry_progress(
@@ -346,6 +366,76 @@ impl SitlGoldenPathDriver for MavlinkGoldenPathDriver<'_> {
         if let Some(recorder) = self.recorder.as_deref_mut() {
             recorder.push_failure(status, error);
         }
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn run_executor_with_transport_observer<O: swarm_comms::MavlinkMissionObserver>(
+    transport: &mut swarm_comms::MavlinkTransport,
+    plan: &swarm_comms::MavlinkCommonPlan,
+    upload_options: swarm_comms::MissionUploadOptions,
+    lifecycle_options: swarm_comms::MissionLifecycleOptions,
+    observer: &mut O,
+) -> swarm_comms::MavlinkPlanExecutionReport {
+    let provider = swarm_comms::MavlinkTransportAckProvider::new(
+        transport,
+        plan,
+        upload_options,
+        lifecycle_options,
+        observer,
+    );
+    let mut executor = swarm_comms::MavlinkPlanExecutor::new(provider, 0);
+    executor.execute(plan)
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn execution_report_to_start_report(
+    plan: &swarm_comms::MavlinkCommonPlan,
+    report: &swarm_comms::MavlinkPlanExecutionReport,
+) -> SitlMissionStartReport {
+    SitlMissionStartReport {
+        uploaded_count: plan.mission_items.len(),
+        armed: report_step_accepted(report, "MAV_CMD_COMPONENT_ARM_DISARM"),
+        took_off: report_step_accepted(report, "MAV_CMD_NAV_TAKEOFF"),
+        started: plan.mission_start.is_none()
+            || report_step_accepted(report, "MAV_CMD_MISSION_START"),
+        post_start_heartbeat: false,
+        abort_result: None,
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn report_step_accepted(report: &swarm_comms::MavlinkPlanExecutionReport, label: &str) -> bool {
+    report.steps.iter().any(|(_, step_label, result)| {
+        step_label == label && matches!(result, swarm_comms::MavlinkExecutionStepResult::Accepted)
+    })
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn execution_report_to_failure(
+    mission_item_count: usize,
+    report: swarm_comms::MavlinkPlanExecutionReport,
+) -> SitlExecutionFailure {
+    let (final_status, error) = match &report.overall {
+        swarm_comms::MavlinkExecutionOutcome::Aborted { reason, .. } => {
+            (SitlRunFinalStatus::Aborted, reason.clone())
+        }
+        swarm_comms::MavlinkExecutionOutcome::Failed { reason, .. } => {
+            (SitlRunFinalStatus::Failed, reason.clone())
+        }
+        swarm_comms::MavlinkExecutionOutcome::Completed
+        | swarm_comms::MavlinkExecutionOutcome::Retried { .. } => (
+            SitlRunFinalStatus::Failed,
+            "unexpected successful report passed to failure converter".to_owned(),
+        ),
+    };
+    SitlExecutionFailure {
+        final_status,
+        mission_item_count,
+        completed_count: 0,
+        failed_count: mission_item_count,
+        error,
+        abort_result: None,
     }
 }
 
@@ -439,7 +529,7 @@ fn execute_sitl_golden_path_with_driver<D: SitlGoldenPathDriver>(
     })
 }
 
-#[cfg(feature = "mavlink-transport")]
+#[cfg(all(test, feature = "mavlink-transport"))]
 pub(super) fn flight_error_to_execution_failure(
     mission_item_count: usize,
     error: swarm_comms::MavlinkFlightError,
@@ -464,7 +554,7 @@ pub(super) fn flight_error_to_execution_failure(
     }
 }
 
-#[cfg(feature = "mavlink-transport")]
+#[cfg(all(test, feature = "mavlink-transport"))]
 fn lifecycle_abort_result(error: &swarm_comms::MavlinkLifecycleError) -> Option<String> {
     match error {
         swarm_comms::MavlinkLifecycleError::CommandAckTimeout { abort_result, .. }
@@ -481,7 +571,7 @@ fn lifecycle_abort_result(error: &swarm_comms::MavlinkLifecycleError) -> Option<
     }
 }
 
-#[cfg(feature = "mavlink-transport")]
+#[cfg(all(test, feature = "mavlink-transport"))]
 fn format_abort_result(abort_result: &swarm_comms::AbortCommandResult) -> String {
     format!("{abort_result:?}")
 }

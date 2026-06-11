@@ -5,6 +5,9 @@ use std::time::{Duration, Instant};
 use mavlink::dialects::common;
 
 #[cfg(feature = "mavlink-transport")]
+use crate::mavlink_common_plan::{MavlinkCommonCommand, MavlinkCommonCommandName};
+
+#[cfg(feature = "mavlink-transport")]
 use super::{
     mission_upload::MavlinkVehicleConnection, AbortCommandResult, CommonHeader, CommonMessage,
     MavlinkLifecycleError, MavlinkMissionError, MavlinkMissionEvent, MavlinkMissionObserver,
@@ -58,6 +61,48 @@ pub fn abort_command(target_system: u8, target_component: u8) -> CommonMessage {
         target_component,
         [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
     )
+}
+
+#[cfg(feature = "mavlink-transport")]
+pub fn common_command_to_message(
+    command: &MavlinkCommonCommand,
+    target_system: u8,
+    target_component: u8,
+) -> CommonMessage {
+    command_long(
+        common_command_name_to_mavcmd(command.command),
+        target_system,
+        target_component,
+        command.params.map(|param| param.unwrap_or(f64::NAN) as f32),
+    )
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn common_command_name_to_mavcmd(command: MavlinkCommonCommandName) -> common::MavCmd {
+    match command {
+        MavlinkCommonCommandName::ComponentArmDisarm => {
+            common::MavCmd::MAV_CMD_COMPONENT_ARM_DISARM
+        }
+        MavlinkCommonCommandName::NavTakeoff => common::MavCmd::MAV_CMD_NAV_TAKEOFF,
+        MavlinkCommonCommandName::NavLand => common::MavCmd::MAV_CMD_NAV_LAND,
+        MavlinkCommonCommandName::NavReturnToLaunch => common::MavCmd::MAV_CMD_NAV_RETURN_TO_LAUNCH,
+        MavlinkCommonCommandName::NavWaypoint => common::MavCmd::MAV_CMD_NAV_WAYPOINT,
+        MavlinkCommonCommandName::NavLoiterTime => common::MavCmd::MAV_CMD_NAV_LOITER_TIME,
+        MavlinkCommonCommandName::MissionStart => common::MavCmd::MAV_CMD_MISSION_START,
+        MavlinkCommonCommandName::FenceCircleInclusion => {
+            common::MavCmd::MAV_CMD_NAV_FENCE_CIRCLE_INCLUSION
+        }
+        MavlinkCommonCommandName::FenceCircleExclusion => {
+            common::MavCmd::MAV_CMD_NAV_FENCE_CIRCLE_EXCLUSION
+        }
+        MavlinkCommonCommandName::FencePolygonVertexInclusion => {
+            common::MavCmd::MAV_CMD_NAV_FENCE_POLYGON_VERTEX_INCLUSION
+        }
+        MavlinkCommonCommandName::FencePolygonVertexExclusion => {
+            common::MavCmd::MAV_CMD_NAV_FENCE_POLYGON_VERTEX_EXCLUSION
+        }
+        MavlinkCommonCommandName::DoFenceEnable => common::MavCmd::MAV_CMD_DO_FENCE_ENABLE,
+    }
 }
 
 #[cfg(feature = "mavlink-transport")]

@@ -903,22 +903,7 @@ pub fn dry_run_artifact_with_mavlink_profile(
     let command_ir_summary = command_ir_plan
         .as_ref()
         .map(MissionCommandSummary::from_plan);
-    let mavlink_common_plan = command_ir_plan.as_ref().and_then(|ir_plan| {
-        let options = MavlinkCommonPlanOptions {
-            capability_profile: mavlink_profile,
-            home_origin: Some(MavlinkCoordinateOrigin {
-                lat_deg: effective_geo_origin.lat_deg,
-                lon_deg: effective_geo_origin.lon_deg,
-                alt_m: effective_geo_origin.alt_m,
-            }),
-            default_hold_position: plan.waypoints.first().map(sitl_waypoint_position),
-            orbit_strategy: MavlinkOrbitStrategy::WaypointApproximation {
-                segments_per_turn: 12,
-            },
-            ..Default::default()
-        };
-        compile_mavlink_common_plan(ir_plan, &options).ok()
-    });
+    let mavlink_common_plan = compile_sitl_plan_to_mavlink_common_plan(plan, mavlink_profile).ok();
     SitlDryRunArtifact {
         schema_version: "sitl_dry_run_artifact.v1".to_owned(),
         source_scenario_path: plan.scenario_path.clone(),
@@ -957,6 +942,30 @@ pub fn dry_run_artifact_with_mavlink_profile(
         command_ir_summary,
         mavlink_common_plan,
     }
+}
+
+pub fn compile_sitl_plan_to_mavlink_common_plan(
+    plan: &SitlPlan,
+    mavlink_profile: MavlinkCapabilityProfileId,
+) -> Result<MavlinkCommonPlan, String> {
+    let effective_geo_origin = plan.geo_origin.unwrap_or(DEFAULT_SITL_GEO_ORIGIN);
+    let Some(ir_plan) = build_command_ir_plan(plan) else {
+        return Err("SITL plan cannot be represented as MissionCommandPlan".to_owned());
+    };
+    let options = MavlinkCommonPlanOptions {
+        capability_profile: mavlink_profile,
+        home_origin: Some(MavlinkCoordinateOrigin {
+            lat_deg: effective_geo_origin.lat_deg,
+            lon_deg: effective_geo_origin.lon_deg,
+            alt_m: effective_geo_origin.alt_m,
+        }),
+        default_hold_position: plan.waypoints.first().map(sitl_waypoint_position),
+        orbit_strategy: MavlinkOrbitStrategy::WaypointApproximation {
+            segments_per_turn: 12,
+        },
+        ..Default::default()
+    };
+    compile_mavlink_common_plan(&ir_plan, &options).map_err(|error| error.to_string())
 }
 
 /// Builds a `MissionCommandPlan` from a dry-run plan.

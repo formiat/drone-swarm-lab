@@ -160,7 +160,8 @@ transport-backed SITL proof, and not hardware readiness.
 Validate a standalone M90 execution artifact. This validates
 `mavlink_execution_artifact.v1.json`, checks schema/profile/git metadata,
 ordered execution steps, lifecycle/outcome consistency, retry-count consistency,
-and terminal abort/failure step consistency:
+terminal abort/failure step consistency, non-empty command/caveats, and
+declared upload/start phases:
 
 ```bash
 cargo run -p swarm-examples --bin artifact_validator -- \
@@ -172,7 +173,9 @@ cargo run -p swarm-examples --bin artifact_validator -- \
 `execution_mode` is machine-readable. `local_mock_executor` and
 `scripted_profile_executor` are portable local executor evidence only.
 `transport_backed` is reserved for a path that actually used the MAVLink
-transport-backed executor boundary.
+transport-backed executor boundary. When `expected_upload_phase` or
+`expected_start_phase` is true, the report must contain the corresponding
+`mission_upload` or `MAV_CMD_MISSION_START` step.
 
 Additional M96 rule ids include:
 

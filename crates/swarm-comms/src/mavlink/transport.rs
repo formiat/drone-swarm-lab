@@ -8,13 +8,16 @@ use super::{MavlinkError, Waypoint};
 use std::{borrow::Cow, time::Duration};
 
 #[cfg(feature = "mavlink-transport")]
-use super::commands::send_abort_command;
+use super::commands::{
+    common_command_to_message, send_abort_command, send_command_and_wait_observed,
+};
 #[cfg(feature = "mavlink-transport")]
 use super::{
     lifecycle::execute_uploaded_mission_with_connection_observed,
     mission_upload::{
         upload_and_execute_mission_with_connection_observed,
         upload_mission_items_with_connection_observed, upload_mission_with_connection_observed,
+        upload_precompiled_mission_items_with_connection_observed,
     },
     telemetry::{poll_telemetry_event_with_connection, wait_next_telemetry_event_with_connection},
     AbortCommandResult, CommonMessage, MavlinkFlightError, MavlinkFlightReport,
@@ -22,6 +25,12 @@ use super::{
     MavlinkTelemetryEvent, MissionItem, MissionLifecycleOptions, MissionLifecycleReport,
     MissionUploadOptions, MissionUploadReport, NoopMavlinkMissionObserver,
 };
+#[cfg(feature = "mavlink-transport")]
+use crate::mavlink_common_plan::{
+    MavlinkCommonCommand, MavlinkCommonCommandName, MavlinkCommonMissionItem, MavlinkCommonPlan,
+};
+#[cfg(feature = "mavlink-transport")]
+use crate::mavlink_executor::{AckProvider, MavlinkExecutionStepResult};
 
 /// Mock MAVLink transport for unit tests and --mock mode.
 pub struct MockMavlinkTransport {
@@ -206,6 +215,167 @@ impl MavlinkTransport {
         timeout: Duration,
     ) -> Result<MavlinkTelemetryEvent, MavlinkTelemetryError> {
         wait_next_telemetry_event_with_connection(&mut self.conn, timeout)
+    }
+}
+
+/// MAVLink transport-backed ACK provider for `MavlinkPlanExecutor`.
+#[cfg(feature = "mavlink-transport")]
+pub struct MavlinkTransportAckProvider<'a, O: MavlinkMissionObserver> {
+    transport: &'a mut MavlinkTransport,
+    mission_items: Vec<MavlinkCommonMissionItem>,
+    mission_start: Option<MavlinkCommonCommand>,
+    upload_options: MissionUploadOptions,
+    lifecycle_options: MissionLifecycleOptions,
+    observer: &'a mut O,
+}
+
+#[cfg(feature = "mavlink-transport")]
+impl<'a, O: MavlinkMissionObserver> MavlinkTransportAckProvider<'a, O> {
+    pub fn new(
+        transport: &'a mut MavlinkTransport,
+        plan: &MavlinkCommonPlan,
+        upload_options: MissionUploadOptions,
+        lifecycle_options: MissionLifecycleOptions,
+        observer: &'a mut O,
+    ) -> Self {
+        Self {
+            transport,
+            mission_items: plan.mission_items.clone(),
+            mission_start: plan.mission_start.clone(),
+            upload_options,
+            lifecycle_options,
+            observer,
+        }
+    }
+
+    fn ack_command(&mut self, command: &MavlinkCommonCommand) -> MavlinkExecutionStepResult {
+        let msg = common_command_to_message(
+            command,
+            self.lifecycle_options.target_system,
+            self.lifecycle_options.target_component,
+        );
+        lifecycle_result_to_step(
+            send_command_and_wait_observed(
+                &mut self.transport.conn,
+                msg,
+                self.lifecycle_options.timeout,
+                self.observer,
+            ),
+            self.lifecycle_options.timeout,
+        )
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
+impl<O: MavlinkMissionObserver> AckProvider for MavlinkTransportAckProvider<'_, O> {
+    fn ack_prelude_command(
+        &mut self,
+        command: &MavlinkCommonCommand,
+    ) -> MavlinkExecutionStepResult {
+        self.ack_command(command)
+    }
+
+    fn ack_mission_upload(&mut self) -> MavlinkExecutionStepResult {
+        if self.mission_items.is_empty() {
+            return MavlinkExecutionStepResult::Rejected {
+                reason: "compiled plan has no supported transport mission items".to_owned(),
+            };
+        }
+        mission_result_to_step(
+            upload_precompiled_mission_items_with_connection_observed(
+                &mut self.transport.conn,
+                &self.mission_items,
+                &self.upload_options,
+                self.observer,
+            ),
+            self.upload_options.timeout,
+        )
+    }
+
+    fn ack_mission_start(&mut self) -> MavlinkExecutionStepResult {
+        let command = self
+            .mission_start
+            .clone()
+            .unwrap_or_else(default_mission_start_command);
+        self.ack_command(&command)
+    }
+
+    fn ack_postlude_command(
+        &mut self,
+        command: &MavlinkCommonCommand,
+    ) -> MavlinkExecutionStepResult {
+        self.ack_command(command)
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn default_mission_start_command() -> MavlinkCommonCommand {
+    MavlinkCommonCommand {
+        command_id: "mission-start-0".to_owned(),
+        command: MavlinkCommonCommandName::MissionStart,
+        phase: crate::mavlink_common_plan::MavlinkPlanPhase::MissionStart,
+        params: [
+            Some(0.0),
+            Some(0.0),
+            Some(0.0),
+            Some(0.0),
+            Some(0.0),
+            Some(0.0),
+            Some(0.0),
+        ],
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn mission_result_to_step(
+    result: Result<MissionUploadReport, MavlinkMissionError>,
+    timeout: Duration,
+) -> MavlinkExecutionStepResult {
+    match result {
+        Ok(_) => MavlinkExecutionStepResult::Accepted,
+        Err(MavlinkMissionError::MissionAckTimeout)
+        | Err(MavlinkMissionError::MissionRequestTimeout { .. })
+        | Err(MavlinkMissionError::HeartbeatTimeout) => MavlinkExecutionStepResult::Timeout {
+            after_ms: timeout.as_millis() as u64,
+        },
+        Err(MavlinkMissionError::MissionRejected(result)) => MavlinkExecutionStepResult::Rejected {
+            reason: format!("{result:?}"),
+        },
+        Err(MavlinkMissionError::WriteFailed(message))
+        | Err(MavlinkMissionError::ReadFailed(message)) => {
+            MavlinkExecutionStepResult::TransportFailure { reason: message }
+        }
+        Err(error) => MavlinkExecutionStepResult::Rejected {
+            reason: error.to_string(),
+        },
+    }
+}
+
+#[cfg(feature = "mavlink-transport")]
+fn lifecycle_result_to_step(
+    result: Result<(), MavlinkLifecycleError>,
+    timeout: Duration,
+) -> MavlinkExecutionStepResult {
+    match result {
+        Ok(()) => MavlinkExecutionStepResult::Accepted,
+        Err(MavlinkLifecycleError::CommandAckTimeout { .. })
+        | Err(MavlinkLifecycleError::PostStartHeartbeatTimeout { .. }) => {
+            MavlinkExecutionStepResult::Timeout {
+                after_ms: timeout.as_millis() as u64,
+            }
+        }
+        Err(MavlinkLifecycleError::CommandRejected { result, .. }) => {
+            MavlinkExecutionStepResult::Rejected {
+                reason: format!("{result:?}"),
+            }
+        }
+        Err(MavlinkLifecycleError::WriteFailed(message))
+        | Err(MavlinkLifecycleError::ReadFailed(message)) => {
+            MavlinkExecutionStepResult::TransportFailure { reason: message }
+        }
+        Err(error) => MavlinkExecutionStepResult::Rejected {
+            reason: error.to_string(),
+        },
     }
 }
 
