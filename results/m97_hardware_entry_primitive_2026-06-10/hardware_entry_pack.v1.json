@@ -1,0 +1,305 @@
+{
+  "schema_version": "hardware_entry_pack.v1",
+  "pack_id": "m97-primitive_takeoff_hold_land_3m_10s-agent-0",
+  "created_at": "2026-06-11T02:09:02.718188456Z",
+  "git_commit": "ce729455c098a4546f369f9f71c820f998697e77",
+  "mission_families_covered": [
+    "primitive:takeoff-hold-land"
+  ],
+  "primitive_evidence": {
+    "plan_id": "primitive_takeoff_hold_land_3m_10s-agent-0-primitive_mission",
+    "steps": [
+      [
+        0,
+        "MAV_CMD_COMPONENT_ARM_DISARM",
+        {
+          "result": "accepted"
+        }
+      ],
+      [
+        1,
+        "MAV_CMD_NAV_TAKEOFF",
+        {
+          "result": "accepted"
+        }
+      ],
+      [
+        2,
+        "mission_upload",
+        {
+          "result": "accepted"
+        }
+      ],
+      [
+        3,
+        "MAV_CMD_MISSION_START",
+        {
+          "result": "accepted"
+        }
+      ],
+      [
+        4,
+        "MAV_CMD_NAV_LAND",
+        {
+          "result": "accepted"
+        }
+      ]
+    ],
+    "overall": {
+      "outcome": "completed"
+    },
+    "lifecycle_state": "completed",
+    "telemetry_milestones_reached": [
+      "heartbeat_expected"
+    ],
+    "retry_count": 0
+  },
+  "urban_evidence": null,
+  "swarm_evidence": null,
+  "dual_stack_evidence": {
+    "schema_version": "dual_stack_execution_evidence.v1",
+    "mission_id": "primitive_takeoff_hold_land_3m_10s-agent-0-primitive_mission",
+    "command_ir_hash": "a4b1b5cff986223606cc2154e7d0976ccc63a1cb51943aa92b0970ed4778149c",
+    "created_at": "2026-06-11T02:09:02.718171354Z",
+    "git_commit": "ce729455c098a4546f369f9f71c820f998697e77",
+    "px4": {
+      "profile_id": "px4",
+      "lifecycle_state": "completed",
+      "execution_report": {
+        "plan_id": "primitive_takeoff_hold_land_3m_10s-agent-0-primitive_mission",
+        "steps": [
+          [
+            0,
+            "MAV_CMD_COMPONENT_ARM_DISARM",
+            {
+              "result": "accepted"
+            }
+          ],
+          [
+            1,
+            "MAV_CMD_NAV_TAKEOFF",
+            {
+              "result": "accepted"
+            }
+          ],
+          [
+            2,
+            "mission_upload",
+            {
+              "result": "accepted"
+            }
+          ],
+          [
+            3,
+            "MAV_CMD_MISSION_START",
+            {
+              "result": "accepted"
+            }
+          ],
+          [
+            4,
+            "MAV_CMD_NAV_LAND",
+            {
+              "result": "accepted"
+            }
+          ]
+        ],
+        "overall": {
+          "outcome": "completed"
+        },
+        "lifecycle_state": "completed",
+        "telemetry_milestones_reached": [
+          "heartbeat_expected"
+        ],
+        "retry_count": 0
+      },
+      "fc_contract_result": {
+        "violations": [],
+        "blocks_mission_start": false,
+        "summary": "FC contract not requested for this primitive execution evidence"
+      },
+      "caveats": [
+        "PX4 execution evidence is local executor evidence over the MavlinkPlanExecutor API; live FC/SIH artifacts remain separate.",
+        "PX4 support is based on local SIH evidence and still requires operator validation"
+      ],
+      "unsupported_features": []
+    },
+    "ardupilot": {
+      "profile_id": "ardupilot",
+      "lifecycle_state": "unsupported",
+      "execution_report": {
+        "plan_id": "primitive_takeoff_hold_land_3m_10s-agent-0-primitive_mission",
+        "steps": [
+          [
+            0,
+            "MAV_CMD_COMPONENT_ARM_DISARM",
+            {
+              "result": "skipped",
+              "reason": "ardupilot_mav_cmd_component_arm_disarm_unsupported_until_sitl"
+            }
+          ],
+          [
+            1,
+            "MAV_CMD_NAV_TAKEOFF",
+            {
+              "result": "skipped",
+              "reason": "ardupilot_mav_cmd_nav_takeoff_unsupported_until_sitl"
+            }
+          ],
+          [
+            2,
+            "mission_upload",
+            {
+              "result": "skipped",
+              "reason": "ardupilot_mission_upload_unsupported_until_sitl"
+            }
+          ],
+          [
+            3,
+            "MAV_CMD_MISSION_START",
+            {
+              "result": "skipped",
+              "reason": "ardupilot_mav_cmd_mission_start_unsupported_until_sitl"
+            }
+          ],
+          [
+            4,
+            "MAV_CMD_NAV_LAND",
+            {
+              "result": "skipped",
+              "reason": "ardupilot_mav_cmd_nav_land_unsupported_until_sitl"
+            }
+          ]
+        ],
+        "overall": {
+          "outcome": "completed"
+        },
+        "lifecycle_state": "unsupported",
+        "telemetry_milestones_reached": [
+          "heartbeat_expected"
+        ],
+        "retry_count": 0
+      },
+      "fc_contract_result": {
+        "violations": [],
+        "blocks_mission_start": false,
+        "summary": "FC contract not requested for this primitive execution evidence"
+      },
+      "caveats": [
+        "ArduPilot execution evidence is experimental and local-only; skipped steps mean unsupported/unevidenced profile behavior, not flight acceptance.",
+        "ArduPilot acceptance is unknown until ArduPilot SITL or hardware evidence is captured",
+        "ArduPilot incompatible or unevidenced steps are represented as skipped executor steps."
+      ],
+      "unsupported_features": [
+        {
+          "rule_id": "ardupilot_profile_unknown_until_sitl_or_hardware",
+          "command_id": "arm-0",
+          "command_kind": "MAV_CMD_COMPONENT_ARM_DISARM",
+          "required": true,
+          "reason": "ArduPilot profile classifies this execution step as unknown_until_sitl_or_hardware: command syntax is known, but stack acceptance is not evidenced"
+        },
+        {
+          "rule_id": "ardupilot_profile_unknown_until_sitl_or_hardware",
+          "command_id": "takeoff-0",
+          "command_kind": "MAV_CMD_NAV_TAKEOFF",
+          "required": true,
+          "reason": "ArduPilot profile classifies this execution step as unknown_until_sitl_or_hardware: command syntax is known, but stack acceptance is not evidenced"
+        },
+        {
+          "rule_id": "ardupilot_profile_unknown_until_sitl_or_hardware",
+          "command_id": "hold-0",
+          "command_kind": "MAV_CMD_NAV_LOITER_TIME",
+          "required": true,
+          "reason": "ArduPilot profile classifies this execution step as unknown_until_sitl_or_hardware: command syntax is known, but stack acceptance is not evidenced"
+        },
+        {
+          "rule_id": "ardupilot_profile_unknown_until_sitl_or_hardware",
+          "command_id": "mission-start-0",
+          "command_kind": "MAV_CMD_MISSION_START",
+          "required": true,
+          "reason": "ArduPilot profile classifies this execution step as unknown_until_sitl_or_hardware: command syntax is known, but stack acceptance is not evidenced"
+        },
+        {
+          "rule_id": "ardupilot_profile_unknown_until_sitl_or_hardware",
+          "command_id": "land-0",
+          "command_kind": "MAV_CMD_NAV_LAND",
+          "required": true,
+          "reason": "ArduPilot profile classifies this execution step as unknown_until_sitl_or_hardware: command syntax is known, but stack acceptance is not evidenced"
+        }
+      ]
+    },
+    "comparison": {
+      "same_command_ir_hash": true,
+      "lifecycle_states_match": false,
+      "step_count_delta": 0,
+      "caveat_count_delta": -1,
+      "unsupported_count_delta": -5,
+      "notable_differences": [
+        "lifecycle_state differs: px4=Completed, ardupilot=Unsupported",
+        "ardupilot skipped 5 incompatible or unevidenced executor step(s)",
+        "unsupported feature count differs: px4=0, ardupilot=5"
+      ]
+    }
+  },
+  "fc_contract_result": {
+    "violations": [],
+    "blocks_mission_start": false,
+    "summary": "No FC fence/parameter contract was requested by this pack."
+  },
+  "param_snapshot": null,
+  "fence_plan": null,
+  "swarm_protocol_assumptions": [
+    "MAVLink transport is not exercised by this pack; evidence is compiler/local-executor only.",
+    "Swarm command fanout evidence is absent unless an explicit swarm artifact is attached."
+  ],
+  "topology_assumptions": [
+    "single_agent_no_network_topology",
+    "multi_agent_hardware_requires_separate_review"
+  ],
+  "degraded_policy_matrix": [
+    {
+      "condition": "gcs_unavailable",
+      "policy": "hold_or_abort_requires_external_operator_procedure",
+      "tested": false
+    },
+    {
+      "condition": "single_agent_mission_failure",
+      "policy": "do_not_continue_to_hardware_without_separate_sitl_or_bench_evidence",
+      "tested": false
+    },
+    {
+      "condition": "multi_agent_link_or_agent_loss",
+      "policy": "requires separate multi-drone safety review before hardware",
+      "tested": false
+    }
+  ],
+  "preflight_report": {
+    "passed": true,
+    "violations": []
+  },
+  "hardware_entry_checklist": {
+    "selected_autopilot": "px4",
+    "selected_airframe": null,
+    "selected_link_class": "not_connected_local_artifact",
+    "coordinate_frame_policy": "local_simulation",
+    "altitude_reference": "primitive_mission.altitude_m",
+    "fence_and_failsafe_verified": false,
+    "manual_abort_procedure_rehearsed": false,
+    "first_allowed_mission_type": "primitive_takeoff_hold_land",
+    "single_drone_gate_passed": true,
+    "multi_drone_review_required": false
+  },
+  "run_command": "target/debug/sitl_agent --hardware-entry-pack --scenario scenarios/primitive.takeoff-hold-land.json --agent-id agent-0 --output-dir results/m97_hardware_entry_primitive_2026-06-10",
+  "readiness_status": "execute_validated_locally",
+  "caveats": [
+    "No hardware flight was performed.",
+    "No certification, regulatory approval, or operator training claim is made.",
+    "SITL/local executor evidence must not be treated as hardware safety proof."
+  ],
+  "limitations": [
+    "Real airframe failsafes, battery behavior, GNSS/estimator failures, RF loss, and obstacle avoidance are not verified.",
+    "PX4 profile evidence is compiler/local-executor evidence unless a separate live SITL or hardware artifact is attached.",
+    "ArduPilot profile evidence is conservative and may contain unsupported/caveated commands."
+  ],
+  "blockers": []
+}
